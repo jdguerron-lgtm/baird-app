@@ -12,7 +12,7 @@ export default function RegistroTecnico() {
     nombre_completo: '',
     whatsapp: '',
     ciudad_pueblo: '',
-    especialidad_principal: 'Lavadoras',
+    especialidades: [] as string[], // Ahora es un array
     acepta_garantias: true
   })
 
@@ -24,20 +24,38 @@ export default function RegistroTecnico() {
     }))
   }
 
+  const handleEspecialidadToggle = (especialidad: string) => {
+    setFormData(prev => ({
+      ...prev,
+      especialidades: prev.especialidades.includes(especialidad)
+        ? prev.especialidades.filter(e => e !== especialidad)
+        : [...prev.especialidades, especialidad]
+    }))
+  }
+
   const handleSubmit = async (e: any) => {
     e.preventDefault()
     setCargando(true)
     setMensaje({ texto: '', tipo: '' })
 
     try {
+      // Preparar datos para Supabase
+      const dataToSave = {
+        nombre_completo: formData.nombre_completo,
+        whatsapp: formData.whatsapp,
+        ciudad_pueblo: formData.ciudad_pueblo,
+        especialidad_principal: formData.especialidades[0] || 'Lavadoras', // Primera como principal
+        acepta_garantias: formData.acepta_garantias
+      }
+
       const { error } = await supabase
         .from('tecnicos')
-        .insert([formData])
+        .insert([dataToSave])
 
       if (error) throw error
 
       setMensaje({ texto: '¡Registro exitoso! Ya estás en la base de datos.', tipo: 'exito' })
-      setFormData({ nombre_completo: '', whatsapp: '', ciudad_pueblo: '', especialidad_principal: 'Lavadoras', acepta_garantias: true })
+      setFormData({ nombre_completo: '', whatsapp: '', ciudad_pueblo: '', especialidades: [], acepta_garantias: true })
 
     } catch (error: any) {
       console.error(error)
@@ -158,27 +176,43 @@ export default function RegistroTecnico() {
               />
             </div>
 
-            {/* Especialidad */}
+            {/* Especialidades - Múltiples selecciones */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
                 <span className="flex items-center">
                   <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
-                  Especialidad Principal
+                  Especialidades (Selecciona todas las que manejes)
                 </span>
               </label>
-              <select
-                name="especialidad_principal"
-                value={formData.especialidad_principal}
-                onChange={handleChange}
-                className="block w-full bg-white border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
-              >
-                <option>Lavadoras</option>
-                <option>Neveras y Nevecones</option>
-                <option>Hornos y Estufas</option>
-                <option>Aires Acondicionados</option>
-              </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {['Lavadoras', 'Neveras y Nevecones', 'Hornos y Estufas', 'Aires Acondicionados'].map((especialidad) => (
+                  <div
+                    key={especialidad}
+                    onClick={() => handleEspecialidadToggle(especialidad)}
+                    className={`cursor-pointer border-2 rounded-xl p-3 transition-all ${formData.especialidades.includes(especialidad)
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                      }`}
+                  >
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.especialidades.includes(especialidad)}
+                        onChange={() => { }} // Manejado por el div onClick
+                        className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label className="ml-3 block text-sm font-medium text-gray-900 cursor-pointer">
+                        {especialidad}
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {formData.especialidades.length === 0 && (
+                <p className="mt-2 text-xs text-red-600">* Selecciona al menos una especialidad</p>
+              )}
             </div>
 
             {/* Garantías */}
