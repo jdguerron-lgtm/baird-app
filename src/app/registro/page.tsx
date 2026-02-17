@@ -52,6 +52,7 @@ export default function RegistroTecnico() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Logo */}
         <div className="flex justify-center mb-6">
+          {/* Temporalmente comentado mientras se agrega el logo 
           <div className="relative w-64 h-24">
             <Image
               src="/baird-logo.png"
@@ -60,6 +61,13 @@ export default function RegistroTecnico() {
               className="object-contain"
               priority
             />
+          </div>
+          */}
+          <div className="text-center">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-900 to-blue-600 bg-clip-text text-transparent">
+              baird
+            </h1>
+            <p className="text-xl font-semibold text-gray-800 tracking-wide">SERVICE S.A.S</p>
           </div>
         </div>
 
@@ -101,7 +109,7 @@ export default function RegistroTecnico() {
                 required
                 value={formData.nombre_completo}
                 onChange={handleChange}
-                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
+                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
                 placeholder="Juan Pérez"
               />
             </div>
@@ -122,7 +130,7 @@ export default function RegistroTecnico() {
                 required
                 value={formData.whatsapp}
                 onChange={handleChange}
-                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
+                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
                 placeholder="+57 300 123 4567"
               />
               <p className="mt-1.5 text-xs text-gray-500">Incluye el código de país</p>
@@ -146,7 +154,7 @@ export default function RegistroTecnico() {
                 value={formData.ciudad_pueblo}
                 onChange={handleChange}
                 placeholder="Bogotá, Chía, Cajicá..."
-                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
+                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
               />
             </div>
 
@@ -164,7 +172,7 @@ export default function RegistroTecnico() {
                 name="especialidad_principal"
                 value={formData.especialidad_principal}
                 onChange={handleChange}
-                className="block w-full bg-white border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
+                className="block w-full bg-white border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
               >
                 <option>Lavadoras</option>
                 <option>Neveras y Nevecones</option>
@@ -203,8 +211,8 @@ export default function RegistroTecnico() {
                 type="submit"
                 disabled={cargando}
                 className={`group relative w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white transition-all duration-200 ${cargando
-                    ? 'bg-gradient-to-r from-blue-400 to-blue-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 hover:shadow-xl transform hover:-translate-y-0.5'
+                  ? 'bg-gradient-to-r from-blue-400 to-blue-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 hover:shadow-xl transform hover:-translate-y-0.5'
                   } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
               >
                 {cargando ? (
