@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { uploadFotoPerfil, uploadFotoDocumento } from '@/lib/uploadHelpers'
 import Image from 'next/image'
 
 export default function RegistroTecnico() {
@@ -12,9 +13,17 @@ export default function RegistroTecnico() {
     nombre_completo: '',
     whatsapp: '',
     ciudad_pueblo: '',
-    especialidades: [] as string[], // Ahora es un array
+    tipo_documento: 'CC',
+    numero_documento: '',
+    especialidades: [] as string[],
     acepta_garantias: true
   })
+
+  // Estados para archivos y previews
+  const [fotoPerfil, setFotoPerfil] = useState<File | null>(null)
+  const [fotoDocumento, setFotoDocumento] = useState<File | null>(null)
+  const [previewPerfil, setPreviewPerfil] = useState<string | null>(null)
+  const [previewDocumento, setPreviewDocumento] = useState<string | null>(null)
 
   const handleChange = (e: any) => {
     const { name, value, type, checked } = e.target
@@ -22,6 +31,36 @@ export default function RegistroTecnico() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }))
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, tipo: 'perfil' | 'documento') => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validar tipo de archivo
+    if (!file.type.startsWith('image/')) {
+      setMensaje({ texto: 'Por favor selecciona una imagen válida', tipo: 'error' })
+      return
+    }
+
+    // Validar tamaño
+    const maxSize = tipo === 'documento' ? 5 * 1024 * 1024 : 2 * 1024 * 1024
+    if (file.size > maxSize) {
+      setMensaje({
+        texto: `La imagen excede el tamaño máximo de ${maxSize / 1024 / 1024}MB`,
+        tipo: 'error'
+      })
+      return
+    }
+
+    // Guardar archivo y crear preview
+    if (tipo === 'perfil') {
+      setFotoPerfil(file)
+      setPreviewPerfil(URL.createObjectURL(file))
+    } else {
+      setFotoDocumento(file)
+      setPreviewDocumento(URL.createObjectURL(file))
+    }
   }
 
   const handleEspecialidadToggle = (especialidad: string) => {
@@ -39,23 +78,71 @@ export default function RegistroTecnico() {
     setMensaje({ texto: '', tipo: '' })
 
     try {
-      // Preparar datos para Supabase
-      const dataToSave = {
-        nombre_completo: formData.nombre_completo,
-        whatsapp: formData.whatsapp,
-        ciudad_pueblo: formData.ciudad_pueblo,
-        especialidad_principal: formData.especialidades[0] || 'Lavadoras', // Primera como principal
-        acepta_garantias: formData.acepta_garantias
+      // Validaciones
+      if (formData.especialidades.length === 0) {
+        throw new Error('Debes seleccionar al menos una especialidad')
+      }
+      if (!fotoPerfil) {
+        throw new Error('La foto de perfil es requerida')
+      }
+      if (!fotoDocumento) {
+        throw new Error('La foto del documento es requerida')
       }
 
-      const { error } = await supabase
+      // 1. Insertar técnico inicial
+      const { data: tecnicoData, error: insertError } = await supabase
         .from('tecnicos')
-        .insert([dataToSave])
+        .insert([{
+          nombre_completo: formData.nombre_completo,
+          whatsapp: formData.whatsapp,
+          ciudad_pueblo: formData.ciudad_pueblo,
+          tipo_documento: formData.tipo_documento,
+          numero_documento: formData.numero_documento,
+          especialidad_principal: formData.especialidades[0],
+          acepta_garantias: formData.acepta_garantias,
+          estado_verificacion: 'pendiente'
+        }])
+        .select()
+        .single()
 
-      if (error) throw error
+      if (insertError) throw insertError
 
-      setMensaje({ texto: '¡Registro exitoso! Ya estás en la base de datos.', tipo: 'exito' })
-      setFormData({ nombre_completo: '', whatsapp: '', ciudad_pueblo: '', especialidades: [], acepta_garantias: true })
+      const tecnicoId = tecnicoData.id
+
+      // 2. Subir fotos
+      const fotoPerfilUrl = await uploadFotoPerfil(fotoPerfil, tecnicoId)
+      const fotoDocumentoUrl = await uploadFotoDocumento(fotoDocumento, tecnicoId)
+
+      // 3. Actualizar técnico con URLs
+      const { error: updateError } = await supabase
+        .from('tecnicos')
+        .update({
+          foto_perfil_url: fotoPerfilUrl,
+          foto_documento_url: fotoDocumentoUrl
+        })
+        .eq('id', tecnicoId)
+
+      if (updateError) throw updateError
+
+      setMensaje({
+        texto: '¡Registro exitoso! Tu cuenta está pendiente de verificación.',
+        tipo: 'exito'
+      })
+
+      // Limpiar formulario completo
+      setFormData({
+        nombre_completo: '',
+        whatsapp: '',
+        ciudad_pueblo: '',
+        tipo_documento: 'CC',
+        numero_documento: '',
+        especialidades: [],
+        acepta_garantias: true
+      })
+      setFotoPerfil(null)
+      setFotoDocumento(null)
+      setPreviewPerfil(null)
+      setPreviewDocumento(null)
 
     } catch (error: any) {
       console.error(error)
@@ -154,6 +241,39 @@ export default function RegistroTecnico() {
               <p className="mt-1.5 text-xs text-gray-500">Incluye el código de país</p>
             </div>
 
+            {/* Documento de Identidad */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tipo de Documento
+                </label>
+                <select
+                  name="tipo_documento"
+                  value={formData.tipo_documento}
+                  onChange={handleChange}
+                  className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
+                >
+                  <option value="CC">Cédula de Ciudadanía</option>
+                  <option value="CE">Cédula de Extranjería</option>
+                  <option value="Pasaporte">Pasaporte</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Número de Documento
+                </label>
+                <input
+                  type="text"
+                  name="numero_documento"
+                  required
+                  value={formData.numero_documento}
+                  onChange={handleChange}
+                  placeholder="12345678"
+                  className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
+                />
+              </div>
+            </div>
+
             {/* Ciudad */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -176,6 +296,61 @@ export default function RegistroTecnico() {
               />
             </div>
 
+            {/* Verificación Visual */}
+            <div className="space-y-4">
+              <label className="block text-sm font-semibold text-gray-700">
+                Verificación de Identidad
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {/* Foto Perfil */}
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 font-medium italic">1. Foto de Perfil (Cara clara)</p>
+                  <div className="flex flex-col items-center p-4 border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative overflow-hidden">
+                    {previewPerfil ? (
+                      <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-blue-500">
+                        <Image src={previewPerfil} alt="Perfil" fill className="object-cover" />
+                      </div>
+                    ) : (
+                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleFileChange(e, 'perfil')}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                    <span className="mt-2 text-xs font-semibold text-blue-600">Subir Foto Perfil</span>
+                  </div>
+                </div>
+
+                {/* Foto Documento */}
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 font-medium italic">2. Foto de Documento</p>
+                  <div className="flex flex-col items-center p-4 border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative overflow-hidden">
+                    {previewDocumento ? (
+                      <div className="relative w-full h-24 rounded-lg overflow-hidden border-2 border-blue-500">
+                        <Image src={previewDocumento} alt="Documento" fill className="object-cover" />
+                      </div>
+                    ) : (
+                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleFileChange(e, 'documento')}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                    <span className="mt-2 text-xs font-semibold text-blue-600">Subir Documento</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Especialidades - Múltiples selecciones */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
@@ -192,8 +367,8 @@ export default function RegistroTecnico() {
                     key={especialidad}
                     onClick={() => handleEspecialidadToggle(especialidad)}
                     className={`cursor-pointer border-2 rounded-xl p-3 transition-all ${formData.especialidades.includes(especialidad)
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-blue-300'
                       }`}
                   >
                     <div className="flex items-center">
