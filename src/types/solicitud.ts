@@ -23,7 +23,7 @@ export const TIPOS_SOLICITUD = [
 
 export type TipoSolicitud = typeof TIPOS_SOLICITUD[number]
 
-// Tipo completo del formulario
+// Tipo completo del formulario del cliente
 export interface SolicitudFormData {
   cliente_nombre: string
   cliente_telefono: string
@@ -36,17 +36,24 @@ export interface SolicitudFormData {
   novedades_equipo: string
   es_garantia: boolean
   numero_serie_factura: string
+  // Campos para WhatsApp y coordinación de visita
+  pago_tecnico: number          // Monto en COP que recibirá el técnico
+  horario_visita_1: string      // Primera franja horaria preferida
+  horario_visita_2: string      // Segunda franja horaria preferida
 }
 
-// Tipo de la solicitud guardada en BD (con ID y metadata)
-export interface SolicitudServicio extends SolicitudFormData {
+// Tipo del registro completo en BD (con ID y metadata del servidor)
+export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico'> {
   id: string
   created_at: string
-  estado?: 'pendiente' | 'asignada' | 'en_proceso' | 'completada' | 'cancelada'
+  pago_tecnico: number
+  estado?: 'pendiente' | 'notificada' | 'asignada' | 'en_proceso' | 'completada' | 'cancelada'
   tecnico_id?: string
+  notificados_at?: string
+  triaje_resultado?: TriajeResponse | null
 }
 
-// Tipo para respuesta de triaje de IA
+// Tipo para respuesta de triaje de IA (deshabilitado temporalmente — ver TODO.md)
 export interface TriajeResponse {
   posible_falla: string
   nivel_complejidad: 'baja' | 'media' | 'alta'
@@ -59,9 +66,20 @@ export interface TriajeResponse {
   urgencia: 'baja' | 'media' | 'alta'
 }
 
-// Estado del triaje en el frontend
+// Estado del triaje en el frontend (reservado para reactivación futura)
 export interface TriajeState {
   loading: boolean
   data: TriajeResponse | null
   error: string | null
+}
+
+// Registro de notificación WhatsApp enviada a un técnico
+export interface NotificacionWhatsApp {
+  id: string
+  solicitud_id: string
+  tecnico_id: string
+  token: string
+  estado: 'enviado' | 'aceptado' | 'expirado' | 'invalidado' | 'error'
+  enviado_at: string
+  respondido_at?: string
 }

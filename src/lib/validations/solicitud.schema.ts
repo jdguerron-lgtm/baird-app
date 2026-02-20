@@ -47,6 +47,19 @@ export const solicitudFormSchema = z.object({
   es_garantia: z.boolean(),
 
   numero_serie_factura: z.string().optional(),
+
+  // Campos de WhatsApp y coordinación de visita
+  pago_tecnico: z
+    .number({ invalid_type_error: 'Ingresa un valor numérico válido' })
+    .int('El valor debe ser un número entero')
+    .min(20000, 'El pago mínimo es $20.000 COP')
+    .max(10000000, 'El pago máximo es $10.000.000 COP'),
+
+  horario_visita_1: nonEmptyString('El primer horario de visita')
+    .max(100, 'El horario no puede exceder 100 caracteres'),
+
+  horario_visita_2: nonEmptyString('El segundo horario de visita')
+    .max(100, 'El horario no puede exceder 100 caracteres'),
 })
 // Refinamiento condicional: si es garantía, requiere número de serie
 .refine(

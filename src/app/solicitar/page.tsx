@@ -1,17 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import { useSolicitudForm } from '@/hooks/useSolicitudForm'
-import { useTriaje } from '@/hooks/useTriaje'
-import { useDebounce } from '@/hooks/useDebounce'
 import { submitSolicitud } from '@/lib/services/solicitud.service'
 import { Alert } from '@/components/ui/Alert'
 import { InputField } from '@/components/ui/InputField'
 import { SelectField } from '@/components/ui/SelectField'
 import { TextAreaField } from '@/components/ui/TextAreaField'
 import { Button } from '@/components/ui/Button'
-import { TriajeDisplay } from '@/components/solicitud/TriajeDisplay'
 import {
   UserIcon,
   PhoneIcon,
@@ -22,51 +19,31 @@ import {
   ChecklistIcon,
   ShieldCheckIcon,
   DocumentIcon,
-  BoltIcon
+  BoltIcon,
+  LightBulbIcon,
 } from '@/components/icons'
 import { TIPOS_EQUIPO, TIPOS_SOLICITUD } from '@/types/solicitud'
+
+// ──────────────────────────────────────────────────────────
+// TRIAJE IA: deshabilitado temporalmente para priorizar
+// la integración con WhatsApp. Los archivos useTriaje.ts,
+// TriajeDisplay.tsx y /api/triaje/route.ts se conservan
+// intactos para reactivarse en una próxima iteración.
+// Ver TODO.md para el plan de reactivación.
+// ──────────────────────────────────────────────────────────
 
 export default function SolicitarServicio() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
 
-  // Hooks personalizados
   const { formData, errors, handleChange, validate, resetForm } = useSolicitudForm()
-  const { triaje, triajeLoading, triajeError, analizarProblema, resetTriaje } = useTriaje()
 
-  // Debounce para triaje automático (esperar 1.5s después de que el usuario deja de escribir)
-  const debouncedNovedades = useDebounce(formData.novedades_equipo, 1500)
-
-  // Effect: Analizar cuando el usuario deja de escribir
-  useEffect(() => {
-    if (
-      debouncedNovedades.length >= 20 &&
-      formData.tipo_equipo &&
-      formData.marca_equipo
-    ) {
-      analizarProblema(
-        debouncedNovedades,
-        formData.tipo_equipo,
-        formData.marca_equipo,
-        formData.tipo_solicitud
-      )
-    } else {
-      resetTriaje()
-    }
-  }, [debouncedNovedades, formData.tipo_equipo, formData.marca_equipo, formData.tipo_solicitud, analizarProblema, resetTriaje])
-
-  // Submit con validación
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validar antes de enviar
     if (!validate()) {
-      setMensaje({
-        texto: 'Por favor corrige los errores en el formulario',
-        tipo: 'error',
-      })
-      // Scroll to top para ver el mensaje
+      setMensaje({ texto: 'Por favor corrige los errores en el formulario', tipo: 'error' })
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
@@ -74,51 +51,63 @@ export default function SolicitarServicio() {
     setCargando(true)
     setMensaje(null)
 
+    // 1. Guardar solicitud en Supabase
     const result = await submitSolicitud(formData)
 
-    if (result.success && result.data) {
-      setSolicitudId(result.data.id)
-      setMensaje({
-        texto: `¡Solicitud #${result.data.id.slice(0, 8)} enviada exitosamente! Pronto un técnico se pondrá en contacto contigo.`,
-        tipo: 'success',
-      })
-      resetForm()
-      resetTriaje()
-      // Scroll to top para ver el mensaje
+    if (!result.success || !result.data) {
+      setMensaje({ texto: result.error || 'Hubo un error al enviar la solicitud', tipo: 'error' })
       window.scrollTo({ top: 0, behavior: 'smooth' })
-    } else {
-      setMensaje({
-        texto: result.error || 'Hubo un error al enviar la solicitud',
-        tipo: 'error',
-      })
-      // Scroll to top para ver el mensaje
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      setCargando(false)
+      return
     }
 
+    const id = result.data.id
+    setSolicitudId(id)
+
+    // 2. Disparar notificaciones WhatsApp a técnicos compatibles
+    try {
+      const waRes = await fetch('/api/whatsapp/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ solicitudId: id }),
+      })
+      const waData = await waRes.json()
+      const tecnicosMsg = waData.notificados > 0
+        ? ` ${waData.notificados} técnico(s) notificado(s) por WhatsApp.`
+        : ' Registramos tu solicitud y buscaremos técnicos disponibles.'
+
+      setMensaje({
+        texto: `✅ Solicitud #${id.slice(0, 8)} enviada.${tecnicosMsg} Te avisaremos cuando un técnico acepte.`,
+        tipo: 'success',
+      })
+    } catch {
+      // No bloquear el flujo si falla la notificación WhatsApp
+      setMensaje({
+        texto: `✅ Solicitud #${id.slice(0, 8)} enviada. Pronto un técnico se pondrá en contacto contigo.`,
+        tipo: 'success',
+      })
+    }
+
+    resetForm()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setCargando(false)
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+
       {/* Header */}
       <div className="sm:mx-auto sm:w-full sm:max-w-2xl">
         <div className="flex justify-center mb-6">
           <div className="relative w-64 h-24">
-            <Image
-              src="/Baird_Service_Logo.png"
-              alt="Baird Service"
-              fill
-              className="object-contain"
-              priority
-            />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
           </div>
         </div>
-
         <h2 className="mt-4 text-center text-3xl font-bold bg-gradient-to-r from-green-700 to-blue-700 bg-clip-text text-transparent">
           Solicita un Servicio Técnico
         </h2>
         <p className="mt-3 text-center text-base text-gray-600 max-w-xl mx-auto">
-          Completa el formulario y te conectaremos con el mejor técnico de tu zona
+          Completa el formulario y el primer técnico disponible en tu zona te contactará por WhatsApp
         </p>
       </div>
 
@@ -127,11 +116,7 @@ export default function SolicitarServicio() {
         <div className="bg-white py-10 px-6 shadow-2xl sm:rounded-2xl sm:px-12 border border-blue-100">
 
           {mensaje && (
-            <Alert
-              type={mensaje.tipo}
-              message={mensaje.texto}
-              onClose={() => setMensaje(null)}
-            />
+            <Alert type={mensaje.tipo} message={mensaje.texto} onClose={() => setMensaje(null)} />
           )}
 
           <form className="space-y-6" onSubmit={handleSubmit}>
@@ -161,7 +146,7 @@ export default function SolicitarServicio() {
 
             {/* Número de Serie (condicional) */}
             {formData.es_garantia && (
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 animate-fadeIn">
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-5">
                 <InputField
                   label="Número de Serie o # de Factura"
                   name="numero_serie_factura"
@@ -175,7 +160,7 @@ export default function SolicitarServicio() {
               </div>
             )}
 
-            {/* Grid de 2 columnas - Datos Personales */}
+            {/* Datos personales */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InputField
                 label="Tu Nombre"
@@ -187,9 +172,8 @@ export default function SolicitarServicio() {
                 icon={<UserIcon className="w-5 h-5 mr-2 text-green-600" />}
                 required
               />
-
               <InputField
-                label="Teléfono de Contacto"
+                label="Teléfono de Contacto (WhatsApp)"
                 name="cliente_telefono"
                 type="tel"
                 value={formData.cliente_telefono}
@@ -213,7 +197,7 @@ export default function SolicitarServicio() {
               required
             />
 
-            {/* Grid Ciudad y Zona */}
+            {/* Ciudad y Zona */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InputField
                 label="Ciudad o Pueblo"
@@ -224,7 +208,6 @@ export default function SolicitarServicio() {
                 error={errors.ciudad_pueblo}
                 required
               />
-
               <InputField
                 label="Zona / Barrio"
                 name="zona_servicio"
@@ -236,7 +219,7 @@ export default function SolicitarServicio() {
               />
             </div>
 
-            {/* Grid Marca y Tipo */}
+            {/* Marca y Tipo de equipo */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InputField
                 label="Marca del Equipo"
@@ -248,7 +231,6 @@ export default function SolicitarServicio() {
                 icon={<TagIcon className="w-5 h-5 mr-2 text-blue-600" />}
                 required
               />
-
               <SelectField
                 label="Tipo de Equipo"
                 name="tipo_equipo"
@@ -273,7 +255,7 @@ export default function SolicitarServicio() {
               required
             />
 
-            {/* Novedades del Equipo */}
+            {/* Descripción del problema */}
             <TextAreaField
               label="¿Qué le pasa al equipo?"
               name="novedades_equipo"
@@ -283,28 +265,57 @@ export default function SolicitarServicio() {
               error={errors.novedades_equipo}
               rows={4}
               icon={<AlertIcon className="w-5 h-5 mr-2 text-orange-600" />}
-              hint="💡 Incluye todos los detalles posibles. Nuestra IA los analizará para sugerir la posible falla."
+              hint="💡 Cuanto más detallado seas, mejor podrá prepararse el técnico."
               required
             />
 
-            {/* Display de Triaje */}
-            {triajeLoading && (
-              <div className="text-center py-6 bg-blue-50 rounded-xl border border-blue-200">
-                <div className="flex items-center justify-center gap-3">
-                  <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <p className="text-sm font-medium text-blue-800">Analizando el problema con IA...</p>
-                </div>
+            {/* ── SECCIÓN: Coordinación de visita ── */}
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
+                <LightBulbIcon className="w-5 h-5 mr-2 text-yellow-500" />
+                Coordinación de la visita
+              </h3>
+
+              {/* Horarios preferidos */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <InputField
+                  label="Primer horario preferido"
+                  name="horario_visita_1"
+                  value={formData.horario_visita_1}
+                  onChange={handleChange}
+                  placeholder="Ej: Lunes 24 Feb, 8am a 12pm"
+                  error={errors.horario_visita_1}
+                  required
+                />
+                <InputField
+                  label="Segundo horario preferido"
+                  name="horario_visita_2"
+                  value={formData.horario_visita_2}
+                  onChange={handleChange}
+                  placeholder="Ej: Martes 25 Feb, 2pm a 6pm"
+                  error={errors.horario_visita_2}
+                  required
+                />
               </div>
-            )}
 
-            {triaje && <TriajeDisplay triaje={triaje} />}
-
-            {triajeError && (
-              <Alert type="warning" message={`Análisis de IA: ${triajeError}. Puedes continuar enviando tu solicitud.`} />
-            )}
+              {/* Valor del servicio */}
+              <div className="bg-green-50 border border-green-200 rounded-xl p-5">
+                <InputField
+                  label="Valor a pagar al técnico (COP)"
+                  name="pago_tecnico"
+                  type="number"
+                  value={formData.pago_tecnico === 0 ? '' : String(formData.pago_tecnico)}
+                  onChange={handleChange}
+                  placeholder="Ej: 150000"
+                  error={errors.pago_tecnico}
+                  icon={<BoltIcon className="w-5 h-5 mr-2 text-green-600" />}
+                  required
+                />
+                <p className="text-xs text-green-700 mt-2">
+                  💡 Este valor se mostrará al técnico antes de que decida aceptar. Mínimo $20.000 COP.
+                </p>
+              </div>
+            </div>
 
             {/* Botón de Envío */}
             <div className="pt-2">
@@ -324,7 +335,7 @@ export default function SolicitarServicio() {
           {/* Footer */}
           <div className="mt-8 pt-6 border-t border-gray-200">
             <p className="text-center text-xs text-gray-500">
-              🔒 Conectamos solo con técnicos verificados y certificados
+              🔒 Conectamos solo con técnicos verificados — recibirás la foto e identificación del técnico asignado
             </p>
           </div>
         </div>

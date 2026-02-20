@@ -15,6 +15,9 @@ const initialFormData: SolicitudFormData = {
   novedades_equipo: '',
   es_garantia: false,
   numero_serie_factura: '',
+  pago_tecnico: 0,
+  horario_visita_1: '',
+  horario_visita_2: '',
 }
 
 /**
@@ -26,8 +29,9 @@ export function useSolicitudForm() {
   const [errors, setErrors] = useState<Partial<Record<keyof SolicitudFormData, string>>>({})
 
   /**
-   * Maneja cambios en los campos del formulario
-   * Limpia el error del campo cuando el usuario empieza a escribir
+   * Maneja cambios en los campos del formulario.
+   * Campos tipo 'number' se convierten a número; checkbox a boolean.
+   * Limpia el error del campo cuando el usuario empieza a escribir.
    */
   const handleChange = useCallback((
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -35,9 +39,18 @@ export function useSolicitudForm() {
     const { name, value, type } = e.target
     const checked = (e.target as HTMLInputElement).checked
 
+    let parsedValue: string | boolean | number
+    if (type === 'checkbox') {
+      parsedValue = checked
+    } else if (type === 'number') {
+      parsedValue = value === '' ? 0 : Number(value)
+    } else {
+      parsedValue = value
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: parsedValue,
     }))
 
     // Limpiar error del campo cuando el usuario empieza a escribir
