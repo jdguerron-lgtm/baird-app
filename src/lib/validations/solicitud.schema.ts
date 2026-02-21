@@ -50,7 +50,7 @@ export const solicitudFormSchema = z.object({
 
   // Campos de WhatsApp y coordinación de visita
   pago_tecnico: z
-    .number({ invalid_type_error: 'Ingresa un valor numérico válido' })
+    .number({ error: 'Ingresa un valor numérico válido' })
     .int('El valor debe ser un número entero')
     .min(20000, 'El pago mínimo es $20.000 COP')
     .max(10000000, 'El pago máximo es $10.000.000 COP'),
