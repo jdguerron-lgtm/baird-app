@@ -3,6 +3,19 @@ import crypto from 'crypto'
 
 const WA_API_BASE = 'https://graph.facebook.com/v21.0'
 
+// Mapping: tipo_equipo from solicitud → especialidad stored in especialidades_tecnico
+// Registration form uses grouped labels; this bridges the gap.
+const TIPO_A_ESPECIALIDAD: Record<string, string> = {
+  'Lavadora':           'Lavadoras',
+  'Secadora':           'Lavadoras',
+  'Lavavajillas':       'Lavadoras',
+  'Nevera':             'Neveras y Nevecones',
+  'Nevecón':            'Neveras y Nevecones',
+  'Horno':              'Hornos y Estufas',
+  'Estufa':             'Hornos y Estufas',
+  'Aire Acondicionado': 'Aires Acondicionados',
+}
+
 // ─────────────────────────────────────────
 // Utilidades de formato
 // ─────────────────────────────────────────
@@ -106,10 +119,12 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
   if (solErr || !sol) throw new Error(`Solicitud no encontrada: ${solicitudId}`)
 
   // 2. Buscar técnicos con la especialidad requerida
+  const especialidadBuscada = TIPO_A_ESPECIALIDAD[sol.tipo_equipo] ?? sol.tipo_equipo
+
   const { data: especialidades } = await supabase
     .from('especialidades_tecnico')
     .select('tecnico_id')
-    .eq('especialidad', sol.tipo_equipo)
+    .eq('especialidad', especialidadBuscada)
 
   if (!especialidades || especialidades.length === 0) return 0
 
@@ -118,10 +133,10 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
   // 3. Filtrar por verificados y ciudad compatible
   const { data: tecnicos } = await supabase
     .from('tecnicos')
-    .select('id, nombre, whatsapp, ciudad')
+    .select('id, nombre_completo, whatsapp, ciudad_pueblo')
     .eq('estado_verificacion', 'verificado')
     .in('id', tecnicoIds)
-    .ilike('ciudad', `%${sol.ciudad_pueblo}%`)
+    .ilike('ciudad_pueblo', `%${sol.ciudad_pueblo}%`)
 
   if (!tecnicos || tecnicos.length === 0) return 0
 
@@ -270,7 +285,7 @@ export async function procesarAceptacion(token: string): Promise<{
   // 3. ¡Ganó! Obtener datos completos del técnico
   const { data: tecnico } = await supabase
     .from('tecnicos')
-    .select('id, nombre, whatsapp, foto_perfil_url, foto_documento_url, tipo_documento, numero_documento')
+    .select('id, nombre_completo, whatsapp, foto_perfil_url, foto_documento_url, tipo_documento, numero_documento')
     .eq('id', notif.tecnico_id)
     .single()
 
@@ -279,7 +294,7 @@ export async function procesarAceptacion(token: string): Promise<{
   // 4. Notificar al técnico ganador con los datos del cliente
   if (tecnico) {
     const msgTecnico = [
-      `✅ *¡Servicio asignado! Lo lograste, ${tecnico.nombre}.*`,
+      `✅ *¡Servicio asignado! Lo lograste, ${tecnico.nombre_completo}.*`,
       ``,
       `👤 *Cliente:* ${sol.cliente_nombre}`,
       `📱 *Teléfono:* ${sol.cliente_telefono}`,
@@ -304,7 +319,7 @@ export async function procesarAceptacion(token: string): Promise<{
   const msgCliente = [
     `🎉 *¡Tu técnico ha sido asignado — Baird Service!*`,
     ``,
-    `👨‍🔧 *Técnico:* ${tecnico?.nombre ?? 'Asignado'}`,
+    `👨‍🔧 *Técnico:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
     `📱 *WhatsApp:* +${formatearTelefono(tecnico?.whatsapp ?? '')}`,
     tecnico?.tipo_documento
       ? `🆔 *Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} ✅ Verificado por Baird`
@@ -326,7 +341,7 @@ export async function procesarAceptacion(token: string): Promise<{
     await enviarImagen(
       sol.cliente_telefono,
       tecnico.foto_perfil_url,
-      `📸 Foto de ${tecnico.nombre} — tu técnico asignado`
+      `📸 Foto de ${tecnico.nombre_completo} — tu técnico asignado`
     ).catch(console.error)
   }
 

@@ -51,7 +51,7 @@ export default async function AceptarServicioPage({ params }: Props) {
   // Obtener nombre del técnico
   const { data: tecnico } = await supabase
     .from('tecnicos')
-    .select('nombre')
+    .select('nombre_completo')
     .eq('id', notif.tecnico_id)
     .single()
 
@@ -61,7 +61,7 @@ export default async function AceptarServicioPage({ params }: Props) {
     <AceptarBoton
       token={token}
       solicitud={sol}
-      tecnicoNombre={tecnico?.nombre ?? 'Técnico'}
+      tecnicoNombre={tecnico?.nombre_completo ?? 'Técnico'}
       yaAsignada={yaAsignada}
     />
   )

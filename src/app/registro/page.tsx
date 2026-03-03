@@ -109,11 +109,25 @@ export default function RegistroTecnico() {
 
       const tecnicoId = tecnicoData.id
 
-      // 2. Subir fotos
-      const fotoPerfilUrl = await uploadFotoPerfil(fotoPerfil, tecnicoId)
-      const fotoDocumentoUrl = await uploadFotoDocumento(fotoDocumento, tecnicoId)
+      // 2. Subir fotos — si falla, eliminar el técnico recién insertado
+      let fotoPerfilUrl: string
+      let fotoDocumentoUrl: string
 
-      // 3. Actualizar técnico con URLs
+      try {
+        fotoPerfilUrl = await uploadFotoPerfil(fotoPerfil, tecnicoId)
+      } catch (uploadError: any) {
+        await supabase.from('tecnicos').delete().eq('id', tecnicoId)
+        throw new Error('Error al subir la foto de perfil: ' + uploadError.message)
+      }
+
+      try {
+        fotoDocumentoUrl = await uploadFotoDocumento(fotoDocumento, tecnicoId)
+      } catch (uploadError: any) {
+        await supabase.from('tecnicos').delete().eq('id', tecnicoId)
+        throw new Error('Error al subir la foto del documento: ' + uploadError.message)
+      }
+
+      // 3. Actualizar técnico con URLs de fotos
       const { error: updateError } = await supabase
         .from('tecnicos')
         .update({
@@ -123,6 +137,18 @@ export default function RegistroTecnico() {
         .eq('id', tecnicoId)
 
       if (updateError) throw updateError
+
+      // 4. Guardar especialidades en tabla junction
+      const especialidadesRows = formData.especialidades.map(esp => ({
+        tecnico_id: tecnicoId,
+        especialidad: esp,
+      }))
+
+      const { error: espError } = await supabase
+        .from('especialidades_tecnico')
+        .insert(especialidadesRows)
+
+      if (espError) throw espError
 
       setMensaje({
         texto: '¡Registro exitoso! Tu cuenta está pendiente de verificación.',
