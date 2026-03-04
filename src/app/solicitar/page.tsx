@@ -37,14 +37,14 @@ const HOW_IT_WORKS = [
   { step: '1', title: 'Completas el formulario', desc: 'Describe el equipo y el problema. Sin registro previo.' },
   { step: '2', title: 'Técnicos reciben alerta', desc: 'Enviamos la solicitud por WhatsApp a técnicos verificados en tu zona.' },
   { step: '3', title: 'El primero en aceptar gana', desc: 'El técnico que acepta se muestra en tu WhatsApp con foto e identificación.' },
-  { step: '4', title: 'Coordinas la visita', desc: 'Hablas directo con el técnico. Pagas al finalizar el servicio.' },
+  { step: '4', title: 'Coordinas la visita', desc: 'Hablas directo con el técnico. Pagas a Baird Service por medios electrónicos (no efectivo).' },
 ]
 
 const TRUST_BADGES = [
   { icon: '🆓', label: 'Gratis para clientes', sub: 'Sin costo de solicitud' },
   { icon: '🔒', label: 'Técnicos verificados', sub: 'Con foto e ID oficial' },
   { icon: '💬', label: 'Contacto directo', sub: 'Sin intermediarios' },
-  { icon: '💳', label: 'Pago al técnico', sub: 'Acordado antes de la visita' },
+  { icon: '💳', label: 'Pago a Baird Service', sub: 'Electrónico, sin efectivo' },
 ]
 
 export default function SolicitarServicio() {
@@ -336,7 +336,7 @@ export default function SolicitarServicio() {
 
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                       <InputField
-                        label="Valor a pagar al técnico (COP)"
+                        label="Valor del servicio (COP)"
                         name="pago_tecnico"
                         type="number"
                         value={formData.pago_tecnico === 0 ? '' : String(formData.pago_tecnico)}
@@ -348,6 +348,7 @@ export default function SolicitarServicio() {
                       />
                       <p className="text-xs text-green-700 mt-2">
                         💡 Este valor se mostrará al técnico antes de que decida aceptar. Mínimo $20.000 COP.
+                        El pago se realiza directamente a Baird Service por medios electrónicos. No se acepta efectivo.
                       </p>
                     </div>
                   </div>
@@ -420,7 +421,7 @@ export default function SolicitarServicio() {
                 <p>📲 Un técnico acepta y te llega su nombre, foto e ID</p>
                 <p>📞 Coordinas la visita directamente por WhatsApp</p>
                 <p>🔧 El técnico llega y arregla el equipo</p>
-                <p>💳 Pagas directamente al técnico al finalizar</p>
+                <p>💳 Pagas a Baird Service por medios electrónicos (sin efectivo)</p>
               </div>
             </div>
 

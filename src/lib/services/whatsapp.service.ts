@@ -179,7 +179,8 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
       `   1️⃣ ${sol.horario_visita_1}`,
       `   2️⃣ ${sol.horario_visita_2}`,
       ``,
-      `💰 *Tu pago por este servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `📌 _Pago a través de Baird Service. No se acepta efectivo._`,
       ``,
       `⚡ *El primer técnico en aceptar gana el servicio.*`,
       `👇 Toca el link para ver los detalles y aceptar:`,
@@ -250,11 +251,11 @@ export async function procesarAceptacion(token: string): Promise<{
   const { data: updated, error: updateErr } = await supabase
     .from('solicitudes_servicio')
     .update({
-      tecnico_id: notif.tecnico_id,
+      tecnico_asignado_id: notif.tecnico_id,
       estado: 'asignada',
     })
     .eq('id', notif.solicitud_id)
-    .is('tecnico_id', null)           // ← clave anti race-condition
+    .is('tecnico_asignado_id', null)  // ← clave anti race-condition
     .select('*')
     .single()
 
@@ -309,7 +310,7 @@ export async function procesarAceptacion(token: string): Promise<{
       ``,
       `Confirma el horario definitivo directamente con el cliente por WhatsApp.`,
       ``,
-      `💰 *Tu pago: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP — Pago vía Baird Service*`,
     ].join('\n')
 
     await enviarMensajeTexto(tecnico.whatsapp, msgTecnico).catch(console.error)
@@ -332,6 +333,7 @@ export async function procesarAceptacion(token: string): Promise<{
     `Coordina el horario definitivo con tu técnico por WhatsApp.`,
     ``,
     `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+    `📌 _El pago se realiza a Baird Service por medios electrónicos. No se acepta efectivo._`,
   ].filter(Boolean).join('\n')
 
   await enviarMensajeTexto(sol.cliente_telefono, msgCliente).catch(console.error)

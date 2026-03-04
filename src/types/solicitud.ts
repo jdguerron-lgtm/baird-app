@@ -18,7 +18,6 @@ export const TIPOS_SOLICITUD = [
   'Diagnóstico',
   'Reparación',
   'Mantenimiento',
-  'Instalación',
 ] as const
 
 export type TipoSolicitud = typeof TIPOS_SOLICITUD[number]
@@ -37,7 +36,7 @@ export interface SolicitudFormData {
   es_garantia: boolean
   numero_serie_factura: string
   // Campos para WhatsApp y coordinación de visita
-  pago_tecnico: number          // Monto en COP que recibirá el técnico
+  pago_tecnico: number          // Valor del servicio en COP (pago a Baird Service)
   horario_visita_1: string      // Primera franja horaria preferida
   horario_visita_2: string      // Segunda franja horaria preferida
 }
@@ -48,7 +47,7 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   created_at: string
   pago_tecnico: number
   estado?: 'pendiente' | 'notificada' | 'asignada' | 'en_proceso' | 'completada' | 'cancelada'
-  tecnico_id?: string
+  tecnico_asignado_id?: string
   notificados_at?: string
   triaje_resultado?: TriajeResponse | null
 }

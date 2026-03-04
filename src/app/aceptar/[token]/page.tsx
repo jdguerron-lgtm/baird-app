@@ -39,7 +39,7 @@ export default async function AceptarServicioPage({ params }: Props) {
       horario_visita_1,
       horario_visita_2,
       estado,
-      tecnico_id
+      tecnico_asignado_id
     `)
     .eq('id', notif.solicitud_id)
     .single()
@@ -55,7 +55,7 @@ export default async function AceptarServicioPage({ params }: Props) {
     .eq('id', notif.tecnico_id)
     .single()
 
-  const yaAsignada = sol.estado === 'asignada' || !!sol.tecnico_id
+  const yaAsignada = sol.estado === 'asignada' || !!sol.tecnico_asignado_id
 
   return (
     <AceptarBoton

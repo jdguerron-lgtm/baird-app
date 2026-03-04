@@ -107,7 +107,7 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
             <div className="bg-green-50 border-2 border-green-200 rounded-xl p-5 text-center">
               <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Tu pago por este servicio</p>
               <p className="text-4xl font-bold text-green-700">${pagoFormateado}</p>
-              <p className="text-xs text-green-600 mt-1 font-medium">COP · Pago directo del cliente</p>
+              <p className="text-xs text-green-600 mt-1 font-medium">COP · Pago a través de Baird Service</p>
             </div>
 
           </div>

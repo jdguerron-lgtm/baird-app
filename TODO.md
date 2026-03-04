@@ -108,18 +108,23 @@ Meta → WhatsApp → API Setup → sección "To" → Manage phone number list
 - [ ] **Token permanente de WhatsApp** — en business.facebook.com → Configuración → Usuarios del sistema → crear Administrador → asignar app con permisos `whatsapp_business_messaging` + `whatsapp_business_management` → generar token → reemplazar en Vercel
 - [ ] **Verificación del negocio en Meta** — puede tomar hasta 5 días hábiles. Necesario para usar número propio y enviar a cualquier número (no solo lista de prueba)
 - [ ] **RLS en Supabase** — activar Row Level Security en todas las tablas. Crítico antes de usuarios reales.
-- [ ] **Panel de administración** — verificar técnicos (`estado_verificacion`), ver solicitudes activas
-- [ ] **Autenticación** — Supabase Auth para sesiones del panel de admin
+- [x] **Panel de administración** — `/admin` con dashboard, lista de técnicos, detalle con verificar/rechazar
+- [x] **Autenticación admin** — Supabase Auth (email/password) con guard en layout
 
 ### Media prioridad
 
 - [ ] **Seguimiento para el cliente** — página pública `/solicitud/{id}` con estado en tiempo real
 - [ ] **Número de Baird propio** — registrar el número real de WhatsApp del negocio en Meta
 
+### Modelo de pago
+
+> **Aclaración:** El pago se realiza directamente a Baird Service (la empresa) por medios electrónicos. **No se acepta efectivo.** El técnico no recibe pago directo del cliente. Los términos y condiciones se detallarán próximamente.
+
 ### Baja prioridad
 
 - [ ] **Sistema de reseñas** — cliente califica el servicio al finalizar
-- [ ] **Integración de pagos** — PSE / tarjeta (Wompi, Kushki)
+- [ ] **Integración de pagos** — PSE / tarjeta (Wompi, Kushki) — El pago va a Baird Service, no al técnico
+- [ ] **Términos y condiciones** — página legal con política de pagos, reembolsos y responsabilidades
 - [ ] **Analytics** — dashboard con patrones de fallas más comunes
 
 ---

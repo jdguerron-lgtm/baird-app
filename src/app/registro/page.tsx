@@ -18,7 +18,7 @@ const ESPECIALIDAD_ICONS: Record<string, string> = {
 const BENEFITS = [
   { icon: '📲', label: 'Solicitudes directo a tu WhatsApp' },
   { icon: '🕐', label: 'Trabaja cuando quieras' },
-  { icon: '💳', label: 'Pago directo del cliente' },
+  { icon: '💳', label: 'Pago a través de Baird Service' },
   { icon: '🔒', label: 'Red de técnicos verificados' },
 ]
 

@@ -13,7 +13,7 @@ ALTER TABLE solicitudes_servicio
   ADD COLUMN IF NOT EXISTS notificados_at     TIMESTAMPTZ;
 
 -- 2. Comentarios descriptivos
-COMMENT ON COLUMN solicitudes_servicio.pago_tecnico     IS 'Monto en COP que recibirá el técnico por el servicio (definido por el cliente al crear la solicitud)';
+COMMENT ON COLUMN solicitudes_servicio.pago_tecnico     IS 'Valor del servicio en COP (definido por el cliente). El pago se realiza a Baird Service, no al técnico directamente. No se acepta efectivo.';
 COMMENT ON COLUMN solicitudes_servicio.horario_visita_1 IS 'Primera franja horaria preferida por el cliente para la visita del técnico';
 COMMENT ON COLUMN solicitudes_servicio.horario_visita_2 IS 'Segunda franja horaria preferida por el cliente para la visita del técnico';
 COMMENT ON COLUMN solicitudes_servicio.triaje_resultado IS 'JSON con el resultado del análisis IA (posible_falla, costo_estimado, urgencia, etc.) — reservado para cuando se reactive IA';

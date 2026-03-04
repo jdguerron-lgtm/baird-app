@@ -59,7 +59,7 @@ const CONTENIDO = {
     {
       icon: '💰',
       titulo: 'Tú propones el precio',
-      texto: 'El valor del servicio lo defines tú. El técnico lo ve antes de aceptar. Sin sorpresas al final.',
+      texto: 'El valor del servicio lo defines tú. El pago se realiza a Baird Service, nunca en efectivo. Sin sorpresas.',
     },
     {
       icon: '📲',
@@ -88,7 +88,7 @@ const CONTENIDO = {
     subtitulo: 'Recibe trabajos directo en tu WhatsApp. Ves el pago y la dirección antes de aceptar.',
     beneficios: [
       { emoji: '📬', titulo: 'Trabajos en tu zona', texto: 'Filtramos por ciudad y especialidad. Solo recibes lo que sabes hacer.' },
-      { emoji: '💸', titulo: 'Ves el pago antes de aceptar', texto: 'El cliente define el valor. Tú decides si vale la pena antes de comprometerte.' },
+      { emoji: '💸', titulo: 'Ves el pago antes de aceptar', texto: 'El cliente define el valor. Baird Service te paga. Tú decides si vale la pena.' },
       { emoji: '🚀', titulo: 'El primero que acepta, gana', texto: 'Sin subastas ni esperas. Toca el link que llega a tu WhatsApp y el trabajo es tuyo.' },
       { emoji: '📵', titulo: 'Sin apps adicionales', texto: 'Todo en WhatsApp. Cero fricción para empezar a recibir clientes.' },
     ],
@@ -96,7 +96,7 @@ const CONTENIDO = {
   },
   confianza: [
     { emoji: '🪪', titulo: 'Identidad verificada', texto: 'El cliente recibe la foto y el documento del técnico por WhatsApp al confirmarse el servicio.' },
-    { emoji: '🔒', titulo: 'Pago acordado antes de la visita', texto: 'El valor del servicio se establece antes de que el técnico llegue. No hay cobros sorpresa.' },
+    { emoji: '🔒', titulo: 'Pago seguro a Baird Service', texto: 'El pago se realiza directamente a la empresa por medios electrónicos. No se acepta efectivo.' },
     { emoji: '🤝', titulo: 'Compromiso de calidad', texto: 'Solo técnicos que cumplen los estándares de Baird pueden recibir solicitudes.' },
   ],
   footer: {
@@ -268,7 +268,7 @@ export default function Home() {
               <div className="flex items-center gap-4 mt-8 text-white/40 text-xs">
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Gratis para clientes</span>
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Sin registro previo</span>
-                <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Pago al técnico directamente</span>
+                <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Pago seguro a Baird Service</span>
               </div>
             </div>
 

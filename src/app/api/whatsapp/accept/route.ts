@@ -7,7 +7,7 @@ import { procesarAceptacion } from '@/lib/services/whatsapp.service'
  * Procesa la aceptación de un servicio cuando el técnico hace clic en
  * el botón "Aceptar" en la página /aceptar/[token].
  *
- * Lógica anti race-condition: usa UPDATE atómico con WHERE tecnico_id IS NULL.
+ * Lógica anti race-condition: usa UPDATE atómico con WHERE tecnico_asignado_id IS NULL.
  * Solo el primer técnico en llamar este endpoint con un token válido gana.
  *
  * Body: { token: string }
