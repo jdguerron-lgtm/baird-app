@@ -1,9 +1,26 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { uploadFotoPerfil, uploadFotoDocumento } from '@/lib/uploadHelpers'
-import Image from 'next/image'
+
+const ESPECIALIDADES = ['Lavadoras', 'Neveras y Nevecones', 'Hornos y Estufas', 'Aires Acondicionados']
+
+const ESPECIALIDAD_ICONS: Record<string, string> = {
+  'Lavadoras': '🫧',
+  'Neveras y Nevecones': '❄️',
+  'Hornos y Estufas': '🔥',
+  'Aires Acondicionados': '💨',
+}
+
+const BENEFITS = [
+  { icon: '📲', label: 'Solicitudes directo a tu WhatsApp' },
+  { icon: '🕐', label: 'Trabaja cuando quieras' },
+  { icon: '💳', label: 'Pago directo del cliente' },
+  { icon: '🔒', label: 'Red de técnicos verificados' },
+]
 
 export default function RegistroTecnico() {
   const [cargando, setCargando] = useState(false)
@@ -19,7 +36,6 @@ export default function RegistroTecnico() {
     acepta_garantias: true
   })
 
-  // Estados para archivos y previews
   const [fotoPerfil, setFotoPerfil] = useState<File | null>(null)
   const [fotoDocumento, setFotoDocumento] = useState<File | null>(null)
   const [previewPerfil, setPreviewPerfil] = useState<string | null>(null)
@@ -37,13 +53,11 @@ export default function RegistroTecnico() {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validar tipo de archivo
     if (!file.type.startsWith('image/')) {
       setMensaje({ texto: 'Por favor selecciona una imagen válida', tipo: 'error' })
       return
     }
 
-    // Validar tamaño
     const maxSize = tipo === 'documento' ? 5 * 1024 * 1024 : 2 * 1024 * 1024
     if (file.size > maxSize) {
       setMensaje({
@@ -53,7 +67,6 @@ export default function RegistroTecnico() {
       return
     }
 
-    // Guardar archivo y crear preview
     if (tipo === 'perfil') {
       setFotoPerfil(file)
       setPreviewPerfil(URL.createObjectURL(file))
@@ -78,7 +91,6 @@ export default function RegistroTecnico() {
     setMensaje({ texto: '', tipo: '' })
 
     try {
-      // Validaciones
       if (formData.especialidades.length === 0) {
         throw new Error('Debes seleccionar al menos una especialidad')
       }
@@ -151,11 +163,10 @@ export default function RegistroTecnico() {
       if (espError) throw espError
 
       setMensaje({
-        texto: '¡Registro exitoso! Tu cuenta está pendiente de verificación.',
+        texto: '¡Registro exitoso! Tu cuenta está pendiente de verificación. Te contactaremos pronto.',
         tipo: 'exito'
       })
 
-      // Limpiar formulario completo
       setFormData({
         nombre_completo: '',
         whatsapp: '',
@@ -179,304 +190,357 @@ export default function RegistroTecnico() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        {/* Logo */}
-        <div className="flex justify-center mb-6">
-          {/* Temporalmente comentado mientras se agrega el logo 
-          <div className="relative w-64 h-24">
-            <Image
-              src="/baird-logo.png"
-              alt="Baird Service"
-              fill
-              className="object-contain"
-              priority
-            />
+    <div className="min-h-screen bg-gray-50">
+
+      {/* ── Sticky header ── */}
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm">
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors text-sm font-medium">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Inicio
+          </Link>
+          <div className="flex items-center gap-1">
+            <span className="text-lg font-bold text-slate-900 tracking-tight">baird</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest mt-0.5">service</span>
           </div>
-          */}
-          <div className="text-center">
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-900 to-blue-600 bg-clip-text text-transparent">
-              baird
-            </h1>
-            <p className="text-xl font-semibold text-gray-800 tracking-wide">SERVICE S.A.S</p>
-          </div>
+          <div className="w-16" />
+        </div>
+      </header>
+
+      {/* ── Main layout ── */}
+      <div className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
+
+        {/* Page heading */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-2">
+            Únete a nuestra <span className="text-blue-600">red de técnicos</span>
+          </h1>
+          <p className="text-gray-500 text-base max-w-lg mx-auto">
+            Recibe solicitudes de servicio directo en tu WhatsApp y trabaja cuando quieras.
+          </p>
         </div>
 
-        <h2 className="mt-4 text-center text-3xl font-bold bg-gradient-to-r from-blue-900 to-blue-600 bg-clip-text text-transparent">
-          Únete a Nuestra Red de Técnicos
-        </h2>
-        <p className="mt-3 text-center text-base text-gray-600 max-w-sm mx-auto">
-          Forma parte del equipo de expertos en electrodomésticos y recibe solicitudes directamente en tu celular
-        </p>
-      </div>
+        {/* ── 2-column grid on desktop ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
 
-      <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-lg">
-        <div className="bg-white py-10 px-6 shadow-2xl sm:rounded-2xl sm:px-12 border border-blue-100">
+          {/* ── LEFT: Form ── */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
 
-          {mensaje.texto && (
-            <div className={`p-4 mb-6 rounded-xl text-sm font-medium shadow-sm ${mensaje.tipo === 'exito' ? 'bg-gradient-to-r from-green-50 to-green-100 text-green-800 border border-green-200' : 'bg-gradient-to-r from-red-50 to-red-100 text-red-800 border border-red-200'}`}>
-              <div className="flex items-center">
-                <span className="text-lg mr-2">{mensaje.tipo === 'exito' ? '✓' : '⚠'}</span>
-                {mensaje.texto}
-              </div>
-            </div>
-          )}
-
-          <form className="space-y-6" onSubmit={handleSubmit}>
-
-            {/* Nombre */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  Nombre Completo
-                </span>
-              </label>
-              <input
-                type="text"
-                name="nombre_completo"
-                required
-                value={formData.nombre_completo}
-                onChange={handleChange}
-                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
-                placeholder="Juan Pérez"
-              />
-            </div>
-
-            {/* WhatsApp */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  WhatsApp
-                </span>
-              </label>
-              <input
-                type="tel"
-                name="whatsapp"
-                required
-                value={formData.whatsapp}
-                onChange={handleChange}
-                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
-                placeholder="+57 300 123 4567"
-              />
-              <p className="mt-1.5 text-xs text-gray-500">Incluye el código de país</p>
-            </div>
-
-            {/* Documento de Identidad */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Tipo de Documento
-                </label>
-                <select
-                  name="tipo_documento"
-                  value={formData.tipo_documento}
-                  onChange={handleChange}
-                  className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
-                >
-                  <option value="CC">Cédula de Ciudadanía</option>
-                  <option value="CE">Cédula de Extranjería</option>
-                  <option value="Pasaporte">Pasaporte</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Número de Documento
-                </label>
-                <input
-                  type="text"
-                  name="numero_documento"
-                  required
-                  value={formData.numero_documento}
-                  onChange={handleChange}
-                  placeholder="12345678"
-                  className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
-                />
-              </div>
-            </div>
-
-            {/* Ciudad */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  Ciudad o Pueblo
-                </span>
-              </label>
-              <input
-                type="text"
-                name="ciudad_pueblo"
-                required
-                value={formData.ciudad_pueblo}
-                onChange={handleChange}
-                placeholder="Bogotá, Chía, Cajicá..."
-                className="block w-full border-2 border-gray-200 rounded-xl shadow-sm py-3 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all sm:text-sm hover:border-blue-300"
-              />
-            </div>
-
-            {/* Verificación Visual */}
-            <div className="space-y-4">
-              <label className="block text-sm font-semibold text-gray-700">
-                Verificación de Identidad
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {/* Foto Perfil */}
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500 font-medium italic">1. Foto de Perfil (Cara clara)</p>
-                  <div className="flex flex-col items-center p-4 border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative overflow-hidden">
-                    {previewPerfil ? (
-                      <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-blue-500">
-                        <Image src={previewPerfil} alt="Perfil" fill className="object-cover" />
-                      </div>
-                    ) : (
-                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileChange(e, 'perfil')}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                    <span className="mt-2 text-xs font-semibold text-blue-600">Subir Foto Perfil</span>
-                  </div>
+              {mensaje.texto && (
+                <div className={`p-4 mb-6 rounded-xl text-sm font-medium ${
+                  mensaje.tipo === 'exito'
+                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  <span className="mr-2">{mensaje.tipo === 'exito' ? '✅' : '⚠️'}</span>
+                  {mensaje.texto}
                 </div>
+              )}
 
-                {/* Foto Documento */}
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500 font-medium italic">2. Foto de Documento</p>
-                  <div className="flex flex-col items-center p-4 border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative overflow-hidden">
-                    {previewDocumento ? (
-                      <div className="relative w-full h-24 rounded-lg overflow-hidden border-2 border-blue-500">
-                        <Image src={previewDocumento} alt="Documento" fill className="object-cover" />
-                      </div>
-                    ) : (
-                      <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileChange(e, 'documento')}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                    <span className="mt-2 text-xs font-semibold text-blue-600">Subir Documento</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+              <form className="space-y-8" onSubmit={handleSubmit}>
 
-            {/* Especialidades - Múltiples selecciones */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-3">
-                <span className="flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                  </svg>
-                  Especialidades (Selecciona todas las que manejes)
-                </span>
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {['Lavadoras', 'Neveras y Nevecones', 'Hornos y Estufas', 'Aires Acondicionados'].map((especialidad) => (
-                  <div
-                    key={especialidad}
-                    onClick={() => handleEspecialidadToggle(especialidad)}
-                    className={`cursor-pointer border-2 rounded-xl p-3 transition-all ${formData.especialidades.includes(especialidad)
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-blue-300'
-                      }`}
-                  >
-                    <div className="flex items-center">
+                {/* ── Sección: Datos personales ── */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Datos personales</p>
+                  <div className="space-y-4">
+
+                    {/* Nombre */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                        Nombre Completo <span className="text-red-500">*</span>
+                      </label>
                       <input
-                        type="checkbox"
-                        checked={formData.especialidades.includes(especialidad)}
-                        onChange={() => { }} // Manejado por el div onClick
-                        className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        type="text"
+                        name="nombre_completo"
+                        required
+                        value={formData.nombre_completo}
+                        onChange={handleChange}
+                        className="block w-full border border-gray-200 rounded-xl py-2.5 px-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
+                        placeholder="Juan Pérez"
                       />
-                      <label className="ml-3 block text-sm font-medium text-gray-900 cursor-pointer">
-                        {especialidad}
+                    </div>
+
+                    {/* WhatsApp + Ciudad */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                          WhatsApp <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="tel"
+                          name="whatsapp"
+                          required
+                          value={formData.whatsapp}
+                          onChange={handleChange}
+                          className="block w-full border border-gray-200 rounded-xl py-2.5 px-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
+                          placeholder="+57 300 123 4567"
+                        />
+                        <p className="mt-1 text-xs text-gray-400">Con código de país</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                          Ciudad o Pueblo <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="ciudad_pueblo"
+                          required
+                          value={formData.ciudad_pueblo}
+                          onChange={handleChange}
+                          className="block w-full border border-gray-200 rounded-xl py-2.5 px-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
+                          placeholder="Bogotá, Chía, Cajicá..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* Documento */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                          Tipo de Documento <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          name="tipo_documento"
+                          value={formData.tipo_documento}
+                          onChange={handleChange}
+                          className="block w-full border border-gray-200 rounded-xl py-2.5 px-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
+                        >
+                          <option value="CC">Cédula de Ciudadanía</option>
+                          <option value="CE">Cédula de Extranjería</option>
+                          <option value="Pasaporte">Pasaporte</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                          Número de Documento <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="numero_documento"
+                          required
+                          value={formData.numero_documento}
+                          onChange={handleChange}
+                          placeholder="12345678"
+                          className="block w-full border border-gray-200 rounded-xl py-2.5 px-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
+                        />
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* ── Sección: Verificación de identidad ── */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Verificación de identidad</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                    {/* Foto Perfil */}
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-1.5">
+                        Foto de Perfil <span className="text-red-500">*</span>
+                      </p>
+                      <p className="text-xs text-gray-400 mb-2">Cara clara, buena iluminación. Máx 2MB</p>
+                      <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer min-h-[120px]">
+                        {previewPerfil ? (
+                          <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-blue-500">
+                            <Image src={previewPerfil} alt="Perfil" fill className="object-cover" />
+                          </div>
+                        ) : (
+                          <>
+                            <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span className="text-xs font-semibold text-blue-600">Subir foto de perfil</span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleFileChange(e, 'perfil')}
+                          className="hidden"
+                        />
                       </label>
                     </div>
+
+                    {/* Foto Documento */}
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-1.5">
+                        Foto del Documento <span className="text-red-500">*</span>
+                      </p>
+                      <p className="text-xs text-gray-400 mb-2">Cédula o documento legible. Máx 5MB</p>
+                      <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer min-h-[120px]">
+                        {previewDocumento ? (
+                          <div className="relative w-full h-20 rounded-lg overflow-hidden border-2 border-blue-500">
+                            <Image src={previewDocumento} alt="Documento" fill className="object-cover" />
+                          </div>
+                        ) : (
+                          <>
+                            <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span className="text-xs font-semibold text-blue-600">Subir documento</span>
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleFileChange(e, 'documento')}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* ── Sección: Especialidades ── */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Especialidades</p>
+                  <p className="text-sm text-gray-500 mb-3">Selecciona todos los equipos que sabes reparar</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {ESPECIALIDADES.map((especialidad) => {
+                      const selected = formData.especialidades.includes(especialidad)
+                      return (
+                        <button
+                          key={especialidad}
+                          type="button"
+                          onClick={() => handleEspecialidadToggle(especialidad)}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                            selected
+                              ? 'border-blue-500 bg-blue-50 text-blue-900'
+                              : 'border-gray-200 hover:border-blue-300 text-gray-700'
+                          }`}
+                        >
+                          <span className="text-xl">{ESPECIALIDAD_ICONS[especialidad]}</span>
+                          <span className="text-sm font-medium">{especialidad}</span>
+                          {selected && (
+                            <span className="ml-auto w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {formData.especialidades.length === 0 && (
+                    <p className="mt-2 text-xs text-red-500">* Selecciona al menos una especialidad</p>
+                  )}
+                </div>
+
+                {/* ── Garantías ── */}
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <input
+                      id="garantias"
+                      name="acepta_garantias"
+                      type="checkbox"
+                      checked={formData.acepta_garantias}
+                      onChange={handleChange}
+                      className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer shrink-0 mt-0.5"
+                    />
+                    <div>
+                      <label htmlFor="garantias" className="font-semibold text-sm text-gray-900 cursor-pointer">
+                        Acepto realizar servicios de garantía
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Como parte de nuestra red, podrás atender servicios con garantía de marca
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botón de envío */}
+                <button
+                  type="submit"
+                  disabled={cargando}
+                  className={`w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl text-sm font-bold text-white transition-all duration-200 shadow-sm ${
+                    cargando
+                      ? 'bg-blue-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700 hover:shadow-md active:scale-[0.99]'
+                  }`}
+                >
+                  {cargando ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Registrando...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                      </svg>
+                      Registrarme como Técnico
+                    </>
+                  )}
+                </button>
+
+                <p className="text-center text-xs text-gray-400">
+                  Al registrarte formarás parte de la red de técnicos verificados de Baird Service S.A.S
+                </p>
+
+              </form>
+            </div>
+          </div>
+
+          {/* ── RIGHT: Info sidebar ── */}
+          <aside className="lg:col-span-2 space-y-5">
+
+            {/* Benefits */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+              <h3 className="font-semibold text-slate-900 mb-4 text-sm">¿Por qué unirte?</h3>
+              <div className="space-y-3">
+                {BENEFITS.map(({ icon, label }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <span className="text-xl w-8 text-center shrink-0">{icon}</span>
+                    <p className="text-sm font-medium text-slate-700">{label}</p>
                   </div>
                 ))}
               </div>
-              {formData.especialidades.length === 0 && (
-                <p className="mt-2 text-xs text-red-600">* Selecciona al menos una especialidad</p>
-              )}
             </div>
 
-            {/* Garantías */}
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-              <div className="flex items-start">
-                <div className="flex items-center h-5">
-                  <input
-                    id="garantias"
-                    name="acepta_garantias"
-                    type="checkbox"
-                    checked={formData.acepta_garantias}
-                    onChange={handleChange}
-                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                  />
-                </div>
-                <div className="ml-3">
-                  <label htmlFor="garantias" className="font-medium text-sm text-gray-900 cursor-pointer">
-                    Acepto realizar servicios de garantía
-                  </label>
-                  <p className="text-xs text-gray-600 mt-1">
-                    Como parte de nuestra red, podrás atender servicios con garantía
-                  </p>
-                </div>
-              </div>
+            {/* Process */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+              <h3 className="font-semibold text-slate-900 mb-4 text-sm">Proceso de verificación</h3>
+              <ol className="space-y-3">
+                {[
+                  { n: '1', t: 'Envías tu registro', d: 'Datos y fotos de verificación' },
+                  { n: '2', t: 'Revisamos tu perfil', d: 'Verificamos identidad y documentos' },
+                  { n: '3', t: 'Cuenta activada', d: 'Empiezas a recibir solicitudes' },
+                ].map(({ n, t, d }) => (
+                  <li key={n} className="flex gap-3">
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                      {n}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{t}</p>
+                      <p className="text-xs text-gray-400">{d}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
             </div>
 
-            {/* Botón */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={cargando}
-                className={`group relative w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white transition-all duration-200 ${cargando
-                  ? 'bg-gradient-to-r from-blue-400 to-blue-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 hover:shadow-xl transform hover:-translate-y-0.5'
-                  } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
+            {/* CTA for clients */}
+            <div className="bg-green-50 rounded-2xl border border-green-100 p-5">
+              <p className="text-sm font-semibold text-green-900 mb-1">¿Necesitas un servicio técnico?</p>
+              <p className="text-xs text-green-700 mb-3">Solicita atención de nuestros técnicos verificados.</p>
+              <Link
+                href="/solicitar"
+                className="block text-center text-sm font-semibold text-green-700 border border-green-300 rounded-xl py-2 hover:bg-green-100 transition-colors"
               >
-                {cargando ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Registrando...
-                  </span>
-                ) : (
-                  <span className="flex items-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                    </svg>
-                    Registrarme como Técnico
-                  </span>
-                )}
-              </button>
+                Solicitar servicio →
+              </Link>
             </div>
 
-          </form>
-
-          {/* Footer */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <p className="text-center text-xs text-gray-500">
-              Al registrarte, formarás parte de la red de técnicos certificados de Baird Service
-            </p>
-          </div>
+          </aside>
         </div>
       </div>
     </div>
