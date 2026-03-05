@@ -4,18 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-
-// Same mapping used in whatsapp.service.ts
-const TIPO_A_ESPECIALIDAD: Record<string, string> = {
-  'Lavadora':           'Lavadoras',
-  'Secadora':           'Lavadoras',
-  'Lavavajillas':       'Lavadoras',
-  'Nevera':             'Neveras y Nevecones',
-  'Nevecón':            'Neveras y Nevecones',
-  'Horno':              'Hornos y Estufas',
-  'Estufa':             'Hornos y Estufas',
-  'Aire Acondicionado': 'Aires Acondicionados',
-}
+import { TIPO_A_ESPECIALIDAD } from '@/lib/services/whatsapp.service'
 
 interface Solicitud {
   id: string

@@ -5,7 +5,7 @@ const WA_API_BASE = 'https://graph.facebook.com/v21.0'
 
 // Mapping: tipo_equipo from solicitud → especialidad stored in especialidades_tecnico
 // Registration form uses grouped labels; this bridges the gap.
-const TIPO_A_ESPECIALIDAD: Record<string, string> = {
+export const TIPO_A_ESPECIALIDAD: Record<string, string> = {
   'Lavadora':           'Lavadoras',
   'Secadora':           'Lavadoras',
   'Lavavajillas':       'Lavadoras',
@@ -27,14 +27,14 @@ const TIPO_A_ESPECIALIDAD: Record<string, string> = {
  *   "+573001234567"  → "573001234567"
  *   "573001234567"   → "573001234567"
  */
-function formatearTelefono(tel: string): string {
+export function formatearTelefono(tel: string): string {
   const digits = tel.replace(/\D/g, '')
   if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`
   if (digits.startsWith('57') && digits.length === 12) return digits
   return digits
 }
 
-function formatCOP(valor: number): string {
+export function formatCOP(valor: number): string {
   return new Intl.NumberFormat('es-CO').format(valor)
 }
 
