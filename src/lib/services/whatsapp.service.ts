@@ -1,20 +1,11 @@
 import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
+import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 
 const WA_API_BASE = 'https://graph.facebook.com/v21.0'
 
-// Mapping: tipo_equipo from solicitud → especialidad stored in especialidades_tecnico
-// Registration form uses grouped labels; this bridges the gap.
-export const TIPO_A_ESPECIALIDAD: Record<string, string> = {
-  'Lavadora':           'Lavadoras',
-  'Secadora':           'Lavadoras',
-  'Lavavajillas':       'Lavadoras',
-  'Nevera':             'Neveras y Nevecones',
-  'Nevecón':            'Neveras y Nevecones',
-  'Horno':              'Hornos y Estufas',
-  'Estufa':             'Hornos y Estufas',
-  'Aire Acondicionado': 'Aires Acondicionados',
-}
+// Re-export for backward compatibility with tests
+export { TIPO_A_ESPECIALIDAD }
 
 // ─────────────────────────────────────────
 // Utilidades de formato

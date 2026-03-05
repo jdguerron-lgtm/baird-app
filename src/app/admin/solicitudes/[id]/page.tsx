@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { TIPO_A_ESPECIALIDAD } from '@/lib/services/whatsapp.service'
+import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 
 interface Solicitud {
   id: string
