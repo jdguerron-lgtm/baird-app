@@ -38,8 +38,8 @@ const ESTADO_ESTILOS: Record<string, string> = {
   cancelada: 'bg-red-100 text-red-800',
 }
 
-function formatCOP(n: number) {
-  return n.toLocaleString('es-CO')
+function formatCOP(n: number | null | undefined) {
+  return (n ?? 0).toLocaleString('es-CO')
 }
 
 export default function SolicitudesAdmin() {
@@ -52,45 +52,58 @@ export default function SolicitudesAdmin() {
     const cargar = async () => {
       setCargando(true)
 
-      let query = supabase
-        .from('solicitudes_servicio')
-        .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, created_at, tecnico_asignado_id')
-        .order('created_at', { ascending: false })
+      try {
+        let query = supabase
+          .from('solicitudes_servicio')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, created_at, tecnico_asignado_id')
+          .order('created_at', { ascending: false })
 
-      if (filtro !== 'todos') {
-        query = query.eq('estado', filtro)
-      }
+        if (filtro !== 'todos') {
+          query = query.eq('estado', filtro)
+        }
 
-      const { data: solData } = await query
+        const { data: solData, error } = await query
 
-      if (!solData) {
+        if (error) {
+          console.error('Error loading solicitudes:', error)
+          setSolicitudes([])
+          setCargando(false)
+          return
+        }
+
+        if (!solData) {
+          setSolicitudes([])
+          setCargando(false)
+          return
+        }
+
+        // Load assigned técnico names
+        const tecnicoIds = [...new Set(solData.filter(s => s.tecnico_asignado_id).map(s => s.tecnico_asignado_id!))]
+        const tecnicoMap = new Map<string, string>()
+
+        if (tecnicoIds.length > 0) {
+          const { data: tecnicos } = await supabase
+            .from('tecnicos')
+            .select('id, nombre_completo')
+            .in('id', tecnicoIds)
+
+          tecnicos?.forEach((t: { id: string; nombre_completo: string }) => {
+            tecnicoMap.set(t.id, t.nombre_completo)
+          })
+        }
+
+        const resultado: Solicitud[] = solData.map(s => ({
+          ...s,
+          estado: s.estado ?? 'pendiente',
+          pago_tecnico: s.pago_tecnico ?? 0,
+          tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) : undefined,
+        }))
+
+        setSolicitudes(resultado)
+      } catch (e) {
+        console.error('Error loading solicitudes:', e)
         setSolicitudes([])
-        setCargando(false)
-        return
       }
-
-      // Load assigned técnico names
-      const tecnicoIds = [...new Set(solData.filter(s => s.tecnico_asignado_id).map(s => s.tecnico_asignado_id!))]
-      let tecnicoMap = new Map<string, string>()
-
-      if (tecnicoIds.length > 0) {
-        const { data: tecnicos } = await supabase
-          .from('tecnicos')
-          .select('id, nombre_completo')
-          .in('id', tecnicoIds)
-
-        tecnicos?.forEach((t: { id: string; nombre_completo: string }) => {
-          tecnicoMap.set(t.id, t.nombre_completo)
-        })
-      }
-
-      const resultado: Solicitud[] = solData.map(s => ({
-        ...s,
-        estado: s.estado ?? 'pendiente',
-        tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) : undefined,
-      }))
-
-      setSolicitudes(resultado)
       setCargando(false)
     }
 
@@ -98,12 +111,15 @@ export default function SolicitudesAdmin() {
   }, [filtro])
 
   const filtradas = busqueda
-    ? solicitudes.filter(s =>
-        s.cliente_nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.ciudad_pueblo.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.tipo_equipo.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.id.includes(busqueda)
-      )
+    ? solicitudes.filter(s => {
+        const q = busqueda.toLowerCase()
+        return (
+          (s.cliente_nombre ?? '').toLowerCase().includes(q) ||
+          (s.ciudad_pueblo ?? '').toLowerCase().includes(q) ||
+          (s.tipo_equipo ?? '').toLowerCase().includes(q) ||
+          s.id.includes(busqueda)
+        )
+      })
     : solicitudes
 
   return (
@@ -175,12 +191,12 @@ export default function SolicitudesAdmin() {
                       <p className="text-xs text-gray-400">{s.cliente_telefono}</p>
                     </td>
                     <td className="px-5 py-3">
-                      <p className="text-sm text-gray-700">{s.tipo_equipo}</p>
-                      <p className="text-xs text-gray-400">{s.marca_equipo}</p>
+                      <p className="text-sm text-gray-700">{s.tipo_equipo ?? '—'}</p>
+                      <p className="text-xs text-gray-400">{s.marca_equipo ?? '—'}</p>
                     </td>
                     <td className="px-5 py-3">
-                      <p className="text-sm text-gray-700">{s.ciudad_pueblo}</p>
-                      <p className="text-xs text-gray-400">{s.zona_servicio}</p>
+                      <p className="text-sm text-gray-700">{s.ciudad_pueblo ?? '—'}</p>
+                      <p className="text-xs text-gray-400">{s.zona_servicio ?? '—'}</p>
                     </td>
                     <td className="px-5 py-3">
                       <p className="text-sm font-medium text-gray-700">${formatCOP(s.pago_tecnico)}</p>
