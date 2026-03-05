@@ -82,6 +82,8 @@ export default function SolicitudDetalle() {
   const [diagnostics, setDiagnostics] = useState<MatchDiagnostic[]>([])
   const [candidatos, setCandidatos] = useState<Tecnico[]>([])
   const [cargando, setCargando] = useState(true)
+  const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
+  const [reenviando, setReenviando] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -474,6 +476,96 @@ export default function SolicitudDetalle() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Re-send WhatsApp notification */}
+      <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+          Reenviar notificacion WhatsApp
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Envia de nuevo la notificacion a los tecnicos compatibles. El numero de prueba de la API de WhatsApp es <span className="font-mono font-semibold text-slate-700">+57 318 372 3213</span>.
+        </p>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setReenviando(true)
+              setReenvioResult(null)
+              try {
+                const res = await fetch('/api/whatsapp/notify', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ solicitudId: id }),
+                })
+                const data = await res.json()
+                setReenvioResult(data)
+              } catch (e) {
+                setReenvioResult({ error: e instanceof Error ? e.message : String(e) })
+              }
+              setReenviando(false)
+            }}
+            disabled={reenviando}
+            className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {reenviando ? 'Enviando...' : 'Enviar notificacion'}
+          </button>
+
+          {solicitud.estado === 'asignada' && (
+            <span className="text-xs text-yellow-700 bg-yellow-50 px-3 py-1.5 rounded-lg">
+              Esta solicitud ya fue asignada. Si reenvia, solo se notificara pero no se reasignara.
+            </span>
+          )}
+        </div>
+
+        {reenvioResult && (
+          <div className={`mt-4 rounded-lg p-4 ${
+            reenvioResult.error
+              ? 'bg-red-50 border border-red-200'
+              : (reenvioResult.notificados as number) > 0
+                ? 'bg-green-50 border border-green-200'
+                : 'bg-yellow-50 border border-yellow-200'
+          }`}>
+            <p className={`text-sm font-semibold mb-2 ${
+              reenvioResult.error ? 'text-red-800' :
+              (reenvioResult.notificados as number) > 0 ? 'text-green-800' :
+              'text-yellow-800'
+            }`}>
+              {reenvioResult.error
+                ? 'Error al enviar'
+                : (reenvioResult.mensaje as string) ?? 'Resultado'}
+            </p>
+
+            {!reenvioResult.error && (
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="text-xs">
+                  <span className="text-gray-500">Tecnicos encontrados:</span>{' '}
+                  <span className="font-semibold">{String(reenvioResult.matched ?? 0)}</span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-gray-500">Notificados exitosamente:</span>{' '}
+                  <span className="font-semibold">{String(reenvioResult.notificados ?? 0)}</span>
+                </div>
+              </div>
+            )}
+
+            {(reenvioResult.errors as string[])?.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs font-semibold text-red-700 mb-1">Errores de envio:</p>
+                {(reenvioResult.errors as string[]).map((err, i) => (
+                  <p key={i} className="text-xs text-red-600 font-mono bg-red-100 rounded px-2 py-1 mt-1 break-all">{err}</p>
+                ))}
+              </div>
+            )}
+
+            <details className="mt-3">
+              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Ver respuesta JSON completa</summary>
+              <pre className="text-xs bg-gray-100 rounded p-3 mt-2 overflow-x-auto whitespace-pre-wrap break-all">
+                {JSON.stringify(reenvioResult, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
       </div>
 
       {/* Matching diagnostics */}
