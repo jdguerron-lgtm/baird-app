@@ -88,6 +88,21 @@ export function useSolicitudForm() {
   }, [formData])
 
   /**
+   * Actualiza un campo programáticamente (sin evento DOM).
+   * Útil para componentes custom como DateTimeSlotPicker.
+   */
+  const setField = useCallback((name: keyof SolicitudFormData, value: string | number | boolean) => {
+    setFormData(prev => ({ ...prev, [name]: value }))
+    if (errors[name]) {
+      setErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors[name]
+        return newErrors
+      })
+    }
+  }, [errors])
+
+  /**
    * Resetea el formulario a sus valores iniciales
    */
   const resetForm = useCallback(() => {
@@ -99,6 +114,7 @@ export function useSolicitudForm() {
     formData,
     errors,
     handleChange,
+    setField,
     validate,
     resetForm,
     setFormData,

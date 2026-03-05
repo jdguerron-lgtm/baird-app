@@ -192,7 +192,7 @@ export default function Home() {
     <main className="min-h-screen bg-white overflow-x-hidden">
 
       {/* ── NAVBAR ──────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-md border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="relative w-36 h-10 block">
@@ -200,15 +200,15 @@ export default function Home() {
           </Link>
 
           {/* Nav links */}
-          <nav className="hidden sm:flex items-center gap-6 text-sm text-white/60">
-            <Link href="/#como-funciona" className="hover:text-white transition-colors">Cómo funciona</Link>
-            <Link href="/#equipos" className="hover:text-white transition-colors">Equipos</Link>
-            <Link href="/registro" className="hover:text-white transition-colors">Soy técnico</Link>
+          <nav className="hidden sm:flex items-center gap-6 text-sm text-slate-600">
+            <Link href="/#como-funciona" className="hover:text-slate-900 transition-colors">Cómo funciona</Link>
+            <Link href="/#equipos" className="hover:text-slate-900 transition-colors">Equipos</Link>
+            <Link href="/registro" className="hover:text-slate-900 transition-colors">Soy técnico</Link>
           </nav>
 
           {/* CTA */}
           <Link href="/solicitar">
-            <button className="bg-green-500 hover:bg-green-400 active:bg-green-600 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-lg shadow-green-500/20 hover:shadow-green-500/40">
+            <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">
               Solicitar servicio
             </button>
           </Link>

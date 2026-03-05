@@ -10,6 +10,7 @@ import { InputField } from '@/components/ui/InputField'
 import { SelectField } from '@/components/ui/SelectField'
 import { TextAreaField } from '@/components/ui/TextAreaField'
 import { Button } from '@/components/ui/Button'
+import { DateTimeSlotPicker } from '@/components/ui/DateTimeSlotPicker'
 import {
   UserIcon,
   PhoneIcon,
@@ -52,7 +53,7 @@ export default function SolicitarServicio() {
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
 
-  const { formData, errors, handleChange, validate, resetForm } = useSolicitudForm()
+  const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -314,21 +315,17 @@ export default function SolicitarServicio() {
                   </p>
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <InputField
+                      <DateTimeSlotPicker
                         label="Primer horario preferido"
-                        name="horario_visita_1"
                         value={formData.horario_visita_1}
-                        onChange={handleChange}
-                        placeholder="Ej: Lunes 24 Feb, 8am–12pm"
+                        onChange={(v) => setField('horario_visita_1', v)}
                         error={errors.horario_visita_1}
                         required
                       />
-                      <InputField
+                      <DateTimeSlotPicker
                         label="Segundo horario preferido"
-                        name="horario_visita_2"
                         value={formData.horario_visita_2}
-                        onChange={handleChange}
-                        placeholder="Ej: Martes 25 Feb, 2pm–6pm"
+                        onChange={(v) => setField('horario_visita_2', v)}
                         error={errors.horario_visita_2}
                         required
                       />
