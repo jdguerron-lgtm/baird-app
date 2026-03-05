@@ -97,7 +97,13 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
  *
  * @returns número de técnicos notificados exitosamente
  */
-export async function notificarTecnicos(solicitudId: string): Promise<number> {
+export interface NotifyResult {
+  notificados: number
+  matched: number
+  errors: string[]
+}
+
+export async function notificarTecnicos(solicitudId: string): Promise<NotifyResult> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird.app'
 
   // 1. Obtener datos de la solicitud
@@ -109,6 +115,8 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
 
   if (solErr || !sol) throw new Error(`Solicitud no encontrada: ${solicitudId}`)
 
+  const sendErrors: string[] = []
+
   // 2. Buscar técnicos con la especialidad requerida
   const especialidadBuscada = TIPO_A_ESPECIALIDAD[sol.tipo_equipo] ?? sol.tipo_equipo
 
@@ -117,7 +125,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
     .select('tecnico_id')
     .eq('especialidad', especialidadBuscada)
 
-  if (!especialidades || especialidades.length === 0) return 0
+  if (!especialidades || especialidades.length === 0) return { notificados: 0, matched: 0, errors: [] }
 
   const tecnicoIds = especialidades.map((e: { tecnico_id: string }) => e.tecnico_id)
 
@@ -129,7 +137,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
     .in('id', tecnicoIds)
     .ilike('ciudad_pueblo', `%${sol.ciudad_pueblo}%`)
 
-  if (!tecnicos || tecnicos.length === 0) return 0
+  if (!tecnicos || tecnicos.length === 0) return { notificados: 0, matched: 0, errors: [] }
 
   // 4. Enviar mensaje a cada técnico con token único
   let notificados = 0
@@ -182,7 +190,9 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
       await enviarMensajeTexto(tecnico.whatsapp, mensaje)
       notificados++
     } catch (e) {
-      console.error(`Error enviando WhatsApp a técnico ${tecnico.id}:`, e)
+      const errMsg = e instanceof Error ? e.message : String(e)
+      console.error(`Error enviando WhatsApp a técnico ${tecnico.id}:`, errMsg)
+      sendErrors.push(`${tecnico.nombre_completo} (${tecnico.whatsapp}): ${errMsg}`)
       // Marcar como error pero continuar con el siguiente
       await supabase
         .from('notificaciones_whatsapp')
@@ -202,7 +212,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<number> {
       .eq('id', solicitudId)
   }
 
-  return notificados
+  return { notificados, matched: tecnicos.length, errors: sendErrors }
 }
 
 /**

@@ -25,14 +25,18 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const notificados = await notificarTecnicos(solicitudId)
+    const result = await notificarTecnicos(solicitudId)
 
     return NextResponse.json({
       success: true,
-      notificados,
-      mensaje: notificados > 0
-        ? `${notificados} técnico(s) notificado(s) por WhatsApp`
-        : 'No se encontraron técnicos disponibles en la zona por ahora',
+      notificados: result.notificados,
+      matched: result.matched,
+      errors: result.errors,
+      mensaje: result.notificados > 0
+        ? `${result.notificados} técnico(s) notificado(s) por WhatsApp`
+        : result.matched > 0
+          ? `Se encontraron ${result.matched} técnico(s) pero falló el envío: ${result.errors.join('; ')}`
+          : 'No se encontraron técnicos disponibles en la zona por ahora',
     })
   } catch (error: unknown) {
     console.error('[/api/whatsapp/notify] Error:', error)

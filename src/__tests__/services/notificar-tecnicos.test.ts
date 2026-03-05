@@ -80,7 +80,9 @@ describe('notificarTecnicos', () => {
 
     const result = await notificarTecnicos('sol-001')
 
-    expect(result).toBe(1)
+    expect(result.notificados).toBe(1)
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
     expect(mockFetch).toHaveBeenCalledTimes(1)
     const [url, opts] = mockFetch.mock.calls[0]
     expect(url).toContain('/messages')
@@ -101,7 +103,8 @@ describe('notificarTecnicos', () => {
 
     const result = await notificarTecnicos('sol-001')
 
-    expect(result).toBe(0)
+    expect(result.notificados).toBe(0)
+    expect(result.matched).toBe(0)
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
@@ -122,7 +125,8 @@ describe('notificarTecnicos', () => {
 
     const result = await notificarTecnicos('sol-001')
 
-    expect(result).toBe(0)
+    expect(result.notificados).toBe(0)
+    expect(result.matched).toBe(0)
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
@@ -146,6 +150,7 @@ describe('notificarTecnicos', () => {
     })
 
     const result = await notificarTecnicos('sol-001')
-    expect(result).toBe(0)
+    expect(result.notificados).toBe(0)
+    expect(result.matched).toBe(0)
   })
 })
