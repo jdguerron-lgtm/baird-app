@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -73,11 +74,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-gray-200 flex flex-col shrink-0 fixed inset-y-0 left-0 z-30">
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-gray-100">
-          <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-slate-900 tracking-tight">baird</span>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-0.5">admin</span>
-          </div>
+        <div className="px-4 py-4 border-b border-gray-100">
+          <Link href="/admin" className="relative w-28 h-8 block">
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+          </Link>
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1 block">admin</span>
         </div>
 
         {/* Nav */}

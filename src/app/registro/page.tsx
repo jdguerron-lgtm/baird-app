@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { uploadFotoPerfil, uploadFotoDocumento } from '@/lib/uploadHelpers'
+import { PhoneInput, phoneToDigits } from '@/components/ui/PhoneInput'
 
 const ESPECIALIDADES = ['Lavadoras', 'Neveras y Nevecones', 'Hornos y Estufas', 'Aires Acondicionados']
 
@@ -105,9 +106,9 @@ export default function RegistroTecnico() {
       const { data: tecnicoData, error: insertError } = await supabase
         .from('tecnicos')
         .insert([{
-          nombre_completo: formData.nombre_completo,
-          whatsapp: formData.whatsapp,
-          ciudad_pueblo: formData.ciudad_pueblo,
+          nombre_completo: formData.nombre_completo.trim(),
+          whatsapp: phoneToDigits(formData.whatsapp),
+          ciudad_pueblo: formData.ciudad_pueblo.trim(),
           tipo_documento: formData.tipo_documento,
           numero_documento: formData.numero_documento,
           especialidad_principal: formData.especialidades[0],
@@ -201,10 +202,9 @@ export default function RegistroTecnico() {
             </svg>
             Inicio
           </Link>
-          <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-slate-900 tracking-tight">baird</span>
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest mt-0.5">service</span>
-          </div>
+          <Link href="/" className="relative w-32 h-9 block">
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
+          </Link>
           <div className="w-16" />
         </div>
       </header>
@@ -265,21 +265,13 @@ export default function RegistroTecnico() {
 
                     {/* WhatsApp + Ciudad */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                          WhatsApp <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="tel"
-                          name="whatsapp"
-                          required
-                          value={formData.whatsapp}
-                          onChange={handleChange}
-                          className="block w-full border border-gray-200 rounded-xl py-2.5 px-4 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-blue-300"
-                          placeholder="+57 300 123 4567"
-                        />
-                        <p className="mt-1 text-xs text-gray-400">Con código de país</p>
-                      </div>
+                      <PhoneInput
+                        label="WhatsApp"
+                        name="whatsapp"
+                        value={formData.whatsapp}
+                        onChange={(v) => setFormData(prev => ({ ...prev, whatsapp: v }))}
+                        required
+                      />
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                           Ciudad o Pueblo <span className="text-red-500">*</span>

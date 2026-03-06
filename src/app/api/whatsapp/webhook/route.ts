@@ -40,10 +40,10 @@ export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text()
 
-    // Verificar firma para seguridad (rechazar requests no auténticos de Meta)
-    const signature = req.headers.get('x-hub-signature-256') ?? ''
-    if (signature && !verificarFirmaWebhook(rawBody, signature)) {
-      console.warn('[Webhook] Firma inválida — request rechazado')
+    // Verificar firma obligatoria (rechazar requests sin firma o con firma inválida)
+    const signature = req.headers.get('x-hub-signature-256')
+    if (!signature || !verificarFirmaWebhook(rawBody, signature)) {
+      console.warn('[Webhook] Firma ausente o inválida — request rechazado')
       return new NextResponse('Unauthorized', { status: 401 })
     }
 

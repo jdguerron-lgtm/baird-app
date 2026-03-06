@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useSolicitudForm } from '@/hooks/useSolicitudForm'
 import { submitSolicitud } from '@/lib/services/solicitud.service'
+import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Alert } from '@/components/ui/Alert'
 import { InputField } from '@/components/ui/InputField'
 import { SelectField } from '@/components/ui/SelectField'
@@ -52,8 +53,49 @@ export default function SolicitarServicio() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
   const [solicitudId, setSolicitudId] = useState<string | null>(null)
+  const [geoLoading, setGeoLoading] = useState(false)
 
   const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()
+
+  const handleUseLocation = async () => {
+    if (!navigator.geolocation) {
+      setMensaje({ texto: 'Tu navegador no soporta geolocalizacion', tipo: 'error' })
+      return
+    }
+    setGeoLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=es`
+          )
+          const data = await res.json()
+          if (data.address) {
+            const addr = data.address
+            const road = addr.road || addr.pedestrian || addr.street || ''
+            const houseNumber = addr.house_number || ''
+            const fullAddress = [road, houseNumber].filter(Boolean).join(' ') || data.display_name?.split(',').slice(0, 2).join(',') || ''
+            const city = addr.city || addr.town || addr.village || addr.municipality || ''
+            const suburb = addr.suburb || addr.neighbourhood || addr.quarter || ''
+
+            if (fullAddress) setField('direccion', fullAddress.trim())
+            if (city) setField('ciudad_pueblo', city.trim())
+            if (suburb) setField('zona_servicio', suburb.trim())
+          }
+        } catch {
+          setMensaje({ texto: 'No se pudo obtener la direccion. Ingresala manualmente.', tipo: 'error' })
+        } finally {
+          setGeoLoading(false)
+        }
+      },
+      () => {
+        setMensaje({ texto: 'No se pudo acceder a tu ubicacion. Verifica los permisos.', tipo: 'error' })
+        setGeoLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -121,10 +163,9 @@ export default function SolicitarServicio() {
             </svg>
             Inicio
           </Link>
-          <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-slate-900 tracking-tight">baird</span>
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest mt-0.5">service</span>
-          </div>
+          <Link href="/" className="relative w-32 h-9 block">
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
+          </Link>
           <div className="w-16" /> {/* spacer */}
         </div>
       </header>
@@ -211,28 +252,47 @@ export default function SolicitarServicio() {
                         icon={<UserIcon className="w-5 h-5 mr-2 text-green-600" />}
                         required
                       />
-                      <InputField
+                      <PhoneInput
                         label="WhatsApp de contacto"
                         name="cliente_telefono"
-                        type="tel"
                         value={formData.cliente_telefono}
-                        onChange={handleChange}
-                        placeholder="+57 300 123 4567"
+                        onChange={(v) => setField('cliente_telefono', v)}
                         error={errors.cliente_telefono}
                         icon={<PhoneIcon className="w-5 h-5 mr-2 text-green-600" />}
                         required
                       />
                     </div>
-                    <InputField
-                      label="Dirección Completa"
-                      name="direccion"
-                      value={formData.direccion}
-                      onChange={handleChange}
-                      placeholder="Calle 123 #45-67, Apto 301"
-                      error={errors.direccion}
-                      icon={<LocationIcon className="w-5 h-5 mr-2 text-green-600" />}
-                      required
-                    />
+                    <div>
+                      <InputField
+                        label="Direccion Completa"
+                        name="direccion"
+                        value={formData.direccion}
+                        onChange={handleChange}
+                        placeholder="Calle 123 #45-67, Apto 301"
+                        error={errors.direccion}
+                        icon={<LocationIcon className="w-5 h-5 mr-2 text-green-600" />}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUseLocation}
+                        disabled={geoLoading}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5 hover:bg-green-100 transition-colors disabled:opacity-50"
+                      >
+                        {geoLoading ? (
+                          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        )}
+                        {geoLoading ? 'Obteniendo ubicacion...' : 'Usar mi ubicacion actual'}
+                      </button>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <InputField
                         label="Ciudad o Pueblo"

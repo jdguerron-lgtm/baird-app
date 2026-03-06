@@ -3,7 +3,7 @@ import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 
 const VALID_DATA = {
   cliente_nombre: 'Maria Garcia Lopez',
-  cliente_telefono: '3001234567',
+  cliente_telefono: '57|3001234567',
   direccion: 'Calle 45 #12-30 Apt 301',
   ciudad_pueblo: 'Bogota',
   zona_servicio: 'Chapinero',
@@ -24,15 +24,23 @@ describe('solicitudFormSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('rejects phone without 3 prefix', () => {
+  it('rejects phone with too few digits', () => {
     const result = solicitudFormSchema.safeParse({
       ...VALID_DATA,
-      cliente_telefono: '1001234567',
+      cliente_telefono: '57|123',
     })
     expect(result.success).toBe(false)
   })
 
-  it('accepts phone with +57 prefix', () => {
+  it('accepts phone with country code pipe format', () => {
+    const result = solicitudFormSchema.safeParse({
+      ...VALID_DATA,
+      cliente_telefono: '1|2025551234',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts legacy phone format with enough digits', () => {
     const result = solicitudFormSchema.safeParse({
       ...VALID_DATA,
       cliente_telefono: '+573001234567',

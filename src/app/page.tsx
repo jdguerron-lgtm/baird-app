@@ -1,6 +1,18 @@
 import Image from 'next/image'
 import Link from 'next/link'
 
+// ── Unsplash image URLs (free, no attribution required) ─────────────────────
+const IMAGES = {
+  heroBackground: 'https://images.unsplash.com/photo-1584367368267-02e2d41d5768?auto=format&fit=crop&w=1920&q=80',
+  kitchenPanorama: 'https://images.unsplash.com/photo-1754415163555-c583965c4fb2?auto=format&fit=crop&w=1920&q=80',
+  technicianWork: 'https://images.unsplash.com/photo-1635424709961-f3a150459ad4?auto=format&fit=crop&w=1200&q=80',
+  modernKitchen: 'https://images.unsplash.com/photo-1758240689297-d8613ca753f3?auto=format&fit=crop&w=1920&q=80',
+  plumberSink: 'https://images.unsplash.com/photo-1540853986208-a3e8f4ab197a?auto=format&fit=crop&w=1200&q=80',
+  washingMachine: 'https://images.unsplash.com/photo-1696546761269-a8f9d2b80512?auto=format&fit=crop&w=800&q=80',
+  minimalistKitchen: 'https://images.unsplash.com/photo-1757711990497-4bd910fbe3cb?auto=format&fit=crop&w=1920&q=80',
+  repairMan: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=80',
+}
+
 const CONTENIDO = {
   hero: {
     badge: '✦ Solo técnicos verificados por Baird',
@@ -25,18 +37,21 @@ const CONTENIDO = {
         emoji: '📝',
         titulo: 'Describe el problema',
         texto: 'Ingresa el equipo, la falla, tu dirección, dos horarios disponibles y el valor que ofreces al técnico.',
+        img: IMAGES.washingMachine,
       },
       {
         num: '02',
         emoji: '📲',
         titulo: 'Un técnico acepta por WhatsApp',
         texto: 'Los técnicos verificados de tu zona reciben la oferta. El primero en aceptar es asignado al instante.',
+        img: IMAGES.repairMan,
       },
       {
         num: '03',
         emoji: '🏠',
         titulo: 'Técnico verificado en tu puerta',
         texto: 'Recibes por WhatsApp la foto, nombre y documento del técnico antes de que llegue. Tú sabías quién venía.',
+        img: IMAGES.plumberSink,
       },
     ],
   },
@@ -195,7 +210,7 @@ export default function Home() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="relative w-36 h-10 block">
+          <Link href="/" className="relative w-44 h-12 block">
             <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" priority />
           </Link>
 
@@ -217,6 +232,19 @@ export default function Home() {
 
       {/* ── HERO ────────────────────────────────────────────────────── */}
       <section className="relative min-h-screen bg-slate-950 flex flex-col justify-center px-4 pt-24 pb-16 overflow-hidden">
+
+        {/* Hero background image */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src={IMAGES.heroBackground}
+            alt=""
+            fill
+            className="object-cover opacity-[0.12]"
+            priority
+            sizes="100vw"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/60 to-slate-950" />
+        </div>
 
         {/* Orbes de fondo */}
         <div className="absolute top-0 left-0 w-[700px] h-[700px] bg-green-500 rounded-full opacity-[0.07] blur-[140px] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
@@ -300,6 +328,23 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── IMAGE BREAK: Kitchen panorama ─────────────────────────── */}
+      <section className="relative h-64 sm:h-80 lg:h-96 overflow-hidden">
+        <Image
+          src={IMAGES.kitchenPanorama}
+          alt="Cocina moderna con electrodomesticos"
+          fill
+          className="object-cover"
+          sizes="100vw"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-green-700/30 to-slate-900/40" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <p className="text-white text-2xl sm:text-3xl lg:text-4xl font-black text-center drop-shadow-lg px-4">
+            Electrodomesticos que funcionan. Tecnicos que responden.
+          </p>
+        </div>
+      </section>
+
       {/* ── CÓMO FUNCIONA ───────────────────────────────────────────── */}
       <section id="como-funciona" className="py-24 px-4 bg-white">
         <div className="max-w-5xl mx-auto">
@@ -317,14 +362,25 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
             {/* Línea conectora */}
-            <div className="hidden md:block absolute top-10 left-[calc(16.66%+1rem)] right-[calc(16.66%+1rem)] h-px bg-gradient-to-r from-transparent via-green-300 to-transparent" />
+            <div className="hidden md:block absolute top-20 left-[calc(16.66%+1rem)] right-[calc(16.66%+1rem)] h-px bg-gradient-to-r from-transparent via-green-300 to-transparent" />
 
             {CONTENIDO.comoFunciona.pasos.map((p, i) => (
               <div key={i} className="relative flex flex-col items-center text-center group">
-                {/* Número */}
-                <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex flex-col items-center justify-center mb-6 shadow-lg shadow-green-200 group-hover:-translate-y-1 transition-transform duration-300 relative z-10">
-                  <span className="text-2xl leading-none">{p.emoji}</span>
-                  <span className="text-green-100/80 text-[10px] font-black tracking-widest mt-1">{p.num}</span>
+                {/* Step image */}
+                <div className="relative w-full h-40 rounded-2xl overflow-hidden mb-5 shadow-md">
+                  <Image
+                    src={p.img}
+                    alt={p.titulo}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                  {/* Número overlay */}
+                  <div className="absolute bottom-3 left-3 w-12 h-12 bg-green-500/90 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center shadow-lg">
+                    <span className="text-lg leading-none">{p.emoji}</span>
+                    <span className="text-white/80 text-[9px] font-black tracking-widest">{p.num}</span>
+                  </div>
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mb-2">{p.titulo}</h3>
                 <p className="text-slate-500 text-sm leading-relaxed">{p.texto}</p>
@@ -343,8 +399,18 @@ export default function Home() {
       </section>
 
       {/* ── EQUIPOS CUBIERTOS ───────────────────────────────────────── */}
-      <section id="equipos" className="bg-slate-50 py-16 px-4">
-        <div className="max-w-4xl mx-auto text-center">
+      <section id="equipos" className="relative bg-slate-50 py-16 px-4 overflow-hidden">
+        {/* Subtle background image */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src={IMAGES.minimalistKitchen}
+            alt=""
+            fill
+            className="object-cover opacity-[0.04]"
+            sizes="100vw"
+          />
+        </div>
+        <div className="relative z-10 max-w-4xl mx-auto text-center">
           <span className="inline-block text-green-600 font-semibold text-xs tracking-[0.15em] uppercase bg-white border border-green-100 rounded-full px-4 py-1.5 mb-4">
             Línea blanca completa
           </span>
@@ -396,6 +462,26 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── IMAGE BREAK: Technician at work ────────────────────────── */}
+      <section className="relative h-56 sm:h-72 lg:h-80 overflow-hidden">
+        <Image
+          src={IMAGES.technicianWork}
+          alt="Tecnico profesional reparando electrodomestico"
+          fill
+          className="object-cover"
+          sizes="100vw"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/70 via-slate-900/40 to-slate-900/70" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center px-4">
+            <p className="text-white/60 text-sm font-semibold uppercase tracking-widest mb-2">Tecnicos verificados</p>
+            <p className="text-white text-xl sm:text-2xl lg:text-3xl font-black drop-shadow-lg">
+              Profesionales que saben lo que hacen
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── SECCIÓN TÉCNICOS ────────────────────────────────────────── */}
       <section className="bg-slate-950 py-24 px-4 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600 rounded-full opacity-[0.06] blur-[120px] pointer-events-none" />
@@ -439,6 +525,18 @@ export default function Home() {
             </Link>
           </div>
         </div>
+      </section>
+
+      {/* ── IMAGE BREAK: Modern kitchen ──────────────────────────── */}
+      <section className="relative h-48 sm:h-64 overflow-hidden">
+        <Image
+          src={IMAGES.modernKitchen}
+          alt="Cocina moderna con electrodomesticos de acero inoxidable"
+          fill
+          className="object-cover"
+          sizes="100vw"
+        />
+        <div className="absolute inset-0 bg-slate-950/30" />
       </section>
 
       {/* ── CONFIANZA ───────────────────────────────────────────────── */}
@@ -523,7 +621,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-8">
             {/* Logo */}
             <div className="flex flex-col items-center md:items-start gap-3">
-              <div className="relative w-36 h-10">
+              <div className="relative w-44 h-12">
                 <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
               </div>
               <p className="text-white/30 text-xs">{CONTENIDO.footer.tagline}</p>

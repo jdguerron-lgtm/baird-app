@@ -17,10 +17,17 @@ export async function submitSolicitud(
   formData: SolicitudFormData
 ): Promise<SubmitResult> {
   try {
-    // IMPORTANTE: Ahora SÍ incluimos numero_serie_factura si es garantía
-    const dataToInsert = formData.es_garantia
-      ? formData // Incluye todo, incluyendo numero_serie_factura
-      : { ...formData, numero_serie_factura: null } // Explícitamente null si no es garantía
+    // Normalize text fields: trim whitespace from ciudad, zona, direccion
+    const normalized = {
+      ...formData,
+      ciudad_pueblo: formData.ciudad_pueblo.trim(),
+      zona_servicio: formData.zona_servicio.trim(),
+      direccion: formData.direccion.trim(),
+      cliente_nombre: formData.cliente_nombre.trim(),
+      numero_serie_factura: formData.es_garantia ? formData.numero_serie_factura : null,
+    }
+
+    const dataToInsert = normalized
 
     const { data, error } = await supabase
       .from('solicitudes_servicio')

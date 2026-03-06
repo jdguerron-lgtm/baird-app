@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 
 interface SolicitudInfo {
   tipo_equipo: string
@@ -49,9 +50,8 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
       {/* Top bar */}
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-slate-900 tracking-tight">baird</span>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest mt-0.5">service</span>
+          <div className="relative w-28 h-8">
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
           </div>
           <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Nueva solicitud</span>
         </div>

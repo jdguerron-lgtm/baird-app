@@ -2,13 +2,19 @@ import { z } from 'zod'
 import { TIPOS_EQUIPO, TIPOS_SOLICITUD } from '@/types/solicitud'
 
 // Validaciones personalizadas
-const colombianPhone = z
+// Accepts "code|number" format (e.g. "57|3001234567") or raw digits
+const phoneWithCode = z
   .string()
-  .min(1, 'El teléfono es requerido')
-  .regex(
-    /^(\+57)?[3][0-9]{9}$/,
-    'Debe ser un número de celular colombiano válido (ej: +573001234567 o 3001234567)'
-  )
+  .min(1, 'El telefono es requerido')
+  .refine((val) => {
+    if (val.includes('|')) {
+      const [code, num] = val.split('|', 2)
+      return code.length >= 1 && num.length >= 7
+    }
+    // Legacy: raw digits
+    const digits = val.replace(/\D/g, '')
+    return digits.length >= 10
+  }, 'Ingresa un numero de telefono valido (minimo 7 digitos)')
 
 const nonEmptyString = (fieldName: string) =>
   z.string()
@@ -21,7 +27,7 @@ export const solicitudFormSchema = z.object({
     .min(3, 'El nombre debe tener al menos 3 caracteres')
     .max(100, 'El nombre no puede exceder 100 caracteres'),
 
-  cliente_telefono: colombianPhone,
+  cliente_telefono: phoneWithCode,
 
   direccion: nonEmptyString('La dirección')
     .min(5, 'La dirección debe ser más específica'),

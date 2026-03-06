@@ -12,13 +12,17 @@ export { TIPO_A_ESPECIALIDAD }
 // ─────────────────────────────────────────
 
 /**
- * Normaliza un número colombiano al formato internacional de WhatsApp (sin +).
- * Ejemplos:
- *   "3001234567"     → "573001234567"
- *   "+573001234567"  → "573001234567"
- *   "573001234567"   → "573001234567"
+ * Normaliza un telefono al formato internacional de WhatsApp (solo digitos, sin +).
+ * Soporta formato "code|number" (ej: "57|3001234567" -> "573001234567")
+ * y formato legacy de digitos sueltos.
  */
 export function formatearTelefono(tel: string): string {
+  // New format: "code|number"
+  if (tel.includes('|')) {
+    const [code, num] = tel.split('|', 2)
+    return `${code.replace(/\D/g, '')}${num.replace(/\D/g, '')}`
+  }
+  // Legacy format
   const digits = tel.replace(/\D/g, '')
   if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`
   if (digits.startsWith('57') && digits.length === 12) return digits
@@ -129,13 +133,14 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
   const tecnicoIds = especialidades.map((e: { tecnico_id: string }) => e.tecnico_id)
 
-  // 3. Filtrar por verificados y ciudad compatible
+  // 3. Filtrar por verificados y ciudad compatible (trim + case-insensitive)
+  const ciudadNorm = sol.ciudad_pueblo?.trim() || ''
   const { data: tecnicos } = await supabase
     .from('tecnicos')
     .select('id, nombre_completo, whatsapp, ciudad_pueblo')
     .eq('estado_verificacion', 'verificado')
     .in('id', tecnicoIds)
-    .ilike('ciudad_pueblo', `%${sol.ciudad_pueblo}%`)
+    .ilike('ciudad_pueblo', `%${ciudadNorm}%`)
 
   if (!tecnicos || tecnicos.length === 0) return { notificados: 0, matched: 0, errors: [] }
 
