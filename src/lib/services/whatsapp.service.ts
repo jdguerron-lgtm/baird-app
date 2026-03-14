@@ -266,7 +266,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
  *
  * @returns { ganado: boolean, mensaje: string }
  */
-export async function procesarAceptacion(token: string): Promise<{
+export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 | 2): Promise<{
   ganado: boolean
   mensaje: string
 }> {
@@ -342,6 +342,11 @@ export async function procesarAceptacion(token: string): Promise<{
     .single()
 
   const sol = updated // aliás semántico
+  const horarioConfirmado = horarioSeleccionado === 1
+    ? sol.horario_visita_1
+    : horarioSeleccionado === 2
+      ? sol.horario_visita_2
+      : null
 
   // 4. Notificar al técnico ganador con los datos del cliente
   if (tecnico) {
@@ -358,11 +363,11 @@ export async function procesarAceptacion(token: string): Promise<{
       `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
       `*Problema:* ${sol.novedades_equipo.substring(0, 150)}`,
       ``,
-      `*Horarios propuestos por el cliente:*`,
-      `  - ${sol.horario_visita_1}`,
-      `  - ${sol.horario_visita_2}`,
+      horarioConfirmado
+        ? `*Horario confirmado:* ${horarioConfirmado}`
+        : `*Horarios propuestos:*\n  - ${sol.horario_visita_1}\n  - ${sol.horario_visita_2}`,
       ``,
-      `Confirma el horario definitivo directamente con el cliente por WhatsApp.`,
+      `Coordina con el cliente por WhatsApp para confirmar la visita.`,
       ``,
       `*Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
       `Pago a traves de Baird Service.`,
@@ -381,11 +386,11 @@ export async function procesarAceptacion(token: string): Promise<{
       ? `*Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} (Verificado por Baird)`
       : null,
     ``,
-    `*Tus horarios propuestos:*`,
-    `  - ${sol.horario_visita_1}`,
-    `  - ${sol.horario_visita_2}`,
+    horarioConfirmado
+      ? `*Horario confirmado por el tecnico:* ${horarioConfirmado}`
+      : `*Tus horarios propuestos:*\n  - ${sol.horario_visita_1}\n  - ${sol.horario_visita_2}`,
     ``,
-    `Coordina el horario definitivo con tu tecnico por WhatsApp.`,
+    `Tu tecnico se comunicara contigo por WhatsApp para confirmar la visita.`,
     ``,
     `*Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
     `_El pago se realiza a Baird Service por medios electronicos. No se acepta efectivo._`,

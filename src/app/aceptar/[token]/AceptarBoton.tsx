@@ -26,14 +26,16 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
   const [estado, setEstado] = useState<'idle' | 'procesando' | 'ganado' | 'tomado'>(
     yaAsignada ? 'tomado' : 'idle'
   )
+  const [horarioSeleccionado, setHorarioSeleccionado] = useState<1 | 2 | null>(null)
 
   const aceptar = async () => {
+    if (!horarioSeleccionado) return
     setEstado('procesando')
     try {
       const res = await fetch('/api/whatsapp/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, horarioSeleccionado }),
       })
       const result = await res.json()
       setEstado(result.ganado ? 'ganado' : 'tomado')
@@ -96,10 +98,28 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
             </div>
 
             <div className="bg-slate-50 rounded-xl p-4">
-              <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">Horarios propuestos</p>
-              <div className="space-y-1.5">
-                <p className="text-sm text-slate-700">1️⃣ {solicitud.horario_visita_1}</p>
-                <p className="text-sm text-slate-700">2️⃣ {solicitud.horario_visita_2}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-2">
+                {estado === 'idle' ? 'Selecciona un horario' : 'Horarios propuestos'}
+              </p>
+              <div className="space-y-2">
+                {[
+                  { num: 1 as const, label: solicitud.horario_visita_1 },
+                  { num: 2 as const, label: solicitud.horario_visita_2 },
+                ].map(({ num, label }) => (
+                  <button
+                    key={num}
+                    type="button"
+                    disabled={estado !== 'idle'}
+                    onClick={() => setHorarioSeleccionado(num)}
+                    className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all text-sm ${
+                      horarioSeleccionado === num
+                        ? 'border-green-500 bg-green-50 text-green-800 font-medium'
+                        : 'border-gray-200 bg-white text-slate-700 hover:border-gray-300'
+                    } ${estado !== 'idle' ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -114,12 +134,22 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
 
           {/* Action states */}
           {estado === 'idle' && (
-            <button
-              onClick={aceptar}
-              className="w-full bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white font-bold py-4 px-6 rounded-xl text-base transition-all shadow-sm"
-            >
-              ✅ Aceptar este servicio
-            </button>
+            <div className="space-y-2">
+              {!horarioSeleccionado && (
+                <p className="text-center text-sm text-amber-600">Selecciona un horario para continuar</p>
+              )}
+              <button
+                onClick={aceptar}
+                disabled={!horarioSeleccionado}
+                className={`w-full font-bold py-4 px-6 rounded-xl text-base transition-all shadow-sm ${
+                  horarioSeleccionado
+                    ? 'bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                Aceptar este servicio
+              </button>
+            </div>
           )}
 
           {estado === 'procesando' && (

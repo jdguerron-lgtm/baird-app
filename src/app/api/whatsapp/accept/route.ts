@@ -21,7 +21,7 @@ import { procesarAceptacion } from '@/lib/services/whatsapp.service'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { token } = body
+    const { token, horarioSeleccionado } = body
 
     if (!token || typeof token !== 'string') {
       return NextResponse.json(
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const resultado = await procesarAceptacion(token)
+    const resultado = await procesarAceptacion(token, horarioSeleccionado)
 
     return NextResponse.json(resultado)
   } catch (error: unknown) {
