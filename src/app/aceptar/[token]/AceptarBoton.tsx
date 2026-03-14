@@ -89,9 +89,9 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
             <div className="flex items-start gap-3 bg-slate-50 rounded-xl p-4">
               <span className="text-2xl">📍</span>
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Ubicación</p>
-                <p className="font-semibold text-slate-900">{solicitud.direccion}</p>
-                <p className="text-slate-500 text-sm">{solicitud.zona_servicio}, {solicitud.ciudad_pueblo}</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Zona</p>
+                <p className="font-semibold text-slate-900">{solicitud.zona_servicio}, {solicitud.ciudad_pueblo}</p>
+                <p className="text-slate-500 text-sm">La direccion exacta se comparte al aceptar</p>
               </div>
             </div>
 

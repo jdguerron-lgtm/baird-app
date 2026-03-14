@@ -71,6 +71,59 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
   }
 }
 
+async function enviarMensajeInteractivo(options: {
+  para: string
+  headerText?: string
+  bodyText: string
+  footerText?: string
+  buttonLabel: string
+  buttonUrl: string
+}): Promise<void> {
+  const phoneId = process.env.WHATSAPP_PHONE_ID
+  const token = process.env.WHATSAPP_API_TOKEN
+
+  if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
+
+  const interactive: Record<string, unknown> = {
+    type: 'cta_url',
+    body: { text: options.bodyText },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: options.buttonLabel,
+        url: options.buttonUrl,
+      },
+    },
+  }
+
+  if (options.headerText) {
+    interactive.header = { type: 'text', text: options.headerText }
+  }
+  if (options.footerText) {
+    interactive.footer = { text: options.footerText }
+  }
+
+  const res = await fetch(`${WA_API_BASE}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneToDigits(options.para),
+      type: 'interactive',
+      interactive,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(`WhatsApp interactive error ${res.status}: ${JSON.stringify(err)}`)
+  }
+}
+
 // ─────────────────────────────────────────
 // Lógica de negocio
 // ─────────────────────────────────────────
@@ -146,33 +199,35 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
       continue
     }
 
-    // Construir mensaje con todos los detalles que necesita el técnico para decidir
+    // Construir mensaje limpio (sin emojis multi-codepoint que causan "?")
+    // Body max 1024 chars para mensajes interactivos CTA
     const diagnostico = sol.triaje_resultado?.posible_falla
-    const mensaje = [
-      `🔧 *Nueva solicitud — Baird Service*`,
+    const bodyLines = [
+      `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
+      `*Problema:* ${sol.novedades_equipo.substring(0, 100)}`,
+      diagnostico ? `*Diagnostico IA:* ${diagnostico}` : null,
       ``,
-      `📋 *Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-      `📝 *Problema:* ${sol.novedades_equipo.substring(0, 120)}`,
-      diagnostico ? `🤖 *Diagnóstico IA:* ${diagnostico}` : null,
+      `*Zona:* ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
       ``,
-      `📍 *Ubicación del servicio:*`,
-      `   ${sol.direccion}`,
-      `   ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
+      `*Horarios propuestos:*`,
+      `  - ${sol.horario_visita_1}`,
+      `  - ${sol.horario_visita_2}`,
       ``,
-      `🕐 *Horarios propuestos por el cliente:*`,
-      `   1️⃣ ${sol.horario_visita_1}`,
-      `   2️⃣ ${sol.horario_visita_2}`,
+      `*TARIFA: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `Pago a traves de Baird Service.`,
       ``,
-      `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
-      `📌 _Pago a través de Baird Service. No se acepta efectivo._`,
-      ``,
-      `⚡ *El primer técnico en aceptar gana el servicio.*`,
-      `👇 Toca el link para ver los detalles y aceptar:`,
-      linkAceptar,
+      `_El primer tecnico en aceptar gana el servicio._`,
     ].filter(Boolean).join('\n')
 
     try {
-      await enviarMensajeTexto(tecnico.whatsapp, mensaje)
+      await enviarMensajeInteractivo({
+        para: tecnico.whatsapp,
+        headerText: 'Nueva solicitud - Baird Service',
+        bodyText: bodyLines,
+        footerText: 'Toca el boton para aceptar',
+        buttonLabel: 'Aceptar servicio',
+        buttonUrl: linkAceptar,
+      })
       notificados++
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
@@ -272,7 +327,7 @@ export async function procesarAceptacion(token: string): Promise<{
     if (tecnico?.whatsapp) {
       await enviarMensajeTexto(
         tecnico.whatsapp,
-        '❌ *Servicio no disponible*\n\nEste servicio ya fue asignado a otro técnico. ¡Sigue atento a nuevas solicitudes! 💪'
+        '*Servicio no disponible*\n\nEste servicio ya fue asignado a otro tecnico. Sigue atento a nuevas solicitudes.'
       ).catch(console.error)
     }
 
@@ -291,22 +346,26 @@ export async function procesarAceptacion(token: string): Promise<{
   // 4. Notificar al técnico ganador con los datos del cliente
   if (tecnico) {
     const msgTecnico = [
-      `✅ *¡Servicio asignado! Lo lograste, ${tecnico.nombre_completo}.*`,
+      `*Servicio asignado - Baird Service*`,
       ``,
-      `👤 *Cliente:* ${sol.cliente_nombre}`,
-      `📱 *Teléfono:* ${sol.cliente_telefono}`,
-      `📍 *Dirección:* ${sol.direccion}`,
-      `   ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
-      `📋 *Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-      `📝 *Problema:* ${sol.novedades_equipo.substring(0, 150)}`,
+      `Felicidades, ${tecnico.nombre_completo}. Ganaste este servicio.`,
       ``,
-      `🕐 *Horarios propuestos por el cliente:*`,
-      `   1️⃣ ${sol.horario_visita_1}`,
-      `   2️⃣ ${sol.horario_visita_2}`,
+      `*Cliente:* ${sol.cliente_nombre}`,
+      `*Telefono:* ${sol.cliente_telefono}`,
+      `*Direccion:* ${sol.direccion}`,
+      `${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
+      ``,
+      `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
+      `*Problema:* ${sol.novedades_equipo.substring(0, 150)}`,
+      ``,
+      `*Horarios propuestos por el cliente:*`,
+      `  - ${sol.horario_visita_1}`,
+      `  - ${sol.horario_visita_2}`,
       ``,
       `Confirma el horario definitivo directamente con el cliente por WhatsApp.`,
       ``,
-      `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP — Pago vía Baird Service*`,
+      `*Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `Pago a traves de Baird Service.`,
     ].join('\n')
 
     await enviarMensajeTexto(tecnico.whatsapp, msgTecnico).catch(console.error)
@@ -314,22 +373,22 @@ export async function procesarAceptacion(token: string): Promise<{
 
   // 5. Notificar al cliente con los datos del técnico
   const msgCliente = [
-    `🎉 *¡Tu técnico ha sido asignado — Baird Service!*`,
+    `*Tecnico asignado - Baird Service*`,
     ``,
-    `👨‍🔧 *Técnico:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
-    `📱 *WhatsApp:* +${phoneToDigits(tecnico?.whatsapp ?? '')}`,
+    `*Tecnico:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
+    `*WhatsApp:* +${phoneToDigits(tecnico?.whatsapp ?? '')}`,
     tecnico?.tipo_documento
-      ? `🆔 *Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} ✅ Verificado por Baird`
+      ? `*Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} (Verificado por Baird)`
       : null,
     ``,
-    `🕐 *Tus horarios propuestos:*`,
-    `   1️⃣ ${sol.horario_visita_1}`,
-    `   2️⃣ ${sol.horario_visita_2}`,
+    `*Tus horarios propuestos:*`,
+    `  - ${sol.horario_visita_1}`,
+    `  - ${sol.horario_visita_2}`,
     ``,
-    `Coordina el horario definitivo con tu técnico por WhatsApp.`,
+    `Coordina el horario definitivo con tu tecnico por WhatsApp.`,
     ``,
-    `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
-    `📌 _El pago se realiza a Baird Service por medios electrónicos. No se acepta efectivo._`,
+    `*Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+    `_El pago se realiza a Baird Service por medios electronicos. No se acepta efectivo._`,
   ].filter(Boolean).join('\n')
 
   await enviarMensajeTexto(sol.cliente_telefono, msgCliente).catch(console.error)
@@ -339,7 +398,7 @@ export async function procesarAceptacion(token: string): Promise<{
     await enviarImagen(
       sol.cliente_telefono,
       tecnico.foto_perfil_url,
-      `📸 Foto de ${tecnico.nombre_completo} — tu técnico asignado`
+      `Foto de ${tecnico.nombre_completo} - tu tecnico asignado`
     ).catch(console.error)
   }
 
@@ -348,7 +407,7 @@ export async function procesarAceptacion(token: string): Promise<{
     await enviarImagen(
       sol.cliente_telefono,
       tecnico.foto_documento_url,
-      `🪪 Documento de identidad verificado por Baird Service`
+      `Documento de identidad verificado por Baird Service`
     ).catch(console.error)
   }
 
