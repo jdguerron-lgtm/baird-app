@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { ESTADO_ESTILOS } from '@/lib/constants/estados'
+import { formatCOP } from '@/lib/utils/format'
 
 interface Solicitud {
   id: string
@@ -28,19 +30,6 @@ const ESTADOS = [
   { value: 'completada', label: 'Completada', color: 'bg-emerald-100 text-emerald-800' },
   { value: 'cancelada', label: 'Cancelada', color: 'bg-red-100 text-red-800' },
 ]
-
-const ESTADO_ESTILOS: Record<string, string> = {
-  pendiente: 'bg-yellow-100 text-yellow-800',
-  notificada: 'bg-blue-100 text-blue-800',
-  asignada: 'bg-green-100 text-green-800',
-  en_proceso: 'bg-purple-100 text-purple-800',
-  completada: 'bg-emerald-100 text-emerald-800',
-  cancelada: 'bg-red-100 text-red-800',
-}
-
-function formatCOP(n: number | null | undefined) {
-  return (n ?? 0).toLocaleString('es-CO')
-}
 
 export default function SolicitudesAdmin() {
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])

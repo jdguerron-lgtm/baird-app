@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+// Hoist Gemini client to module scope (avoids re-creation per request)
+const genAI = process.env.GEMINI_API_KEY
+  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  : null
+
+function requireString(val: unknown, name: string, min = 1, max = 100): string | null {
+  if (!val || typeof val !== 'string' || val.length < min || val.length > max) {
+    return `${name} invalido (${min}-${max} caracteres)`
+  }
+  return null
+}
+
 /**
  * API Route para triaje de problemas con IA usando Google Gemini
  * POST /api/triaje
@@ -17,24 +29,25 @@ export async function POST(request: NextRequest) {
       tipo_solicitud
     } = body
 
-    // Validar que la API key esté configurada
-    if (!process.env.GEMINI_API_KEY) {
+    if (!genAI) {
       return NextResponse.json(
         { error: 'API de IA no configurada. Contacta al administrador.' },
         { status: 500 }
       )
     }
 
-    // Validar entrada
-    if (!novedades_equipo || novedades_equipo.length < 20) {
-      return NextResponse.json(
-        { error: 'La descripción es muy corta para realizar un análisis (mínimo 20 caracteres)' },
-        { status: 400 }
-      )
+    // Validate all inputs
+    const errors = [
+      requireString(novedades_equipo, 'La descripcion del problema', 20, 1000),
+      requireString(tipo_equipo, 'Tipo de equipo'),
+      requireString(marca_equipo, 'Marca de equipo'),
+      requireString(tipo_solicitud, 'Tipo de solicitud'),
+    ].filter(Boolean)
+
+    if (errors.length > 0) {
+      return NextResponse.json({ error: errors[0] }, { status: 400 })
     }
 
-    // Inicializar Gemini
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' })
 
     // Construir prompt técnico para el triaje
@@ -78,13 +91,15 @@ Considera patrones comunes de fallas para ${tipo_equipo} marca ${marca_equipo}.
 
 IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después.`
 
-    // Llamar a Gemini con timeout
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000) // 15 segundos timeout
-
+    // Llamar a Gemini with actual timeout via Promise.race
     try {
-      const result = await model.generateContent(prompt)
-      clearTimeout(timeout)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), 15000)
+      )
+      const result = await Promise.race([
+        model.generateContent(prompt),
+        timeoutPromise,
+      ])
 
       const response = result.response
       const responseText = response.text().trim()
@@ -141,11 +156,9 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después.`
       return NextResponse.json(triaje)
 
     } catch (aiError: unknown) {
-      clearTimeout(timeout)
-
-      if (aiError instanceof Error && aiError.name === 'AbortError') {
+      if (aiError instanceof Error && aiError.message === 'TIMEOUT') {
         return NextResponse.json(
-          { error: 'El análisis está tomando demasiado tiempo. Inténtalo de nuevo.' },
+          { error: 'El analisis esta tomando demasiado tiempo. Intentalo de nuevo.' },
           { status: 408 }
         )
       }
@@ -164,12 +177,8 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después.`
       )
     }
 
-    const errorMessage = error instanceof Error
-      ? error.message
-      : 'Error al analizar el problema'
-
     return NextResponse.json(
-      { error: errorMessage },
+      { error: 'Error al analizar el problema. Intenta de nuevo.' },
       { status: 500 }
     )
   }

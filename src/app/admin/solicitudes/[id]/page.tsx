@@ -5,6 +5,9 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
+import { ESTADO_ESTILOS, NOTIF_ESTILOS } from '@/lib/constants/estados'
+import { formatCOP } from '@/lib/utils/format'
+import { escapeLikePattern } from '@/lib/utils/format'
 
 interface Solicitud {
   id: string
@@ -49,27 +52,6 @@ interface MatchDiagnostic {
   step: string
   status: 'pass' | 'fail' | 'warn'
   detail: string
-}
-
-const ESTADO_ESTILOS: Record<string, string> = {
-  pendiente: 'bg-yellow-100 text-yellow-800',
-  notificada: 'bg-blue-100 text-blue-800',
-  asignada: 'bg-green-100 text-green-800',
-  en_proceso: 'bg-purple-100 text-purple-800',
-  completada: 'bg-emerald-100 text-emerald-800',
-  cancelada: 'bg-red-100 text-red-800',
-}
-
-const NOTIF_ESTILOS: Record<string, string> = {
-  enviado: 'bg-blue-100 text-blue-800',
-  aceptado: 'bg-green-100 text-green-800',
-  invalidado: 'bg-gray-100 text-gray-600',
-  error: 'bg-red-100 text-red-800',
-  expirado: 'bg-yellow-100 text-yellow-800',
-}
-
-function formatCOP(n: number) {
-  return n.toLocaleString('es-CO')
 }
 
 export default function SolicitudDetalle() {
@@ -245,7 +227,7 @@ export default function SolicitudDetalle() {
       .from('tecnicos')
       .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
       .in('id', verificados.map((t: { id: string }) => t.id))
-      .ilike('ciudad_pueblo', `%${sol.ciudad_pueblo}%`)
+      .ilike('ciudad_pueblo', `%${escapeLikePattern(sol.ciudad_pueblo)}%`)
 
     if (!enCiudad || enCiudad.length === 0) {
       steps.push({
@@ -484,7 +466,7 @@ export default function SolicitudDetalle() {
           Reenviar notificacion WhatsApp
         </h2>
         <p className="text-xs text-gray-500 mb-3">
-          Envia de nuevo la notificacion a los tecnicos compatibles. El numero de prueba de la API de WhatsApp es <span className="font-mono font-semibold text-slate-700">+57 318 372 3213</span>.
+          Envia de nuevo la notificacion a los tecnicos compatibles.
         </p>
 
         <div className="flex items-center gap-3">

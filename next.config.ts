@@ -7,14 +7,16 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'ceblicvdmephhktedsyv.supabase.co',
-        pathname: '/storage/v1/object/public/**',
+        pathname: '/storage/v1/object/public/tecnicos-fotos/**',
       },
       {
         protocol: 'https',
-        hostname: 'images.unsplash.com',
+        hostname: 'ceblicvdmephhktedsyv.supabase.co',
+        pathname: '/storage/v1/object/public/tecnicos-documentos/**',
       },
     ],
   },
+  // Security headers are set in src/middleware.ts (single source of truth)
 };
 
 export default nextConfig;

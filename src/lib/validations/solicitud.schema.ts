@@ -1,20 +1,11 @@
 import { z } from 'zod'
 import { TIPOS_EQUIPO, TIPOS_SOLICITUD } from '@/types/solicitud'
+import { isValidPhone } from '@/lib/utils/phone'
 
-// Validaciones personalizadas
-// Accepts "code|number" format (e.g. "57|3001234567") or raw digits
 const phoneWithCode = z
   .string()
   .min(1, 'El telefono es requerido')
-  .refine((val) => {
-    if (val.includes('|')) {
-      const [code, num] = val.split('|', 2)
-      return code.length >= 1 && num.length >= 7
-    }
-    // Legacy: raw digits
-    const digits = val.replace(/\D/g, '')
-    return digits.length >= 10
-  }, 'Ingresa un numero de telefono valido (minimo 7 digitos)')
+  .refine(isValidPhone, 'Ingresa un numero de telefono valido (minimo 7 digitos)')
 
 const nonEmptyString = (fieldName: string) =>
   z.string()
@@ -29,14 +20,18 @@ export const solicitudFormSchema = z.object({
 
   cliente_telefono: phoneWithCode,
 
-  direccion: nonEmptyString('La dirección')
-    .min(5, 'La dirección debe ser más específica'),
+  direccion: nonEmptyString('La direccion')
+    .min(5, 'La direccion debe ser mas especifica')
+    .max(200, 'La direccion no puede exceder 200 caracteres'),
 
-  ciudad_pueblo: nonEmptyString('La ciudad'),
+  ciudad_pueblo: nonEmptyString('La ciudad')
+    .max(100, 'La ciudad no puede exceder 100 caracteres'),
 
-  zona_servicio: nonEmptyString('La zona o barrio'),
+  zona_servicio: nonEmptyString('La zona o barrio')
+    .max(100, 'La zona no puede exceder 100 caracteres'),
 
-  marca_equipo: nonEmptyString('La marca del equipo'),
+  marca_equipo: nonEmptyString('La marca del equipo')
+    .max(100, 'La marca no puede exceder 100 caracteres'),
 
   tipo_equipo: z.enum(TIPOS_EQUIPO, {
     message: 'Selecciona un tipo de equipo válido'

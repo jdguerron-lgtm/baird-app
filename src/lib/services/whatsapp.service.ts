@@ -1,37 +1,17 @@
 import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
+import { phoneToDigits } from '@/lib/utils/phone'
+import { formatCOP, escapeLikePattern } from '@/lib/utils/format'
 
 const WA_API_BASE = 'https://graph.facebook.com/v21.0'
 
-// Re-export for backward compatibility with tests
+// Re-exports for backward compatibility
 export { TIPO_A_ESPECIALIDAD }
+export { formatCOP } from '@/lib/utils/format'
+export { phoneToDigits as formatearTelefono } from '@/lib/utils/phone'
 
-// ─────────────────────────────────────────
-// Utilidades de formato
-// ─────────────────────────────────────────
-
-/**
- * Normaliza un telefono al formato internacional de WhatsApp (solo digitos, sin +).
- * Soporta formato "code|number" (ej: "57|3001234567" -> "573001234567")
- * y formato legacy de digitos sueltos.
- */
-export function formatearTelefono(tel: string): string {
-  // New format: "code|number"
-  if (tel.includes('|')) {
-    const [code, num] = tel.split('|', 2)
-    return `${code.replace(/\D/g, '')}${num.replace(/\D/g, '')}`
-  }
-  // Legacy format
-  const digits = tel.replace(/\D/g, '')
-  if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`
-  if (digits.startsWith('57') && digits.length === 12) return digits
-  return digits
-}
-
-export function formatCOP(valor: number): string {
-  return new Intl.NumberFormat('es-CO').format(valor)
-}
+const TOKEN_EXPIRATION_MS = 30 * 60 * 1000 // 30 minutes
 
 // ─────────────────────────────────────────
 // Funciones de envío (primitivas)
@@ -52,7 +32,7 @@ async function enviarMensajeTexto(para: string, texto: string): Promise<void> {
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: formatearTelefono(para),
+      to: phoneToDigits(para),
       type: 'text',
       text: { body: texto, preview_url: true },
     }),
@@ -79,7 +59,7 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: formatearTelefono(para),
+      to: phoneToDigits(para),
       type: 'image',
       image: { link: urlImagen, caption },
     }),
@@ -140,7 +120,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     .select('id, nombre_completo, whatsapp, ciudad_pueblo')
     .eq('estado_verificacion', 'verificado')
     .in('id', tecnicoIds)
-    .ilike('ciudad_pueblo', `%${ciudadNorm}%`)
+    .ilike('ciudad_pueblo', `%${escapeLikePattern(ciudadNorm)}%`)
 
   if (!tecnicos || tecnicos.length === 0) return { notificados: 0, matched: 0, errors: [] }
 
@@ -197,7 +177,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
       console.error(`Error enviando WhatsApp a técnico ${tecnico.id}:`, errMsg)
-      sendErrors.push(`${tecnico.nombre_completo} (${tecnico.whatsapp}): ${errMsg}`)
+      sendErrors.push(`${tecnico.nombre_completo}: error de envio`)
       // Marcar como error pero continuar con el siguiente
       await supabase
         .from('notificaciones_whatsapp')
@@ -238,12 +218,22 @@ export async function procesarAceptacion(token: string): Promise<{
   // 1. Validar token
   const { data: notif } = await supabase
     .from('notificaciones_whatsapp')
-    .select('solicitud_id, tecnico_id, estado')
+    .select('solicitud_id, tecnico_id, estado, enviado_at')
     .eq('token', token)
     .single()
 
   if (!notif) {
-    return { ganado: false, mensaje: 'Token inválido o expirado' }
+    return { ganado: false, mensaje: 'Token invalido o expirado' }
+  }
+
+  // Verificar expiracion del token
+  const tokenAge = Date.now() - new Date(notif.enviado_at).getTime()
+  if (tokenAge > TOKEN_EXPIRATION_MS) {
+    await supabase
+      .from('notificaciones_whatsapp')
+      .update({ estado: 'expirado' })
+      .eq('token', token)
+    return { ganado: false, mensaje: 'Este enlace ha expirado. El tiempo limite es de 30 minutos.' }
   }
 
   if (notif.estado !== 'enviado') {
@@ -327,7 +317,7 @@ export async function procesarAceptacion(token: string): Promise<{
     `🎉 *¡Tu técnico ha sido asignado — Baird Service!*`,
     ``,
     `👨‍🔧 *Técnico:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
-    `📱 *WhatsApp:* +${formatearTelefono(tecnico?.whatsapp ?? '')}`,
+    `📱 *WhatsApp:* +${phoneToDigits(tecnico?.whatsapp ?? '')}`,
     tecnico?.tipo_documento
       ? `🆔 *Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} ✅ Verificado por Baird`
       : null,

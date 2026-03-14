@@ -1,20 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
 import { notificarTecnicos } from '@/lib/services/whatsapp.service'
+
+async function verificarAdmin(req: NextRequest): Promise<boolean> {
+  const authHeader = req.headers.get('authorization')
+  const token = authHeader?.replace('Bearer ', '')
+
+  if (!token) return false
+
+  const { data: { user } } = await supabase.auth.getUser(token)
+  return !!user
+}
 
 /**
  * POST /api/whatsapp/notify
  *
- * Recibe el ID de una solicitud recién creada y envía mensajes de
- * WhatsApp a todos los técnicos verificados compatibles (por especialidad
- * y ciudad). Cada técnico recibe un link único para aceptar el servicio.
- *
- * Llamado internamente desde el formulario del cliente, justo después
- * de que la solicitud se guarda en Supabase.
- *
+ * Requiere autenticacion de admin.
  * Body: { solicitudId: string }
  */
 export async function POST(req: NextRequest) {
   try {
+    const isAdmin = await verificarAdmin(req)
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     const body = await req.json()
     const { solicitudId } = body
 
@@ -31,18 +41,17 @@ export async function POST(req: NextRequest) {
       success: true,
       notificados: result.notificados,
       matched: result.matched,
-      errors: result.errors,
+      errors: result.errors.length,
       mensaje: result.notificados > 0
-        ? `${result.notificados} técnico(s) notificado(s) por WhatsApp`
+        ? `${result.notificados} tecnico(s) notificado(s) por WhatsApp`
         : result.matched > 0
-          ? `Se encontraron ${result.matched} técnico(s) pero falló el envío: ${result.errors.join('; ')}`
-          : 'No se encontraron técnicos disponibles en la zona por ahora',
+          ? `Se encontraron ${result.matched} tecnico(s) pero fallo el envio`
+          : 'No se encontraron tecnicos disponibles en la zona por ahora',
     })
   } catch (error: unknown) {
     console.error('[/api/whatsapp/notify] Error:', error)
-    const mensaje = error instanceof Error ? error.message : 'Error inesperado'
     return NextResponse.json(
-      { error: mensaje },
+      { error: 'Error interno del servidor' },
       { status: 500 }
     )
   }

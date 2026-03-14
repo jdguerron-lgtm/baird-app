@@ -35,9 +35,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(resultado)
   } catch (error: unknown) {
     console.error('[/api/whatsapp/accept] Error:', error)
-    const mensaje = error instanceof Error ? error.message : 'Error inesperado'
     return NextResponse.json(
-      { error: mensaje },
+      { error: 'Error interno del servidor' },
       { status: 500 }
     )
   }
