@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'ceblicvdmephhktedsyv.supabase.co',
+        pathname: '/storage/v1/object/public/evidencias-servicio/**',
+      },
+      {
+        protocol: 'https',
         hostname: 'images.unsplash.com',
       },
     ],

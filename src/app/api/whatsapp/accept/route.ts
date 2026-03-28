@@ -30,7 +30,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const resultado = await procesarAceptacion(token, horarioSeleccionado)
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(token)) {
+      return NextResponse.json(
+        { error: 'Token inválido' },
+        { status: 400 }
+      )
+    }
+
+    // Validate horarioSeleccionado if provided
+    const horario = horarioSeleccionado === 1 || horarioSeleccionado === 2
+      ? horarioSeleccionado as 1 | 2
+      : undefined
+
+    const resultado = await procesarAceptacion(token, horario)
 
     return NextResponse.json(resultado)
   } catch (error: unknown) {

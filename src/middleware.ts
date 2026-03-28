@@ -39,20 +39,27 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
 }
 
-// Rate limit configs per API route
+// Rate limit configs per route (API + token pages)
 const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
   { path: '/api/triaje', limit: 10, windowMs: 60_000 },
   { path: '/api/whatsapp/notify', limit: 5, windowMs: 60_000 },
   { path: '/api/whatsapp/accept', limit: 20, windowMs: 60_000 },
+  { path: '/api/carga-masiva', limit: 5, windowMs: 60_000 },
+  { path: '/api/completar-servicio', limit: 10, windowMs: 60_000 },
+  { path: '/api/confirmar-servicio', limit: 10, windowMs: 60_000 },
 ]
+
+// Token pages: prevent brute-force enumeration
+const TOKEN_PAGE_PREFIXES = ['/aceptar/', '/tecnico/', '/confirmar/']
+const TOKEN_PAGE_LIMIT = 30  // requests per minute per IP
+const TOKEN_PAGE_WINDOW = 60_000
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
 
-  // Rate limiting — only on API routes
+  // Rate limiting on API routes
   if (pathname.startsWith('/api/')) {
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-
     for (const rl of RATE_LIMITS) {
       if (pathname === rl.path) {
         const key = `${ip}:${pathname}`
@@ -64,6 +71,14 @@ export function middleware(req: NextRequest) {
         }
         break
       }
+    }
+  }
+
+  // Rate limiting on token-based pages (prevent enumeration)
+  if (TOKEN_PAGE_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
+    const key = `${ip}:token-pages`
+    if (isRateLimited(key, TOKEN_PAGE_LIMIT, TOKEN_PAGE_WINDOW)) {
+      return new NextResponse('Too many requests', { status: 429, headers: { 'Retry-After': '60' } })
     }
   }
 

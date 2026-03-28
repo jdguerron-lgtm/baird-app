@@ -46,7 +46,7 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   id: string
   created_at: string
   pago_tecnico: number
-  estado?: 'pendiente' | 'notificada' | 'asignada' | 'en_proceso' | 'completada' | 'cancelada'
+  estado?: 'pendiente' | 'notificada' | 'asignada' | 'en_proceso' | 'en_verificacion' | 'completada' | 'cancelada' | 'en_disputa'
   tecnico_asignado_id?: string
   notificados_at?: string
   triaje_resultado?: TriajeResponse | null
@@ -70,6 +70,35 @@ export interface TriajeState {
   loading: boolean
   data: TriajeResponse | null
   error: string | null
+}
+
+// Checklist de completación del servicio
+export interface ChecklistServicio {
+  diagnostico_realizado: boolean
+  pieza_reemplazada: boolean
+  pieza_detalle?: string
+  prueba_encendido: boolean
+  prueba_ciclo_completo: boolean
+  limpieza_area: boolean
+  explicacion_cliente: boolean
+  notas_tecnico?: string
+}
+
+// Evidencia de servicio completado
+export interface EvidenciaServicio {
+  id: string
+  solicitud_id: string
+  tecnico_id: string
+  fotos: string[]                   // URLs en Supabase Storage
+  checklist: ChecklistServicio
+  firma_url: string | null          // Firma digital del cliente
+  gps_lat: number | null
+  gps_lng: number | null
+  completado_at: string
+  confirmacion_token: string        // Token para que el cliente confirme
+  confirmado_at?: string
+  confirmado?: boolean
+  cliente_comentario?: string
 }
 
 // Registro de notificación WhatsApp enviada a un técnico

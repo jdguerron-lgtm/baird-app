@@ -187,10 +187,26 @@ curl "https://tu-url.ngrok-free.app/api/whatsapp/webhook?hub.mode=subscribe&hub.
 ### 8f. El técnico acepta
 - El técnico abre el link desde su teléfono
 - Ve los detalles y toca "Aceptar este servicio"
+- El técnico recibe: confirmación con link a su portal `/tecnico/{token}`
 - El cliente recibe por WhatsApp:
   1. Mensaje con datos del técnico (nombre, número, documento)
   2. Foto de perfil del técnico
   3. Foto del documento de identidad verificado
+
+### 8g. El técnico completa el servicio
+1. El técnico abre el link "Ver mis servicios" del WhatsApp
+2. Ve su portal con los servicios asignados
+3. Toca "Completar servicio" en el servicio correspondiente
+4. Sube fotos (equipo funcionando, placa, repuesto, antes/después)
+5. Llena el checklist técnico
+6. El cliente firma con el dedo en la pantalla
+7. Envía la evidencia
+
+### 8h. El cliente confirma
+- El cliente recibe un WhatsApp: "Tu servicio ha sido completado. Confirma si quedaste satisfecho"
+- El cliente abre el link y ve: resumen + fotos del técnico
+- Puede confirmar satisfacción o reportar un problema
+- El estado cambia a `completada` o `en_disputa`
 
 ---
 

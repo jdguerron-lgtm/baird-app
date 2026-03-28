@@ -29,6 +29,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No se recibió archivo' }, { status: 400 })
     }
 
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'El archivo excede el tamaño máximo de 10MB' }, { status: 400 })
+    }
+
     // Validate file type
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -36,6 +41,11 @@ export async function POST(req: NextRequest) {
     ]
     if (!validTypes.includes(file.type) && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
       return NextResponse.json({ error: 'Formato de archivo no soportado. Usa .xlsx o .xls' }, { status: 400 })
+    }
+
+    // Validate defaultPago
+    if (isNaN(defaultPago) || defaultPago < 0 || defaultPago > 10000000) {
+      return NextResponse.json({ error: 'Valor de pago inválido' }, { status: 400 })
     }
 
     // Read Excel file

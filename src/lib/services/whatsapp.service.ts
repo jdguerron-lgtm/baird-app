@@ -270,6 +270,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   ganado: boolean
   mensaje: string
 }> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
+
   // 1. Validar token
   const { data: notif } = await supabase
     .from('notificaciones_whatsapp')
@@ -334,12 +336,27 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     return { ganado: false, mensaje: 'Este servicio ya fue tomado por otro técnico' }
   }
 
-  // 3. ¡Ganó! Obtener datos completos del técnico
+  // 3. ¡Ganó! Obtener datos completos del técnico (incluyendo portal_token)
   const { data: tecnico } = await supabase
     .from('tecnicos')
-    .select('id, nombre_completo, whatsapp, foto_perfil_url, foto_documento_url, tipo_documento, numero_documento')
+    .select('id, nombre_completo, whatsapp, foto_perfil_url, foto_documento_url, tipo_documento, numero_documento, portal_token')
     .eq('id', notif.tecnico_id)
     .single()
+
+  // Generar portal_token si no existe (con verificación de persistencia)
+  if (tecnico && !tecnico.portal_token) {
+    const newToken = crypto.randomUUID()
+    const { error: tokenErr } = await supabase
+      .from('tecnicos')
+      .update({ portal_token: newToken })
+      .eq('id', tecnico.id)
+
+    if (!tokenErr) {
+      tecnico.portal_token = newToken
+    } else {
+      console.error('Error generando portal_token:', tokenErr)
+    }
+  }
 
   const sol = updated // aliás semántico
   const horarioConfirmado = horarioSeleccionado === 1
@@ -373,7 +390,16 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       `Pago a traves de Baird Service.`,
     ].join('\n')
 
-    await enviarMensajeTexto(tecnico.whatsapp, msgTecnico).catch(console.error)
+    // Enviar mensaje con link al portal
+    const portalUrl = `${appUrl}/tecnico/${tecnico.portal_token}`
+    await enviarMensajeInteractivo({
+      para: tecnico.whatsapp,
+      headerText: 'Servicio asignado - Baird Service',
+      bodyText: msgTecnico,
+      footerText: 'Cuando completes el servicio, registra la evidencia',
+      buttonLabel: 'Ver mis servicios',
+      buttonUrl: portalUrl,
+    }).catch(console.error)
   }
 
   // 5. Notificar al cliente con los datos del técnico

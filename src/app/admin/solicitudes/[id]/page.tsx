@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
-import { ESTADO_ESTILOS, NOTIF_ESTILOS } from '@/lib/constants/estados'
+import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { escapeLikePattern } from '@/lib/utils/format'
+import type { ChecklistServicio } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -48,6 +50,19 @@ interface Notificacion {
   tecnico_nombre?: string
 }
 
+interface Evidencia {
+  id: string
+  fotos: string[]
+  checklist: ChecklistServicio
+  firma_url: string | null
+  gps_lat: number | null
+  gps_lng: number | null
+  completado_at: string
+  confirmado: boolean | null
+  confirmado_at: string | null
+  cliente_comentario: string | null
+}
+
 interface MatchDiagnostic {
   step: string
   status: 'pass' | 'fail' | 'warn'
@@ -63,6 +78,7 @@ export default function SolicitudDetalle() {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([])
   const [diagnostics, setDiagnostics] = useState<MatchDiagnostic[]>([])
   const [candidatos, setCandidatos] = useState<Tecnico[]>([])
+  const [evidencia, setEvidencia] = useState<Evidencia | null>(null)
   const [cargando, setCargando] = useState(true)
   const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
   const [reenviando, setReenviando] = useState(false)
@@ -129,7 +145,18 @@ export default function SolicitudDetalle() {
         })))
       }
 
-      // 4. Run matching diagnostics
+      // 4. Fetch evidence if exists
+      const { data: evData } = await supabase
+        .from('evidencias_servicio')
+        .select('id, fotos, checklist, firma_url, gps_lat, gps_lng, completado_at, confirmado, confirmado_at, cliente_comentario')
+        .eq('solicitud_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (evData) setEvidencia(evData)
+
+      // 5. Run matching diagnostics
       await runDiagnostics(sol)
 
       setCargando(false)
@@ -317,7 +344,7 @@ export default function SolicitudDetalle() {
           </p>
         </div>
         <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${ESTADO_ESTILOS[solicitud.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-          {solicitud.estado}
+          {ESTADO_LABELS[solicitud.estado] ?? solicitud.estado}
         </span>
       </div>
 
@@ -459,6 +486,104 @@ export default function SolicitudDetalle() {
           )}
         </div>
       </div>
+
+      {/* Service evidence */}
+      {evidencia && (
+        <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            Evidencia del servicio
+          </h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Photos */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 mb-2">Fotos ({evidencia.fotos.length})</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {evidencia.fotos.map((url, i) => (
+                  <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
+                    <Image src={url} alt={`Evidencia ${i + 1}`} fill className="object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Checklist + details */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 mb-2">Checklist</h3>
+                <div className="space-y-1.5">
+                  {([
+                    { key: 'diagnostico_realizado', label: 'Diagnóstico realizado' },
+                    { key: 'pieza_reemplazada', label: 'Pieza reemplazada' },
+                    { key: 'prueba_encendido', label: 'Prueba de encendido' },
+                    { key: 'prueba_ciclo_completo', label: 'Prueba de ciclo completo' },
+                    { key: 'limpieza_area', label: 'Limpieza del área' },
+                    { key: 'explicacion_cliente', label: 'Explicación al cliente' },
+                  ] as const).map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-2 text-xs">
+                      <span>{evidencia.checklist[key] ? '✅' : '⬜'}</span>
+                      <span className={evidencia.checklist[key] ? 'text-gray-700' : 'text-gray-400'}>{label}</span>
+                    </div>
+                  ))}
+                  {evidencia.checklist.pieza_detalle && (
+                    <p className="text-xs text-gray-500 ml-6">Pieza: {evidencia.checklist.pieza_detalle}</p>
+                  )}
+                  {evidencia.checklist.notas_tecnico && (
+                    <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg p-2">
+                      <span className="font-semibold">Notas:</span> {evidencia.checklist.notas_tecnico}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Signature */}
+              {evidencia.firma_url && (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-500 mb-2">Firma del cliente</h3>
+                  <div className="relative h-20 bg-white border border-gray-200 rounded-lg overflow-hidden">
+                    <Image src={evidencia.firma_url} alt="Firma" fill className="object-contain" />
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="text-xs text-gray-400 space-y-1">
+                <p>Completado: {new Date(evidencia.completado_at).toLocaleString('es-CO')}</p>
+                {evidencia.gps_lat && evidencia.gps_lng && (
+                  <p>GPS: {evidencia.gps_lat.toFixed(5)}, {evidencia.gps_lng.toFixed(5)}</p>
+                )}
+              </div>
+
+              {/* Customer confirmation status */}
+              <div className={`rounded-lg p-3 ${
+                evidencia.confirmado === true ? 'bg-green-50 border border-green-200' :
+                evidencia.confirmado === false ? 'bg-orange-50 border border-orange-200' :
+                'bg-yellow-50 border border-yellow-200'
+              }`}>
+                <p className={`text-sm font-semibold ${
+                  evidencia.confirmado === true ? 'text-green-800' :
+                  evidencia.confirmado === false ? 'text-orange-800' :
+                  'text-yellow-800'
+                }`}>
+                  {evidencia.confirmado === true ? '✅ Cliente confirmó satisfacción' :
+                   evidencia.confirmado === false ? '⚠️ Cliente reportó un problema' :
+                   '⏳ Esperando confirmación del cliente'}
+                </p>
+                {evidencia.confirmado_at && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {new Date(evidencia.confirmado_at).toLocaleString('es-CO')}
+                  </p>
+                )}
+                {evidencia.cliente_comentario && (
+                  <p className="text-xs mt-2 bg-white rounded p-2 text-gray-700">
+                    {evidencia.cliente_comentario}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Re-send WhatsApp notification */}
       <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">

@@ -1,9 +1,9 @@
 # TODO — Baird Service
-**Última actualización:** 3 de marzo de 2026
+**Última actualización:** 28 de marzo de 2026
 
 ## Estado general
 
-El proyecto está en **fase de integración WhatsApp**. El código del MVP está completo y desplegado en Vercel. La cuenta de Meta está configurada y el webhook verificado. Faltan 4 pasos operacionales (sin código) para que el flujo completo funcione en pruebas.
+El proyecto está en **fase de pruebas de producción**. El ciclo de vida completo del servicio está implementado: solicitud → notificación → aceptación → completación → confirmación del cliente. Carga masiva de garantías operativa. Pendiente: verificación de negocio en Meta para WhatsApp con número propio.
 
 ---
 
@@ -18,6 +18,7 @@ El proyecto está en **fase de integración WhatsApp**. El código del MVP está
 - [x] Validación de formulario con Zod (teléfono colombiano, campos condicionales)
 - [x] Persistencia de solicitudes en Supabase (`solicitudes_servicio`)
 - [x] Confirmación de solicitud con ID generado
+- [x] **Confirmación de servicio por el cliente** — página `/confirmar/{token}` con satisfecho/reportar problema
 
 ### Flujo del técnico
 - [x] Formulario de registro de técnicos
@@ -26,8 +27,9 @@ El proyecto está en **fase de integración WhatsApp**. El código del MVP está
 - [x] Carga de foto de documento de identidad (JPG/PNG, máx 5MB)
 - [x] Acuerdo de garantía en el registro
 - [x] Almacenamiento de imágenes en Supabase Storage
-- [x] **FIX:** Especialidades se guardan correctamente en tabla `especialidades_tecnico`
-- [x] **FIX:** Si falla subida de fotos, se elimina el técnico insertado (sin registros huérfanos)
+- [x] **Portal del técnico** — `/tecnico/{token}` con lista de servicios activos e historial
+- [x] **Completación de servicio** — `/tecnico/{token}/completar/{id}` con fotos, checklist, firma digital, GPS
+- [x] **Portal token** — UUID persistente por técnico, acceso sin login por link
 
 ### WhatsApp — código
 - [x] `whatsapp.service.ts` — `notificarTecnicos()`, `procesarAceptacion()`, `verificarFirmaWebhook()`
@@ -36,9 +38,10 @@ El proyecto está en **fase de integración WhatsApp**. El código del MVP está
 - [x] `POST /api/whatsapp/webhook` — recibe eventos, verifica firma HMAC, responde 200
 - [x] `POST /api/whatsapp/accept` — asignación atómica (primer en aceptar gana)
 - [x] `/aceptar/[token]` — página de aceptación para técnicos
-- [x] Migración SQL `add_whatsapp_fields.sql` — campos y tabla `notificaciones_whatsapp`
+- [x] Mensaje de aceptación incluye link al portal del técnico
+- [x] `POST /api/completar-servicio` — envía WhatsApp al cliente pidiendo confirmación
+- [x] `POST /api/confirmar-servicio` — procesa confirmación del cliente
 - [x] Mapping especialidades (`Lavadora` → `Lavadoras`, etc.)
-- [x] **FIX:** Nombres de columnas corregidos (`nombre_completo`, `ciudad_pueblo`)
 
 ### WhatsApp — infraestructura Meta
 - [x] Cuenta Meta Business creada
@@ -46,9 +49,18 @@ El proyecto está en **fase de integración WhatsApp**. El código del MVP está
 - [x] Producto WhatsApp agregado a la app
 - [x] Phone Number ID obtenido: `934556439751612`
 - [x] WABA ID obtenido: `1839027660132592`
-- [x] Token temporal generado (válido 24h — reemplazar)
 - [x] Webhook registrado y verificado: `https://baird-app.vercel.app/api/whatsapp/webhook`
-- [x] Verify token configurado: `baird_webhook_2025`
+
+### Admin panel
+- [x] Dashboard con estadísticas generales
+- [x] Lista y detalle de solicitudes con filtros por estado
+- [x] Lista y detalle de técnicos con verificar/rechazar
+- [x] Autenticación Supabase Auth (email/password)
+- [x] **Carga masiva** — `/admin/carga-masiva` upload de Excel (formato BITÁCORA Mabe/GE)
+- [x] **Dashboard de garantías** — `/admin/garantias` resumen por marca, equipo y estado
+- [x] **Vista de evidencia** — en detalle de solicitud: fotos, checklist, firma, estado de confirmación
+- [x] Botón re-notificar con diagnóstico de matching
+- [x] Nuevos estados: `en_verificacion`, `en_disputa` con estilos y labels
 
 ### Infraestructura y despliegue
 - [x] Proyecto desplegado en Vercel: `https://baird-app.vercel.app`
@@ -56,76 +68,66 @@ El proyecto está en **fase de integración WhatsApp**. El código del MVP está
 - [x] Hooks personalizados: useDebounce, useSolicitudForm, useTriaje
 - [x] Error boundary `error.tsx` y página 404 `not-found.tsx`
 - [x] Loading skeletons para `/solicitar` y `/registro`
-- [x] `.gitattributes` para normalización de line endings
-- [x] Push en `main` — Vercel redesplegó automáticamente
+- [x] Imágenes Unsplash configuradas en `remotePatterns`
+- [x] Storage bucket `evidencias-servicio` para fotos de completación
+
+### Migraciones SQL
+- [x] `add_whatsapp_fields.sql` — campos WhatsApp y tabla `notificaciones_whatsapp`
+- [x] `20260327_portal_evidencias.sql` — `portal_token` en tecnicos, tabla `evidencias_servicio`
 
 ---
 
-## Pendientes — para activar pruebas (sin código)
+## Pendientes — para activar producción
 
-Estos 5 pasos son puramente operacionales. No requieren tocar código.
+### 1. Verificación del negocio en Meta ⚡ EN PROCESO
+- [ ] Enviar documentos de verificación (RUT / Cámara de Comercio)
+- [ ] Esperar aprobación de Meta (1-5 días hábiles)
+- [ ] Sin esto: solo 5 números de prueba, no número propio
 
-### 1. Activar suscripción "messages" en Meta ⚡ INMEDIATO
-Meta for Developers → tu app → WhatsApp → Configuration → Webhook fields
-- Activar toggle del campo **`messages`**
-- Sin esto, Meta no envía los mensajes entrantes al webhook
+### 2. Registrar número propio de WhatsApp
+- [ ] Desvincular número de WhatsApp personal (si aplica)
+- [ ] Registrar número en Meta → API Setup → Add phone number
+- [ ] Verificar con SMS/llamada
+- [ ] Actualizar `WHATSAPP_PHONE_ID` en Vercel
 
-### 2. Confirmar variables de entorno en Vercel ⚡ INMEDIATO
-Vercel → proyecto → Settings → Environment Variables. Deben estar las 5:
-```
-WHATSAPP_API_TOKEN        = (token temporal o permanente)
-WHATSAPP_PHONE_ID         = 934556439751612
-WHATSAPP_WEBHOOK_VERIFY_TOKEN = baird_webhook_2025
-WHATSAPP_WEBHOOK_SECRET   = (App Secret de Meta → Settings → Basic)
-NEXT_PUBLIC_APP_URL       = https://baird-app.vercel.app
-```
-Después de agregar, hacer **Redeploy** desde Vercel para que tomen efecto.
+### 3. Token permanente (System User)
+- [ ] Crear System User en business.facebook.com
+- [ ] Generar token con permisos `whatsapp_business_messaging` + `whatsapp_business_management`
+- [ ] Actualizar `WHATSAPP_API_TOKEN` en Vercel
+- [ ] Redeploy
 
-### 3. Ejecutar migración SQL en Supabase ⚡ INMEDIATO
-Supabase → SQL Editor → pegar y ejecutar:
-```
-supabase/migrations/add_whatsapp_fields.sql
-```
-Agrega `pago_tecnico`, `horario_visita_1/2`, `triaje_resultado`, `notificados_at` a `solicitudes_servicio` y crea la tabla `notificaciones_whatsapp`.
+### 4. Ejecutar migración de evidencias en Supabase
+- [ ] Ejecutar `supabase/migrations/20260327_portal_evidencias.sql` en SQL Editor
+- [ ] Crear bucket `evidencias-servicio` en Storage (público)
 
-### 4. Agregar números de prueba en Meta
-Meta → WhatsApp → API Setup → sección "To" → Manage phone number list
-- Agregar el WhatsApp del técnico de prueba
-- Agregar el WhatsApp del cliente de prueba
-- Cada número recibirá un código de verificación
-
-### 5. Crear un técnico de prueba verificado en Supabase
-- Registrar un técnico en `/registro` con especialidad y ciudad de prueba
-- En Supabase → Table Editor → `tecnicos` → actualizar `estado_verificacion = 'verificado'`
-- El sistema solo notifica técnicos verificados
+### 5. RLS en Supabase
+- [ ] Activar Row Level Security en todas las tablas
+- [ ] Crear políticas para: solicitudes (lectura pública, escritura autenticada), tecnicos, evidencias, notificaciones
 
 ---
 
-## Pendientes — Fase 2 (producción)
+## Pendientes — Fase 2
 
 ### Alta prioridad
-
-- [ ] **Token permanente de WhatsApp** — en business.facebook.com → Configuración → Usuarios del sistema → crear Administrador → asignar app con permisos `whatsapp_business_messaging` + `whatsapp_business_management` → generar token → reemplazar en Vercel
-- [ ] **Verificación del negocio en Meta** — puede tomar hasta 5 días hábiles. Necesario para usar número propio y enviar a cualquier número (no solo lista de prueba)
-- [ ] **RLS en Supabase** — activar Row Level Security en todas las tablas. Crítico antes de usuarios reales.
-- [x] **Panel de administración** — `/admin` con dashboard, lista de técnicos, detalle con verificar/rechazar
-- [x] **Autenticación admin** — Supabase Auth (email/password) con guard en layout
+- [ ] **Auto-cierre 24h** — Si el cliente no confirma en 24h, marcar automáticamente como completada (cron job o edge function)
+- [ ] **Seguimiento para el cliente** — página pública `/solicitud/{id}` con estado en tiempo real
+- [ ] **Notificación de disputa** — cuando el cliente reporta problema, avisar al admin por WhatsApp/email
 
 ### Media prioridad
-
-- [ ] **Seguimiento para el cliente** — página pública `/solicitud/{id}` con estado en tiempo real
-- [ ] **Número de Baird propio** — registrar el número real de WhatsApp del negocio en Meta
+- [ ] **Mappers de Excel adicionales** — para otros formatos de proveedores (no solo Mabe/GE BITÁCORA)
+- [ ] **Exportar reportes** — descargar garantías/solicitudes como Excel desde admin
+- [ ] **Paginación** — queries sin LIMIT actuales serán lentas con volumen
 
 ### Modelo de pago
 
-> **Aclaración:** El pago se realiza directamente a Baird Service (la empresa) por medios electrónicos. **No se acepta efectivo.** El técnico no recibe pago directo del cliente. Los términos y condiciones se detallarán próximamente.
+> **Aclaración:** El pago se realiza directamente a Baird Service (la empresa) por medios electrónicos. **No se acepta efectivo.** El técnico no recibe pago directo del cliente.
 
 ### Baja prioridad
-
-- [ ] **Sistema de reseñas** — cliente califica el servicio al finalizar
-- [ ] **Integración de pagos** — PSE / tarjeta (Wompi, Kushki) — El pago va a Baird Service, no al técnico
-- [ ] **Términos y condiciones** — página legal con política de pagos, reembolsos y responsabilidades
+- [ ] **Sistema de reseñas** — calificación con estrellas al confirmar servicio
+- [ ] **Integración de pagos** — PSE / tarjeta (Wompi, Kushki)
+- [ ] **Términos y condiciones** — página legal
 - [ ] **Analytics** — dashboard con patrones de fallas más comunes
+- [ ] **SEO** — Open Graph, sitemap, meta tags completos
 
 ---
 
@@ -135,7 +137,7 @@ Meta → WhatsApp → API Setup → sección "To" → Manage phone number list
 |------|-------------|---------|
 | **Testing** | Sin tests (unitario, integración, e2e). Agregar Vitest + Playwright. | Alto |
 | **RLS Supabase** | Las tablas no tienen Row Level Security. Cualquiera puede leer/escribir. | Alto |
-| **Token permanente** | El token de WhatsApp actual expira en 24h. | Alto |
 | **Gestión estado global** | Solo hooks locales. Evaluar Zustand si la app crece. | Bajo |
-| **SEO** | Solo metadata básica. Sin Open Graph ni sitemap. | Bajo |
+| **Phone utilities** | `parsePhone()`, `phoneToDigits()`, `formatearTelefono()` — consolidar en una sola utilidad. | Bajo |
+| **Excel mapper** | Hardcoded para formato BITÁCORA Mabe/GE. No flexible para otros proveedores. | Medio |
 | **Paginación** | Queries sin LIMIT — costosas cuando haya volumen. | Futuro |

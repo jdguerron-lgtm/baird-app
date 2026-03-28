@@ -3,8 +3,21 @@ export const ESTADO_ESTILOS: Record<string, string> = {
   notificada: 'bg-blue-100 text-blue-800',
   asignada: 'bg-green-100 text-green-800',
   en_proceso: 'bg-purple-100 text-purple-800',
+  en_verificacion: 'bg-amber-100 text-amber-800',
   completada: 'bg-emerald-100 text-emerald-800',
   cancelada: 'bg-red-100 text-red-800',
+  en_disputa: 'bg-orange-100 text-orange-800',
+}
+
+export const ESTADO_LABELS: Record<string, string> = {
+  pendiente: 'Pendiente',
+  notificada: 'Notificada',
+  asignada: 'Asignada',
+  en_proceso: 'En proceso',
+  en_verificacion: 'En verificación',
+  completada: 'Completada',
+  cancelada: 'Cancelada',
+  en_disputa: 'En disputa',
 }
 
 export const NOTIF_ESTILOS: Record<string, string> = {

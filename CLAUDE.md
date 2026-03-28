@@ -30,17 +30,28 @@ src/
 │   ├── solicitar/          # Customer service request form
 │   ├── registro/           # Technician registration
 │   ├── aceptar/[token]/    # 1-click acceptance page for technicians
+│   ├── tecnico/[token]/    # Technician portal (service list, completion)
+│   │   └── completar/[id]/ # Service completion form (photos, checklist, signature)
+│   ├── confirmar/[token]/  # Customer satisfaction confirmation page
 │   ├── admin/              # Admin panel (auth-guarded)
+│   │   ├── solicitudes/    # Solicitudes list + detail (with evidence view)
+│   │   ├── tecnicos/       # Technician management
+│   │   ├── carga-masiva/   # Bulk Excel upload for warranty services
+│   │   └── garantias/      # Warranty dashboard (summary by brand/equipment)
 │   └── api/                # API routes
 │       ├── triaje/         # Gemini AI diagnosis
 │       ├── health/         # Health check
+│       ├── carga-masiva/   # Bulk Excel upload processing
+│       ├── completar-servicio/  # Service completion + WhatsApp to customer
+│       ├── confirmar-servicio/  # Customer confirmation processing
 │       └── whatsapp/       # notify, accept, webhook
 ├── components/ui/          # Reusable UI components (Button, InputField, PhoneInput, etc.)
 ├── hooks/                  # useDebounce, useSolicitudForm, useTriaje
 ├── lib/
 │   ├── supabase.ts         # Supabase client singleton — always import from here
-│   ├── constants/          # TIPO_A_ESPECIALIDAD mapping
+│   ├── constants/          # TIPO_A_ESPECIALIDAD mapping, ESTADO_ESTILOS/LABELS
 │   ├── services/           # whatsapp.service.ts, solicitud.service.ts
+│   ├── utils/              # phone.ts, format.ts, excel-mapping.ts
 │   └── validations/        # Zod schemas (solicitud.schema.ts)
 ├── types/                  # Domain types (solicitud.ts)
 └── middleware.ts            # Rate limiting + security headers
@@ -49,8 +60,19 @@ src/
 ## Key Data Flows
 
 1. **Customer request:** Form → Zod validation → Supabase insert → WhatsApp notifications
-2. **Technician acceptance:** Unique token link → POST /api/whatsapp/accept → atomic UPDATE (first-wins) → confirmations to both parties
-3. **AI triage (disabled):** Description → Gemini API → structured JSON diagnosis
+2. **Bulk upload:** Excel (.xlsx BITÁCORA format) → parse with `xlsx` → map columns → bulk insert → optional WhatsApp notify
+3. **Technician acceptance:** Unique token link → POST /api/whatsapp/accept → atomic UPDATE (first-wins) → confirmations + portal link
+4. **Service completion:** Technician portal → upload photos + checklist + signature → Supabase Storage → WhatsApp to customer
+5. **Customer confirmation:** Confirmation link → customer confirms/reports → estado updates to `completada` or `en_disputa`
+6. **AI triage (disabled):** Description → Gemini API → structured JSON diagnosis
+
+## Solicitud State Machine
+
+```
+pendiente → notificada → asignada → en_proceso → en_verificacion → completada
+                                                                  → en_disputa
+                                                → cancelada
+```
 
 ## Code Conventions
 
@@ -84,11 +106,23 @@ NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
 - **RLS not enabled:** Supabase tables have NO Row Level Security yet. Critical before production.
 - **ILIKE injection:** Always use `escapeLikePattern()` before interpolating user input into `.ilike()` queries.
 - **Security headers:** Define in ONE place only (middleware.ts or next.config.ts), not both.
+- **Portal token:** Each technician gets a `portal_token` UUID on first acceptance. Used for passwordless access to `/tecnico/{token}`. Never expose technician IDs in URLs.
+- **Evidence storage:** Photos and signatures stored in Supabase Storage bucket `evidencias-servicio` (public). Path pattern: `{solicitud_id}/{timestamp}_{index}.{ext}`.
+- **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.
+- **Image domains:** All external image hosts must be in `next.config.ts` `remotePatterns` (Unsplash, Supabase Storage buckets).
 
 ## Testing
 
 Vitest is configured but no tests exist yet. Test files should be colocated or in a `__tests__` directory.
 
+## Database Tables
+
+- **solicitudes_servicio** — Main service request table (form fields + state + assignment)
+- **notificaciones_whatsapp** — One record per tech notification (token, estado, timestamps)
+- **tecnicos** — Technician profiles (includes `portal_token` for portal access)
+- **especialidades_tecnico** — Many-to-many linking technicians to skills
+- **evidencias_servicio** — Completion evidence (photos, checklist, signature, GPS, confirmation)
+
 ## Current Status
 
-MVP deployed on Vercel. WhatsApp integration code complete. Pending: operational setup (Meta webhook subscription, Supabase migration, test phone numbers). See TODO.md for full roadmap.
+MVP deployed on Vercel. Full service lifecycle implemented: request → notify → accept → complete → confirm. Bulk warranty upload via Excel operational. Pending: Meta business verification for production WhatsApp with own number. See TODO.md for full roadmap.
