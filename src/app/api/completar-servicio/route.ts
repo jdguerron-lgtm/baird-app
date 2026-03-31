@@ -88,11 +88,12 @@ export async function POST(req: NextRequest) {
       }
 
       if (sol.es_garantia) {
-        bodyLines.push(`🛡️ *Servicio en garantia*`)
+        bodyLines.push(`🛡️ *Servicio cubierto por garantia del fabricante*`)
+      } else {
+        bodyLines.push(`💰 *Valor:* $${formatCOP(sol.pago_tecnico)} COP`)
       }
 
       bodyLines.push(
-        `💰 *Valor:* $${formatCOP(sol.pago_tecnico)} COP`,
         ``,
         `━━━━━━━━━━━━━━━━━━━`,
         `✅ *Trabajos realizados:*`,

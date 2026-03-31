@@ -13,6 +13,7 @@ interface DatosConfirmacion {
     marca_equipo: string
     pago_tecnico: number
     novedades_equipo: string
+    es_garantia: boolean
   }
   tecnico: {
     nombre_completo: string
@@ -56,7 +57,7 @@ export default function ConfirmarServicioPage() {
       const [{ data: sol }, { data: tec }] = await Promise.all([
         supabase
           .from('solicitudes_servicio')
-          .select('id, tipo_equipo, marca_equipo, pago_tecnico, novedades_equipo')
+          .select('id, tipo_equipo, marca_equipo, pago_tecnico, novedades_equipo, es_garantia')
           .eq('id', evidencia.solicitud_id)
           .single(),
         supabase
@@ -285,10 +286,16 @@ export default function ConfirmarServicioPage() {
               <span className="font-semibold text-gray-500">Tecnico:</span>{' '}
               {datos!.tecnico.nombre_completo}
             </p>
-            <p>
-              <span className="font-semibold text-gray-500">Valor:</span>{' '}
-              ${formatCOP(datos!.solicitud.pago_tecnico)} COP
-            </p>
+            {datos!.solicitud.es_garantia ? (
+              <p className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1 inline-block">
+                Cubierto por garantia del fabricante
+              </p>
+            ) : (
+              <p>
+                <span className="font-semibold text-gray-500">Valor:</span>{' '}
+                ${formatCOP(datos!.solicitud.pago_tecnico)} COP
+              </p>
+            )}
             <p>
               <span className="font-semibold text-gray-500">Completado:</span>{' '}
               {new Date(datos!.completado_at).toLocaleString('es-CO')}
