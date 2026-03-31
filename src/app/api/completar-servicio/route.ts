@@ -88,7 +88,10 @@ export async function POST(req: NextRequest) {
       }
 
       if (sol.es_garantia) {
-        bodyLines.push(`🛡️ *Servicio cubierto por garantia del fabricante*`)
+        bodyLines.push(
+          `🛡️ *Servicio en garantia*`,
+          `✅ *No debes realizar ningun pago.* El costo es asumido por el fabricante.`,
+        )
       } else {
         bodyLines.push(`💰 *Valor:* $${formatCOP(sol.pago_tecnico)} COP`)
       }

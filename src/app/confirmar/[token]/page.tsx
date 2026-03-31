@@ -303,6 +303,23 @@ export default function ConfirmarServicioPage() {
           </div>
         </div>
 
+        {/* Warranty no-payment notice */}
+        {datos!.solicitud.es_garantia && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl shrink-0">🛡️</span>
+              <div>
+                <h3 className="text-sm font-bold text-blue-900 mb-1">Servicio en garantia</h3>
+                <p className="text-xs text-blue-700 leading-relaxed">
+                  Este servicio esta cubierto por la garantia del fabricante.
+                  <strong> No debes realizar ningun pago al tecnico ni a Baird Service.</strong> El costo es asumido
+                  directamente por el fabricante de tu equipo.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Evidence photos */}
         {datos!.fotos.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 p-4">
