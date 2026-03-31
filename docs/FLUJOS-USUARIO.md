@@ -318,19 +318,28 @@ El cliente recibe un WhatsApp con enlace para confirmar que el servicio quedo bi
 
 ### Pasos del Cliente
 
-1. **Recibe WhatsApp** con boton "Confirmar servicio"
+1. **Recibe WhatsApp** con boton "Calificar servicio"
+   - Mensaje incluye: nombre del tecnico, documento, equipo, modelo, garantia, checklist de trabajos, valor
 2. **Abre el enlace** de confirmacion
 3. **Ve la pagina** con:
-   - Resumen: equipo, tecnico, valor, fecha
+   - Resumen: equipo, modelo, tecnico, valor, fecha
    - Evidencia fotografica del trabajo
 4. **Decide:**
-   - **"Si, quede satisfecho"** → marca como `completada`
+   - **"Si, quede satisfecho"** → abre pantalla de calificacion
    - **"Reportar un problema"** → abre campo de comentario → marca como `en_disputa`
+5. **Califica de 1 a 10** (si quedo satisfecho):
+   - Grid de numeros con colores:
+     - 🔴 1-3: Malo
+     - 🟠 4-5: Regular
+     - 🟡 6-7: Bueno
+     - 🟢 8-10: Excelente
+   - Campo opcional para comentarios
+   - Boton: "Confirmar servicio con X/10"
 
 ### Datos Tecnicos
-- **API:** `POST /api/confirmar-servicio`
 - **Token:** UUID unico por evidencia (`confirmacion_token`)
 - **Idempotente:** No se puede confirmar dos veces (verifica `confirmado !== null`)
+- **Calificacion:** Se guarda en `cliente_comentario` como `"Calificacion: X/10. Comentario opcional"`
 - **Estados resultantes:**
   - `confirmado: true` → estado `completada`
   - `confirmado: false` → estado `en_disputa` + comentario del cliente
