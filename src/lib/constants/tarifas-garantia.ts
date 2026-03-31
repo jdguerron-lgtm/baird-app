@@ -3,7 +3,6 @@
  *
  * Fuente: Tabla oficial Mabe/GE Colombia
  * Código SAP mano de obra: 8011161600000121
- * Código SAP kilometraje: 8011161600000125
  */
 
 export type ComplejidadServicio = 'baja' | 'media' | 'alta'
@@ -40,13 +39,9 @@ export const TARIFAS_MANO_OBRA: Record<ComplejidadServicio, TarifaComplejidad> =
 }
 
 /**
- * Tarifa de kilometraje
- */
-export const TARIFA_KILOMETRO = 470 // COP por km
-
-/**
  * Bono incentivo por cumplimiento (TSS — Time to Service)
- * Basado en dias desde la creacion de la solicitud hasta el diagnostico
+ * Basado en dias desde la creacion de la solicitud hasta el diagnostico.
+ * Se otorga como bonificacion por pronta solucion al cliente.
  */
 export const BONO_INCENTIVO: Record<ComplejidadServicio, { rango: string; min: number; max: number; bono: number }[]> = {
   baja: [
@@ -80,11 +75,11 @@ export function calcularBono(complejidad: ComplejidadServicio, diasTranscurridos
 }
 
 /**
- * Calcula el total del servicio de garantía
+ * Calcula el total del servicio de garantía (sin kilometraje)
  */
 export function calcularTotalGarantia(
   complejidad: ComplejidadServicio,
-  kilometros: number,
+  _kilometros: number, // deprecated, kept for backward compat
   diasTranscurridos: number
 ): {
   manoObra: number
@@ -94,14 +89,13 @@ export function calcularTotalGarantia(
   complejidadInfo: TarifaComplejidad
 } {
   const info = TARIFAS_MANO_OBRA[complejidad]
-  const kilometraje = Math.round(kilometros * TARIFA_KILOMETRO)
   const bono = calcularBono(complejidad, diasTranscurridos)
 
   return {
     manoObra: info.manoObra,
-    kilometraje,
+    kilometraje: 0,
     bono,
-    total: info.manoObra + kilometraje + bono,
+    total: info.manoObra + bono,
     complejidadInfo: info,
   }
 }
