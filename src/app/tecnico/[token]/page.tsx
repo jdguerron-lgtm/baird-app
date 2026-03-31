@@ -201,7 +201,15 @@ export default function PortalTecnicoPage() {
 }
 
 function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string }) {
-  const canComplete = ['asignada', 'en_proceso'].includes(s.estado) && !s.tiene_evidencia
+  const needsDiagnostic = s.estado === 'asignada'
+  const canComplete = s.estado === 'en_proceso' && !s.tiene_evidencia
+
+  // Extract model from novedades if present
+  const modeloMatch = s.novedades_equipo.match(/^\[Modelo:\s*(.+?)\]\s*/)
+  const modelo = modeloMatch ? modeloMatch[1] : null
+  const novedadesSinModelo = modeloMatch
+    ? s.novedades_equipo.replace(modeloMatch[0], '').trim()
+    : s.novedades_equipo
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -212,7 +220,10 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
             <p className="text-sm font-bold text-slate-900">
               {s.tipo_equipo} {s.marca_equipo}
             </p>
-            <p className="text-xs text-gray-400">{s.cliente_nombre}</p>
+            {modelo && (
+              <p className="text-[10px] text-gray-500 font-mono bg-gray-50 px-1.5 py-0.5 rounded mt-0.5 inline-block">{modelo}</p>
+            )}
+            <p className="text-xs text-gray-400 mt-0.5">{s.cliente_nombre}</p>
           </div>
           <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${ESTADO_ESTILOS[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>
             {ESTADO_LABELS[s.estado] ?? s.estado}
@@ -221,13 +232,9 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
 
         {/* Details */}
         <div className="space-y-1.5 text-xs text-gray-600 mb-3">
-          <p><span className="font-semibold text-gray-500">Problema:</span> {s.novedades_equipo.substring(0, 120)}{s.novedades_equipo.length > 120 ? '...' : ''}</p>
-          <p><span className="font-semibold text-gray-500">Dirección:</span> {s.direccion}</p>
+          <p><span className="font-semibold text-gray-500">Problema:</span> {novedadesSinModelo.substring(0, 120)}{novedadesSinModelo.length > 120 ? '...' : ''}</p>
+          <p><span className="font-semibold text-gray-500">Direccion:</span> {s.direccion}</p>
           <p><span className="font-semibold text-gray-500">Zona:</span> {s.zona_servicio}, {s.ciudad_pueblo}</p>
-          <div className="flex gap-4">
-            <p><span className="font-semibold text-gray-500">Horario 1:</span> {s.horario_visita_1}</p>
-            <p><span className="font-semibold text-gray-500">Horario 2:</span> {s.horario_visita_2}</p>
-          </div>
         </div>
 
         {/* Footer */}
@@ -237,6 +244,14 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
             <span className="text-[10px] text-gray-300">
               {new Date(s.created_at).toLocaleDateString('es-CO')}
             </span>
+            {needsDiagnostic && (
+              <Link
+                href={`/tecnico/${token}/diagnostico/${s.id}`}
+                className="bg-purple-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors"
+              >
+                🔍 Diagnosticar
+              </Link>
+            )}
             {canComplete && (
               <Link
                 href={`/tecnico/${token}/completar/${s.id}`}
@@ -246,7 +261,7 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
               </Link>
             )}
             {s.estado === 'en_verificacion' && (
-              <span className="text-xs text-amber-600 font-medium">Esperando confirmación del cliente</span>
+              <span className="text-xs text-amber-600 font-medium">Esperando confirmacion del cliente</span>
             )}
           </div>
         </div>
