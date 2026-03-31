@@ -77,7 +77,8 @@ export async function POST(req: NextRequest) {
     const insertedIds: string[] = []
 
     for (const row of valid) {
-      const solicitud = row.mapped as MappedSolicitud
+      // Strip modelo_equipo before inserting (not a DB column, embedded in novedades_equipo)
+      const { modelo_equipo: _modelo, ...solicitud } = row.mapped as MappedSolicitud & { modelo_equipo?: string }
 
       const { data, error } = await supabase
         .from('solicitudes_servicio')

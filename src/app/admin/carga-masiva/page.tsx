@@ -26,8 +26,8 @@ export default function CargaMasivaPage() {
   const [resultado, setResultado] = useState<UploadResult | null>(null)
   const [notificar, setNotificar] = useState(false)
   const [defaultPago, setDefaultPago] = useState(80000)
-  const [defaultHorario1, setDefaultHorario1] = useState('Lunes a Viernes 8:00 AM - 12:00 PM')
-  const [defaultHorario2, setDefaultHorario2] = useState('Lunes a Viernes 2:00 PM - 5:00 PM')
+  const [defaultHorario1, setDefaultHorario1] = useState('8:00 AM - 12:00 PM')
+  const [defaultHorario2, setDefaultHorario2] = useState('2:00 PM - 5:00 PM')
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 

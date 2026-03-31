@@ -39,7 +39,8 @@ export default async function AceptarServicioPage({ params }: Props) {
       horario_visita_1,
       horario_visita_2,
       estado,
-      tecnico_asignado_id
+      tecnico_asignado_id,
+      es_garantia
     `)
     .eq('id', notif.solicitud_id)
     .single()
@@ -57,12 +58,21 @@ export default async function AceptarServicioPage({ params }: Props) {
 
   const yaAsignada = sol.estado === 'asignada' || !!sol.tecnico_asignado_id
 
+  // Extract model from novedades if present: "[Modelo: ...] description"
+  const modeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
+  const modeloEquipo = modeloMatch ? modeloMatch[1] : null
+  const novedadesSinModelo = modeloMatch
+    ? sol.novedades_equipo.replace(modeloMatch[0], '').trim()
+    : sol.novedades_equipo
+
   return (
     <AceptarBoton
       token={token}
-      solicitud={sol}
+      solicitud={{ ...sol, novedades_equipo: novedadesSinModelo }}
       tecnicoNombre={tecnico?.nombre_completo ?? 'Técnico'}
       yaAsignada={yaAsignada}
+      modeloEquipo={modeloEquipo}
+      esGarantia={sol.es_garantia ?? false}
     />
   )
 }

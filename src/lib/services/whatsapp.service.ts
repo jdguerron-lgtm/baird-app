@@ -201,31 +201,38 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
     // Construir mensaje limpio (sin emojis multi-codepoint que causan "?")
     // Body max 1024 chars para mensajes interactivos CTA
+
+    // Extract model from novedades if present
+    const notifModeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
+    const notifModelo = notifModeloMatch ? notifModeloMatch[1] : null
+    const notifNovedades = notifModeloMatch
+      ? sol.novedades_equipo.replace(notifModeloMatch[0], '').trim()
+      : sol.novedades_equipo
+
     const diagnostico = sol.triaje_resultado?.posible_falla
+    const esGarantia = sol.es_garantia ? '🛡️ *GARANTIA*' : null
     const bodyLines = [
-      `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-      `*Problema:* ${sol.novedades_equipo.substring(0, 100)}`,
-      diagnostico ? `*Diagnostico IA:* ${diagnostico}` : null,
+      `🔧 *Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
+      notifModelo ? `📦 *Modelo:* ${notifModelo}` : null,
+      `📋 *Problema:* ${notifNovedades.substring(0, 100)}`,
+      diagnostico ? `🤖 *Diagnostico IA:* ${diagnostico}` : null,
+      esGarantia,
       ``,
-      `*Zona:* ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
+      `📍 *Zona:* ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
       ``,
-      `*Horarios propuestos:*`,
-      `  - ${sol.horario_visita_1}`,
-      `  - ${sol.horario_visita_2}`,
+      `💰 *TARIFA: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `💳 Pago a traves de Baird Service.`,
       ``,
-      `*TARIFA: $${formatCOP(sol.pago_tecnico)} COP*`,
-      `Pago a traves de Baird Service.`,
-      ``,
-      `_El primer tecnico en aceptar gana el servicio._`,
+      `⚡ _El primer tecnico en aceptar gana el servicio._`,
     ].filter(Boolean).join('\n')
 
     try {
       await enviarMensajeInteractivo({
         para: tecnico.whatsapp,
-        headerText: 'Nueva solicitud - Baird Service',
+        headerText: '🆕 Nueva solicitud - Baird Service',
         bodyText: bodyLines,
-        footerText: 'Toca el boton para aceptar',
-        buttonLabel: 'Aceptar servicio',
+        footerText: '👇 Toca el boton para aceptar',
+        buttonLabel: '✅ Aceptar servicio',
         buttonUrl: linkAceptar,
       })
       notificados++
@@ -266,7 +273,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
  *
  * @returns { ganado: boolean, mensaje: string }
  */
-export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 | 2): Promise<{
+export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 | 2 | string): Promise<{
   ganado: boolean
   mensaje: string
 }> {
@@ -329,7 +336,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     if (tecnico?.whatsapp) {
       await enviarMensajeTexto(
         tecnico.whatsapp,
-        '*Servicio no disponible*\n\nEste servicio ya fue asignado a otro tecnico. Sigue atento a nuevas solicitudes.'
+        '😔 *Servicio no disponible*\n\nEste servicio ya fue asignado a otro tecnico.\n\n💪 Sigue atento a nuevas solicitudes, la proxima puede ser tuya!'
       ).catch(console.error)
     }
 
@@ -359,67 +366,78 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   }
 
   const sol = updated // aliás semántico
-  const horarioConfirmado = horarioSeleccionado === 1
-    ? sol.horario_visita_1
-    : horarioSeleccionado === 2
-      ? sol.horario_visita_2
-      : null
+
+  // Extract model from novedades if present: "[Modelo: ...] description"
+  const modeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
+  const modeloEquipo = modeloMatch ? modeloMatch[1] : null
+
+  // horarioConfirmado: string directo (3-day picker) o legacy 1|2
+  const horarioConfirmado = typeof horarioSeleccionado === 'string'
+    ? horarioSeleccionado
+    : horarioSeleccionado === 1
+      ? sol.horario_visita_1
+      : horarioSeleccionado === 2
+        ? sol.horario_visita_2
+        : null
 
   // 4. Notificar al técnico ganador con los datos del cliente
   if (tecnico) {
     const msgTecnico = [
-      `*Servicio asignado - Baird Service*`,
+      `🎉 *Servicio asignado - Baird Service*`,
       ``,
-      `Felicidades, ${tecnico.nombre_completo}. Ganaste este servicio.`,
+      `Felicidades *${tecnico.nombre_completo}*! Ganaste este servicio. 🏆`,
       ``,
-      `*Cliente:* ${sol.cliente_nombre}`,
-      `*Telefono:* ${sol.cliente_telefono}`,
-      `*Direccion:* ${sol.direccion}`,
-      `${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
+      `👤 *Cliente:* ${sol.cliente_nombre}`,
+      `📞 *Telefono:* ${sol.cliente_telefono}`,
+      `📍 *Direccion:* ${sol.direccion}`,
+      `🏘️ ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
       ``,
-      `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-      `*Problema:* ${sol.novedades_equipo.substring(0, 150)}`,
+      `🔧 *Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
+      modeloEquipo ? `📦 *Modelo:* ${modeloEquipo}` : null,
+      `📋 *Problema:* ${sol.novedades_equipo.substring(0, 150)}`,
       ``,
       horarioConfirmado
-        ? `*Horario confirmado:* ${horarioConfirmado}`
-        : `*Horarios propuestos:*\n  - ${sol.horario_visita_1}\n  - ${sol.horario_visita_2}`,
+        ? `🕐 *Horario confirmado:* ${horarioConfirmado}`
+        : `🕐 *Horarios propuestos:*\n  • ${sol.horario_visita_1}\n  • ${sol.horario_visita_2}`,
       ``,
-      `Coordina con el cliente por WhatsApp para confirmar la visita.`,
+      `📱 Coordina con el cliente por WhatsApp para confirmar la visita.`,
       ``,
-      `*Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
-      `Pago a traves de Baird Service.`,
-    ].join('\n')
+      `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+      `💳 Pago a traves de Baird Service.`,
+    ].filter(Boolean).join('\n')
 
     // Enviar mensaje con link al portal
     const portalUrl = `${appUrl}/tecnico/${tecnico.portal_token}`
     await enviarMensajeInteractivo({
       para: tecnico.whatsapp,
-      headerText: 'Servicio asignado - Baird Service',
+      headerText: '🎉 Servicio asignado - Baird Service',
       bodyText: msgTecnico,
-      footerText: 'Cuando completes el servicio, registra la evidencia',
-      buttonLabel: 'Ver mis servicios',
+      footerText: '✅ Cuando completes el servicio, registra la evidencia',
+      buttonLabel: '📋 Ver mis servicios',
       buttonUrl: portalUrl,
     }).catch(console.error)
   }
 
   // 5. Notificar al cliente con los datos del técnico
   const msgCliente = [
-    `*Tecnico asignado - Baird Service*`,
+    `✅ *Tecnico asignado - Baird Service*`,
     ``,
-    `*Tecnico:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
-    `*WhatsApp:* +${phoneToDigits(tecnico?.whatsapp ?? '')}`,
+    `¡Buenas noticias! Ya tenemos un tecnico verificado para tu servicio. 🙌`,
+    ``,
+    `🧑‍🔧 *Tecnico:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
+    `📞 *WhatsApp:* +${phoneToDigits(tecnico?.whatsapp ?? '')}`,
     tecnico?.tipo_documento
-      ? `*Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} (Verificado por Baird)`
+      ? `🪪 *Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} _(Verificado por Baird)_`
       : null,
     ``,
     horarioConfirmado
-      ? `*Horario confirmado por el tecnico:* ${horarioConfirmado}`
-      : `*Tus horarios propuestos:*\n  - ${sol.horario_visita_1}\n  - ${sol.horario_visita_2}`,
+      ? `🕐 *Horario confirmado por el tecnico:* ${horarioConfirmado}`
+      : `🕐 *Tus horarios propuestos:*\n  • ${sol.horario_visita_1}\n  • ${sol.horario_visita_2}`,
     ``,
-    `Tu tecnico se comunicara contigo por WhatsApp para confirmar la visita.`,
+    `📱 Tu tecnico se comunicara contigo por WhatsApp para confirmar la visita.`,
     ``,
-    `*Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
-    `_El pago se realiza a Baird Service por medios electronicos. No se acepta efectivo._`,
+    `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
+    `💳 _El pago se realiza a Baird Service por medios electronicos. No se acepta efectivo._`,
   ].filter(Boolean).join('\n')
 
   await enviarMensajeTexto(sol.cliente_telefono, msgCliente).catch(console.error)
@@ -429,7 +447,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     await enviarImagen(
       sol.cliente_telefono,
       tecnico.foto_perfil_url,
-      `Foto de ${tecnico.nombre_completo} - tu tecnico asignado`
+      `📸 ${tecnico.nombre_completo} — tu tecnico asignado por Baird Service`
     ).catch(console.error)
   }
 
@@ -438,7 +456,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     await enviarImagen(
       sol.cliente_telefono,
       tecnico.foto_documento_url,
-      `Documento de identidad verificado por Baird Service`
+      `🪪 Documento de identidad verificado por Baird Service`
     ).catch(console.error)
   }
 

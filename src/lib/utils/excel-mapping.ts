@@ -40,6 +40,7 @@ export interface MappedSolicitud {
   ciudad_pueblo: string
   zona_servicio: string
   marca_equipo: string
+  modelo_equipo: string
   tipo_equipo: TipoEquipo
   tipo_solicitud: 'Reparación'
   novedades_equipo: string
@@ -183,6 +184,12 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
   const marca = extractBrand(raw.modelo)
   const esGarantia = raw.tipo_servicio.toUpperCase().includes('GARANTÍA') || raw.tipo_servicio.toUpperCase().includes('GARANTIA')
 
+  // Extract model code (e.g., "PM6042GV0" from "PM6042GV0 / CUBIERTA EMPOTRE 60 CM MABE NEG")
+  const modeloParts = raw.modelo.split(' / ')
+  const modeloCodigo = modeloParts[0]?.trim() || raw.modelo.trim()
+  const modeloDescripcion = modeloParts.length >= 2 ? modeloParts.slice(1).join(' / ').trim() : ''
+  const modeloCompleto = raw.modelo.trim()
+
   // Build problem description from symptom + diagnostic
   let novedades = raw.sintoma
   if (raw.diagnostico && raw.diagnostico !== raw.sintoma) {
@@ -217,6 +224,11 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
     return { fila: raw.fila, raw, mapped: null, errors, warnings }
   }
 
+  // Prepend model info to novedades for display
+  const novedadesConModelo = modeloCompleto
+    ? `[Modelo: ${modeloCompleto}] ${novedades}`
+    : novedades
+
   const mapped: MappedSolicitud = {
     cliente_nombre: raw.cliente_nombre,
     cliente_telefono: `57|${phone}`,
@@ -224,10 +236,11 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
     ciudad_pueblo: ciudad || 'BOGOTA',
     zona_servicio: zona || 'Sin especificar',
     marca_equipo: marca,
+    modelo_equipo: modeloCompleto,
     tipo_equipo: tipoEquipo!,
     tipo_solicitud: 'Reparación',
-    novedades_equipo: novedades.slice(0, 1000),
-    es_garantia: esGarantia,
+    novedades_equipo: novedadesConModelo.slice(0, 1000),
+    es_garantia: true, // Carga masiva siempre es garantía MABE
     numero_serie_factura: raw.orden,
     pago_tecnico: defaultPago,
     horario_visita_1: defaultHorario1,

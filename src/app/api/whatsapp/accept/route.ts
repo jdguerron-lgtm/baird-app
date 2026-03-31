@@ -10,7 +10,7 @@ import { procesarAceptacion } from '@/lib/services/whatsapp.service'
  * Lógica anti race-condition: usa UPDATE atómico con WHERE tecnico_asignado_id IS NULL.
  * Solo el primer técnico en llamar este endpoint con un token válido gana.
  *
- * Body: { token: string }
+ * Body: { token: string, horarioSeleccionado?: string }
  *
  * Respuestas:
  *   200 { ganado: true }  → Técnico asignado, confirmaciones enviadas
@@ -39,10 +39,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Validate horarioSeleccionado if provided
-    const horario = horarioSeleccionado === 1 || horarioSeleccionado === 2
-      ? horarioSeleccionado as 1 | 2
-      : undefined
+    // horarioSeleccionado can be:
+    // - string: "Martes 1 de Abril, 8:00 AM - 12:00 PM" (new 3-day picker)
+    // - 1 | 2: legacy format (maps to horario_visita_1 / horario_visita_2)
+    const horario = typeof horarioSeleccionado === 'string'
+      ? horarioSeleccionado
+      : horarioSeleccionado === 1 || horarioSeleccionado === 2
+        ? horarioSeleccionado as 1 | 2
+        : undefined
 
     const resultado = await procesarAceptacion(token, horario)
 
