@@ -505,6 +505,7 @@ export default function DiagnosticoPage() {
                     </span>
                   </div>
                 ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={preview} alt={`Evidencia ${idx + 1}`} className="w-full h-full object-cover" />
                 )}
                 <button

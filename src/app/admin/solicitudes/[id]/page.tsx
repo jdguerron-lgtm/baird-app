@@ -83,89 +83,6 @@ export default function SolicitudDetalle() {
   const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
   const [reenviando, setReenviando] = useState(false)
 
-  useEffect(() => {
-    const cargar = async () => {
-      setCargando(true)
-
-      // 1. Fetch solicitud
-      const { data: sol } = await supabase
-        .from('solicitudes_servicio')
-        .select('*')
-        .eq('id', id)
-        .single()
-
-      if (!sol) {
-        setCargando(false)
-        return
-      }
-
-      setSolicitud({ ...sol, estado: sol.estado ?? 'pendiente' })
-
-      // 2. Fetch assigned técnico if any
-      if (sol.tecnico_asignado_id) {
-        const { data: tec } = await supabase
-          .from('tecnicos')
-          .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
-          .eq('id', sol.tecnico_asignado_id)
-          .single()
-
-        if (tec) {
-          const { data: esp } = await supabase
-            .from('especialidades_tecnico')
-            .select('especialidad')
-            .eq('tecnico_id', tec.id)
-
-          setTecnicoAsignado({
-            ...tec,
-            especialidades: esp?.map((e: { especialidad: string }) => e.especialidad) ?? [],
-          })
-        }
-      }
-
-      // 3. Fetch notifications
-      const { data: notifs } = await supabase
-        .from('notificaciones_whatsapp')
-        .select('id, tecnico_id, estado, enviado_at, respondido_at')
-        .eq('solicitud_id', id)
-        .order('enviado_at', { ascending: false })
-
-      if (notifs && notifs.length > 0) {
-        const tecIds = [...new Set(notifs.map((n: { tecnico_id: string }) => n.tecnico_id))]
-        const { data: tecs } = await supabase
-          .from('tecnicos')
-          .select('id, nombre_completo')
-          .in('id', tecIds)
-
-        const nameMap = new Map<string, string>()
-        tecs?.forEach((t: { id: string; nombre_completo: string }) => nameMap.set(t.id, t.nombre_completo))
-
-        setNotificaciones(notifs.map((n: Notificacion) => ({
-          ...n,
-          tecnico_nombre: nameMap.get(n.tecnico_id),
-        })))
-      }
-
-      // 4. Fetch evidence if exists
-      const { data: evData } = await supabase
-        .from('evidencias_servicio')
-        .select('id, fotos, checklist, firma_url, gps_lat, gps_lng, completado_at, confirmado, confirmado_at, cliente_comentario')
-        .eq('solicitud_id', id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (evData) setEvidencia(evData)
-
-      // 5. Run matching diagnostics
-      await runDiagnostics(sol)
-
-      setCargando(false)
-    }
-
-    cargar()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
-
   async function runDiagnostics(sol: Solicitud) {
     const steps: MatchDiagnostic[] = []
 
@@ -310,6 +227,88 @@ export default function SolicitudDetalle() {
 
     setDiagnostics(steps)
   }
+
+  useEffect(() => {
+    const cargar = async () => {
+      setCargando(true)
+
+      // 1. Fetch solicitud
+      const { data: sol } = await supabase
+        .from('solicitudes_servicio')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (!sol) {
+        setCargando(false)
+        return
+      }
+
+      setSolicitud({ ...sol, estado: sol.estado ?? 'pendiente' })
+
+      // 2. Fetch assigned técnico if any
+      if (sol.tecnico_asignado_id) {
+        const { data: tec } = await supabase
+          .from('tecnicos')
+          .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
+          .eq('id', sol.tecnico_asignado_id)
+          .single()
+
+        if (tec) {
+          const { data: esp } = await supabase
+            .from('especialidades_tecnico')
+            .select('especialidad')
+            .eq('tecnico_id', tec.id)
+
+          setTecnicoAsignado({
+            ...tec,
+            especialidades: esp?.map((e: { especialidad: string }) => e.especialidad) ?? [],
+          })
+        }
+      }
+
+      // 3. Fetch notifications
+      const { data: notifs } = await supabase
+        .from('notificaciones_whatsapp')
+        .select('id, tecnico_id, estado, enviado_at, respondido_at')
+        .eq('solicitud_id', id)
+        .order('enviado_at', { ascending: false })
+
+      if (notifs && notifs.length > 0) {
+        const tecIds = [...new Set(notifs.map((n: { tecnico_id: string }) => n.tecnico_id))]
+        const { data: tecs } = await supabase
+          .from('tecnicos')
+          .select('id, nombre_completo')
+          .in('id', tecIds)
+
+        const nameMap = new Map<string, string>()
+        tecs?.forEach((t: { id: string; nombre_completo: string }) => nameMap.set(t.id, t.nombre_completo))
+
+        setNotificaciones(notifs.map((n: Notificacion) => ({
+          ...n,
+          tecnico_nombre: nameMap.get(n.tecnico_id),
+        })))
+      }
+
+      // 4. Fetch evidence if exists
+      const { data: evData } = await supabase
+        .from('evidencias_servicio')
+        .select('id, fotos, checklist, firma_url, gps_lat, gps_lng, completado_at, confirmado, confirmado_at, cliente_comentario')
+        .eq('solicitud_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (evData) setEvidencia(evData)
+
+      // 5. Run matching diagnostics
+      await runDiagnostics(sol)
+
+      setCargando(false)
+    }
+
+    cargar()
+  }, [id])
 
   if (cargando) {
     return (

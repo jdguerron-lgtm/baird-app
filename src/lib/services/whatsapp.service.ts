@@ -438,6 +438,29 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       buttonLabel: '💬 Contactar cliente',
       buttonUrl: waClienteLink,
     }).catch(console.error)
+
+    // Send diagnostic link (text message — URL too long for CTA button)
+    const diagUrl = `${appUrl}/tecnico/${tecnico.portal_token}/diagnostico/${sol.id}`
+    const diagMsg = [
+      `🔍 *Siguiente paso: Diagnostico*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      ``,
+      `🔧 *${sol.tipo_equipo} ${sol.marca_equipo}*`,
+      modeloEquipo ? `📦 *Modelo:* ${modeloEquipo}` : null,
+      `👤 *Cliente:* ${sol.cliente_nombre}`,
+      `📍 ${sol.direccion} — ${sol.zona_servicio}`,
+      ``,
+      `📋 Completa el diagnostico con:`,
+      `  • Estado del equipo al llegar`,
+      `  • Fotos de evidencia`,
+      `  • Diagnostico tecnico`,
+      `  • Complejidad del servicio`,
+      ``,
+      `👇 *Toca el enlace para comenzar:*`,
+      diagUrl,
+    ].filter(Boolean).join('\n')
+
+    await enviarMensajeTexto(tecnico.whatsapp, diagMsg).catch(console.error)
   }
 
   // 5. Notificar al cliente con los datos del técnico

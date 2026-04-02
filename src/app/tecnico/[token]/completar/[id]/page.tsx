@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -27,7 +27,6 @@ interface TecnicoInfo {
 
 export default function CompletarServicioPage() {
   const { token, id } = useParams<{ token: string; id: string }>()
-  const router = useRouter()
   const [tecnico, setTecnico] = useState<TecnicoInfo | null>(null)
   const [servicio, setServicio] = useState<Servicio | null>(null)
   const [cargando, setCargando] = useState(true)

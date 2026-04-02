@@ -42,7 +42,7 @@ export default function RegistroTecnico() {
   const [previewPerfil, setPreviewPerfil] = useState<string | null>(null)
   const [previewDocumento, setPreviewDocumento] = useState<string | null>(null)
 
-  const handleChange = (e: any) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type, checked } = e.target
     setFormData(prev => ({
       ...prev,
@@ -86,7 +86,7 @@ export default function RegistroTecnico() {
     }))
   }
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setCargando(true)
     setMensaje({ texto: '', tipo: '' })
@@ -128,16 +128,16 @@ export default function RegistroTecnico() {
 
       try {
         fotoPerfilUrl = await uploadFotoPerfil(fotoPerfil, tecnicoId)
-      } catch (uploadError: any) {
+      } catch (uploadError: unknown) {
         await supabase.from('tecnicos').delete().eq('id', tecnicoId)
-        throw new Error('Error al subir la foto de perfil: ' + uploadError.message)
+        throw new Error('Error al subir la foto de perfil: ' + (uploadError instanceof Error ? uploadError.message : String(uploadError)))
       }
 
       try {
         fotoDocumentoUrl = await uploadFotoDocumento(fotoDocumento, tecnicoId)
-      } catch (uploadError: any) {
+      } catch (uploadError: unknown) {
         await supabase.from('tecnicos').delete().eq('id', tecnicoId)
-        throw new Error('Error al subir la foto del documento: ' + uploadError.message)
+        throw new Error('Error al subir la foto del documento: ' + (uploadError instanceof Error ? uploadError.message : String(uploadError)))
       }
 
       // 3. Actualizar técnico con URLs de fotos
@@ -182,9 +182,9 @@ export default function RegistroTecnico() {
       setPreviewPerfil(null)
       setPreviewDocumento(null)
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error)
-      setMensaje({ texto: 'Hubo un error al registrar: ' + error.message, tipo: 'error' })
+      setMensaje({ texto: 'Hubo un error al registrar: ' + (error instanceof Error ? error.message : String(error)), tipo: 'error' })
     } finally {
       setCargando(false)
     }

@@ -121,7 +121,7 @@ IMPORTANTE: Responde SOLO con el JSON, sin texto adicional antes o después.`
       let triaje
       try {
         triaje = JSON.parse(cleanedText)
-      } catch (parseError) {
+      } catch {
         console.error('Error al parsear JSON:', cleanedText)
         throw new Error('Respuesta de IA en formato inválido')
       }

@@ -14,7 +14,7 @@ interface Stats {
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
-  const [recientes, setRecientes] = useState<any[]>([])
+  const [recientes, setRecientes] = useState<Record<string, unknown>[]>([])
 
   useEffect(() => {
     const cargarStats = async () => {

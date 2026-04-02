@@ -52,7 +52,7 @@ const TRUST_BADGES = [
 export default function SolicitarServicio() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
-  const [solicitudId, setSolicitudId] = useState<string | null>(null)
+  const [, setSolicitudId] = useState<string | null>(null)
   const [geoLoading, setGeoLoading] = useState(false)
 
   const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()

@@ -130,7 +130,7 @@ export default function GarantiasPage() {
     return true
   })
 
-  const marcas = [...new Set(solicitudes.map(s => (s.marca_equipo || 'Sin marca').toUpperCase()))]
+  const _marcas = [...new Set(solicitudes.map(s => (s.marca_equipo || 'Sin marca').toUpperCase()))]
 
   if (cargando) {
     return (

@@ -4,7 +4,8 @@ import { useState, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { parseExcelData, type ParsedRow } from '@/lib/utils/excel-mapping'
-import { formatCOP } from '@/lib/utils/format'
+// formatCOP available if needed for price display
+// import { formatCOP } from '@/lib/utils/format'
 
 interface UploadResult {
   totalFilas: number

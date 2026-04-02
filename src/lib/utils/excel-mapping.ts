@@ -182,12 +182,12 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
   const phone = parsePhone(raw.telefono)
   const tipoEquipo = mapFamilia(raw.familia)
   const marca = extractBrand(raw.modelo)
-  const esGarantia = raw.tipo_servicio.toUpperCase().includes('GARANTÍA') || raw.tipo_servicio.toUpperCase().includes('GARANTIA')
+  const _esGarantia = raw.tipo_servicio.toUpperCase().includes('GARANTÍA') || raw.tipo_servicio.toUpperCase().includes('GARANTIA')
 
   // Extract model code (e.g., "PM6042GV0" from "PM6042GV0 / CUBIERTA EMPOTRE 60 CM MABE NEG")
   const modeloParts = raw.modelo.split(' / ')
-  const modeloCodigo = modeloParts[0]?.trim() || raw.modelo.trim()
-  const modeloDescripcion = modeloParts.length >= 2 ? modeloParts.slice(1).join(' / ').trim() : ''
+  const _modeloCodigo = modeloParts[0]?.trim() || raw.modelo.trim()
+  const _modeloDescripcion = modeloParts.length >= 2 ? modeloParts.slice(1).join(' / ').trim() : ''
   const modeloCompleto = raw.modelo.trim()
 
   // Build problem description from symptom + diagnostic
