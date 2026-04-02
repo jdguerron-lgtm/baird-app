@@ -542,6 +542,53 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   return { ganado: true, mensaje: '¡Servicio asignado exitosamente!' }
 }
 
+// ─────────────────────────────────────────
+// Notificación de registro de técnico
+// ─────────────────────────────────────────
+
+/**
+ * Envía un mensaje de bienvenida al técnico recién registrado y
+ * notifica al admin que hay un nuevo técnico pendiente de verificación.
+ */
+export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok: boolean; error?: string }> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
+
+  // 1. Obtener datos del técnico
+  const { data: tecnico, error } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo, whatsapp, ciudad_pueblo, especialidad_principal')
+    .eq('id', tecnicoId)
+    .single()
+
+  if (error || !tecnico) {
+    return { ok: false, error: `Técnico no encontrado: ${error?.message}` }
+  }
+
+  const nombre = tecnico.nombre_completo.split(' ')[0] // primer nombre
+
+  // 2. Mensaje de bienvenida al técnico
+  try {
+    await enviarMensajeInteractivo({
+      para: tecnico.whatsapp,
+      headerText: '🔧 ¡Bienvenido a Baird Service!',
+      bodyText:
+        `Hola ${nombre}, tu registro fue recibido exitosamente.\n\n` +
+        `📍 Ciudad: ${tecnico.ciudad_pueblo}\n` +
+        `🛠️ Especialidad: ${tecnico.especialidad_principal}\n\n` +
+        `Tu perfil está *pendiente de verificación*. Nuestro equipo revisará tu información y te notificaremos cuando tu cuenta esté activa.\n\n` +
+        `Una vez verificado, recibirás solicitudes de servicio directamente aquí en tu WhatsApp.`,
+      footerText: 'Baird Service — Red de técnicos verificados',
+      buttonLabel: 'Ver Baird Service',
+      buttonUrl: appUrl,
+    })
+  } catch (err) {
+    console.error('[notificarRegistroTecnico] Error enviando bienvenida:', err)
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+
+  return { ok: true }
+}
+
 /**
  * Verifica la firma HMAC-SHA256 del webhook de Meta.
  * @param rawBody  Body del request como string (sin parsear)

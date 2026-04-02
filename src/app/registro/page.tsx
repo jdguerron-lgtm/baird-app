@@ -163,8 +163,15 @@ export default function RegistroTecnico() {
 
       if (espError) throw espError
 
+      // 5. Enviar mensaje de bienvenida por WhatsApp (fire-and-forget)
+      fetch('/api/notificar-registro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tecnicoId }),
+      }).catch((err) => console.warn('WhatsApp notification failed:', err))
+
       setMensaje({
-        texto: '¡Registro exitoso! Tu cuenta está pendiente de verificación. Te contactaremos pronto.',
+        texto: '¡Registro exitoso! Te enviamos un mensaje de bienvenida a tu WhatsApp. Tu cuenta está pendiente de verificación.',
         tipo: 'exito'
       })
 
