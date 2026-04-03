@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-
-const WA_API_BASE = 'https://graph.facebook.com/v21.0'
+import { WA_API_BASE } from '@/lib/services/whatsapp.service'
 
 export async function POST(request: Request) {
   try {

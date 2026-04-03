@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { formatCOP } from '@/lib/utils/format'
-
-const WA_API_BASE = 'https://graph.facebook.com/v21.0'
+import { WA_API_BASE } from '@/lib/services/whatsapp.service'
 
 export async function POST(req: NextRequest) {
   try {

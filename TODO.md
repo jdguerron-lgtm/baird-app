@@ -1,9 +1,9 @@
 # TODO — Baird Service
-**Última actualización:** 28 de marzo de 2026
+**Última actualización:** 2 de abril de 2026
 
 ## Estado general
 
-El proyecto está en **fase de pruebas de producción**. El ciclo de vida completo del servicio está implementado: solicitud → notificación → aceptación → completación → confirmación del cliente. Carga masiva de garantías operativa. Pendiente: verificación de negocio en Meta para WhatsApp con número propio.
+El proyecto está en **fase de producción activa**. El ciclo de vida completo del servicio está implementado: solicitud → notificación → aceptación → completación → confirmación del cliente. Carga masiva de garantías operativa. Verificación de negocio en Meta completada (vía Shopify). Verificación de acceso enviada y en revisión. RLS habilitado en Supabase. Número propio registrado (+57 313 4951164). Token permanente del System User activo. WhatsApp Cloud API v22.0 operativa con número propio. Notificación de bienvenida para técnicos implementada.
 
 ---
 
@@ -42,14 +42,20 @@ El proyecto está en **fase de pruebas de producción**. El ciclo de vida comple
 - [x] `POST /api/completar-servicio` — envía WhatsApp al cliente pidiendo confirmación
 - [x] `POST /api/confirmar-servicio` — procesa confirmación del cliente
 - [x] Mapping especialidades (`Lavadora` → `Lavadoras`, etc.)
+- [x] **Bienvenida por WhatsApp al registrarse** — `POST /api/notificar-registro` envía mensaje interactivo al técnico
+- [x] WhatsApp API actualizada a v22.0 con constante centralizada
 
 ### WhatsApp — infraestructura Meta
 - [x] Cuenta Meta Business creada
 - [x] App "Baird Service" creada en Meta for Developers
 - [x] Producto WhatsApp agregado a la app
-- [x] Phone Number ID obtenido: `934556439751612`
-- [x] WABA ID obtenido: `1839027660132592`
+- [x] Phone Number ID obtenido: `1148716061648720` (número propio +57 313 4951164)
+- [x] WABA ID obtenido: `2354953275016882`
 - [x] Webhook registrado y verificado: `https://baird-app.vercel.app/api/whatsapp/webhook`
+- [x] Verificación de negocio completada (vía Shopify: 1rep538r 1768612310)
+- [x] Verificación de acceso (tech provider) enviada — en revisión, deadline 2026-05-31
+- [x] System User `baird-api` creado con acceso Admin
+- [x] Número propio +57 313 4951164 registrado en la API
 
 ### Admin panel
 - [x] Dashboard con estadísticas generales
@@ -70,6 +76,8 @@ El proyecto está en **fase de pruebas de producción**. El ciclo de vida comple
 - [x] Loading skeletons para `/solicitar` y `/registro`
 - [x] Imágenes Unsplash configuradas en `remotePatterns`
 - [x] Storage bucket `evidencias-servicio` para fotos de completación
+- [x] Lint cleanup completo — 26 problemas resueltos (commit 3f771c9)
+- [x] RLS habilitado en las 5 tablas de Supabase con políticas apropiadas
 
 ### Migraciones SQL
 - [x] `add_whatsapp_fields.sql` — campos WhatsApp y tabla `notificaciones_whatsapp`
@@ -79,30 +87,31 @@ El proyecto está en **fase de pruebas de producción**. El ciclo de vida comple
 
 ## Pendientes — para activar producción
 
-### 1. Verificación del negocio en Meta ⚡ EN PROCESO
-- [ ] Enviar documentos de verificación (RUT / Cámara de Comercio)
-- [ ] Esperar aprobación de Meta (1-5 días hábiles)
-- [ ] Sin esto: solo 5 números de prueba, no número propio
+### 1. Verificación del negocio en Meta ✅ COMPLETADO
+- [x] Verificación de negocio completada vía Shopify (1rep538r 1768612310)
+- [x] Verificación de acceso (tech provider) enviada — en revisión (respuesta en ~5 días hábiles, deadline 2026-05-31)
 
-### 2. Registrar número propio de WhatsApp
-- [ ] Desvincular número de WhatsApp personal (si aplica)
-- [ ] Registrar número en Meta → API Setup → Add phone number
-- [ ] Verificar con SMS/llamada
-- [ ] Actualizar `WHATSAPP_PHONE_ID` en Vercel
+### 2. Registrar número propio de WhatsApp ✅ COMPLETADO
+- [x] Número +57 313 4951164 registrado en Meta API
+- [x] Phone Number ID: `1148716061648720`
+- [x] WABA ID: `2354953275016882`
+- [x] `WHATSAPP_PHONE_ID` en Vercel actualizado al nuevo ID
 
-### 3. Token permanente (System User)
-- [ ] Crear System User en business.facebook.com
-- [ ] Generar token con permisos `whatsapp_business_messaging` + `whatsapp_business_management`
-- [ ] Actualizar `WHATSAPP_API_TOKEN` en Vercel
-- [ ] Redeploy
+### 3. Token permanente (System User) ✅ COMPLETADO
+- [x] System User `baird-api` creado en business.facebook.com
+- [x] Permisos seleccionados: `whatsapp_business_messaging` + `whatsapp_business_management`
+- [x] Caducidad: Nunca (token permanente)
+- [x] Token permanente generado y configurado en Vercel
+- [x] `WHATSAPP_API_TOKEN` actualizado en Vercel
+- [x] Redeploy completado — mensajes enviándose correctamente
 
 ### 4. Ejecutar migración de evidencias en Supabase
 - [ ] Ejecutar `supabase/migrations/20260327_portal_evidencias.sql` en SQL Editor
 - [ ] Crear bucket `evidencias-servicio` en Storage (público)
 
-### 5. RLS en Supabase
-- [ ] Activar Row Level Security en todas las tablas
-- [ ] Crear políticas para: solicitudes (lectura pública, escritura autenticada), tecnicos, evidencias, notificaciones
+### 5. RLS en Supabase ✅ COMPLETADO
+- [x] Row Level Security habilitado en las 5 tablas
+- [x] Políticas creadas: anon INSERT/SELECT/UPDATE, authenticated ALL en cada tabla
 
 ---
 
@@ -136,7 +145,7 @@ El proyecto está en **fase de pruebas de producción**. El ciclo de vida comple
 | Área | Descripción | Impacto |
 |------|-------------|---------|
 | **Testing** | Sin tests (unitario, integración, e2e). Agregar Vitest + Playwright. | Alto |
-| **RLS Supabase** | Las tablas no tienen Row Level Security. Cualquiera puede leer/escribir. | Alto |
+| **RLS Supabase** | ~~Resuelto~~ — RLS habilitado con políticas en las 5 tablas (2026-04-01). | ✅ |
 | **Gestión estado global** | Solo hooks locales. Evaluar Zustand si la app crece. | Bajo |
 | **Phone utilities** | `parsePhone()`, `phoneToDigits()`, `formatearTelefono()` — consolidar en una sola utilidad. | Bajo |
 | **Excel mapper** | Hardcoded para formato BITÁCORA Mabe/GE. No flexible para otros proveedores. | Medio |

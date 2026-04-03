@@ -43,7 +43,8 @@ export default function RegistroTecnico() {
   const [previewDocumento, setPreviewDocumento] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type, checked } = e.target
+    const { name, value, type } = e.target
+    const checked = 'checked' in e.target ? (e.target as HTMLInputElement).checked : false
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value

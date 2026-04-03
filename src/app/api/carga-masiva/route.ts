@@ -114,8 +114,8 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({ solicitudId: id }),
           })
           if (notifyRes.ok) notificados++
-        } catch {
-          // Notification failure is non-blocking
+        } catch (err) {
+          console.warn(`[carga-masiva] Notification failed for solicitud ${id}:`, err instanceof Error ? err.message : String(err))
         }
       }
     }

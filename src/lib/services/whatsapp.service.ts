@@ -4,7 +4,7 @@ import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { formatCOP, escapeLikePattern } from '@/lib/utils/format'
 
-const WA_API_BASE = 'https://graph.facebook.com/v21.0'
+export const WA_API_BASE = 'https://graph.facebook.com/v22.0'
 
 // Re-exports for backward compatibility
 export { TIPO_A_ESPECIALIDAD }
