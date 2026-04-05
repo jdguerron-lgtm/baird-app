@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { parseExcelData, type MappedSolicitud } from '@/lib/utils/excel-mapping'
+import { notificarTecnicos, enviarMensajeTexto } from '@/lib/services/whatsapp.service'
+import { phoneToDigits } from '@/lib/utils/phone'
 
 export async function POST(req: NextRequest) {
   try {
@@ -100,22 +102,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Optionally notify technicians for each inserted solicitud
+    // Send WhatsApp confirmation to each customer + optionally notify technicians
     let notificados = 0
-    if (notificar && insertedIds.length > 0) {
-      for (const id of insertedIds) {
+    for (const row of valid) {
+      if (!row.mapped) continue
+      const sol = row.mapped as MappedSolicitud
+      const matchingResult = results.find(r => r.fila === row.fila)
+      if (!matchingResult?.success || !matchingResult.id) continue
+
+      // Send confirmation to customer
+      try {
+        const telefono = phoneToDigits(sol.cliente_telefono)
+        if (telefono) {
+          const nombre = sol.cliente_nombre.split(' ')[0]
+          const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+          await enviarMensajeTexto(
+            sol.cliente_telefono,
+            `Hola ${nombre}, recibimos tu solicitud de servicio para tu ${equipo}. Estamos buscando técnicos verificados en tu zona. Te notificaremos cuando un técnico acepte tu servicio.\n\n— Baird Service`
+          )
+        }
+      } catch (err) {
+        console.warn(`[carga-masiva] Customer notification failed for fila ${row.fila}:`, err instanceof Error ? err.message : String(err))
+      }
+
+      // Notify matching technicians
+      if (notificar) {
         try {
-          const notifyRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/notify`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ solicitudId: id }),
-          })
-          if (notifyRes.ok) notificados++
+          const result = await notificarTecnicos(matchingResult.id)
+          if (result.notificados > 0) notificados++
         } catch (err) {
-          console.warn(`[carga-masiva] Notification failed for solicitud ${id}:`, err instanceof Error ? err.message : String(err))
+          console.warn(`[carga-masiva] Technician notification failed for solicitud ${matchingResult.id}:`, err instanceof Error ? err.message : String(err))
         }
       }
     }
