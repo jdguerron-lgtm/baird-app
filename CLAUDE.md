@@ -40,6 +40,7 @@ src/
 │   │   └── garantias/      # Warranty dashboard (summary by brand/equipment)
 │   └── api/                # API routes
 │       ├── solicitar/           # Service request: insert + WhatsApp confirm + notify techs
+│       ├── diagnostico/         # Technician diagnosis: save + WhatsApp to customer
 │       ├── triaje/              # Gemini AI diagnosis
 │       ├── health/              # Health check
 │       ├── carga-masiva/        # Bulk Excel upload processing + WhatsApp confirm + notify
@@ -63,9 +64,10 @@ src/
 1. **Customer request:** Form → POST /api/solicitar → Zod validation → Supabase insert → WhatsApp confirmation to customer → notificarTecnicos() to all matching techs
 2. **Bulk upload:** Excel (.xlsx BITÁCORA format) → parse with `xlsx` → map columns → bulk insert → WhatsApp confirmation to each customer → optional notificarTecnicos()
 3. **Technician acceptance:** Unique token link → POST /api/whatsapp/accept → atomic UPDATE (first-wins) → WhatsApp to technician (assignment + client contact) + WhatsApp to customer (technician info)
-4. **Service completion:** Technician portal → upload photos + checklist + signature → Supabase Storage → POST /api/completar-servicio → WhatsApp to customer with confirmation link
-5. **Customer confirmation:** Confirmation link → POST /api/confirmar-servicio → estado updates to `completada` or `en_disputa` → WhatsApp to technician (confirmation or dispute notification)
-6. **AI triage (disabled):** Description → Gemini API → structured JSON diagnosis
+4. **Technician diagnosis:** Portal → upload evidence + describe problem + select complexity → POST /api/diagnostico → WhatsApp to customer (diagnosis in progress)
+5. **Service completion:** Technician portal → upload photos + checklist + signature → Supabase Storage → POST /api/completar-servicio → WhatsApp to customer with confirmation link
+6. **Customer confirmation:** Confirmation link → POST /api/confirmar-servicio → estado updates to `completada` or `en_disputa` → WhatsApp to technician (confirmation or dispute notification)
+7. **AI triage (disabled):** Description → Gemini API → structured JSON diagnosis
 
 ## Solicitud State Machine
 
