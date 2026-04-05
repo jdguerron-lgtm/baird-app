@@ -71,6 +71,39 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
   }
 }
 
+async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<void> {
+  const phoneId = process.env.WHATSAPP_PHONE_ID
+  const token = process.env.WHATSAPP_API_TOKEN
+
+  if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
+
+  const template: Record<string, unknown> = {
+    name: templateName,
+    language: { code: languageCode },
+  }
+  if (components) template.components = components
+
+  const res = await fetch(`${WA_API_BASE}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneToDigits(para),
+      type: 'template',
+      template,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(`WhatsApp template error ${res.status}: ${JSON.stringify(err)}`)
+  }
+}
+
 async function enviarMensajeInteractivo(options: {
   para: string
   headerText?: string
@@ -551,8 +584,6 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
  * notifica al admin que hay un nuevo técnico pendiente de verificación.
  */
 export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok: boolean; error?: string }> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
-
   // 1. Obtener datos del técnico
   const { data: tecnico, error } = await supabase
     .from('tecnicos')
@@ -566,21 +597,18 @@ export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok:
 
   const nombre = tecnico.nombre_completo.split(' ')[0] // primer nombre
 
-  // 2. Mensaje de bienvenida al técnico
+  // 2. Mensaje de bienvenida al técnico (usando plantilla aprobada)
   try {
-    await enviarMensajeInteractivo({
-      para: tecnico.whatsapp,
-      headerText: '🔧 ¡Bienvenido a Baird Service!',
-      bodyText:
-        `Hola ${nombre}, tu registro fue recibido exitosamente.\n\n` +
-        `📍 Ciudad: ${tecnico.ciudad_pueblo}\n` +
-        `🛠️ Especialidad: ${tecnico.especialidad_principal}\n\n` +
-        `Tu perfil está *pendiente de verificación*. Nuestro equipo revisará tu información y te notificaremos cuando tu cuenta esté activa.\n\n` +
-        `Una vez verificado, recibirás solicitudes de servicio directamente aquí en tu WhatsApp.`,
-      footerText: 'Baird Service — Red de técnicos verificados',
-      buttonLabel: 'Ver Baird Service',
-      buttonUrl: appUrl,
-    })
+    await enviarPlantilla(tecnico.whatsapp, 'registro_bienvenida', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: tecnico.ciudad_pueblo },
+          { type: 'text', text: tecnico.especialidad_principal },
+        ],
+      },
+    ])
   } catch (err) {
     console.error('[notificarRegistroTecnico] Error enviando bienvenida:', err)
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
