@@ -119,7 +119,7 @@ export default function RegistroTecnico() {
         .select()
         .single()
 
-      if (insertError) throw insertError
+      if (insertError) throw new Error(insertError.message)
 
       const tecnicoId = tecnicoData.id
 
@@ -150,7 +150,7 @@ export default function RegistroTecnico() {
         })
         .eq('id', tecnicoId)
 
-      if (updateError) throw updateError
+      if (updateError) throw new Error(updateError.message)
 
       // 4. Guardar especialidades en tabla junction
       const especialidadesRows = formData.especialidades.map(esp => ({
@@ -162,7 +162,7 @@ export default function RegistroTecnico() {
         .from('especialidades_tecnico')
         .insert(especialidadesRows)
 
-      if (espError) throw espError
+      if (espError) throw new Error(espError.message)
 
       // 5. Enviar mensaje de bienvenida por WhatsApp (fire-and-forget)
       fetch('/api/notificar-registro', {
@@ -210,7 +210,7 @@ export default function RegistroTecnico() {
             </svg>
             Inicio
           </Link>
-          <Link href="/" className="relative w-32 h-9 block">
+          <Link href="/" className="relative w-44 h-12 block">
             <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
           </Link>
           <div className="w-16" />
