@@ -17,7 +17,7 @@ const TOKEN_EXPIRATION_MS = 30 * 60 * 1000 // 30 minutes
 // Funciones de envío (primitivas)
 // ─────────────────────────────────────────
 
-async function enviarMensajeTexto(para: string, texto: string): Promise<void> {
+export async function enviarMensajeTexto(para: string, texto: string): Promise<void> {
   const phoneId = process.env.WHATSAPP_PHONE_ID
   const token = process.env.WHATSAPP_API_TOKEN
 

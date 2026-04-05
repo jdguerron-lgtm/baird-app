@@ -91,32 +91,33 @@ export default function ConfirmarServicioPage() {
       ? `Calificacion: ${calificacion}/10${comentario ? '. ' + comentario : ''}`
       : comentario
 
-    // Atomic update: only confirm if not already confirmed (prevents double-click)
-    const { data: updated, error: err } = await supabase
-      .from('evidencias_servicio')
-      .update({
-        confirmado: satisfecho,
-        confirmado_at: new Date().toISOString(),
-        cliente_comentario: comentarioFinal || null,
+    try {
+      const res = await fetch('/api/confirmar-servicio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirmacionToken: token,
+          confirmado: satisfecho,
+          comentario: comentarioFinal,
+        }),
       })
-      .eq('confirmacion_token', token)
-      .is('confirmado', null) // prevents double confirmation
-      .select('solicitud_id')
-      .single()
 
-    if (err || !updated) {
-      setError('Este servicio ya fue confirmado anteriormente.')
+      const data = await res.json()
+
+      if (!res.ok) {
+        if (res.status === 400 && data.error === 'Ya fue confirmado anteriormente') {
+          setEstado(satisfecho ? 'confirmado' : 'disputa')
+        } else {
+          setError(data.error || 'Error al procesar la confirmación')
+        }
+        return
+      }
+
       setEstado(satisfecho ? 'confirmado' : 'disputa')
-      return
+    } catch {
+      setError('Error de conexión. Intenta de nuevo.')
+      setEstado('idle')
     }
-
-    // Update solicitud estado
-    await supabase
-      .from('solicitudes_servicio')
-      .update({ estado: satisfecho ? 'completada' : 'en_disputa' })
-      .eq('id', updated.solicitud_id)
-
-    setEstado(satisfecho ? 'confirmado' : 'disputa')
   }
 
   // Extract model from novedades
