@@ -116,7 +116,7 @@ export default function PortalTecnicoPage() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <Link href="/" className="relative w-28 h-8 block shrink-0">
+          <Link href="/" className="relative w-36 h-10 block shrink-0">
             <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
           </Link>
           <div className="flex-1 min-w-0">

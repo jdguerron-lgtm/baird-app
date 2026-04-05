@@ -210,7 +210,7 @@ export default function Home() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="relative w-44 h-12 block">
+          <Link href="/" className="relative w-52 h-14 block">
             <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" priority />
           </Link>
 
@@ -621,7 +621,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-8">
             {/* Logo */}
             <div className="flex flex-col items-center md:items-start gap-3">
-              <div className="relative w-44 h-12">
+              <div className="relative w-52 h-14">
                 <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
               </div>
               <p className="text-white/30 text-xs">{CONTENIDO.footer.tagline}</p>

@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSolicitudForm } from '@/hooks/useSolicitudForm'
-import { submitSolicitud } from '@/lib/services/solicitud.service'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Alert } from '@/components/ui/Alert'
 import { InputField } from '@/components/ui/InputField'
@@ -109,29 +108,28 @@ export default function SolicitarServicio() {
     setCargando(true)
     setMensaje(null)
 
-    // 1. Guardar solicitud en Supabase
-    const result = await submitSolicitud(formData)
-
-    if (!result.success || !result.data) {
-      setMensaje({ texto: result.error || 'Hubo un error al enviar la solicitud', tipo: 'error' })
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      setCargando(false)
-      return
-    }
-
-    const id = result.data.id
-    setSolicitudId(id)
-
-    // 2. Disparar notificaciones WhatsApp a técnicos compatibles
+    // Enviar solicitud al API (inserta en BD + notifica al cliente + notifica técnicos)
     try {
-      const waRes = await fetch('/api/whatsapp/notify', {
+      const res = await fetch('/api/solicitar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ solicitudId: id }),
+        body: JSON.stringify(formData),
       })
-      const waData = await waRes.json()
-      const tecnicosMsg = waData.notificados > 0
-        ? ` ${waData.notificados} técnico(s) notificado(s) por WhatsApp.`
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setMensaje({ texto: data.error || 'Hubo un error al enviar la solicitud', tipo: 'error' })
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        setCargando(false)
+        return
+      }
+
+      const id = data.id
+      setSolicitudId(id)
+
+      const tecnicosMsg = data.notificados > 0
+        ? ` ${data.notificados} técnico(s) notificado(s) por WhatsApp.`
         : ' Registramos tu solicitud y buscaremos técnicos disponibles.'
 
       setMensaje({
@@ -139,11 +137,12 @@ export default function SolicitarServicio() {
         tipo: 'success',
       })
     } catch {
-      // No bloquear el flujo si falla la notificación WhatsApp
       setMensaje({
-        texto: `✅ Solicitud #${id.slice(0, 8)} enviada. Pronto un técnico se pondrá en contacto contigo.`,
-        tipo: 'success',
+        texto: 'Error de conexión. Intenta de nuevo.',
+        tipo: 'error',
       })
+      setCargando(false)
+      return
     }
 
     resetForm()

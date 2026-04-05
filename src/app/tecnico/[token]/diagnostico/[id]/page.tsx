@@ -196,33 +196,32 @@ export default function DiagnosticoPage() {
       // 2. Calculate pricing (hidden from technician)
       const calculo = calcularTotalGarantia(complejidad, 0, diasTranscurridos)
 
-      // 3. Store diagnostic in triaje_resultado (JSONB)
+      // 3. Send diagnostic to API (handles DB update + WhatsApp notification)
       setProgreso('Guardando diagnostico...')
-      const diagnosticoData = {
-        diagnostico_tecnico: diagnosticoTexto.trim(),
-        complejidad,
-        codigo_complejidad: calculo.complejidadInfo.codigo,
-        tarifa_mano_obra: calculo.manoObra,
-        bono_incentivo: calculo.bono,
-        total_servicio: calculo.total,
-        requiere_repuestos: requiereRepuestos,
-        repuestos_detalle: requiereRepuestos ? repuestosDetalle.trim() : null,
-        evidencias_diagnostico: evidenciaUrls,
-        diagnosticado_at: new Date().toISOString(),
-        dias_transcurridos: diasTranscurridos,
-      }
 
-      const { error: updateErr } = await supabase
-        .from('solicitudes_servicio')
-        .update({
-          triaje_resultado: diagnosticoData,
-          pago_tecnico: calculo.total,
-          estado: 'en_proceso',
-        })
-        .eq('id', servicio.id)
+      const res = await fetch('/api/diagnostico', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          solicitudId: servicio.id,
+          portalToken: token,
+          diagnostico: diagnosticoTexto.trim(),
+          complejidad,
+          codigoComplejidad: calculo.complejidadInfo.codigo,
+          tarifaManoObra: calculo.manoObra,
+          bonoIncentivo: calculo.bono,
+          totalServicio: calculo.total,
+          requiereRepuestos,
+          repuestosDetalle: requiereRepuestos ? repuestosDetalle.trim() : null,
+          evidenciaUrls,
+          diasTranscurridos,
+        }),
+      })
 
-      if (updateErr) {
-        setError('Error al guardar: ' + updateErr.message)
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Error al guardar el diagnóstico')
         setEnviando(false)
         return
       }

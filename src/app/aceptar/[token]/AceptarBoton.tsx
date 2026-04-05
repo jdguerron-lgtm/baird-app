@@ -110,7 +110,7 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
       {/* Top bar */}
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="relative w-28 h-8">
+          <div className="relative w-36 h-10">
             <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
           </div>
           <div className="flex items-center gap-2">
