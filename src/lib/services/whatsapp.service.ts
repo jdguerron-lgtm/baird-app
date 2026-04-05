@@ -71,7 +71,7 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
   }
 }
 
-async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<void> {
+export async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<void> {
   const phoneId = process.env.WHATSAPP_PHONE_ID
   const token = process.env.WHATSAPP_API_TOKEN
 
@@ -232,42 +232,39 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
       continue
     }
 
-    // Construir mensaje limpio (sin emojis multi-codepoint que causan "?")
-    // Body max 1024 chars para mensajes interactivos CTA
-
-    // Extract model from novedades if present
+    // Build template parameters
     const notifModeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
-    const notifModelo = notifModeloMatch ? notifModeloMatch[1] : null
     const notifNovedades = notifModeloMatch
       ? sol.novedades_equipo.replace(notifModeloMatch[0], '').trim()
       : sol.novedades_equipo
 
-    const diagnostico = sol.triaje_resultado?.posible_falla
-    const esGarantia = sol.es_garantia ? '🛡️ *GARANTIA*' : null
-    const bodyLines = [
-      `🔧 *Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-      notifModelo ? `📦 *Modelo:* ${notifModelo}` : null,
-      `📋 *Problema:* ${notifNovedades.substring(0, 100)}`,
-      diagnostico ? `🤖 *Diagnostico IA:* ${diagnostico}` : null,
-      esGarantia,
-      ``,
-      `📍 *Zona:* ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
-      ``,
-      `💰 *TARIFA: $${formatCOP(sol.pago_tecnico)} COP*`,
-      `💳 Pago a traves de Baird Service.`,
-      ``,
-      `⚡ _El primer tecnico en aceptar gana el servicio._`,
-    ].filter(Boolean).join('\n')
+    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const problema = notifNovedades.substring(0, 100)
+    const ubicacion = `${sol.zona_servicio}, ${sol.ciudad_pueblo}`
+    const horario = sol.horario_visita_1 || 'Por coordinar'
+    const pago = sol.es_garantia ? 'GARANTIA - Sin cobro' : `$${formatCOP(sol.pago_tecnico)} COP`
+    const nombre = tecnico.nombre_completo.split(' ')[0]
 
     try {
-      await enviarMensajeInteractivo({
-        para: tecnico.whatsapp,
-        headerText: '🆕 Nueva solicitud - Baird Service',
-        bodyText: bodyLines,
-        footerText: '👇 Toca el boton para aceptar',
-        buttonLabel: '✅ Aceptar servicio',
-        buttonUrl: linkAceptar,
-      })
+      await enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombre },
+            { type: 'text', text: equipo },
+            { type: 'text', text: problema },
+            { type: 'text', text: ubicacion },
+            { type: 'text', text: horario },
+            { type: 'text', text: pago },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: token }],
+        },
+      ])
       notificados++
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
@@ -310,8 +307,6 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   ganado: boolean
   mensaje: string
 }> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
-
   // 1. Validar token
   const { data: notif } = await supabase
     .from('notificaciones_whatsapp')
@@ -367,10 +362,13 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       .single()
 
     if (tecnico?.whatsapp) {
-      await enviarMensajeTexto(
-        tecnico.whatsapp,
-        '😔 *Servicio no disponible*\n\nEste servicio ya fue asignado a otro tecnico.\n\n💪 Sigue atento a nuevas solicitudes, la proxima puede ser tuya!'
-      ).catch(console.error)
+      const techName = (await supabase.from('tecnicos').select('nombre_completo').eq('id', notif.tecnico_id).single()).data?.nombre_completo?.split(' ')[0] ?? 'Técnico'
+      await enviarPlantilla(tecnico.whatsapp, 'servicio_no_disponible', 'es', [
+        {
+          type: 'body',
+          parameters: [{ type: 'text', text: techName }],
+        },
+      ]).catch(console.error)
     }
 
     return { ganado: false, mensaje: 'Este servicio ya fue tomado por otro técnico' }
@@ -400,164 +398,62 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   const sol = updated // aliás semántico
 
-  // Extract model from novedades if present: "[Modelo: ...] description"
-  const modeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
-  const modeloEquipo = modeloMatch ? modeloMatch[1] : null
-
-  // horarioConfirmado: string directo (3-day picker) o legacy 1|2
-  const horarioConfirmado = typeof horarioSeleccionado === 'string'
-    ? horarioSeleccionado
-    : horarioSeleccionado === 1
-      ? sol.horario_visita_1
-      : horarioSeleccionado === 2
-        ? sol.horario_visita_2
-        : null
-
   // 4. Notificar al técnico ganador con los datos del cliente
   const clienteDigits = phoneToDigits(sol.cliente_telefono)
 
   if (tecnico) {
-    // Clean novedades (remove model prefix if present)
-    const novedadesSinModelo = modeloEquipo
-      ? sol.novedades_equipo.replace(/^\[Modelo:\s*.+?\]\s*/, '').trim()
-      : sol.novedades_equipo
+    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const direccion = `${sol.direccion}, ${sol.zona_servicio}`
+    const pago = sol.es_garantia ? 'GARANTIA - Sin cobro' : `$${formatCOP(sol.pago_tecnico)} COP`
+    const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
-    const msgTecnico = [
-      `🎉 *Servicio asignado - Baird Service*`,
-      ``,
-      `Felicidades *${tecnico.nombre_completo}*! Ganaste este servicio. 🏆`,
-      sol.es_garantia ? `🛡️ *Servicio de GARANTIA*` : null,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `👤 *DATOS DEL CLIENTE*`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `*Nombre:* ${sol.cliente_nombre}`,
-      `📞 *Telefono:* +${clienteDigits}`,
-      `📍 *Direccion:* ${sol.direccion}`,
-      `🏘️ *Zona:* ${sol.zona_servicio}, ${sol.ciudad_pueblo}`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `🔧 *DETALLES DEL SERVICIO*`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-      modeloEquipo ? `*Modelo:* ${modeloEquipo}` : null,
-      `*Problema:* ${novedadesSinModelo.substring(0, 200)}`,
-      ``,
-      horarioConfirmado
-        ? `📅 *FECHA Y HORA CONFIRMADA:*\n${horarioConfirmado}`
-        : `🕐 *Horarios propuestos:*\n  • ${sol.horario_visita_1}\n  • ${sol.horario_visita_2}`,
-      ``,
-      `💰 *Tu pago: $${formatCOP(sol.pago_tecnico)} COP*`,
-      ``,
-      `📱 Contacta al cliente por WhatsApp para coordinar tu llegada.`,
-    ].filter(Boolean).join('\n')
+    // Send assignment template to technician (with portal link button)
+    await enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombreTecnico },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: equipo },
+          { type: 'text', text: direccion },
+          { type: 'text', text: pago },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: tecnico.portal_token }],
+      },
+    ]).catch(console.error)
 
-    // Send assignment + portal link
-    const portalUrl = `${appUrl}/tecnico/${tecnico.portal_token}`
-    await enviarMensajeInteractivo({
-      para: tecnico.whatsapp,
-      headerText: '🎉 Servicio asignado',
-      bodyText: msgTecnico,
-      footerText: 'Al completar, registra la evidencia en el portal',
-      buttonLabel: '📋 Ver mis servicios',
-      buttonUrl: portalUrl,
-    }).catch(console.error)
-
-    // Send direct WhatsApp link to contact customer
-    const waClienteLink = `https://wa.me/${clienteDigits}`
-    await enviarMensajeInteractivo({
-      para: tecnico.whatsapp,
-      bodyText: `📲 Toca el boton para escribirle a *${sol.cliente_nombre}* y coordinar la visita.`,
-      buttonLabel: '💬 Contactar cliente',
-      buttonUrl: waClienteLink,
-    }).catch(console.error)
-
-    // Send diagnostic link (text message — URL too long for CTA button)
-    const diagUrl = `${appUrl}/tecnico/${tecnico.portal_token}/diagnostico/${sol.id}`
-    const diagMsg = [
-      `🔍 *Siguiente paso: Diagnostico*`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      ``,
-      `🔧 *${sol.tipo_equipo} ${sol.marca_equipo}*`,
-      modeloEquipo ? `📦 *Modelo:* ${modeloEquipo}` : null,
-      `👤 *Cliente:* ${sol.cliente_nombre}`,
-      `📍 ${sol.direccion} — ${sol.zona_servicio}`,
-      ``,
-      `📋 Completa el diagnostico con:`,
-      `  • Estado del equipo al llegar`,
-      `  • Fotos de evidencia`,
-      `  • Diagnostico tecnico`,
-      `  • Complejidad del servicio`,
-      ``,
-      `👇 *Toca el enlace para comenzar:*`,
-      diagUrl,
-    ].filter(Boolean).join('\n')
-
-    await enviarMensajeTexto(tecnico.whatsapp, diagMsg).catch(console.error)
+    // Send contact client template
+    await enviarPlantilla(tecnico.whatsapp, 'contactar_cliente', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: `+${clienteDigits}` },
+        ],
+      },
+    ]).catch(console.error)
   }
 
   // 5. Notificar al cliente con los datos del técnico
   const tecnicoDigits = phoneToDigits(tecnico?.whatsapp ?? '')
 
-  const msgCliente = [
-    `✅ *Tecnico asignado - Baird Service*`,
-    ``,
-    `Hola *${sol.cliente_nombre}*! Ya tenemos un tecnico verificado para tu servicio. 🙌`,
-    ``,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🧑‍🔧 *TU TECNICO ASIGNADO*`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `*Nombre:* ${tecnico?.nombre_completo ?? 'Asignado'}`,
-    `📞 *WhatsApp:* +${tecnicoDigits}`,
-    tecnico?.tipo_documento
-      ? `🪪 *Documento:* ${tecnico.tipo_documento} ${tecnico.numero_documento} _(Verificado por Baird)_`
-      : null,
-    ``,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🔧 *TU SERVICIO*`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `*Equipo:* ${sol.tipo_equipo} ${sol.marca_equipo}`,
-    modeloEquipo ? `*Modelo:* ${modeloEquipo}` : null,
-    sol.es_garantia ? `🛡️ *Servicio de GARANTIA*` : null,
-    ``,
-    horarioConfirmado
-      ? `📅 *VISITA PROGRAMADA:*\n${horarioConfirmado}`
-      : `🕐 *Horarios propuestos:*\n  • ${sol.horario_visita_1}\n  • ${sol.horario_visita_2}`,
-    ``,
-    `💰 *Valor del servicio: $${formatCOP(sol.pago_tecnico)} COP*`,
-    `💳 _El pago se realiza a Baird Service por medios electronicos._`,
-    ``,
-    `📱 Tu tecnico se comunicara contigo para confirmar la visita.`,
-  ].filter(Boolean).join('\n')
-
-  // Send client message with CTA to contact technician
-  const waTecnicoLink = `https://wa.me/${tecnicoDigits}`
-  await enviarMensajeInteractivo({
-    para: sol.cliente_telefono,
-    headerText: '✅ Tecnico asignado - Baird Service',
-    bodyText: msgCliente,
-    footerText: 'Baird Service — Red de tecnicos verificados',
-    buttonLabel: '💬 Escribir al tecnico',
-    buttonUrl: waTecnicoLink,
-  }).catch(console.error)
-
-  // 6. Enviar foto de perfil del técnico al cliente
-  if (tecnico?.foto_perfil_url) {
-    await enviarImagen(
-      sol.cliente_telefono,
-      tecnico.foto_perfil_url,
-      `📸 *${tecnico.nombre_completo}* — tu tecnico asignado por Baird Service.\n\n✅ Identidad verificada por Baird Service.`
-    ).catch(console.error)
-  }
-
-  // 7. Enviar foto del documento del técnico al cliente
-  if (tecnico?.foto_documento_url) {
-    await enviarImagen(
-      sol.cliente_telefono,
-      tecnico.foto_documento_url,
-      `🪪 Documento de identidad de ${tecnico.nombre_completo} — verificado por Baird Service`
-    ).catch(console.error)
-  }
+  // Send client notification template
+  await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente', 'es', [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: sol.cliente_nombre },
+        { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+        { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+        { type: 'text', text: `+${tecnicoDigits}` },
+      ],
+    },
+  ]).catch(console.error)
 
   // 8. Marcar este token como aceptado e invalidar los demás
   await supabase
