@@ -36,6 +36,9 @@ export default function SolicitudesAdmin() {
   const [filtro, setFiltro] = useState('todos')
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  const [eliminando, setEliminando] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -99,6 +102,50 @@ export default function SolicitudesAdmin() {
     cargar()
   }, [filtro])
 
+  const toggleSeleccion = (id: string) => {
+    setSeleccionados(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleTodos = () => {
+    if (seleccionados.size === filtradas.length) {
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(filtradas.map(s => s.id)))
+    }
+  }
+
+  const handleEliminar = async () => {
+    if (seleccionados.size === 0) return
+    setEliminando(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { setEliminando(false); return }
+
+      const res = await fetch('/api/carga-masiva', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ ids: [...seleccionados] }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSolicitudes(prev => prev.filter(s => !seleccionados.has(s.id)))
+        setSeleccionados(new Set())
+        setConfirmDelete(false)
+      }
+    } catch (e) {
+      console.error('Error eliminando:', e)
+    }
+    setEliminando(false)
+  }
+
   const filtradas = busqueda
     ? solicitudes.filter(s => {
         const q = busqueda.toLowerCase()
@@ -149,6 +196,45 @@ export default function SolicitudesAdmin() {
         </div>
       </div>
 
+      {/* Selection action bar */}
+      {seleccionados.size > 0 && (
+        <div className="mb-4 flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+          <span className="text-sm font-semibold text-red-800">
+            {seleccionados.size} seleccionada{seleccionados.size !== 1 ? 's' : ''}
+          </span>
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="px-4 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Eliminar
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleEliminar}
+                disabled={eliminando}
+                className="px-4 py-1.5 bg-red-700 text-white text-xs font-semibold rounded-lg hover:bg-red-800 disabled:opacity-50 transition-colors"
+              >
+                {eliminando ? 'Eliminando...' : 'Confirmar eliminacion'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-4 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Cancelar
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => { setSeleccionados(new Set()); setConfirmDelete(false) }}
+            className="ml-auto text-xs text-gray-500 hover:text-gray-700"
+          >
+            Deseleccionar todo
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {cargando ? (
@@ -162,6 +248,14 @@ export default function SolicitudesAdmin() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-3 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={filtradas.length > 0 && seleccionados.size === filtradas.length}
+                      onChange={toggleTodos}
+                      className="w-4 h-4 rounded border-gray-300"
+                    />
+                  </th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Cliente</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Equipo</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Ciudad</th>
@@ -174,7 +268,15 @@ export default function SolicitudesAdmin() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filtradas.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={s.id} className={`transition-colors ${seleccionados.has(s.id) ? 'bg-red-50/50' : 'hover:bg-gray-50/50'}`}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={seleccionados.has(s.id)}
+                        onChange={() => toggleSeleccion(s.id)}
+                        className="w-4 h-4 rounded border-gray-300"
+                      />
+                    </td>
                     <td className="px-5 py-3">
                       <p className="text-sm font-semibold text-slate-900">{s.cliente_nombre}</p>
                       <p className="text-xs text-gray-400">{s.cliente_telefono}</p>
