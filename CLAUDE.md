@@ -114,6 +114,21 @@ NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
 - **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.
 - **Image domains:** All external image hosts must be in `next.config.ts` `remotePatterns` (Unsplash, Supabase Storage buckets).
 
+## WhatsApp Templates (Approved - Meta Business)
+
+All templates use language `es` (Spanish). Names follow `_v3` suffix convention.
+
+| Template | Used In | Parameters | Purpose |
+|----------|---------|------------|---------|
+| `nueva_solicitud_v3` | `notificarTecnicos()` | nombre, equipo, problema, ubicacion, horario, pago + button(token) | Notify technician of new service request |
+| `servicio_no_disponible_v3` | `procesarAceptacion()` | nombre | Tell late technician the service was taken |
+| `servicio_asignado_tecnico_v3` | `procesarAceptacion()` | nombre, cliente, equipo, direccion, pago, telefono + button(portal_token) | Assignment details + client contact to technician |
+| `tecnico_asignado_cliente_v3` | `procesarAceptacion()` | cliente, tecnico, equipo, telefono | Tell customer their assigned technician |
+| `registro_bienvenida_v3` | `notificarRegistroTecnico()` | nombre, ciudad, especialidad | Welcome message to new technician |
+| `confirmar_servicio_v3` | `POST /api/completar-servicio` | cliente, tecnico, equipo + button(token) | Ask customer to confirm service completion |
+
+**Important:** Template names must match exactly what's approved in Meta Business Manager > WhatsApp Manager > Message Templates. If a template is renamed or re-created, update the name in code.
+
 ## Testing
 
 Vitest is configured but no tests exist yet. Test files should be colocated or in a `__tests__` directory.

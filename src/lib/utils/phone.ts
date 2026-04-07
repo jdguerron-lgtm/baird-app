@@ -26,17 +26,27 @@ export function parsePhone(value: string): { countryCode: string; number: string
 /**
  * Converts stored "countryCode|number" format to pure digits for WhatsApp API.
  * Strips non-digit characters from both parts for safety.
+ * Always ensures Colombian country code 57 prefix.
  * Example: "57|3001234567" -> "573001234567"
+ *          "3001234567"    -> "573001234567"
+ *          "+573001234567" -> "573001234567"
  */
 export function phoneToDigits(value: string): string {
   if (value.includes('|')) {
     const [code, num] = value.split('|', 2)
-    return `${code.replace(/\D/g, '')}${num.replace(/\D/g, '')}`
+    const digits = `${code.replace(/\D/g, '')}${num.replace(/\D/g, '')}`
+    // Ensure 57 prefix
+    if (!digits.startsWith('57')) return `57${digits}`
+    return digits
   }
-  // Legacy fallback
+  // Strip all non-digits (handles +57..., spaces, dashes, etc.)
   const digits = value.replace(/\D/g, '')
+  // Already has country code
+  if (digits.startsWith('57') && digits.length >= 12) return digits
+  // Colombian mobile (10 digits starting with 3)
   if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`
-  if (digits.startsWith('57') && digits.length === 12) return digits
+  // Short number without country code — default to 57
+  if (digits.length >= 7 && !digits.startsWith('57')) return `57${digits}`
   return digits
 }
 
