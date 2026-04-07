@@ -1,12 +1,30 @@
 import { NextResponse } from 'next/server'
-import { WA_API_BASE } from '@/lib/services/whatsapp.service'
+import { WA_API_BASE, notificarTecnicos } from '@/lib/services/whatsapp.service'
 
 export async function POST(request: Request) {
   try {
-    const { to } = await request.json()
+    const { to, solicitudId } = await request.json()
 
+    // Mode 2: Test full notificarTecnicos flow with a real solicitud
+    if (solicitudId) {
+      try {
+        const result = await notificarTecnicos(solicitudId)
+        return NextResponse.json({
+          success: true,
+          mode: 'notificarTecnicos',
+          ...result,
+        })
+      } catch (err) {
+        return NextResponse.json({
+          error: 'notificarTecnicos failed',
+          message: err instanceof Error ? err.message : String(err),
+        }, { status: 500 })
+      }
+    }
+
+    // Mode 1: Simple text message test
     if (!to) {
-      return NextResponse.json({ error: 'Missing "to" phone number' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing "to" phone number or "solicitudId"' }, { status: 400 })
     }
 
     const phoneId = process.env.WHATSAPP_PHONE_ID
