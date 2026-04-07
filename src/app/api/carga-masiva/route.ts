@@ -5,18 +5,20 @@ import { parseExcelData, type MappedSolicitud } from '@/lib/utils/excel-mapping'
 import { notificarTecnicos, enviarMensajeTexto } from '@/lib/services/whatsapp.service'
 import { phoneToDigits } from '@/lib/utils/phone'
 
+async function verificarAuth(req: NextRequest) {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader?.startsWith('Bearer ')) return null
+  const token = authHeader.split(' ')[1]
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) return null
+  return user
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Verify auth
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
+    const user = await verificarAuth(req)
+    if (!user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
-
-    const token = authHeader.split(' ')[1]
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
     }
 
     // Parse multipart form data
@@ -118,7 +120,7 @@ export async function POST(req: NextRequest) {
           const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
           await enviarMensajeTexto(
             sol.cliente_telefono,
-            `Hola ${nombre}, recibimos tu solicitud de servicio para tu ${equipo}. Estamos buscando técnicos verificados en tu zona. Te notificaremos cuando un técnico acepte tu servicio.\n\n— Baird Service`
+            `👋 Hola ${nombre}, recibimos tu solicitud de servicio para tu ${equipo}.\n\n🔍 Estamos buscando técnicos verificados en tu zona. Te notificaremos cuando un técnico acepte tu servicio. ✅\n\n🔧 Baird Service`
           )
         }
       } catch (err) {
@@ -154,6 +156,77 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     console.error('Error en carga masiva:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Error interno del servidor' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/carga-masiva
+ * Deletes a batch of solicitudes by their IDs.
+ * Also removes associated notificaciones_whatsapp records.
+ * Body: { ids: string[] }
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await verificarAuth(req)
+    if (!user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const body = await req.json()
+    const ids: string[] = body.ids
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json({ error: 'Se requiere un array de IDs' }, { status: 400 })
+    }
+
+    if (ids.length > 500) {
+      return NextResponse.json({ error: 'Máximo 500 solicitudes por operación' }, { status: 400 })
+    }
+
+    // 1. Delete associated notifications
+    const { error: notifErr } = await supabase
+      .from('notificaciones_whatsapp')
+      .delete()
+      .in('solicitud_id', ids)
+
+    if (notifErr) {
+      console.error('[carga-masiva DELETE] Error deleting notifications:', notifErr)
+    }
+
+    // 2. Delete associated evidence
+    const { error: evidErr } = await supabase
+      .from('evidencias_servicio')
+      .delete()
+      .in('solicitud_id', ids)
+
+    if (evidErr) {
+      console.error('[carga-masiva DELETE] Error deleting evidence:', evidErr)
+    }
+
+    // 3. Delete solicitudes
+    const { error: solErr, count } = await supabase
+      .from('solicitudes_servicio')
+      .delete({ count: 'exact' })
+      .in('id', ids)
+
+    if (solErr) {
+      return NextResponse.json(
+        { error: `Error eliminando solicitudes: ${solErr.message}` },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      eliminadas: count ?? ids.length,
+      mensaje: `${count ?? ids.length} solicitud(es) eliminada(s) correctamente`,
+    })
+  } catch (error) {
+    console.error('Error en eliminación masiva:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error interno del servidor' },
       { status: 500 }

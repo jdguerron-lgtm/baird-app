@@ -599,9 +599,18 @@ export default function SolicitudDetalle() {
               setReenviando(true)
               setReenvioResult(null)
               try {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (!session) {
+                  setReenvioResult({ error: 'Sesión expirada. Inicia sesión de nuevo.' })
+                  setReenviando(false)
+                  return
+                }
                 const res = await fetch('/api/whatsapp/notify', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                  },
                   body: JSON.stringify({ solicitudId: id }),
                 })
                 const data = await res.json()

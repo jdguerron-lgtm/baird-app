@@ -16,3 +16,16 @@ export function formatCOP(valor: number | null | undefined): string {
 export function escapeLikePattern(input: string): string {
   return input.replace(/[%_\\]/g, '\\$&')
 }
+
+/**
+ * Normalizes a string for fuzzy matching: lowercases, strips accents/diacritics,
+ * and collapses whitespace. E.g. "BOGOTÁ" → "bogota", "Medellín" → "medellin".
+ */
+export function normalizeForMatch(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+}

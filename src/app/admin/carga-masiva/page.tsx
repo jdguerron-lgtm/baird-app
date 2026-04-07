@@ -18,6 +18,13 @@ interface UploadResult {
   filasInvalidas: { fila: number; nombre: string; errors: string[]; warnings: string[] }[]
 }
 
+interface DeleteResult {
+  success: boolean
+  eliminadas?: number
+  mensaje?: string
+  error?: string
+}
+
 export default function CargaMasivaPage() {
   const [archivo, setArchivo] = useState<File | null>(null)
   const [preview, setPreview] = useState<ParsedRow[]>([])
@@ -30,6 +37,9 @@ export default function CargaMasivaPage() {
   const [defaultHorario1, setDefaultHorario1] = useState('8:00 AM - 12:00 PM')
   const [defaultHorario2, setDefaultHorario2] = useState('2:00 PM - 5:00 PM')
   const [dragging, setDragging] = useState(false)
+  const [eliminando, setEliminando] = useState(false)
+  const [deleteResult, setDeleteResult] = useState<DeleteResult | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = useCallback((file: File) => {
@@ -112,6 +122,44 @@ export default function CargaMasivaPage() {
     }
 
     setEnviando(false)
+  }
+
+  const handleDeleteBatch = async () => {
+    if (!resultado) return
+    const ids = resultado.detalles.filter(d => d.success && d.id).map(d => d.id!)
+    if (ids.length === 0) return
+
+    setEliminando(true)
+    setDeleteResult(null)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setDeleteResult({ success: false, error: 'Sesión expirada. Inicia sesión de nuevo.' })
+        setEliminando(false)
+        return
+      }
+
+      const res = await fetch('/api/carga-masiva', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ ids }),
+      })
+
+      const data = await res.json()
+      setDeleteResult(data as DeleteResult)
+      if (data.success) {
+        setResultado(null)
+        setConfirmDelete(false)
+      }
+    } catch {
+      setDeleteResult({ success: false, error: 'Error de conexión al servidor' })
+    }
+
+    setEliminando(false)
   }
 
   const validCount = preview.filter(r => r.mapped !== null).length
@@ -439,19 +487,80 @@ export default function CargaMasivaPage() {
             </div>
           )}
 
-          {/* Reset button */}
-          <button
-            onClick={() => {
-              setArchivo(null)
-              setPreview([])
-              setResultado(null)
-              setParseError(null)
-              if (fileInputRef.current) fileInputRef.current.value = ''
-            }}
-            className="px-5 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-200 transition-colors"
-          >
-            Cargar otro archivo
-          </button>
+          {/* Action buttons */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => {
+                setArchivo(null)
+                setPreview([])
+                setResultado(null)
+                setParseError(null)
+                setDeleteResult(null)
+                setConfirmDelete(false)
+                if (fileInputRef.current) fileInputRef.current.value = ''
+              }}
+              className="px-5 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-200 transition-colors"
+            >
+              Cargar otro archivo
+            </button>
+
+            {resultado.insertadas > 0 && !deleteResult?.success && (
+              <>
+                {!confirmDelete ? (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="px-5 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-xl border border-red-200 hover:bg-red-100 transition-colors"
+                  >
+                    Deshacer carga ({resultado.insertadas})
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-600 font-medium">
+                      Esto eliminara {resultado.insertadas} solicitud(es) y sus notificaciones
+                    </span>
+                    <button
+                      onClick={handleDeleteBatch}
+                      disabled={eliminando}
+                      className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {eliminando ? (
+                        <span className="flex items-center gap-2">
+                          <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                          Eliminando...
+                        </span>
+                      ) : (
+                        'Confirmar eliminacion'
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={eliminando}
+                      className="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-200 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Delete result */}
+          {deleteResult && (
+            <div className={`rounded-xl border p-4 ${
+              deleteResult.success
+                ? 'bg-green-50 border-green-200'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <p className={`text-sm font-medium ${
+                deleteResult.success ? 'text-green-700' : 'text-red-700'
+              }`}>
+                {deleteResult.success
+                  ? deleteResult.mensaje
+                  : deleteResult.error}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

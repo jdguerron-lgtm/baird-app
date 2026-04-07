@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits } from '@/lib/utils/phone'
-import { formatCOP, escapeLikePattern } from '@/lib/utils/format'
+import { formatCOP, normalizeForMatch } from '@/lib/utils/format'
 
 export const WA_API_BASE = 'https://graph.facebook.com/v22.0'
 
@@ -187,28 +187,37 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
   const sendErrors: string[] = []
 
-  // 2. Buscar técnicos con la especialidad requerida
+  // 2. Buscar técnicos con la especialidad requerida (accent/case-insensitive)
   const especialidadBuscada = TIPO_A_ESPECIALIDAD[sol.tipo_equipo] ?? sol.tipo_equipo
+  const especialidadNorm = normalizeForMatch(especialidadBuscada)
 
   const { data: especialidades } = await supabase
     .from('especialidades_tecnico')
-    .select('tecnico_id')
-    .eq('especialidad', especialidadBuscada)
+    .select('tecnico_id, especialidad')
 
   if (!especialidades || especialidades.length === 0) return { notificados: 0, matched: 0, errors: [] }
 
-  const tecnicoIds = especialidades.map((e: { tecnico_id: string }) => e.tecnico_id)
+  const tecnicoIds = especialidades
+    .filter((e: { especialidad: string }) => normalizeForMatch(e.especialidad) === especialidadNorm)
+    .map((e: { tecnico_id: string }) => e.tecnico_id)
 
-  // 3. Filtrar por verificados y ciudad compatible (trim + case-insensitive)
-  const ciudadNorm = sol.ciudad_pueblo?.trim() || ''
-  const { data: tecnicos } = await supabase
+  if (tecnicoIds.length === 0) return { notificados: 0, matched: 0, errors: [] }
+
+  // 3. Filtrar por verificados, luego por ciudad compatible (accent/case-insensitive)
+  const ciudadNorm = normalizeForMatch(sol.ciudad_pueblo ?? '')
+  const { data: tecnicosVerificados } = await supabase
     .from('tecnicos')
     .select('id, nombre_completo, whatsapp, ciudad_pueblo')
     .eq('estado_verificacion', 'verificado')
     .in('id', tecnicoIds)
-    .ilike('ciudad_pueblo', `%${escapeLikePattern(ciudadNorm)}%`)
 
-  if (!tecnicos || tecnicos.length === 0) return { notificados: 0, matched: 0, errors: [] }
+  const tecnicos = (tecnicosVerificados ?? []).filter(t => {
+    if (!ciudadNorm) return true
+    const tecCiudad = normalizeForMatch(t.ciudad_pueblo ?? '')
+    return tecCiudad.includes(ciudadNorm) || ciudadNorm.includes(tecCiudad)
+  })
+
+  if (tecnicos.length === 0) return { notificados: 0, matched: 0, errors: [] }
 
   // 4. Enviar mensaje a cada técnico con token único
   let notificados = 0
@@ -246,7 +255,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     const nombre = tecnico.nombre_completo.split(' ')[0]
 
     try {
-      await enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud', 'es', [
+      await enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [
         {
           type: 'body',
           parameters: [
@@ -363,7 +372,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
     if (tecnico?.whatsapp) {
       const techName = (await supabase.from('tecnicos').select('nombre_completo').eq('id', notif.tecnico_id).single()).data?.nombre_completo?.split(' ')[0] ?? 'Técnico'
-      await enviarPlantilla(tecnico.whatsapp, 'servicio_no_disponible', 'es', [
+      await enviarPlantilla(tecnico.whatsapp, 'servicio_no_disponible_v3', 'es', [
         {
           type: 'body',
           parameters: [{ type: 'text', text: techName }],
@@ -407,8 +416,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     const pago = sol.es_garantia ? 'GARANTIA - Sin cobro' : `$${formatCOP(sol.pago_tecnico)} COP`
     const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
-    // Send assignment template to technician (with portal link button)
-    await enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico', 'es', [
+    // Send assignment template to technician (with client contact + portal link)
+    await enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v3', 'es', [
       {
         type: 'body',
         parameters: [
@@ -417,6 +426,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
           { type: 'text', text: equipo },
           { type: 'text', text: direccion },
           { type: 'text', text: pago },
+          { type: 'text', text: `+${clienteDigits}` },
         ],
       },
       {
@@ -426,24 +436,13 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
         parameters: [{ type: 'text', text: tecnico.portal_token }],
       },
     ]).catch(console.error)
-
-    // Send contact client template
-    await enviarPlantilla(tecnico.whatsapp, 'contactar_cliente', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: `+${clienteDigits}` },
-        ],
-      },
-    ]).catch(console.error)
   }
 
   // 5. Notificar al cliente con los datos del técnico
   const tecnicoDigits = phoneToDigits(tecnico?.whatsapp ?? '')
 
   // Send client notification template
-  await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente', 'es', [
+  await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v3', 'es', [
     {
       type: 'body',
       parameters: [
@@ -455,7 +454,24 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     },
   ]).catch(console.error)
 
-  // 8. Marcar este token como aceptado e invalidar los demás
+  // 6. Enviar foto de perfil y documento del técnico al cliente
+  if (tecnico?.foto_perfil_url) {
+    await enviarImagen(
+      sol.cliente_telefono,
+      tecnico.foto_perfil_url,
+      `📷 ${tecnico.nombre_completo} — Tu técnico asignado`
+    ).catch(console.error)
+  }
+
+  if (tecnico?.foto_documento_url) {
+    await enviarImagen(
+      sol.cliente_telefono,
+      tecnico.foto_documento_url,
+      `🪪 ${tecnico.tipo_documento ?? 'Documento'}: ${tecnico.numero_documento ?? ''} — Identificación verificada`
+    ).catch(console.error)
+  }
+
+  // 7. Marcar este token como aceptado e invalidar los demás
   await supabase
     .from('notificaciones_whatsapp')
     .update({ estado: 'aceptado', respondido_at: new Date().toISOString() })
@@ -495,7 +511,7 @@ export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok:
 
   // 2. Mensaje de bienvenida al técnico (usando plantilla aprobada)
   try {
-    await enviarPlantilla(tecnico.whatsapp, 'registro_bienvenida', 'es', [
+    await enviarPlantilla(tecnico.whatsapp, 'registro_bienvenida_v3', 'es', [
       {
         type: 'body',
         parameters: [
