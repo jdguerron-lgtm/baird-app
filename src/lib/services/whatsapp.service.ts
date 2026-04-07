@@ -195,29 +195,57 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     .from('especialidades_tecnico')
     .select('tecnico_id, especialidad')
 
-  if (!especialidades || especialidades.length === 0) return { notificados: 0, matched: 0, errors: [] }
+  if (!especialidades || especialidades.length === 0) {
+    return { notificados: 0, matched: 0, errors: [`Sin especialidades registradas en BD`] }
+  }
 
+  const especialidadesUnicas = [...new Set(especialidades.map(e => e.especialidad))]
   const tecnicoIds = especialidades
     .filter((e: { especialidad: string }) => normalizeForMatch(e.especialidad) === especialidadNorm)
     .map((e: { tecnico_id: string }) => e.tecnico_id)
 
-  if (tecnicoIds.length === 0) return { notificados: 0, matched: 0, errors: [] }
+  if (tecnicoIds.length === 0) {
+    return {
+      notificados: 0, matched: 0,
+      errors: [`Ningún técnico tiene especialidad "${especialidadBuscada}". Especialidades en BD: ${especialidadesUnicas.join(', ')}`],
+    }
+  }
 
   // 3. Filtrar por verificados, luego por ciudad compatible (accent/case-insensitive)
   const ciudadNorm = normalizeForMatch(sol.ciudad_pueblo ?? '')
-  const { data: tecnicosVerificados } = await supabase
+
+  const { data: tecnicosConEsp } = await supabase
     .from('tecnicos')
-    .select('id, nombre_completo, whatsapp, ciudad_pueblo')
-    .eq('estado_verificacion', 'verificado')
+    .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
     .in('id', tecnicoIds)
 
-  const tecnicos = (tecnicosVerificados ?? []).filter(t => {
+  if (!tecnicosConEsp || tecnicosConEsp.length === 0) {
+    return { notificados: 0, matched: 0, errors: [`${tecnicoIds.length} técnico(s) con especialidad pero ninguno encontrado en tabla tecnicos`] }
+  }
+
+  const tecnicosVerificados = tecnicosConEsp.filter(t => t.estado_verificacion === 'verificado')
+
+  if (tecnicosVerificados.length === 0) {
+    const estados = tecnicosConEsp.map(t => `${t.nombre_completo}: ${t.estado_verificacion}`)
+    return {
+      notificados: 0, matched: 0,
+      errors: [`${tecnicosConEsp.length} técnico(s) con especialidad pero ninguno verificado. Estados: ${estados.join(', ')}`],
+    }
+  }
+
+  const tecnicos = tecnicosVerificados.filter(t => {
     if (!ciudadNorm) return true
     const tecCiudad = normalizeForMatch(t.ciudad_pueblo ?? '')
     return tecCiudad.includes(ciudadNorm) || ciudadNorm.includes(tecCiudad)
   })
 
-  if (tecnicos.length === 0) return { notificados: 0, matched: 0, errors: [] }
+  if (tecnicos.length === 0) {
+    const ciudades = tecnicosVerificados.map(t => `${t.nombre_completo}: "${t.ciudad_pueblo}"`)
+    return {
+      notificados: 0, matched: 0,
+      errors: [`${tecnicosVerificados.length} técnico(s) verificado(s) pero ninguno en "${sol.ciudad_pueblo}". Ciudades: ${ciudades.join(', ')}`],
+    }
+  }
 
   // 4. Enviar mensaje a cada técnico con token único
   let notificados = 0

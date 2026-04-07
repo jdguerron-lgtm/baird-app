@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
 
     // Send WhatsApp confirmation to each customer + optionally notify technicians
     let notificados = 0
+    const notifDiagnostico: string[] = []
     for (const row of valid) {
       if (!row.mapped) continue
       const sol = row.mapped as MappedSolicitud
@@ -131,7 +132,14 @@ export async function POST(req: NextRequest) {
       if (notificar) {
         try {
           const result = await notificarTecnicos(matchingResult.id)
-          if (result.notificados > 0) notificados++
+          if (result.notificados > 0) {
+            notificados++
+          } else if (result.errors.length > 0) {
+            // Only add unique diagnostic messages
+            for (const err of result.errors) {
+              if (!notifDiagnostico.includes(err)) notifDiagnostico.push(err)
+            }
+          }
         } catch (err) {
           console.warn(`[carga-masiva] Technician notification failed for solicitud ${matchingResult.id}:`, err instanceof Error ? err.message : String(err))
         }
@@ -146,6 +154,7 @@ export async function POST(req: NextRequest) {
       insertadas: results.filter(r => r.success).length,
       erroresInsert: results.filter(r => !r.success).length,
       notificados,
+      notifDiagnostico: notifDiagnostico.length > 0 ? notifDiagnostico : undefined,
       detalles: results,
       filasInvalidas: invalid.map(r => ({
         fila: r.fila,

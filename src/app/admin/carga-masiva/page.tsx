@@ -14,6 +14,7 @@ interface UploadResult {
   insertadas: number
   erroresInsert: number
   notificados: number
+  notifDiagnostico?: string[]
   detalles: { fila: number; success: boolean; id?: string; error?: string }[]
   filasInvalidas: { fila: number; nombre: string; errors: string[]; warnings: string[] }[]
 }
@@ -425,6 +426,16 @@ export default function CargaMasivaPage() {
               </div>
             )}
           </div>
+
+          {/* Notification diagnostic */}
+          {notificar && resultado.notificados === 0 && resultado.notifDiagnostico && resultado.notifDiagnostico.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-amber-800 mb-2">No se notificaron técnicos</p>
+              {resultado.notifDiagnostico.map((d, i) => (
+                <p key={i} className="text-xs text-amber-700 mt-1">{d}</p>
+              ))}
+            </div>
+          )}
 
           {/* Detail table */}
           {resultado.detalles.length > 0 && (

@@ -664,11 +664,11 @@ export default function SolicitudDetalle() {
               </div>
             )}
 
-            {(reenvioResult.errors as string[])?.length > 0 && (
+            {(reenvioResult.diagnostico as string[])?.length > 0 && (
               <div className="mt-2">
-                <p className="text-xs font-semibold text-red-700 mb-1">Errores de envio:</p>
-                {(reenvioResult.errors as string[]).map((err, i) => (
-                  <p key={i} className="text-xs text-red-600 font-mono bg-red-100 rounded px-2 py-1 mt-1 break-all">{err}</p>
+                <p className="text-xs font-semibold text-amber-700 mb-1">Diagnostico:</p>
+                {(reenvioResult.diagnostico as string[]).map((d: string, i: number) => (
+                  <p key={i} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1 break-all">{d}</p>
                 ))}
               </div>
             )}

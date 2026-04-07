@@ -42,11 +42,14 @@ export async function POST(req: NextRequest) {
       notificados: result.notificados,
       matched: result.matched,
       errors: result.errors.length,
+      diagnostico: result.errors,
       mensaje: result.notificados > 0
         ? `${result.notificados} tecnico(s) notificado(s) por WhatsApp`
         : result.matched > 0
-          ? `Se encontraron ${result.matched} tecnico(s) pero fallo el envio`
-          : 'No se encontraron tecnicos disponibles en la zona por ahora',
+          ? `Se encontraron ${result.matched} tecnico(s) pero fallo el envio: ${result.errors.join('; ')}`
+          : result.errors.length > 0
+            ? result.errors[0]
+            : 'No se encontraron tecnicos disponibles en la zona por ahora',
     })
   } catch (error: unknown) {
     console.error('[/api/whatsapp/notify] Error:', error)
