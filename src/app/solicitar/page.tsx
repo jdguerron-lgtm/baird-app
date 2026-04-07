@@ -397,9 +397,11 @@ export default function SolicitarServicio() {
                         type="number"
                         value={formData.pago_tecnico === 0 ? '' : String(formData.pago_tecnico)}
                         onChange={handleChange}
-                        placeholder="Ej: 150000"
+                        placeholder="Mínimo $20.000"
                         error={errors.pago_tecnico}
                         icon={<BoltIcon className="w-5 h-5 mr-2 text-green-600" />}
+                        min={20000}
+                        max={10000000}
                         required
                       />
                       <p className="text-xs text-green-700 mt-2">

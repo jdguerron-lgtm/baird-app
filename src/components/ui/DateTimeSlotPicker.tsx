@@ -28,7 +28,7 @@ const SHORT_MONTHS = [
 const SHORT_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 function toDateKey(d: Date) {
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function formatOutput(date: Date, slotRange: string) {
@@ -187,6 +187,8 @@ export function DateTimeSlotPicker({ label, value, onChange, error, required }: 
                 type="button"
                 disabled={!enabled}
                 onClick={() => handleDateClick(day)}
+                aria-label={`${day.getDate()} de ${MONTH_NAMES[day.getMonth()]} de ${day.getFullYear()}`}
+                aria-pressed={isSelected || undefined}
                 className={`
                   h-8 text-xs rounded-lg transition-all font-medium
                   ${!enabled

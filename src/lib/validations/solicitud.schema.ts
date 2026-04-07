@@ -7,9 +7,9 @@ const phoneWithCode = z
   .min(1, 'El telefono es requerido')
   .refine(isValidPhone, 'Ingresa un numero de telefono valido (minimo 7 digitos)')
 
-const nonEmptyString = (fieldName: string) =>
+const nonEmptyString = (fieldName: string, feminine = false) =>
   z.string()
-    .min(1, `${fieldName} es requerido`)
+    .min(1, `${fieldName} es ${feminine ? 'requerida' : 'requerido'}`)
     .trim()
 
 // Schema principal del formulario
@@ -20,17 +20,17 @@ export const solicitudFormSchema = z.object({
 
   cliente_telefono: phoneWithCode,
 
-  direccion: nonEmptyString('La direccion')
+  direccion: nonEmptyString('La direccion', true)
     .min(5, 'La direccion debe ser mas especifica')
     .max(200, 'La direccion no puede exceder 200 caracteres'),
 
-  ciudad_pueblo: nonEmptyString('La ciudad')
+  ciudad_pueblo: nonEmptyString('La ciudad', true)
     .max(100, 'La ciudad no puede exceder 100 caracteres'),
 
-  zona_servicio: nonEmptyString('La zona o barrio')
+  zona_servicio: nonEmptyString('La zona o barrio', true)
     .max(100, 'La zona no puede exceder 100 caracteres'),
 
-  marca_equipo: nonEmptyString('La marca del equipo')
+  marca_equipo: nonEmptyString('La marca del equipo', true)
     .max(100, 'La marca no puede exceder 100 caracteres'),
 
   tipo_equipo: z.enum(TIPOS_EQUIPO, {
@@ -41,7 +41,7 @@ export const solicitudFormSchema = z.object({
     message: 'Selecciona un tipo de servicio válido'
   }),
 
-  novedades_equipo: nonEmptyString('La descripción del problema')
+  novedades_equipo: nonEmptyString('La descripción del problema', true)
     .min(20, 'Por favor describe el problema con más detalle (mínimo 20 caracteres)')
     .max(1000, 'La descripción no puede exceder 1000 caracteres'),
 

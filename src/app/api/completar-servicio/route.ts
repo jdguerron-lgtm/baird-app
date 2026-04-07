@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
 
     try {
-      await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio', 'es', [
+      await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v3', 'es', [
         {
           type: 'body',
           parameters: [

@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       if (telefono) {
         await enviarMensajeTexto(
           formData.cliente_telefono,
-          `Hola ${clienteNombre}, recibimos tu solicitud de servicio para tu ${equipo}. Estamos buscando técnicos verificados en tu zona. Te notificaremos cuando un técnico acepte tu servicio.\n\n— Baird Service`
+          `👋 Hola ${clienteNombre}, recibimos tu solicitud de servicio para tu ${equipo}.\n\n🔍 Estamos buscando técnicos verificados en tu zona. Te notificaremos cuando un técnico acepte tu servicio. ✅\n\n🔧 Baird Service`
         )
       }
     } catch (waErr) {

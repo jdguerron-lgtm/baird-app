@@ -19,6 +19,9 @@ export interface InputFieldProps {
   error?: string
   icon?: React.ReactNode
   disabled?: boolean
+  min?: number
+  max?: number
+  hint?: string
 }
 
 export interface SelectFieldProps {

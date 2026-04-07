@@ -11,6 +11,9 @@ export function InputField({
   error,
   icon,
   disabled = false,
+  min,
+  max,
+  hint,
 }: InputFieldProps) {
   const borderColor = error
     ? 'border-red-300 focus:ring-red-500'
@@ -30,11 +33,14 @@ export function InputField({
         placeholder={placeholder}
         required={required}
         disabled={disabled}
+        min={min}
+        max={max}
         className={`block w-full border-2 rounded-xl shadow-sm py-3 px-4 text-gray-900
           focus:outline-none focus:ring-2 focus:border-transparent
           transition-all sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed
           ${borderColor}`}
       />
+      {hint && !error && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   )

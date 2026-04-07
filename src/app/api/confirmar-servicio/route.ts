@@ -65,12 +65,12 @@ export async function POST(req: NextRequest) {
         if (confirmado) {
           await enviarMensajeTexto(
             tecnico.whatsapp,
-            `Hola ${nombreTecnico}, el cliente ${sol.cliente_nombre} ha confirmado que el servicio de ${equipo} fue completado exitosamente. ¡Buen trabajo! 🎉\n\n— Baird Service`
+            `🎉 ¡Hola ${nombreTecnico}! El cliente ${sol.cliente_nombre} ha confirmado que el servicio de ${equipo} fue completado exitosamente.\n\n⭐ ¡Buen trabajo! Sigue así 💪\n\n🔧 Baird Service`
           )
         } else {
           await enviarMensajeTexto(
             tecnico.whatsapp,
-            `Hola ${nombreTecnico}, el cliente ${sol.cliente_nombre} ha reportado un problema con el servicio de ${equipo}. El equipo de Baird Service se pondrá en contacto contigo para más detalles.\n\n— Baird Service`
+            `⚠️ Hola ${nombreTecnico}, el cliente ${sol.cliente_nombre} ha reportado un problema con el servicio de ${equipo}.\n\n📞 El equipo de Baird Service se pondrá en contacto contigo para más detalles.\n\n🔧 Baird Service`
           )
         }
       } catch (waErr) {

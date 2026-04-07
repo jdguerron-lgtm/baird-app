@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     try {
       await enviarMensajeTexto(
         sol.cliente_telefono,
-        `Hola ${clienteNombre}, el técnico ${nombreTecnico} ya realizó el diagnóstico de tu ${equipo} y está trabajando en la reparación. Te notificaremos cuando el servicio esté completado.\n\n— Baird Service`
+        `👋 Hola ${clienteNombre}, el técnico 👨‍🔧 ${nombreTecnico} ya realizó el diagnóstico de tu ${equipo}.\n\n🛠️ Está trabajando en la reparación. Te notificaremos cuando el servicio esté completado. ✅\n\n🔧 Baird Service`
       )
     } catch (waErr) {
       console.error('Error enviando WhatsApp de diagnóstico al cliente:', waErr)
