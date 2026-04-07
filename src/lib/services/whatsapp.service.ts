@@ -77,11 +77,22 @@ export async function enviarPlantilla(para: string, templateName: string, langua
 
   if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
 
+  const toNumber = phoneToDigits(para)
   const template: Record<string, unknown> = {
     name: templateName,
     language: { code: languageCode },
   }
   if (components) template.components = components
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: toNumber,
+    type: 'template',
+    template,
+  }
+
+  console.log(`[WhatsApp] Sending template "${templateName}" to ${toNumber}`)
 
   const res = await fetch(`${WA_API_BASE}/${phoneId}/messages`, {
     method: 'POST',
@@ -89,19 +100,29 @@ export async function enviarPlantilla(para: string, templateName: string, langua
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: phoneToDigits(para),
-      type: 'template',
-      template,
-    }),
+    body: JSON.stringify(payload),
   })
 
+  const body = await res.json().catch(() => ({}))
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`WhatsApp template error ${res.status}: ${JSON.stringify(err)}`)
+    console.error(`[WhatsApp] Template error ${res.status}:`, JSON.stringify(body))
+    throw new Error(`WhatsApp template error ${res.status}: ${JSON.stringify(body)}`)
   }
+
+  // Meta can return 200 but with error details in the response
+  if (body.error) {
+    console.error(`[WhatsApp] API returned error in body:`, JSON.stringify(body.error))
+    throw new Error(`WhatsApp API error: ${JSON.stringify(body.error)}`)
+  }
+
+  // Check message status
+  const messageStatus = body.messages?.[0]?.message_status
+  if (messageStatus && messageStatus !== 'accepted') {
+    console.warn(`[WhatsApp] Message status: ${messageStatus} for ${toNumber}`)
+  }
+
+  console.log(`[WhatsApp] Template "${templateName}" sent to ${toNumber}, message_id: ${body.messages?.[0]?.id ?? 'unknown'}`)
 }
 
 async function enviarMensajeInteractivo(options: {
@@ -305,9 +326,8 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
       notificados++
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
-      console.error(`Error enviando WhatsApp a técnico ${tecnico.id}:`, errMsg)
-      sendErrors.push(`${tecnico.nombre_completo}: error de envio`)
-      // Marcar como error pero continuar con el siguiente
+      console.error(`Error enviando WhatsApp a técnico ${tecnico.id} (${tecnico.whatsapp}):`, errMsg)
+      sendErrors.push(`${tecnico.nombre_completo} (${phoneToDigits(tecnico.whatsapp)}): ${errMsg}`)
       await supabase
         .from('notificaciones_whatsapp')
         .update({ estado: 'error' })
