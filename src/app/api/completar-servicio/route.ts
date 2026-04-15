@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     // Verify portal token belongs to the assigned technician
     const { data: tecnico } = await supabase
       .from('tecnicos')
-      .select('id, nombre_completo, numero_documento, foto_perfil_url, telefono')
+      .select('id, nombre_completo, whatsapp')
       .eq('portal_token', portalToken)
       .single()
 

@@ -274,14 +274,22 @@ export default function CompletarServicioPage() {
         .eq('id', servicio.id)
 
       // 5. Trigger WhatsApp confirmation to customer (via API)
-      await fetch('/api/completar-servicio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          solicitudId: servicio.id,
-          portalToken: token,
-        }),
-      }).catch(() => {}) // Non-blocking
+      try {
+        const waRes = await fetch('/api/completar-servicio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            solicitudId: servicio.id,
+            portalToken: token,
+          }),
+        })
+        if (!waRes.ok) {
+          const waBody = await waRes.json().catch(() => ({}))
+          console.error('Error enviando WhatsApp de confirmación:', waRes.status, waBody)
+        }
+      } catch (waErr) {
+        console.error('Error de red al enviar WhatsApp de confirmación:', waErr)
+      }
 
       setExito(true)
     } catch (e) {
