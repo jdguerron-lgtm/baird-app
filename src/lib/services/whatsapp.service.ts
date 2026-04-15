@@ -300,29 +300,54 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     const problema = notifNovedades.substring(0, 100)
     const ubicacion = `${sol.zona_servicio}, ${sol.ciudad_pueblo}`
     const horario = sol.horario_visita_1 || 'Por coordinar'
-    const pago = sol.es_garantia ? 'GARANTIA - Sin cobro' : `$${formatCOP(sol.pago_tecnico)} COP`
     const nombre = tecnico.nombre_completo.split(' ')[0]
 
     try {
-      await enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: nombre },
-            { type: 'text', text: equipo },
-            { type: 'text', text: problema },
-            { type: 'text', text: ubicacion },
-            { type: 'text', text: horario },
-            { type: 'text', text: pago },
-          ],
-        },
-        {
-          type: 'button',
-          sub_type: 'url',
-          index: '0',
-          parameters: [{ type: 'text', text: token }],
-        },
-      ])
+      if (sol.es_garantia) {
+        // ── WARRANTY FLOW: existing template ──
+        const pago = 'GARANTIA - Sin cobro'
+        await enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: nombre },
+              { type: 'text', text: equipo },
+              { type: 'text', text: problema },
+              { type: 'text', text: ubicacion },
+              { type: 'text', text: horario },
+              { type: 'text', text: pago },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: token }],
+          },
+        ])
+      } else {
+        // ── NON-WARRANTY (PARTICULAR) FLOW: different template with diagnostic fee ──
+        const pagoDiagnostico = `${formatCOP(sol.pago_tecnico)} COP`
+        await enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: nombre },
+              { type: 'text', text: equipo },
+              { type: 'text', text: problema },
+              { type: 'text', text: ubicacion },
+              { type: 'text', text: horario },
+              { type: 'text', text: pagoDiagnostico },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: token }],
+          },
+        ])
+      }
       notificados++
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
@@ -392,12 +417,22 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     return { ganado: false, mensaje: msg }
   }
 
-  // 2. UPDATE atómico — solo asigna si aún no tiene técnico (evita race condition)
+  // 2. Fetch solicitud to determine flow type BEFORE atomic update
+  const { data: solPreview } = await supabase
+    .from('solicitudes_servicio')
+    .select('es_garantia')
+    .eq('id', notif.solicitud_id)
+    .single()
+
+  // Non-warranty: goes to diagnostico_pendiente; Warranty: goes to asignada
+  const estadoAsignacion = solPreview?.es_garantia === false ? 'diagnostico_pendiente' : 'asignada'
+
+  // UPDATE atómico — solo asigna si aún no tiene técnico (evita race condition)
   const { data: updated, error: updateErr } = await supabase
     .from('solicitudes_servicio')
     .update({
       tecnico_asignado_id: notif.tecnico_id,
-      estado: 'asignada',
+      estado: estadoAsignacion,
     })
     .eq('id', notif.solicitud_id)
     .is('tecnico_asignado_id', null)  // ← clave anti race-condition
@@ -488,19 +523,42 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   // 5. Notificar al cliente con los datos del técnico
   const tecnicoDigits = phoneToDigits(tecnico?.whatsapp ?? '')
+  const horarioServicio = sol.horario_visita_1 || 'Por coordinar'
 
-  // Send client notification template
-  await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v3', 'es', [
-    {
-      type: 'body',
-      parameters: [
-        { type: 'text', text: sol.cliente_nombre },
-        { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-        { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-        { type: 'text', text: `+${tecnicoDigits}` },
-      ],
-    },
-  ]).catch(console.error)
+  if (sol.es_garantia) {
+    // ── WARRANTY FLOW: template v4 with schedule + no-pay warning ──
+    await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v4', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: horarioServicio },
+          { type: 'text', text: `+${tecnicoDigits}` },
+        ],
+      },
+    ]).catch(console.error)
+  } else {
+    // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
+    const tarifaDiagnostico = formatCOP(sol.pago_tecnico)
+    const anticipo = formatCOP(Math.round(sol.pago_tecnico * 0.5))
+
+    await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: horarioServicio },
+          { type: 'text', text: `+${tecnicoDigits}` },
+          { type: 'text', text: tarifaDiagnostico },
+          { type: 'text', text: anticipo },
+        ],
+      },
+    ]).catch(console.error)
+  }
 
   // 6. Enviar foto de perfil y documento del técnico al cliente
   if (tecnico?.foto_perfil_url) {
@@ -533,6 +591,116 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     .eq('estado', 'enviado')
 
   return { ganado: true, mensaje: '¡Servicio asignado exitosamente!' }
+}
+
+// ─────────────────────────────────────────
+// Cotización — Servicio particular (non-warranty)
+// ─────────────────────────────────────────
+
+/**
+ * Envía la cotización de reparación al cliente para aprobación.
+ * Solo aplica para servicios particulares (es_garantia = false).
+ */
+export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('*, cotizacion')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (sol.es_garantia) return { ok: false, error: 'Las cotizaciones solo aplican para servicios particulares' }
+  if (!sol.cotizacion) return { ok: false, error: 'No hay cotización registrada' }
+
+  const cot = sol.cotizacion as { diagnostico_tecnico: string; mano_obra: number; repuestos: number; total: number; token: string }
+
+  // Get technician name
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Técnico asignado' },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: cot.diagnostico_tecnico.substring(0, 200) },
+          { type: 'text', text: formatCOP(cot.mano_obra) },
+          { type: 'text', text: formatCOP(cot.repuestos) },
+          { type: 'text', text: formatCOP(cot.total) },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: cot.token }],
+      },
+    ])
+
+    // Update state
+    await supabase
+      .from('solicitudes_servicio')
+      .update({ estado: 'cotizacion_enviada' })
+      .eq('id', solicitudId)
+
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al técnico que el cliente aprobó la cotización.
+ */
+export async function notificarCotizacionAprobada(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('*, cotizacion')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  const cot = sol.cotizacion as { total: number }
+
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo, whatsapp, portal_token')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  if (!tecnico) return { ok: false, error: 'Técnico no encontrado' }
+
+  const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
+
+  try {
+    await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombreTecnico },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: formatCOP(cot.total) },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: tecnico.portal_token ?? '' }],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }
 
 // ─────────────────────────────────────────

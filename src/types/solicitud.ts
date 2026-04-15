@@ -42,14 +42,50 @@ export interface SolicitudFormData {
 }
 
 // Tipo del registro completo en BD (con ID y metadata del servidor)
+// Estados del flujo de solicitud
+// Warranty:     pendiente → notificada → asignada → en_proceso → en_verificacion → completada | en_disputa | cancelada
+// Non-warranty: pendiente → notificada → asignada → diagnostico_pendiente → cotizacion_enviada → cotizacion_aprobada → en_proceso → en_verificacion → completada | en_disputa | cancelada
+export type EstadoSolicitud =
+  | 'pendiente'
+  | 'notificada'
+  | 'asignada'
+  | 'diagnostico_pendiente'    // Non-warranty: tech assigned, diagnostic pending
+  | 'cotizacion_enviada'       // Non-warranty: quote sent to customer
+  | 'cotizacion_aprobada'      // Non-warranty: customer approved quote
+  | 'cotizacion_rechazada'     // Non-warranty: customer rejected quote
+  | 'en_proceso'
+  | 'en_verificacion'
+  | 'completada'
+  | 'cancelada'
+  | 'en_disputa'
+
+// Cotización de reparación (non-warranty)
+export interface CotizacionReparacion {
+  diagnostico_tecnico: string
+  mano_obra: number
+  repuestos: number
+  repuestos_detalle?: string
+  total: number
+  evidencias_diagnostico?: string[]
+  cotizado_at: string
+  aprobado_at?: string
+  rechazado_at?: string
+  token: string                // Token for customer approval page
+}
+
+// Tarifas de diagnóstico para servicios particulares (non-warranty)
+export const TARIFA_DIAGNOSTICO = 80000  // COP — fixed diagnostic fee
+export const ANTICIPO_PORCENTAJE = 0.5   // 50% upfront
+
 export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico'> {
   id: string
   created_at: string
   pago_tecnico: number
-  estado?: 'pendiente' | 'notificada' | 'asignada' | 'en_proceso' | 'en_verificacion' | 'completada' | 'cancelada' | 'en_disputa'
+  estado?: EstadoSolicitud
   tecnico_asignado_id?: string
   notificados_at?: string
   triaje_resultado?: TriajeResponse | null
+  cotizacion?: CotizacionReparacion | null  // Non-warranty: quote data
 }
 
 // Tipo para respuesta de triaje de IA (deshabilitado temporalmente — ver TODO.md)

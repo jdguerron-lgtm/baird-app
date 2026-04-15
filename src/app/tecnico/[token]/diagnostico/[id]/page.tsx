@@ -11,6 +11,8 @@ import {
   type ComplejidadServicio,
 } from '@/lib/constants/tarifas-garantia'
 import { formatCOP } from '@/lib/utils/format'
+import { CodigoFallaSelector } from '@/components/ui/CodigoFallaSelector'
+import type { CodigoFalla } from '@/lib/constants/codigos-falla'
 
 interface Servicio {
   id: string
@@ -50,6 +52,13 @@ export default function DiagnosticoPage() {
   const [repuestosDetalle, setRepuestosDetalle] = useState('')
   const [evidencias, setEvidencias] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
+
+  // Fault code (warranty only)
+  const [codigoFalla, setCodigoFalla] = useState<CodigoFalla | null>(null)
+
+  // Non-warranty (particular) quote fields
+  const [manoObraParticular, setManoObraParticular] = useState('')
+  const [repuestosParticular, setRepuestosParticular] = useState('')
 
   // Extract model from novedades
   const modeloEquipo = useMemo(() => {
@@ -99,7 +108,8 @@ export default function DiagnosticoPage() {
         return
       }
 
-      if (sol.estado !== 'asignada') {
+      // Valid states: 'asignada' (warranty) or 'diagnostico_pendiente' (non-warranty)
+      if (sol.estado !== 'asignada' && sol.estado !== 'diagnostico_pendiente') {
         setError('Este servicio ya fue diagnosticado')
         setCargando(false)
         return
@@ -193,16 +203,15 @@ export default function DiagnosticoPage() {
         return
       }
 
-      // 2. Calculate pricing (hidden from technician)
-      const calculo = calcularTotalGarantia(complejidad, 0, diasTranscurridos)
-
-      // 3. Send diagnostic to API (handles DB update + WhatsApp notification)
+      // 2. Build request body based on flow type
       setProgreso('Guardando diagnostico...')
 
-      const res = await fetch('/api/diagnostico', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let bodyPayload: Record<string, unknown>
+
+      if (servicio.es_garantia) {
+        // WARRANTY: calculate tariffs (hidden from technician)
+        const calculo = calcularTotalGarantia(complejidad, 0, diasTranscurridos)
+        bodyPayload = {
           solicitudId: servicio.id,
           portalToken: token,
           diagnostico: diagnosticoTexto.trim(),
@@ -215,7 +224,36 @@ export default function DiagnosticoPage() {
           repuestosDetalle: requiereRepuestos ? repuestosDetalle.trim() : null,
           evidenciaUrls,
           diasTranscurridos,
-        }),
+          // Fault code data
+          codigoFalla: codigoFalla ? {
+            codigo: codigoFalla.codigo,
+            descripcion: codigoFalla.descripcion,
+            familia: codigoFalla.familia,
+            sistema: codigoFalla.sistema,
+            componente: codigoFalla.componente,
+            complejidad: codigoFalla.complejidad,
+          } : null,
+        }
+      } else {
+        // NON-WARRANTY (PARTICULAR): send quote data
+        bodyPayload = {
+          solicitudId: servicio.id,
+          portalToken: token,
+          diagnostico: diagnosticoTexto.trim(),
+          complejidad,
+          requiereRepuestos,
+          repuestosDetalle: requiereRepuestos ? repuestosDetalle.trim() : null,
+          manoObraParticular: Number(manoObraParticular) || 0,
+          repuestosParticular: Number(repuestosParticular) || 0,
+          evidenciaUrls,
+        }
+      }
+
+      // 3. Send diagnostic to API (handles DB update + WhatsApp notification)
+      const res = await fetch('/api/diagnostico', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload),
       })
 
       const data = await res.json()
@@ -237,6 +275,7 @@ export default function DiagnosticoPage() {
 
   // Can submit?
   const canSubmit = complejidad && diagnosticoTexto.length >= 10 && evidencias.length > 0
+    && (servicio?.es_garantia || Number(manoObraParticular) > 0) // Non-warranty requires quote amount
 
   if (cargando) {
     return (
@@ -273,8 +312,9 @@ export default function DiagnosticoPage() {
             <div className="text-5xl mb-4">✅</div>
             <h1 className="text-2xl font-bold text-green-700 mb-2">Diagnostico registrado</h1>
             <p className="text-gray-500 text-sm mb-6">
-              Tu diagnostico ha sido registrado exitosamente. Ahora puedes proceder con la reparacion.
-              Cuando termines, completa el servicio con las evidencias del trabajo realizado.
+              {servicio?.es_garantia
+                ? 'Tu diagnostico ha sido registrado exitosamente. Ahora puedes proceder con la reparacion. Cuando termines, completa el servicio con las evidencias del trabajo realizado.'
+                : 'Tu diagnostico y cotizacion han sido enviados al cliente para aprobacion. Te notificaremos cuando el cliente responda.'}
             </p>
             <button
               onClick={() => router.push(`/tecnico/${token}`)}
@@ -332,77 +372,93 @@ export default function DiagnosticoPage() {
           </div>
         </div>
 
-        {/* TSS Bonus incentive banner */}
-        <div className={`rounded-2xl shadow-sm border-2 p-5 mb-4 ${
-          diasTranscurridos <= 2 ? 'bg-green-50 border-green-300' :
-          diasTranscurridos <= 5 ? 'bg-amber-50 border-amber-300' :
-          diasTranscurridos <= 8 ? 'bg-orange-50 border-orange-300' :
-          'bg-red-50 border-red-300'
-        }`}>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xl">💰</span>
-            <h3 className="text-sm font-bold text-slate-900">Bonificacion por pronta solucion</h3>
-          </div>
-          <p className="text-xs text-gray-600 mb-3">
-            Resuelve rapido y gana un bono adicional. El bono depende de los dias transcurridos desde la solicitud y la complejidad del servicio.
-          </p>
-          <div className="bg-white/80 rounded-xl p-3">
-            <div className="grid grid-cols-4 gap-1 text-[10px] font-semibold text-gray-500 uppercase mb-2">
-              <span>Dias</span>
-              <span className="text-center">Baja</span>
-              <span className="text-center">Media</span>
-              <span className="text-center">Alta</span>
+        {/* WARRANTY: TSS Bonus incentive banner */}
+        {servicio!.es_garantia && (
+          <div className={`rounded-2xl shadow-sm border-2 p-5 mb-4 ${
+            diasTranscurridos <= 2 ? 'bg-green-50 border-green-300' :
+            diasTranscurridos <= 5 ? 'bg-amber-50 border-amber-300' :
+            diasTranscurridos <= 8 ? 'bg-orange-50 border-orange-300' :
+            'bg-red-50 border-red-300'
+          }`}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">💰</span>
+              <h3 className="text-sm font-bold text-slate-900">Bonificacion por pronta solucion</h3>
             </div>
-            {[
-              { rango: '0-2', min: 0, max: 2 },
-              { rango: '3-5', min: 3, max: 5 },
-              { rango: '6-8', min: 6, max: 8 },
-            ].map(({ rango, min, max }) => {
-              const isActive = diasTranscurridos >= min && diasTranscurridos <= max
-              return (
-                <div key={rango} className={`grid grid-cols-4 gap-1 py-1.5 text-xs rounded-lg px-1 ${
-                  isActive ? 'bg-purple-100 font-bold' : ''
-                }`}>
-                  <span className={isActive ? 'text-purple-800' : 'text-gray-600'}>{rango} dias</span>
-                  <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
-                    ${formatCOP(BONO_INCENTIVO.baja.find(b => b.min === min)?.bono ?? 0)}
-                  </span>
-                  <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
-                    ${formatCOP(BONO_INCENTIVO.media.find(b => b.min === min)?.bono ?? 0)}
-                  </span>
-                  <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
-                    ${formatCOP(BONO_INCENTIVO.alta.find(b => b.min === min)?.bono ?? 0)}
-                  </span>
-                </div>
-              )
-            })}
-            {diasTranscurridos > 8 && (
-              <div className="grid grid-cols-4 gap-1 py-1.5 text-xs rounded-lg px-1 bg-red-100 font-bold">
-                <span className="text-red-700">&gt;8 dias</span>
-                <span className="text-center text-red-600">$0</span>
-                <span className="text-center text-red-600">$0</span>
-                <span className="text-center text-red-600">$0</span>
+            <p className="text-xs text-gray-600 mb-3">
+              Resuelve rapido y gana un bono adicional. El bono depende de los dias transcurridos desde la solicitud y la complejidad del servicio.
+            </p>
+            <div className="bg-white/80 rounded-xl p-3">
+              <div className="grid grid-cols-4 gap-1 text-[10px] font-semibold text-gray-500 uppercase mb-2">
+                <span>Dias</span>
+                <span className="text-center">Baja</span>
+                <span className="text-center">Media</span>
+                <span className="text-center">Alta</span>
               </div>
-            )}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-              diasTranscurridos <= 2 ? 'bg-green-200 text-green-800' :
-              diasTranscurridos <= 5 ? 'bg-amber-200 text-amber-800' :
-              diasTranscurridos <= 8 ? 'bg-orange-200 text-orange-800' :
-              'bg-red-200 text-red-800'
-            }`}>
-              {diasTranscurridos} dia{diasTranscurridos !== 1 ? 's' : ''} transcurrido{diasTranscurridos !== 1 ? 's' : ''}
-            </span>
-            {diasTranscurridos <= 8 ? (
-              <span className="text-xs text-gray-500">
-                {diasTranscurridos <= 2 ? 'Bono maximo disponible!' : diasTranscurridos <= 5 ? 'Aun tienes bono disponible' : 'Ultimo rango de bonificacion'}
+              {[
+                { rango: '0-2', min: 0, max: 2 },
+                { rango: '3-5', min: 3, max: 5 },
+                { rango: '6-8', min: 6, max: 8 },
+              ].map(({ rango, min, max }) => {
+                const isActive = diasTranscurridos >= min && diasTranscurridos <= max
+                return (
+                  <div key={rango} className={`grid grid-cols-4 gap-1 py-1.5 text-xs rounded-lg px-1 ${
+                    isActive ? 'bg-purple-100 font-bold' : ''
+                  }`}>
+                    <span className={isActive ? 'text-purple-800' : 'text-gray-600'}>{rango} dias</span>
+                    <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
+                      ${formatCOP(BONO_INCENTIVO.baja.find(b => b.min === min)?.bono ?? 0)}
+                    </span>
+                    <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
+                      ${formatCOP(BONO_INCENTIVO.media.find(b => b.min === min)?.bono ?? 0)}
+                    </span>
+                    <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
+                      ${formatCOP(BONO_INCENTIVO.alta.find(b => b.min === min)?.bono ?? 0)}
+                    </span>
+                  </div>
+                )
+              })}
+              {diasTranscurridos > 8 && (
+                <div className="grid grid-cols-4 gap-1 py-1.5 text-xs rounded-lg px-1 bg-red-100 font-bold">
+                  <span className="text-red-700">&gt;8 dias</span>
+                  <span className="text-center text-red-600">$0</span>
+                  <span className="text-center text-red-600">$0</span>
+                  <span className="text-center text-red-600">$0</span>
+                </div>
+              )}
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                diasTranscurridos <= 2 ? 'bg-green-200 text-green-800' :
+                diasTranscurridos <= 5 ? 'bg-amber-200 text-amber-800' :
+                diasTranscurridos <= 8 ? 'bg-orange-200 text-orange-800' :
+                'bg-red-200 text-red-800'
+              }`}>
+                {diasTranscurridos} dia{diasTranscurridos !== 1 ? 's' : ''} transcurrido{diasTranscurridos !== 1 ? 's' : ''}
               </span>
-            ) : (
-              <span className="text-xs text-red-600">Sin bonificacion disponible</span>
-            )}
+              {diasTranscurridos <= 8 ? (
+                <span className="text-xs text-gray-500">
+                  {diasTranscurridos <= 2 ? 'Bono maximo disponible!' : diasTranscurridos <= 5 ? 'Aun tienes bono disponible' : 'Ultimo rango de bonificacion'}
+                </span>
+              ) : (
+                <span className="text-xs text-red-600">Sin bonificacion disponible</span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* NON-WARRANTY: Particular service info banner */}
+        {!servicio!.es_garantia && (
+          <div className="rounded-2xl shadow-sm border-2 border-blue-300 bg-blue-50 p-5 mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xl">💼</span>
+              <h3 className="text-sm font-bold text-slate-900">Servicio particular</h3>
+            </div>
+            <p className="text-xs text-gray-600">
+              Este es un servicio particular (sin garantia). Completa el diagnostico y genera una cotizacion de reparacion.
+              El cliente debera aprobar la cotizacion antes de que puedas proceder con la reparacion.
+            </p>
+          </div>
+        )}
 
         {/* Diagnostic form */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
@@ -425,6 +481,16 @@ export default function DiagnosticoPage() {
               <p className="text-xs text-red-500 mt-1">Minimo 10 caracteres</p>
             )}
           </div>
+
+          {/* Fault code selector (warranty only) */}
+          {servicio!.es_garantia && (
+            <CodigoFallaSelector
+              tipoEquipo={servicio!.tipo_equipo}
+              diagnosticoTexto={diagnosticoTexto}
+              value={codigoFalla}
+              onChange={setCodigoFalla}
+            />
+          )}
 
           {/* Complexity selection — NO prices shown */}
           <div className="mb-5">
@@ -482,6 +548,54 @@ export default function DiagnosticoPage() {
               />
             )}
           </div>
+
+          {/* NON-WARRANTY: Quote pricing fields */}
+          {!servicio!.es_garantia && (
+            <div className="mb-5 bg-blue-50 rounded-xl p-4 border border-blue-200">
+              <h3 className="text-sm font-bold text-slate-900 mb-3">💰 Cotizacion de reparacion</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Ingresa el costo estimado de la reparacion. Esta cotizacion sera enviada al cliente para su aprobacion.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                    Mano de obra (COP) *
+                  </label>
+                  <input
+                    type="number"
+                    value={manoObraParticular}
+                    onChange={(e) => setManoObraParticular(e.target.value)}
+                    placeholder="Ej: 120000"
+                    min="0"
+                    className="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                    Repuestos (COP)
+                  </label>
+                  <input
+                    type="number"
+                    value={repuestosParticular}
+                    onChange={(e) => setRepuestosParticular(e.target.value)}
+                    placeholder="Ej: 250000 (0 si no aplica)"
+                    min="0"
+                    className="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {(Number(manoObraParticular) > 0 || Number(repuestosParticular) > 0) && (
+                  <div className="bg-white rounded-lg p-3 border border-blue-100">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Total cotizacion:</span>
+                      <span className="font-bold text-blue-700">
+                        ${formatCOP((Number(manoObraParticular) || 0) + (Number(repuestosParticular) || 0))} COP
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Evidence upload */}

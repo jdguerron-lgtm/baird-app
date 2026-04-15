@@ -16,6 +16,7 @@ interface Tecnico {
   foto_perfil_url: string | null
   estado_verificacion: string
   created_at: string
+  portal_token: string | null
   especialidades: string[]
 }
 
@@ -34,6 +35,15 @@ export default function TecnicosAdmin() {
   const [filtro, setFiltro] = useState(filtroInicial)
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const copyPortalLink = (tecnico: Tecnico) => {
+    if (!tecnico.portal_token) return
+    const url = `${window.location.origin}/tecnico/${tecnico.portal_token}`
+    navigator.clipboard.writeText(url)
+    setCopiedId(tecnico.id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
 
   useEffect(() => {
     const cargar = async () => {
@@ -41,7 +51,7 @@ export default function TecnicosAdmin() {
 
       let query = supabase
         .from('tecnicos')
-        .select('id, nombre_completo, whatsapp, ciudad_pueblo, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at')
+        .select('id, nombre_completo, whatsapp, ciudad_pueblo, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token')
         .order('created_at', { ascending: false })
 
       if (filtro !== 'todos') {
@@ -158,6 +168,7 @@ export default function TecnicosAdmin() {
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Especialidades</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Registro</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Portal</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -203,6 +214,34 @@ export default function TecnicosAdmin() {
                       <span className="text-xs text-gray-400">
                         {t.created_at ? new Date(t.created_at).toLocaleDateString('es-CO') : '—'}
                       </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      {t.portal_token ? (
+                        <div className="flex items-center gap-1.5">
+                          <a
+                            href={`/tecnico/${t.portal_token}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition-colors"
+                            title="Abrir portal del técnico"
+                          >
+                            Abrir ↗
+                          </a>
+                          <button
+                            onClick={() => copyPortalLink(t)}
+                            className={`text-xs px-2 py-0.5 rounded-full transition-all ${
+                              copiedId === t.id
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }`}
+                            title="Copiar enlace del portal"
+                          >
+                            {copiedId === t.id ? '✓ Copiado' : 'Copiar'}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">Sin portal</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <Link

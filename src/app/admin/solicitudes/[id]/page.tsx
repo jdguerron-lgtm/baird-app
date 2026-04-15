@@ -423,6 +423,65 @@ export default function SolicitudDetalle() {
           </dl>
         </div>
 
+        {/* Diagnosis & Fault Code */}
+        {solicitud.es_garantia && (() => {
+          const triaje = (solicitud as unknown as Record<string, unknown>).triaje_resultado as Record<string, unknown> | null
+          if (!triaje?.diagnostico_tecnico) return null
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Diagnostico del tecnico</h2>
+
+              {/* Fault code badge */}
+              {!!triaje.codigo_falla && (
+                <div className="flex items-center gap-4 mb-4 bg-purple-50 rounded-xl p-4 border border-purple-100">
+                  <div className="w-14 h-14 rounded-xl bg-purple-600 text-white flex flex-col items-center justify-center shrink-0">
+                    <span className="text-[8px] uppercase font-semibold opacity-80">Falla</span>
+                    <span className="text-lg font-extrabold leading-none">{String(triaje.codigo_falla)}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{String(triaje.descripcion_falla ?? '')}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {!!triaje.familia_falla && (
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{String(triaje.familia_falla)}</span>
+                      )}
+                      {!!triaje.sistema_falla && (
+                        <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{String(triaje.sistema_falla)}</span>
+                      )}
+                      {!!triaje.componente_falla && (
+                        <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{String(triaje.componente_falla)}</span>
+                      )}
+                      {!!triaje.complejidad_falla && (
+                        <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">{String(triaje.complejidad_falla)}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <dl className="space-y-3">
+                <div>
+                  <dt className="text-xs text-gray-500">Diagnostico</dt>
+                  <dd className="text-sm text-slate-900 bg-gray-50 rounded-lg p-3">{String(triaje.diagnostico_tecnico)}</dd>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <dt className="text-xs text-gray-500">Complejidad</dt>
+                    <dd className="text-sm font-medium text-slate-900">{String(triaje.complejidad)} (Cod. {String(triaje.codigo_complejidad)})</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-gray-500">Diagnosticado</dt>
+                    <dd className="text-sm text-slate-900">{triaje.diagnosticado_at ? new Date(String(triaje.diagnosticado_at)).toLocaleString('es-CO') : '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-gray-500">Repuestos</dt>
+                    <dd className="text-sm text-slate-900">{triaje.requiere_repuestos ? `Si — ${String(triaje.repuestos_detalle ?? '')}` : 'No'}</dd>
+                  </div>
+                </div>
+              </dl>
+            </div>
+          )
+        })()}
+
         {/* Assigned técnico */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Tecnico asignado</h2>
