@@ -11,7 +11,7 @@ export { TIPO_A_ESPECIALIDAD }
 export { formatCOP } from '@/lib/utils/format'
 export { phoneToDigits as formatearTelefono } from '@/lib/utils/phone'
 
-const TOKEN_EXPIRATION_MS = 30 * 60 * 1000 // 30 minutes
+const TOKEN_EXPIRATION_MS = 3 * 60 * 60 * 1000 // 3 hours
 
 // ─────────────────────────────────────────
 // Funciones de envío (primitivas)
@@ -268,45 +268,39 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     }
   }
 
-  // 4. Enviar mensaje a cada técnico con token único
-  let notificados = 0
+  // 4. Enviar mensaje a cada técnico con token único — EN PARALELO
+  const notifModeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
+  const notifNovedades = notifModeloMatch
+    ? sol.novedades_equipo.replace(notifModeloMatch[0], '').trim()
+    : sol.novedades_equipo
 
-  for (const tecnico of tecnicos) {
-    const token = crypto.randomUUID()
-    const linkAceptar = `${appUrl}/aceptar/${token}`
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const problema = notifNovedades.substring(0, 100)
+  const ubicacion = `${sol.zona_servicio}, ${sol.ciudad_pueblo}`
+  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
 
-    // Registrar la notificación en la BD antes de enviar
-    const { error: insertErr } = await supabase
-      .from('notificaciones_whatsapp')
-      .insert({
+  // Pre-generar tokens y registrar todas las notificaciones en paralelo
+  const tokens = tecnicos.map(() => crypto.randomUUID())
+  const insertResults = await Promise.allSettled(
+    tecnicos.map((t, i) =>
+      supabase.from('notificaciones_whatsapp').insert({
         solicitud_id: solicitudId,
-        tecnico_id: tecnico.id,
-        token,
+        tecnico_id: t.id,
+        token: tokens[i],
         estado: 'enviado',
       })
+    )
+  )
 
-    if (insertErr) {
-      console.error(`Error registrando notificación para técnico ${tecnico.id}:`, insertErr)
-      continue
-    }
+  // Solo enviar WhatsApp a los que se insertaron OK
+  const enviables = tecnicos.map((t, i) => ({ tecnico: t, token: tokens[i], idx: i }))
+    .filter(({ idx }) => insertResults[idx].status === 'fulfilled')
 
-    // Build template parameters
-    const notifModeloMatch = sol.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
-    const notifNovedades = notifModeloMatch
-      ? sol.novedades_equipo.replace(notifModeloMatch[0], '').trim()
-      : sol.novedades_equipo
-
-    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
-    const problema = notifNovedades.substring(0, 100)
-    const ubicacion = `${sol.zona_servicio}, ${sol.ciudad_pueblo}`
-    const horario = sol.horario_visita_1 || 'Por coordinar'
-    const nombre = tecnico.nombre_completo.split(' ')[0]
-
-    try {
+  const sendResults = await Promise.allSettled(
+    enviables.map(({ tecnico, token }) => {
+      const nombre = tecnico.nombre_completo.split(' ')[0]
       if (sol.es_garantia) {
-        // ── WARRANTY FLOW: existing template ──
-        const pago = 'GARANTIA - Sin cobro'
-        await enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [
+        return enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [
           {
             type: 'body',
             parameters: [
@@ -315,50 +309,48 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
               { type: 'text', text: problema },
               { type: 'text', text: ubicacion },
               { type: 'text', text: horario },
-              { type: 'text', text: pago },
+              { type: 'text', text: 'GARANTIA - Sin cobro' },
             ],
           },
-          {
-            type: 'button',
-            sub_type: 'url',
-            index: '0',
-            parameters: [{ type: 'text', text: token }],
-          },
-        ])
-      } else {
-        // ── NON-WARRANTY (PARTICULAR) FLOW: different template with diagnostic fee ──
-        const pagoDiagnostico = `${formatCOP(sol.pago_tecnico)} COP`
-        await enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [
-          {
-            type: 'body',
-            parameters: [
-              { type: 'text', text: nombre },
-              { type: 'text', text: equipo },
-              { type: 'text', text: problema },
-              { type: 'text', text: ubicacion },
-              { type: 'text', text: horario },
-              { type: 'text', text: pagoDiagnostico },
-            ],
-          },
-          {
-            type: 'button',
-            sub_type: 'url',
-            index: '0',
-            parameters: [{ type: 'text', text: token }],
-          },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
         ])
       }
-      notificados++
-    } catch (e) {
-      const errMsg = e instanceof Error ? e.message : String(e)
-      console.error(`Error enviando WhatsApp a técnico ${tecnico.id} (${tecnico.whatsapp}):`, errMsg)
-      sendErrors.push(`${tecnico.nombre_completo} (${phoneToDigits(tecnico.whatsapp)}): ${errMsg}`)
-      await supabase
-        .from('notificaciones_whatsapp')
-        .update({ estado: 'error' })
-        .eq('token', token)
-    }
-  }
+      const pagoDiagnostico = `${formatCOP(sol.pago_tecnico)} COP`
+      return enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombre },
+            { type: 'text', text: equipo },
+            { type: 'text', text: problema },
+            { type: 'text', text: ubicacion },
+            { type: 'text', text: horario },
+            { type: 'text', text: pagoDiagnostico },
+          ],
+        },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
+      ])
+    })
+  )
+
+  // Marcar errores en BD para los que fallaron en send
+  let notificados = 0
+  await Promise.allSettled(
+    enviables.map(async ({ tecnico, token }, i) => {
+      const r = sendResults[i]
+      if (r.status === 'fulfilled') {
+        notificados++
+      } else {
+        const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason)
+        console.error(`Error enviando WhatsApp a técnico ${tecnico.id} (${tecnico.whatsapp}):`, errMsg)
+        sendErrors.push(`${tecnico.nombre_completo} (${phoneToDigits(tecnico.whatsapp)}): ${errMsg}`)
+        await supabase
+          .from('notificaciones_whatsapp')
+          .update({ estado: 'error' })
+          .eq('token', token)
+      }
+    })
+  )
 
   // 5. Actualizar estado de la solicitud
   if (notificados > 0) {
@@ -523,11 +515,11 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   // 5. Notificar al cliente con los datos del técnico
   const tecnicoDigits = phoneToDigits(tecnico?.whatsapp ?? '')
-  const horarioServicio = sol.horario_visita_1 || 'Por coordinar'
+  const horarioServicio = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
 
   if (sol.es_garantia) {
-    // ── WARRANTY FLOW: template v4 with schedule + no-pay warning ──
-    await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v4', 'es', [
+    // ── WARRANTY FLOW: template v5 with schedule + no-pay warning + T&C link ──
+    await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v5', 'es', [
       {
         type: 'body',
         parameters: [
@@ -591,6 +583,312 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     .eq('estado', 'enviado')
 
   return { ganado: true, mensaje: '¡Servicio asignado exitosamente!' }
+}
+
+// ─────────────────────────────────────────
+// Customer-first scheduling
+// ─────────────────────────────────────────
+
+/**
+ * Envía la plantilla cliente_seleccion_horario_v1 al cliente con las 2 opciones
+ * de horario propuestas en su solicitud y un CTA a /horario/{token}.
+ */
+export async function enviarSeleccionHorarioCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_visita_1, horario_visita_2, horario_token')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.horario_token) return { ok: false, error: 'horario_token no generado' }
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const cliente = sol.cliente_nombre.split(' ')[0]
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'cliente_seleccion_horario_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: cliente },
+          { type: 'text', text: equipo },
+          { type: 'text', text: sol.horario_visita_1 || 'Por coordinar' },
+          { type: 'text', text: sol.horario_visita_2 || 'Por coordinar' },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: sol.horario_token }],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Envía recordatorio si el cliente no confirmó el horario tras 24h.
+ * Llamado por el cron job /api/cron/horario-recordatorio.
+ */
+export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_token, horario_recordatorio_at')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.horario_token) return { ok: false, error: 'horario_token no existe' }
+  if (sol.horario_recordatorio_at) return { ok: false, error: 'Recordatorio ya enviado' }
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const cliente = sol.cliente_nombre.split(' ')[0]
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'recordatorio_horario_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: cliente },
+          { type: 'text', text: equipo },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: sol.horario_token }],
+      },
+    ])
+
+    await supabase
+      .from('solicitudes_servicio')
+      .update({ horario_recordatorio_at: new Date().toISOString() })
+      .eq('id', solicitudId)
+
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+// ─────────────────────────────────────────
+// Post-diagnóstico — siguiente paso (4 opciones)
+// ─────────────────────────────────────────
+
+/**
+ * Construye el texto descriptivo del siguiente paso para mostrarlo al cliente.
+ */
+export function describirSiguientePaso(
+  paso: string,
+  detalle?: string | null,
+  repuesto?: { sku?: string; descripcion?: string; tiempoEstimado?: string } | null,
+): string {
+  switch (paso) {
+    case 'reparar':
+      return 'Proceder con la reparación inmediata. El técnico cuenta con todo lo necesario.'
+    case 'esperar_repuesto':
+      if (repuesto?.sku && repuesto?.descripcion) {
+        const tiempo = repuesto.tiempoEstimado ? ` Tiempo estimado: ${repuesto.tiempoEstimado}.` : ''
+        return `Esperar repuesto SKU ${repuesto.sku} (${repuesto.descripcion}).${tiempo}`
+      }
+      return 'Esperar la llegada de un repuesto antes de continuar la reparación.'
+    case 'no_reparable':
+      return `Imposibilidad de reparación. ${detalle ? `Motivo: ${detalle}` : ''}`.trim()
+    case 'negativa_cliente':
+      return `Tu decisión de no proceder con la reparación. ${detalle ? `(${detalle})` : ''}`.trim()
+    default:
+      return paso
+  }
+}
+
+/**
+ * Envía la plantilla verificar_siguiente_paso_v1 al cliente para que apruebe
+ * el siguiente paso propuesto por el técnico (solo flujo garantía).
+ */
+export async function enviarVerificacionPasoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, triaje_resultado, siguiente_paso, siguiente_paso_detalle, verificacion_paso_token')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.verificacion_paso_token) return { ok: false, error: 'verificacion_paso_token no generado' }
+  if (!sol.siguiente_paso) return { ok: false, error: 'siguiente_paso no definido' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+
+  // Buscar repuesto pendiente si aplica
+  let repuesto: { sku?: string; descripcion?: string; tiempoEstimado?: string } | null = null
+  if (sol.siguiente_paso === 'esperar_repuesto') {
+    const { data: rep } = await supabase
+      .from('repuestos_pendientes')
+      .select('sku, descripcion, tiempo_estimado')
+      .eq('solicitud_id', solicitudId)
+      .eq('estado', 'pendiente')
+      .order('solicitado_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (rep) repuesto = { sku: rep.sku, descripcion: rep.descripcion, tiempoEstimado: rep.tiempo_estimado }
+  }
+
+  const triajeJson = (sol.triaje_resultado ?? {}) as { diagnostico_tecnico?: string }
+  const diagnostico = (triajeJson.diagnostico_tecnico ?? 'Diagnóstico realizado').substring(0, 200)
+  const accion = describirSiguientePaso(sol.siguiente_paso, sol.siguiente_paso_detalle, repuesto).substring(0, 250)
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const cliente = sol.cliente_nombre.split(' ')[0]
+  const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'verificar_siguiente_paso_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: cliente },
+          { type: 'text', text: tecnico },
+          { type: 'text', text: equipo },
+          { type: 'text', text: diagnostico },
+          { type: 'text', text: accion },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: sol.verificacion_paso_token }],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al cliente cuando el repuesto que estaba esperando ya llegó.
+ */
+export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const cliente = sol.cliente_nombre.split(' ')[0]
+  const tecnico = tec?.nombre_completo ?? 'Técnico asignado'
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: cliente },
+          { type: 'text', text: equipo },
+          { type: 'text', text: tecnico },
+        ],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al cliente cuando se necesita esperar repuesto (incluye SKU).
+ */
+export async function enviarEsperandoRepuestoCliente(
+  solicitudId: string,
+  sku: string,
+  descripcionRepuesto: string,
+  tiempoEstimado: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const cliente = sol.cliente_nombre.split(' ')[0]
+  const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'esperando_repuesto_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: cliente },
+          { type: 'text', text: tecnico },
+          { type: 'text', text: equipo },
+          { type: 'text', text: sku },
+          { type: 'text', text: descripcionRepuesto },
+          { type: 'text', text: tiempoEstimado },
+        ],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al cliente que el equipo no es reparable (terminal).
+ */
+export async function enviarFinalizadoSinReparacion(
+  solicitudId: string,
+  motivoTecnico: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const cliente = sol.cliente_nombre.split(' ')[0]
+  const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
+
+  try {
+    await enviarPlantilla(sol.cliente_telefono, 'finalizado_sin_reparacion_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: cliente },
+          { type: 'text', text: equipo },
+          { type: 'text', text: motivoTecnico.substring(0, 200) },
+          { type: 'text', text: tecnico },
+        ],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }
 
 // ─────────────────────────────────────────

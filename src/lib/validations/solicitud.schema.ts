@@ -49,11 +49,13 @@ export const solicitudFormSchema = z.object({
 
   numero_serie_factura: z.string().optional(),
 
-  // Campos de WhatsApp y coordinación de visita
+  // Calculado automáticamente por calcularPagoTecnico() — el cliente NO lo ingresa.
+  // Garantía → 0 (lo cubre la marca). Particular → tarifa fija de catálogo.
+  // El servidor lo recalcula igualmente para evitar manipulación desde el cliente.
   pago_tecnico: z
-    .number({ error: 'Ingresa un valor numérico válido' })
+    .number({ error: 'Valor del servicio inválido' })
     .int('El valor debe ser un número entero')
-    .min(20000, 'El pago mínimo es $20.000 COP')
+    .min(0, 'El pago no puede ser negativo')
     .max(10000000, 'El pago máximo es $10.000.000 COP'),
 
   horario_visita_1: nonEmptyString('El primer horario de visita')

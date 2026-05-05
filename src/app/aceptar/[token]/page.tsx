@@ -38,6 +38,7 @@ export default async function AceptarServicioPage({ params }: Props) {
       pago_tecnico,
       horario_visita_1,
       horario_visita_2,
+      horario_confirmado,
       estado,
       tecnico_asignado_id,
       es_garantia

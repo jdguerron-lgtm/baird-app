@@ -16,6 +16,7 @@ export const EQUIPO_A_FAMILIA: Record<string, string[]> = {
   'Nevecón':            ['REFRIGERACION'],
   'Lavadora':           ['LAVADO', 'CENTROS DE LAVADO'],
   'Secadora':           ['SECADORAS'],
+  'Lavadora Secadora':  ['CENTROS DE LAVADO', 'LAVADO', 'SECADORAS'],  // combo 2-en-1
   'Lavavajillas':       ['LAVAVAJILLAS'],
   'Horno':              ['HORNOS MICROONDAS', 'ESTUFAS'],
   'Estufa':             ['ESTUFAS'],

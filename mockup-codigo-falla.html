@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup - Código de Falla | Baird Service</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { font-family: 'Inter', sans-serif; }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .pulse-border { animation: pulseBorder 2s infinite; }
+  @keyframes pulseBorder { 0%,100% { border-color: #7c3aed; } 50% { border-color: #c4b5fd; } }
+  .mockup-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; padding: 4px 16px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; white-space: nowrap; z-index: 10; box-shadow: 0 2px 8px rgba(124,58,237,0.3); }
+  .new-section { position: relative; border: 2px solid #7c3aed; border-radius: 16px; padding: 20px; margin: 16px 0; background: linear-gradient(to bottom, #faf5ff, white); }
+  .highlight-arrow { display: inline-block; animation: bounce 1s infinite; }
+  @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  .tab-active { border-bottom: 3px solid #7c3aed; color: #7c3aed; font-weight: 700; }
+  .tab-inactive { border-bottom: 3px solid transparent; color: #9ca3af; }
+  .suggestion-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .match-high { background: #dcfce7; color: #166534; }
+  .match-medium { background: #fef9c3; color: #854d0e; }
+  .match-low { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body class="bg-gray-100">
+
+<!-- Navigation Tabs -->
+<div class="sticky top-0 z-50 bg-white border-b shadow-sm">
+  <div class="max-w-4xl mx-auto flex">
+    <button onclick="showView('tecnico')" id="tab-tecnico" class="flex-1 py-4 px-6 text-sm text-center cursor-pointer tab-active transition-all">
+      📱 Vista Técnico — Diagnóstico
+    </button>
+    <button onclick="showView('admin')" id="tab-admin" class="flex-1 py-4 px-6 text-sm text-center cursor-pointer tab-inactive transition-all">
+      🖥️ Vista Admin — Detalle Servicio
+    </button>
+    <button onclick="showView('flujo')" id="tab-flujo" class="flex-1 py-4 px-6 text-sm text-center cursor-pointer tab-inactive transition-all">
+      🔄 Flujo Completo
+    </button>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- VISTA TÉCNICO -->
+<!-- ============================================ -->
+<div id="view-tecnico" class="max-w-md mx-auto py-6 px-4">
+
+  <!-- Header mockup -->
+  <div class="bg-white rounded-xl shadow-sm border p-4 flex items-center justify-between mb-4">
+    <span class="font-bold text-gray-800 text-lg">🔧 Baird Service</span>
+    <span class="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-semibold">Diagnóstico</span>
+  </div>
+
+  <!-- Service summary (existing, unchanged) -->
+  <div class="bg-white rounded-2xl shadow-sm border p-5 mb-4">
+    <h2 class="text-lg font-bold text-gray-900 mb-3">Datos del servicio</h2>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <span class="text-gray-500">Equipo</span>
+        <span class="font-semibold text-gray-900">Nevera Samsung</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-gray-500">Cliente</span>
+        <span class="text-gray-700">María López</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-gray-500">Zona</span>
+        <span class="text-gray-700">Norte, Bogotá</span>
+      </div>
+      <div>
+        <span class="text-gray-500">Problema reportado:</span>
+        <p class="text-gray-700 text-xs mt-1">La nevera no enfría bien, hace un ruido extraño y se forma escarcha en el congelador</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bonus banner (existing, unchanged) -->
+  <div class="rounded-2xl shadow-sm border-2 border-green-300 bg-green-50 p-4 mb-4 opacity-60">
+    <div class="flex items-center gap-2">
+      <span class="text-lg">💰</span>
+      <span class="text-xs font-bold text-gray-600">Bonificación (sin cambios) — 1 día transcurrido</span>
+    </div>
+  </div>
+
+  <!-- DIAGNOSTIC FORM -->
+  <div class="bg-white rounded-2xl shadow-sm border p-5 mb-4">
+    <h2 class="text-lg font-bold text-gray-900 mb-1">Diagnóstico del técnico</h2>
+    <p class="text-xs text-gray-400 mb-4">Registra el problema real identificado en el equipo</p>
+
+    <!-- Textarea (existing) -->
+    <div class="mb-5">
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        Problema real identificado *
+      </label>
+      <textarea
+        id="diagnostico-input"
+        oninput="simulateSuggestions()"
+        placeholder="Describe detalladamente el problema real encontrado en el equipo..."
+        rows="3"
+        class="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+      >El compresor no arranca. Se escucha el relay haciendo clic pero el compresor no enciende. Verifico que no hay fuga de gas.</textarea>
+    </div>
+
+    <!-- ★★★ NEW: Fault Code Suggestion Section ★★★ -->
+    <div class="new-section fade-in" id="fault-code-section">
+      <div class="mockup-badge">✨ NUEVO — Código de Falla</div>
+
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-2">
+        Código de falla sugerido
+      </label>
+      <p class="text-xs text-gray-400 mb-3">
+        Basado en tu diagnóstico, estos son los códigos más probables:
+      </p>
+
+      <!-- Suggestions -->
+      <div class="space-y-2" id="suggestions-container">
+
+        <!-- Suggestion 1 - Best match -->
+        <div class="suggestion-card border-2 border-purple-500 bg-purple-50 rounded-xl p-3 cursor-pointer transition-all" onclick="selectCode(this, 1156)">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-purple-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                1156
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-gray-900">Compresor no arranca</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">REFRIGERACIÓN</span>
+                  <span class="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">ELÉCTRICO</span>
+                  <span class="text-[10px] match-high px-1.5 py-0.5 rounded font-bold">92% match</span>
+                </div>
+              </div>
+            </div>
+            <div class="w-5 h-5 rounded-full border-2 border-purple-500 bg-purple-500 flex items-center justify-center shrink-0 mt-1">
+              <svg width="12" height="12" fill="white" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Suggestion 2 -->
+        <div class="suggestion-card border border-gray-200 bg-white rounded-xl p-3 cursor-pointer transition-all hover:border-purple-300" onclick="selectCode(this, 1160)">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-gray-200 text-gray-700 flex items-center justify-center text-xs font-bold shrink-0">
+                1160
+              </div>
+              <div>
+                <p class="text-sm font-medium text-gray-800">Relay de arranque defectuoso</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">REFRIGERACIÓN</span>
+                  <span class="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">ELÉCTRICO</span>
+                  <span class="text-[10px] match-medium px-1.5 py-0.5 rounded font-bold">78% match</span>
+                </div>
+              </div>
+            </div>
+            <div class="w-5 h-5 rounded-full border-2 border-gray-300 shrink-0 mt-1"></div>
+          </div>
+        </div>
+
+        <!-- Suggestion 3 -->
+        <div class="suggestion-card border border-gray-200 bg-white rounded-xl p-3 cursor-pointer transition-all hover:border-purple-300" onclick="selectCode(this, 1178)">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-gray-200 text-gray-700 flex items-center justify-center text-xs font-bold shrink-0">
+                1178
+              </div>
+              <div>
+                <p class="text-sm font-medium text-gray-800">Bobina de compresor abierta</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">REFRIGERACIÓN</span>
+                  <span class="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">UNIDAD REFRIG.</span>
+                  <span class="text-[10px] match-medium px-1.5 py-0.5 rounded font-bold">65% match</span>
+                </div>
+              </div>
+            </div>
+            <div class="w-5 h-5 rounded-full border-2 border-gray-300 shrink-0 mt-1"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual search toggle -->
+      <button onclick="toggleManualSearch()" class="mt-3 text-xs text-purple-600 font-semibold hover:text-purple-800 flex items-center gap-1">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        Buscar código manualmente
+      </button>
+
+      <!-- Manual search (hidden by default) -->
+      <div id="manual-search" class="hidden mt-3">
+        <input
+          type="text"
+          placeholder="Buscar por código o descripción..."
+          class="w-full border border-gray-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+        >
+      </div>
+
+      <!-- Selected code confirmation -->
+      <div id="selected-confirmation" class="mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
+        <div class="flex items-center gap-2">
+          <span class="text-green-600 text-lg">✅</span>
+          <div>
+            <p class="text-xs font-bold text-green-800">Código seleccionado: 1156</p>
+            <p class="text-xs text-green-600">Compresor no arranca — REFRIGERACIÓN / ELÉCTRICO</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ★★★ END NEW SECTION ★★★ -->
+
+    <!-- Complexity selection (existing, dimmed) -->
+    <div class="mb-5 mt-5">
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        Nivel de complejidad de la reparación *
+      </label>
+      <div class="space-y-2">
+        <div class="w-full text-left px-4 py-3 rounded-xl border-2 border-gray-200 bg-white opacity-70">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-sm font-bold">21</div>
+            <div>
+              <span class="text-sm font-bold text-gray-900">Baja</span>
+              <p class="text-xs text-gray-500">Sin cambios</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parts + evidence (existing, collapsed) -->
+    <div class="opacity-50 text-center py-4 border-t border-dashed border-gray-200">
+      <p class="text-xs text-gray-400">↓ Repuestos, evidencias, botón enviar (sin cambios) ↓</p>
+    </div>
+  </div>
+
+  <!-- Clarification question example -->
+  <div class="new-section fade-in mb-4">
+    <div class="mockup-badge">✨ NUEVO — Pregunta de aclaración</div>
+    <div class="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
+      <div class="flex items-start gap-3">
+        <span class="text-amber-500 text-xl mt-0.5">🤔</span>
+        <div>
+          <p class="text-sm font-semibold text-amber-800 mb-2">¿Podrías aclarar el diagnóstico?</p>
+          <p class="text-xs text-amber-700 mb-3">
+            La descripción podría corresponder a varios tipos de falla. ¿Cuál describe mejor la situación?
+          </p>
+          <div class="space-y-2">
+            <button class="w-full text-left bg-white border border-amber-200 rounded-lg px-3 py-2.5 text-xs hover:bg-amber-50 transition-colors">
+              <span class="font-bold text-amber-800">A)</span> El compresor <span class="font-semibold">intenta arrancar</span> pero se detiene (relay hace clic)
+            </button>
+            <button class="w-full text-left bg-white border border-amber-200 rounded-lg px-3 py-2.5 text-xs hover:bg-amber-50 transition-colors">
+              <span class="font-bold text-amber-800">B)</span> El compresor <span class="font-semibold">no hace ningún ruido</span> (posible falla eléctrica total)
+            </button>
+            <button class="w-full text-left bg-white border border-amber-200 rounded-lg px-3 py-2.5 text-xs hover:bg-amber-50 transition-colors">
+              <span class="font-bold text-amber-800">C)</span> El compresor arranca pero <span class="font-semibold">se apaga a los pocos segundos</span> (protección térmica)
+            </button>
+          </div>
+          <p class="text-[10px] text-amber-500 mt-2">Esto aparece solo cuando la confianza del match es menor al 60%</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- VISTA ADMIN -->
+<!-- ============================================ -->
+<div id="view-admin" class="max-w-4xl mx-auto py-6 px-4 hidden">
+
+  <!-- Header mockup -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Detalle de Solicitud</h1>
+      <p class="text-sm text-gray-500">ID: sol_abc123 · Garantía Samsung</p>
+    </div>
+    <span class="px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">EN PROCESO</span>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- Left column: service info -->
+    <div class="lg:col-span-2 space-y-4">
+
+      <!-- Service summary card (existing) -->
+      <div class="bg-white rounded-2xl shadow-sm border p-5">
+        <h3 class="text-sm font-bold text-gray-500 uppercase mb-3">Información del servicio</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div><span class="text-gray-500">Cliente:</span> <span class="font-semibold">María López</span></div>
+          <div><span class="text-gray-500">Equipo:</span> <span class="font-semibold">Nevera Samsung</span></div>
+          <div><span class="text-gray-500">Zona:</span> <span>Norte, Bogotá</span></div>
+          <div><span class="text-gray-500">Tipo:</span> <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-semibold">Garantía</span></div>
+        </div>
+      </div>
+
+      <!-- ★★★ NEW: Diagnosis + Fault Code Card ★★★ -->
+      <div class="new-section">
+        <div class="mockup-badge">✨ NUEVO — Código de Falla en Detalle</div>
+
+        <div class="bg-white rounded-xl border p-5 mt-2">
+          <h3 class="text-sm font-bold text-gray-500 uppercase mb-4">Diagnóstico del técnico</h3>
+
+          <!-- Fault code badge - prominent display -->
+          <div class="flex items-center gap-4 mb-4 bg-purple-50 rounded-xl p-4 border border-purple-200">
+            <div class="w-16 h-16 rounded-xl bg-purple-600 text-white flex flex-col items-center justify-center shrink-0">
+              <span class="text-[10px] uppercase font-medium opacity-80">Falla</span>
+              <span class="text-xl font-bold">1156</span>
+            </div>
+            <div>
+              <p class="text-sm font-bold text-gray-900">Compresor no arranca</p>
+              <div class="flex flex-wrap items-center gap-2 mt-1.5">
+                <span class="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">REFRIGERACIÓN</span>
+                <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold">ELÉCTRICO</span>
+                <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold">COMPRESOR</span>
+                <span class="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold">Complejidad: Media</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagnosis text -->
+          <div class="mb-3">
+            <label class="text-xs text-gray-500 font-medium">Diagnóstico:</label>
+            <p class="text-sm text-gray-800 mt-1">El compresor no arranca. Se escucha el relay haciendo clic pero el compresor no enciende. Verifico que no hay fuga de gas.</p>
+          </div>
+
+          <!-- Diagnosis metadata -->
+          <div class="grid grid-cols-3 gap-3 text-xs mt-4 pt-4 border-t border-gray-100">
+            <div>
+              <span class="text-gray-500">Complejidad</span>
+              <p class="font-semibold text-gray-800 mt-0.5">Media (Cod. 22)</p>
+            </div>
+            <div>
+              <span class="text-gray-500">Diagnosticado</span>
+              <p class="font-semibold text-gray-800 mt-0.5">15 Abr 2026, 10:30 AM</p>
+            </div>
+            <div>
+              <span class="text-gray-500">Requiere repuestos</span>
+              <p class="font-semibold text-gray-800 mt-0.5">Sí — Relay de arranque</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- How it looked before (comparison) -->
+        <div class="mt-3 bg-gray-50 rounded-xl border border-dashed border-gray-300 p-4">
+          <p class="text-xs text-gray-500 font-semibold mb-2">⬆️ ANTES: No se mostraba código de falla en el detalle</p>
+          <p class="text-xs text-gray-400">Solo se veía el texto del diagnóstico en el campo triaje_resultado. Ahora el código de falla, familia, sistema y componente son visibles de inmediato.</p>
+        </div>
+      </div>
+
+      <!-- Evidence card (existing, dimmed) -->
+      <div class="bg-white rounded-2xl shadow-sm border p-5 opacity-50">
+        <h3 class="text-sm font-bold text-gray-500 uppercase mb-3">Evidencias (sin cambios)</h3>
+        <div class="grid grid-cols-4 gap-2">
+          <div class="aspect-square bg-gray-200 rounded-lg"></div>
+          <div class="aspect-square bg-gray-200 rounded-lg"></div>
+          <div class="aspect-square bg-gray-200 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: sidebar -->
+    <div class="space-y-4">
+      <!-- Technician card (existing, dimmed) -->
+      <div class="bg-white rounded-2xl shadow-sm border p-5 opacity-50">
+        <h3 class="text-sm font-bold text-gray-500 uppercase mb-3">Técnico asignado</h3>
+        <p class="text-sm font-semibold">Carlos Pérez</p>
+        <p class="text-xs text-gray-500">Bogotá · Verificado</p>
+      </div>
+
+      <!-- Timeline (existing, dimmed) -->
+      <div class="bg-white rounded-2xl shadow-sm border p-5 opacity-50">
+        <h3 class="text-sm font-bold text-gray-500 uppercase mb-3">Timeline</h3>
+        <div class="space-y-2 text-xs text-gray-500">
+          <p>✅ Creada — 14 Abr</p>
+          <p>✅ Notificada — 14 Abr</p>
+          <p>✅ Asignada — 14 Abr</p>
+          <p>🔵 En proceso — 15 Abr</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- VISTA FLUJO -->
+<!-- ============================================ -->
+<div id="view-flujo" class="max-w-3xl mx-auto py-6 px-4 hidden">
+
+  <h2 class="text-2xl font-bold text-gray-900 mb-2">Flujo de integración</h2>
+  <p class="text-sm text-gray-500 mb-6">Cómo se integra el sistema de códigos de falla en el flujo de garantías existente</p>
+
+  <!-- Architecture diagram -->
+  <div class="bg-white rounded-2xl shadow-sm border p-6 mb-6">
+    <h3 class="text-sm font-bold text-purple-700 uppercase mb-4">Arquitectura de la solución</h3>
+
+    <div class="space-y-4">
+      <!-- Step 1 -->
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm shrink-0">1</div>
+        <div class="flex-1 bg-purple-50 rounded-xl p-4 border border-purple-100">
+          <p class="text-sm font-bold text-gray-900">Parsear Excel → JSON estático</p>
+          <p class="text-xs text-gray-600 mt-1"><code class="bg-white px-1.5 py-0.5 rounded text-purple-700 text-[11px]">src/lib/constants/codigos-falla.ts</code></p>
+          <p class="text-xs text-gray-500 mt-1">3,358 códigos con: número, descripción, familia, sistema, componente, complejidad</p>
+          <p class="text-xs text-gray-500">Familia derivada del rango numérico (1000-1999 = REFRIGERACIÓN, 2000-2999 = LAVADO, etc.)</p>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm shrink-0">2</div>
+        <div class="flex-1 bg-purple-50 rounded-xl p-4 border border-purple-100">
+          <p class="text-sm font-bold text-gray-900">Componente CodigoFallaSelector</p>
+          <p class="text-xs text-gray-600 mt-1"><code class="bg-white px-1.5 py-0.5 rounded text-purple-700 text-[11px]">src/components/ui/CodigoFallaSelector.tsx</code></p>
+          <p class="text-xs text-gray-500 mt-1">Usa Fuse.js para fuzzy search en español. Pre-filtra por tipo_equipo → familia.</p>
+          <p class="text-xs text-gray-500">Si match &lt; 60% confianza → muestra pregunta de aclaración.</p>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm shrink-0">3</div>
+        <div class="flex-1 bg-blue-50 rounded-xl p-4 border border-blue-100">
+          <p class="text-sm font-bold text-gray-900">Integrar en página de diagnóstico (solo garantía)</p>
+          <p class="text-xs text-gray-600 mt-1"><code class="bg-white px-1.5 py-0.5 rounded text-blue-700 text-[11px]">src/app/tecnico/[token]/diagnostico/[id]/page.tsx</code></p>
+          <p class="text-xs text-gray-500 mt-1">Se ubica entre el textarea de diagnóstico y la selección de complejidad.</p>
+          <p class="text-xs text-gray-500">El selector auto-sugiere al escribir (con debounce de 500ms).</p>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-sm shrink-0">4</div>
+        <div class="flex-1 bg-green-50 rounded-xl p-4 border border-green-100">
+          <p class="text-sm font-bold text-gray-900">Guardar en triaje_resultado JSONB</p>
+          <p class="text-xs text-gray-600 mt-1"><code class="bg-white px-1.5 py-0.5 rounded text-green-700 text-[11px]">src/app/api/diagnostico/route.ts</code></p>
+          <p class="text-xs text-gray-500 mt-1">Nuevos campos en el JSON:</p>
+          <code class="block text-[11px] bg-white rounded-lg p-3 mt-2 text-gray-700 border">
+{<br>
+&nbsp;&nbsp;...campos_existentes,<br>
+&nbsp;&nbsp;<span class="text-purple-700 font-bold">codigo_falla: 1156,</span><br>
+&nbsp;&nbsp;<span class="text-purple-700 font-bold">descripcion_falla: "Compresor no arranca",</span><br>
+&nbsp;&nbsp;<span class="text-purple-700 font-bold">familia_falla: "REFRIGERACIÓN",</span><br>
+&nbsp;&nbsp;<span class="text-purple-700 font-bold">sistema_falla: "ELÉCTRICO",</span><br>
+&nbsp;&nbsp;<span class="text-purple-700 font-bold">componente_falla: "COMPRESOR"</span><br>
+}
+          </code>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-sm shrink-0">5</div>
+        <div class="flex-1 bg-amber-50 rounded-xl p-4 border border-amber-100">
+          <p class="text-sm font-bold text-gray-900">Mostrar en admin detalle</p>
+          <p class="text-xs text-gray-600 mt-1"><code class="bg-white px-1.5 py-0.5 rounded text-amber-700 text-[11px]">src/app/admin/solicitudes/[id]/page.tsx</code></p>
+          <p class="text-xs text-gray-500 mt-1">Badge prominente con código, descripción, familia, sistema, componente.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- What changes / what stays -->
+  <div class="grid grid-cols-2 gap-4 mb-6">
+    <div class="bg-green-50 rounded-2xl border border-green-200 p-5">
+      <h3 class="text-sm font-bold text-green-800 mb-3">✅ Lo que cambia</h3>
+      <ul class="space-y-2 text-xs text-green-700">
+        <li>• Nuevo componente <code class="bg-white px-1 rounded">CodigoFallaSelector</code></li>
+        <li>• Nuevo archivo <code class="bg-white px-1 rounded">codigos-falla.ts</code> (JSON estático)</li>
+        <li>• Diagnóstico page: agrega selector después del textarea</li>
+        <li>• API diagnostico: recibe y guarda código de falla</li>
+        <li>• Admin detalle: muestra badge de código de falla</li>
+        <li>• Dependencia nueva: <code class="bg-white px-1 rounded">fuse.js</code> (~6KB gzip)</li>
+      </ul>
+    </div>
+    <div class="bg-gray-50 rounded-2xl border border-gray-200 p-5">
+      <h3 class="text-sm font-bold text-gray-700 mb-3">⬜ Lo que NO cambia</h3>
+      <ul class="space-y-2 text-xs text-gray-600">
+        <li>• Estado machine de la solicitud (mismos estados)</li>
+        <li>• Flow de WhatsApp (mismos templates)</li>
+        <li>• Tabla solicitudes_servicio (no necesita migración)</li>
+        <li>• Flow de servicios particulares (no aplica)</li>
+        <li>• Cálculo de tarifas y bonos</li>
+        <li>• Evidencias y completar servicio</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Key decisions -->
+  <div class="bg-white rounded-2xl shadow-sm border p-6">
+    <h3 class="text-sm font-bold text-gray-500 uppercase mb-4">Decisiones clave de diseño</h3>
+    <div class="space-y-4 text-sm">
+      <div class="flex items-start gap-3">
+        <span class="text-purple-500 font-bold">→</span>
+        <div>
+          <p class="font-semibold text-gray-900">JSON estático en vez de tabla Supabase</p>
+          <p class="text-xs text-gray-500">3,358 registros es un dataset chico. Se carga con el bundle, sin round-trip al servidor. Actualizar = re-parsear el Excel.</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-purple-500 font-bold">→</span>
+        <div>
+          <p class="font-semibold text-gray-900">Pre-filtro por familia (tipo_equipo)</p>
+          <p class="text-xs text-gray-500">Si la solicitud es de "Nevera", solo muestra códigos de REFRIGERACIÓN primero. Reduce ruido y mejora la precisión del match.</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-purple-500 font-bold">→</span>
+        <div>
+          <p class="font-semibold text-gray-900">Pregunta de aclaración con opciones</p>
+          <p class="text-xs text-gray-500">Cuando hay 3+ códigos con score similar, el sistema muestra opciones tipo quiz para que el técnico precise la falla.</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3">
+        <span class="text-purple-500 font-bold">→</span>
+        <div>
+          <p class="font-semibold text-gray-900">No es campo obligatorio (por ahora)</p>
+          <p class="text-xs text-gray-500">Para no bloquear al técnico si no encuentra el código. Se puede hacer obligatorio después cuando estén cómodos con el sistema.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showView(view) {
+  document.querySelectorAll('[id^="view-"]').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('[id^="tab-"]').forEach(el => { el.classList.remove('tab-active'); el.classList.add('tab-inactive'); });
+  document.getElementById('view-' + view).classList.remove('hidden');
+  document.getElementById('tab-' + view).classList.remove('tab-inactive');
+  document.getElementById('tab-' + view).classList.add('tab-active');
+}
+
+function selectCode(el, code) {
+  // Reset all cards
+  document.querySelectorAll('.suggestion-card').forEach(card => {
+    card.classList.remove('border-purple-500', 'bg-purple-50');
+    card.classList.add('border-gray-200', 'bg-white');
+    const radio = card.querySelector('.w-5');
+    radio.classList.remove('bg-purple-500', 'border-purple-500');
+    radio.classList.add('border-gray-300');
+    radio.innerHTML = '';
+  });
+  // Activate selected
+  el.classList.remove('border-gray-200', 'bg-white');
+  el.classList.add('border-purple-500', 'bg-purple-50');
+  const radio = el.querySelector('.w-5');
+  radio.classList.remove('border-gray-300');
+  radio.classList.add('bg-purple-500', 'border-purple-500');
+  radio.innerHTML = '<svg width="12" height="12" fill="white" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>';
+
+  document.getElementById('selected-confirmation').innerHTML = `
+    <div class="flex items-center gap-2">
+      <span class="text-green-600 text-lg">✅</span>
+      <div>
+        <p class="text-xs font-bold text-green-800">Código seleccionado: ${code}</p>
+        <p class="text-xs text-green-600">${code === 1156 ? 'Compresor no arranca' : code === 1160 ? 'Relay de arranque defectuoso' : 'Bobina de compresor abierta'} — REFRIGERACIÓN</p>
+      </div>
+    </div>
+  `;
+}
+
+function toggleManualSearch() {
+  const el = document.getElementById('manual-search');
+  el.classList.toggle('hidden');
+}
+</script>
+
+</body>
+</html>

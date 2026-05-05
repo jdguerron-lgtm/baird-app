@@ -1,9 +1,17 @@
 # TODO — Baird Service
-**Última actualización:** 2 de abril de 2026
+**Última actualización:** 27 de abril de 2026
 
 ## Estado general
 
-El proyecto está en **fase de producción activa**. El ciclo de vida completo del servicio está implementado: solicitud → notificación → aceptación → completación → confirmación del cliente. Carga masiva de garantías operativa. Verificación de negocio en Meta completada (vía Shopify). Verificación de acceso enviada y en revisión. RLS habilitado en Supabase. Número propio registrado (+57 313 4951164). Token permanente del System User activo. WhatsApp Cloud API v22.0 operativa con número propio. Notificación de bienvenida para técnicos implementada.
+El proyecto está en **fase de producción activa** con **flujo customer-first scheduling (v2)**: el cliente elige horario antes de que se notifique a los técnicos. Implementadas también:
+- 4 opciones de siguiente paso post-diagnóstico (reparar / esperar repuesto / no reparable / negativa cliente)
+- Oath del técnico con firma digital antes de cada diagnóstico
+- Tracking GPS en 4 fases con flagging silencioso 30 min post-visita
+- Página pública de Términos y Condiciones (Ley 1480/2011, Ley 1581/2012)
+- 6 nuevas plantillas WhatsApp aprobadas en Meta
+- UI admin para gestión de repuestos pendientes y alertas GPS
+
+**ACCIÓN PENDIENTE DEL USUARIO:** aplicar migración SQL `supabase/migrations/20260427_customer_first_scheduling.sql` en Supabase Studio antes de probar en producción.
 
 ---
 
@@ -79,39 +87,83 @@ El proyecto está en **fase de producción activa**. El ciclo de vida completo d
 - [x] Lint cleanup completo — 26 problemas resueltos (commit 3f771c9)
 - [x] RLS habilitado en las 5 tablas de Supabase con políticas apropiadas
 
+### Flujo particular (no-garantía)
+- [x] Diferenciación completa WARRANTY vs PARTICULAR en todo el stack
+- [x] `notificarTecnicos()` — envía template diferente según `es_garantia`
+- [x] `procesarAceptacion()` — estado `diagnostico_pendiente` para particular
+- [x] Formulario de diagnóstico con cotización (mano de obra + repuestos)
+- [x] `POST /api/diagnostico` — branch WARRANTY (tarifa) vs PARTICULAR (cotización)
+- [x] `enviarCotizacionCliente()` — envía cotización al cliente con template WhatsApp
+- [x] Página `/cotizacion/{token}` — cliente aprueba o rechaza cotización
+- [x] `POST /api/aprobar-cotizacion` — procesa aprobación/rechazo
+- [x] `notificarCotizacionAprobada()` — notifica al técnico
+- [x] Nuevos estados: `diagnostico_pendiente`, `cotizacion_enviada`, `cotizacion_aprobada`, `cotizacion_rechazada`
+- [x] Constantes: `TARIFA_DIAGNOSTICO = $80,000 COP`, `ANTICIPO_PORCENTAJE = 50%`
+
+### Customer-first scheduling v2 (2026-04-27) — NEW
+- [x] Tipos `EstadoSolicitud` con 5 estados nuevos: `pendiente_horario`, `sin_agendar`, `esperando_repuesto`, `finalizado_sin_reparacion`, `cancelada_cliente`
+- [x] Tipo `SiguientePasoDiagnostico` con 4 valores
+- [x] Migración SQL completa lista (`20260427_customer_first_scheduling.sql`)
+- [x] 6 nuevas plantillas Meta aprobadas: `cliente_seleccion_horario_v1`, `recordatorio_horario_v1`, `tecnico_asignado_cliente_v5`, `esperando_repuesto_cliente_v1`, `repuesto_recibido_cliente_v1`, `finalizado_sin_reparacion_v1`
+- [x] Página `/horario/[token]` — cliente elige 1 de 2 horarios + acepta T&C
+- [x] Endpoint `/api/confirmar-horario` — atomic update + dispara `notificarTecnicos`
+- [x] Cron `/api/cron/horario-recordatorio` — recordatorio 24h + transición `sin_agendar` 36h
+- [x] Página `/terminos` — T&C completos alineados con legislación colombiana
+- [x] OathModal — declaración bajo juramento + firma digital del técnico antes del diagnóstico
+- [x] SiguientePasoSelector — 4 opciones con SKU obligatorio para `esperar_repuesto`
+- [x] Hook `useGps` + endpoint `/api/gps-ping` para tracking en 4 fases
+- [x] Cron `/api/cron/gps-followup` — flagging silencioso 30 min post-visita (radio 100m)
+- [x] UI admin `/admin/repuestos` — gestión de repuestos pendientes
+- [x] UI admin `/admin/gps-alertas` — visualización de servicios flagged
+- [x] Endpoint `/api/repuesto-recibido` — admin marca repuesto + reactiva estado + notifica cliente
+- [x] Tabla `repuestos_pendientes` con SKU, descripción, costo, tiempo_estimado
+- [x] Tabla `gps_pings` con auditoría completa de fases
+- [x] `vercel.json` con cron schedules
+
 ### Migraciones SQL
 - [x] `add_whatsapp_fields.sql` — campos WhatsApp y tabla `notificaciones_whatsapp`
 - [x] `20260327_portal_evidencias.sql` — `portal_token` en tecnicos, tabla `evidencias_servicio`
+- [ ] **`20260427_customer_first_scheduling.sql`** — APLICAR EN SUPABASE STUDIO antes de probar v2
 
 ---
 
 ## Pendientes — para activar producción
 
-### 1. Verificación del negocio en Meta ✅ COMPLETADO
-- [x] Verificación de negocio completada vía Shopify (1rep538r 1768612310)
-- [x] Verificación de acceso (tech provider) enviada — en revisión (respuesta en ~5 días hábiles, deadline 2026-05-31)
+### 0. Aplicar migración SQL v2 — BLOQUEADOR DE E2E
+- [ ] Abrir [Supabase Studio](https://supabase.com/dashboard) → SQL Editor
+- [ ] Pegar contenido de `supabase/migrations/20260427_customer_first_scheduling.sql`
+- [ ] Ejecutar (incluye: 9 columnas en solicitudes_servicio, 9 columnas en evidencias_servicio, tablas `repuestos_pendientes` y `gps_pings`, RLS)
+- [ ] Verificar con: `SELECT estado, COUNT(*) FROM solicitudes_servicio GROUP BY estado` — no debería romperse
 
-### 2. Registrar número propio de WhatsApp ✅ COMPLETADO
+### 1. Templates WhatsApp para flujo particular — ✅ APROBADAS
+- [x] `solicitud_particular_cliente_v1` — APPROVED
+- [x] `solicitud_particular_tecnico_v1` — APPROVED
+- [x] `tecnico_asignado_particular_v1` — APPROVED
+- [x] `cotizacion_cliente_v1` — APPROVED
+- [x] `cotizacion_aprobada_tecnico_v1` — APPROVED
+
+### 1b. Templates v2 customer-first scheduling — ✅ APROBADAS
+- [x] `cliente_seleccion_horario_v1` — APPROVED
+- [x] `recordatorio_horario_v1` — APPROVED
+- [x] `tecnico_asignado_cliente_v5` — APPROVED (reemplaza v4)
+- [x] `esperando_repuesto_cliente_v1` — APPROVED
+- [x] `repuesto_recibido_cliente_v1` — APPROVED
+- [x] `finalizado_sin_reparacion_v1` — APPROVED
+
+### 2. Verificación del negocio en Meta ✅ COMPLETADO
+- [x] Verificación de negocio completada vía Shopify (1rep538r 1768612310)
+- [x] Verificación de acceso (tech provider) enviada — en revisión (deadline 2026-05-31)
+
+### 3. Registrar número propio de WhatsApp ✅ COMPLETADO
 - [x] Número +57 313 4951164 registrado en Meta API
 - [x] Phone Number ID: `1148716061648720`
 - [x] WABA ID: `2354953275016882`
-- [x] `WHATSAPP_PHONE_ID` en Vercel actualizado al nuevo ID
 
-### 3. Token permanente (System User) ✅ COMPLETADO
-- [x] System User `baird-api` creado en business.facebook.com
-- [x] Permisos seleccionados: `whatsapp_business_messaging` + `whatsapp_business_management`
-- [x] Caducidad: Nunca (token permanente)
-- [x] Token permanente generado y configurado en Vercel
-- [x] `WHATSAPP_API_TOKEN` actualizado en Vercel
-- [x] Redeploy completado — mensajes enviándose correctamente
-
-### 4. Ejecutar migración de evidencias en Supabase
-- [ ] Ejecutar `supabase/migrations/20260327_portal_evidencias.sql` en SQL Editor
-- [ ] Crear bucket `evidencias-servicio` en Storage (público)
+### 4. Token permanente (System User) ✅ COMPLETADO
+- [x] System User `baird-api` con token permanente activo
 
 ### 5. RLS en Supabase ✅ COMPLETADO
 - [x] Row Level Security habilitado en las 5 tablas
-- [x] Políticas creadas: anon INSERT/SELECT/UPDATE, authenticated ALL en cada tabla
 
 ---
 

@@ -24,7 +24,16 @@ import {
   BoltIcon,
   LightBulbIcon,
 } from '@/components/icons'
-import { TIPOS_EQUIPO, TIPOS_SOLICITUD } from '@/types/solicitud'
+import {
+  TIPOS_EQUIPO,
+  TIPOS_SOLICITUD,
+  TARIFA_DIAGNOSTICO,
+  ANTICIPO_PORCENTAJE,
+  IVA_TARIFA,
+  calcularBaseSinIva,
+  calcularIvaIncluido,
+} from '@/types/solicitud'
+import { formatCOP } from '@/lib/utils/format'
 
 // ──────────────────────────────────────────────────────────
 // TRIAJE IA: deshabilitado temporalmente para priorizar
@@ -390,25 +399,104 @@ export default function SolicitarServicio() {
                       />
                     </div>
 
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                      <InputField
-                        label="Valor del servicio (COP)"
-                        name="pago_tecnico"
-                        type="number"
-                        value={formData.pago_tecnico === 0 ? '' : String(formData.pago_tecnico)}
-                        onChange={handleChange}
-                        placeholder="Mínimo $20.000"
-                        error={errors.pago_tecnico}
-                        icon={<BoltIcon className="w-5 h-5 mr-2 text-green-600" />}
-                        min={20000}
-                        max={10000000}
-                        required
-                      />
-                      <p className="text-xs text-green-700 mt-2">
-                        💡 Este valor se mostrará al técnico antes de que decida aceptar. Mínimo $20.000 COP.
-                        El pago se realiza directamente a Baird Service por medios electrónicos. No se acepta efectivo.
-                      </p>
-                    </div>
+                    {/* ── Tarjeta de precio (calculado automáticamente) ── */}
+                    {formData.es_garantia ? (
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                        <div className="flex items-start gap-3">
+                          <ShieldCheckIcon className="w-5 h-5 text-purple-600 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-sm font-semibold text-purple-900">
+                              Servicio sin costo para ti
+                            </p>
+                            <p className="text-xs text-purple-700 mt-1">
+                              Esta solicitud está cubierta por la garantía de la marca. Baird Service
+                              factura directamente al fabricante.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : formData.tipo_solicitud === 'Mantenimiento' ? (
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-2">
+                            <BoltIcon className="w-5 h-5 text-green-600 shrink-0" />
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Mantenimiento {formData.tipo_equipo}
+                              </p>
+                              <p className="text-2xl font-bold text-green-700 mt-0.5">
+                                ${formatCOP(formData.pago_tecnico)} <span className="text-sm font-medium text-green-600">COP</span>
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs text-green-700 bg-white border border-green-200 rounded-full px-2.5 py-1 font-medium">
+                            Tarifa fija
+                          </span>
+                        </div>
+
+                        {/* Discriminación del IVA — exigido por DIAN para facturación electrónica */}
+                        <div className="bg-white border border-green-100 rounded-lg p-2.5 text-[11px] text-gray-700 space-y-0.5">
+                          <div className="flex justify-between">
+                            <span>Base sin IVA</span>
+                            <span className="font-medium tabular-nums">${formatCOP(calcularBaseSinIva(formData.pago_tecnico))}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>IVA ({Math.round(IVA_TARIFA * 100)}%)</span>
+                            <span className="font-medium tabular-nums">${formatCOP(calcularIvaIncluido(formData.pago_tecnico))}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-green-200 pt-1 mt-1 text-green-800 font-semibold">
+                            <span>Total a pagar</span>
+                            <span className="tabular-nums">${formatCOP(formData.pago_tecnico)}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-green-700 mt-3">
+                          💡 Incluye limpieza, lubricación, ajustes eléctricos y prueba de funcionamiento.
+                          El pago se realiza a Baird Service por medios electrónicos (no efectivo).
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-2">
+                            <BoltIcon className="w-5 h-5 text-blue-600 shrink-0" />
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                {formData.tipo_solicitud} — visita técnica
+                              </p>
+                              <p className="text-2xl font-bold text-blue-700 mt-0.5">
+                                ${formatCOP(TARIFA_DIAGNOSTICO)} <span className="text-sm font-medium text-blue-600">COP</span>
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs text-blue-700 bg-white border border-blue-200 rounded-full px-2.5 py-1 font-medium">
+                            Anticipo ${formatCOP(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)}
+                          </span>
+                        </div>
+
+                        {/* Discriminación del IVA — exigido por DIAN para facturación electrónica */}
+                        <div className="bg-white border border-blue-100 rounded-lg p-2.5 text-[11px] text-gray-700 space-y-0.5">
+                          <div className="flex justify-between">
+                            <span>Base sin IVA</span>
+                            <span className="font-medium tabular-nums">${formatCOP(calcularBaseSinIva(TARIFA_DIAGNOSTICO))}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>IVA ({Math.round(IVA_TARIFA * 100)}%)</span>
+                            <span className="font-medium tabular-nums">${formatCOP(calcularIvaIncluido(TARIFA_DIAGNOSTICO))}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 text-blue-800 font-semibold">
+                            <span>Total visita</span>
+                            <span className="tabular-nums">${formatCOP(TARIFA_DIAGNOSTICO)}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-blue-700 mt-3">
+                          💡 Pagas <strong>${formatCOP(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)} COP</strong> de
+                          anticipo para reservar la visita. Tras revisar el equipo, el técnico te enviará una
+                          cotización por la reparación; tú decides si aprobar o rechazar.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

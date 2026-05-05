@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baird Service — Guía de Arquitectura</title>
+<style>
+  :root {
+    --blue: #2563eb;
+    --blue-light: #eff6ff;
+    --green: #16a34a;
+    --green-light: #f0fdf4;
+    --orange: #ea580c;
+    --orange-light: #fff7ed;
+    --purple: #9333ea;
+    --purple-light: #faf5ff;
+    --gray: #6b7280;
+    --gray-light: #f9fafb;
+    --red: #dc2626;
+    --red-light: #fef2f2;
+    --teal: #0d9488;
+    --teal-light: #f0fdfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; line-height: 1.7; color: #1f2937; background: #f8fafc; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* Header */
+  .hero { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #06b6d4 100%); color: white; padding: 3rem 2rem; border-radius: 1.5rem; margin-bottom: 2rem; text-align: center; }
+  .hero h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+  .hero p { font-size: 1.15rem; opacity: 0.9; max-width: 700px; margin: 0 auto; }
+
+  /* Navigation */
+  .toc { background: white; border-radius: 1rem; padding: 1.5rem 2rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .toc h2 { font-size: 1.1rem; color: var(--gray); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.5rem; }
+  .toc a { display: block; padding: 0.5rem 0.75rem; color: var(--blue); text-decoration: none; border-radius: 0.5rem; font-weight: 500; transition: background 0.2s; }
+  .toc a:hover { background: var(--blue-light); }
+
+  /* Section */
+  .section { background: white; border-radius: 1rem; padding: 2rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .section h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+  .section h3 { font-size: 1.2rem; font-weight: 600; margin: 1.5rem 0 0.75rem; color: #374151; }
+  .section p { margin-bottom: 0.75rem; }
+
+  /* Diagram container */
+  .diagram { background: var(--gray-light); border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1.5rem; margin: 1rem 0; overflow-x: auto; }
+  .diagram svg { display: block; margin: 0 auto; }
+
+  /* Flow boxes */
+  .flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; margin: 1rem 0; }
+  .flow-box { padding: 0.6rem 1.2rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
+  .flow-arrow { font-size: 1.5rem; color: var(--gray); }
+  .fb-blue { background: var(--blue-light); color: var(--blue); border: 2px solid #bfdbfe; }
+  .fb-green { background: var(--green-light); color: var(--green); border: 2px solid #bbf7d0; }
+  .fb-orange { background: var(--orange-light); color: var(--orange); border: 2px solid #fed7aa; }
+  .fb-purple { background: var(--purple-light); color: var(--purple); border: 2px solid #e9d5ff; }
+  .fb-teal { background: var(--teal-light); color: var(--teal); border: 2px solid #99f6e4; }
+  .fb-red { background: var(--red-light); color: var(--red); border: 2px solid #fecaca; }
+
+  /* Cards grid */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin: 1rem 0; }
+  .card { border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1.25rem; transition: box-shadow 0.2s; }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .card-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .card h4 { font-weight: 700; margin-bottom: 0.25rem; }
+  .card p { color: var(--gray); font-size: 0.9rem; line-height: 1.5; }
+
+  /* State machine */
+  .state-machine { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; align-items: center; margin: 1rem 0; }
+  .state { padding: 0.5rem 1rem; border-radius: 2rem; font-weight: 600; font-size: 0.85rem; }
+  .state-pending { background: #fef3c7; color: #92400e; }
+  .state-notified { background: #dbeafe; color: #1e40af; }
+  .state-assigned { background: #e0e7ff; color: #3730a3; }
+  .state-process { background: #fce7f3; color: #9d174d; }
+  .state-verify { background: #f3e8ff; color: #6b21a8; }
+  .state-done { background: #d1fae5; color: #065f46; }
+  .state-dispute { background: #fee2e2; color: #991b1b; }
+  .state-cancel { background: #f3f4f6; color: #4b5563; }
+
+  /* Table-like info */
+  .info-grid { display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem 1rem; margin: 0.75rem 0; }
+  .info-label { font-weight: 600; color: #374151; }
+  .info-value { color: var(--gray); }
+
+  /* Layer diagram */
+  .layer-stack { display: flex; flex-direction: column; gap: 0; margin: 1rem auto; max-width: 700px; }
+  .layer { padding: 1rem 1.5rem; text-align: center; font-weight: 600; border: 2px solid white; }
+  .layer small { font-weight: 400; display: block; font-size: 0.8rem; opacity: 0.8; margin-top: 0.25rem; }
+  .layer-1 { background: #dbeafe; color: #1e3a8a; border-radius: 0.75rem 0.75rem 0 0; }
+  .layer-2 { background: #e0e7ff; color: #312e81; }
+  .layer-3 { background: #ede9fe; color: #4c1d95; }
+  .layer-4 { background: #f3e8ff; color: #581c87; }
+  .layer-5 { background: #fae8ff; color: #701a75; border-radius: 0 0 0.75rem 0.75rem; }
+
+  /* Badge */
+  .badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 1rem; font-size: 0.75rem; font-weight: 600; }
+  .badge-blue { background: var(--blue-light); color: var(--blue); }
+  .badge-green { background: var(--green-light); color: var(--green); }
+
+  /* Code */
+  code { background: #f1f5f9; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.88em; font-family: 'Fira Code', 'Consolas', monospace; }
+
+  /* Collapsible */
+  details { margin: 0.75rem 0; }
+  details summary { cursor: pointer; font-weight: 600; padding: 0.5rem; border-radius: 0.5rem; transition: background 0.2s; }
+  details summary:hover { background: var(--gray-light); }
+  details[open] summary { margin-bottom: 0.5rem; }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 1.75rem; }
+    .container { padding: 1rem; }
+    .section { padding: 1.25rem; }
+    .info-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Diagram: Architecture SVG */
+  .arch-svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+  /* Animated entrance */
+  .section { animation: fadeUp 0.4s ease-out; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Baird Service</h1>
+  <p>Guía completa de arquitectura y funcionamiento de la aplicación.<br>Marketplace de reparación de electrodomésticos de línea blanca en Colombia.</p>
+</div>
+
+<!-- TOC -->
+<nav class="toc">
+  <h2>Contenido</h2>
+  <div class="toc-grid">
+    <a href="#overview">1. Vista General</a>
+    <a href="#how-it-works">2. Cómo Funciona</a>
+    <a href="#tech-stack">3. Tecnologías</a>
+    <a href="#architecture">4. Arquitectura</a>
+    <a href="#pages">5. Páginas de la App</a>
+    <a href="#api">6. API Endpoints</a>
+    <a href="#database">7. Base de Datos</a>
+    <a href="#whatsapp">8. WhatsApp</a>
+    <a href="#states">9. Estados de Solicitud</a>
+    <a href="#security">10. Seguridad</a>
+    <a href="#deploy">11. Despliegue</a>
+    <a href="#files">12. Estructura de Archivos</a>
+  </div>
+</nav>
+
+<!-- 1. OVERVIEW -->
+<div class="section" id="overview">
+  <h2>1. Vista General</h2>
+  <p><strong>Baird Service</strong> es un marketplace que conecta clientes que necesitan reparar electrodomésticos (lavadoras, neveras, aires acondicionados, etc.) con técnicos verificados en Colombia. Todo el proceso se coordina automáticamente por WhatsApp.</p>
+
+  <h3>El Problema que Resuelve</h3>
+  <p>Cuando un electrodoméstico se daña, el cliente normalmente tiene que buscar un técnico por su cuenta, sin garantías de calidad ni precios justos. Baird Service centraliza ese proceso: el cliente describe el problema, la app usa inteligencia artificial para hacer un diagnóstico preliminar, y luego notifica automáticamente a técnicos calificados en la zona.</p>
+
+  <h3>Los 3 Usuarios del Sistema</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-icon">👤</div>
+      <h4>Cliente</h4>
+      <p>Persona que necesita reparar un electrodoméstico. Llena un formulario web, recibe un diagnóstico IA, y espera a que un técnico acepte el trabajo. Al final confirma si quedó satisfecho.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔧</div>
+      <h4>Técnico</h4>
+      <p>Profesional verificado que repara electrodomésticos. Recibe notificaciones por WhatsApp, acepta trabajos, sube evidencia fotográfica y firma digital al completar.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🛡️</div>
+      <h4>Administrador</h4>
+      <p>Juan (tú). Gestiona solicitudes, verifica técnicos, sube garantías masivas por Excel, y supervisa todo el flujo desde el panel de administración.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 2. HOW IT WORKS -->
+<div class="section" id="how-it-works">
+  <h2>2. Cómo Funciona (Paso a Paso)</h2>
+  <p>Este es el flujo completo desde que un cliente tiene un problema hasta que el servicio se completa:</p>
+
+  <div class="diagram">
+    <h3 style="text-align:center; margin-bottom: 1rem;">Flujo Completo del Servicio</h3>
+    <div class="flow">
+      <div class="flow-box fb-blue">1. Cliente llena formulario</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-purple">2. IA diagnostica</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-orange">3. Se notifica a técnicos por WhatsApp</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-green">4. Primer técnico acepta</div>
+    </div>
+    <div class="flow" style="margin-top: 0.5rem;">
+      <div class="flow-box fb-green">4. Técnico asignado</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-teal">5. Técnico realiza servicio</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-teal">6. Sube fotos + firma</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-blue">7. Cliente confirma</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-green">8. ¡Completado!</div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Paso 1: El cliente solicita un servicio</summary>
+    <p>El cliente visita <code>baird-app.vercel.app/solicitar</code> y llena un formulario con: nombre, teléfono, dirección, tipo de electrodoméstico, marca, modelo, y una descripción del problema. Si es una garantía, se habilitan campos adicionales.</p>
+    <p>Mientras el cliente escribe la descripción, la IA (Google Gemini) analiza el texto en tiempo real con un "debounce" (espera medio segundo después de que deja de teclear) y muestra un diagnóstico preliminar: posible causa, estimado de costo, urgencia y partes necesarias.</p>
+  </details>
+
+  <details>
+    <summary>Paso 2: Se guardan los datos y se notifica</summary>
+    <p>Al enviar el formulario, los datos se validan con Zod (un validador de datos) y se guardan en la base de datos Supabase. Luego el sistema busca técnicos que tengan la especialidad correcta (por ejemplo, si es una lavadora, busca técnicos con especialidad "Lavadoras") y les envía un mensaje de WhatsApp con los detalles del servicio y un botón para aceptar.</p>
+  </details>
+
+  <details>
+    <summary>Paso 3: El técnico acepta</summary>
+    <p>El primer técnico que toca el botón "Acepto este servicio" en WhatsApp gana la asignación. Es un mecanismo "atómico" — si dos técnicos tocan al mismo tiempo, solo uno queda asignado gracias a una condición en la base de datos (<code>WHERE tecnico_asignado_id IS NULL</code>). El técnico recibe un link a su portal personal donde puede ver los detalles.</p>
+  </details>
+
+  <details>
+    <summary>Paso 4: El técnico completa el servicio</summary>
+    <p>Después de realizar la reparación, el técnico va a su portal (<code>/tecnico/{token}/completar/{id}</code>) donde debe: subir fotos del antes y después, llenar un checklist de verificación, firmar digitalmente con su dedo, y el GPS captura su ubicación. Todo esto queda como evidencia.</p>
+  </details>
+
+  <details>
+    <summary>Paso 5: El cliente confirma</summary>
+    <p>El cliente recibe un WhatsApp con un link de confirmación. Al hacer clic, puede decir "Estoy satisfecho" o "Tengo un problema". Si está satisfecho, el servicio se marca como completado. Si reporta un problema, se marca como "en disputa" para que el admin intervenga.</p>
+  </details>
+</div>
+
+<!-- 3. TECH STACK -->
+<div class="section" id="tech-stack">
+  <h2>3. Tecnologías Utilizadas</h2>
+  <p>Piensa en estas tecnologías como las herramientas que se usaron para construir la casa:</p>
+
+  <div class="cards">
+    <div class="card" style="border-left: 4px solid var(--blue);">
+      <h4>Next.js 16 <span class="badge badge-blue">Framework</span></h4>
+      <p>Es el "esqueleto" de la app. Maneja las páginas web, las rutas (URLs), y el servidor. Piensa en él como el arquitecto que organiza todo. Usa el "App Router", que es la forma moderna de crear páginas.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid #06b6d4;">
+      <h4>React 19 <span class="badge badge-blue">Interfaz</span></h4>
+      <p>Es lo que el usuario ve y toca. Los botones, formularios, listas — todo está hecho con componentes de React. Es como los ladrillos individuales de la casa.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid #2dd4bf;">
+      <h4>TypeScript 5 <span class="badge badge-blue">Lenguaje</span></h4>
+      <p>El lenguaje de programación. Es JavaScript pero con "tipos" — como poner etiquetas a todo para que el código sea más seguro y tenga menos errores.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid #06b6d4;">
+      <h4>Tailwind CSS <span class="badge badge-blue">Estilos</span></h4>
+      <p>Controla cómo se ve todo: colores, tamaños, espacios, sombras. En lugar de escribir archivos CSS separados, se ponen clases directamente en el HTML como <code>bg-blue-500 text-white p-4</code>.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--green);">
+      <h4>Supabase <span class="badge badge-green">Base de Datos</span></h4>
+      <p>Es donde se guardan todos los datos: solicitudes, técnicos, notificaciones, evidencias. También maneja la autenticación del admin y el almacenamiento de fotos. Es como el "archivador" gigante del negocio.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--green);">
+      <h4>WhatsApp Business API <span class="badge badge-green">Mensajería</span></h4>
+      <p>Permite enviar y recibir mensajes de WhatsApp automáticamente. Cuando un cliente solicita un servicio, el sistema envía WhatsApps a los técnicos sin intervención humana.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--purple);">
+      <h4>Google Gemini AI <span class="badge badge-blue">IA</span></h4>
+      <p>Inteligencia artificial que analiza la descripción del problema y genera un diagnóstico preliminar: qué podría estar mal, cuánto podría costar, y qué tan urgente es. (Temporalmente desactivado).</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--orange);">
+      <h4>Vercel <span class="badge badge-green">Hosting</span></h4>
+      <p>Es donde "vive" la app en internet. Cada vez que se sube código nuevo, Vercel automáticamente lo despliega. La app está en <code>baird-app.vercel.app</code>.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. ARCHITECTURE -->
+<div class="section" id="architecture">
+  <h2>4. Arquitectura (Cómo Está Organizado)</h2>
+  <p>La app tiene una arquitectura de "capas", donde cada capa tiene una responsabilidad específica:</p>
+
+  <div class="layer-stack">
+    <div class="layer layer-1">
+      🖥️ Capa de Presentación (lo que ve el usuario)
+      <small>Páginas React + Tailwind CSS — formularios, botones, portales</small>
+    </div>
+    <div class="layer layer-2">
+      🔀 Capa de Rutas (App Router de Next.js)
+      <small>Decide qué página mostrar según la URL — /solicitar, /admin, /tecnico/[token]</small>
+    </div>
+    <div class="layer layer-3">
+      ⚙️ Capa de API (endpoints del servidor)
+      <small>8 endpoints que procesan datos — /api/whatsapp/notify, /api/triaje, etc.</small>
+    </div>
+    <div class="layer layer-4">
+      🧠 Capa de Servicios (lógica del negocio)
+      <small>whatsapp.service.ts, solicitud.service.ts — la "inteligencia" de la app</small>
+    </div>
+    <div class="layer layer-5">
+      💾 Capa de Datos (almacenamiento)
+      <small>Supabase (PostgreSQL) — 5 tablas + Storage para fotos</small>
+    </div>
+  </div>
+
+  <h3>Diagrama de Conexiones</h3>
+  <div class="diagram">
+    <svg viewBox="0 0 800 420" width="100%" style="max-width:800px;">
+      <!-- Client Browser -->
+      <rect x="20" y="20" width="180" height="70" rx="12" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+      <text x="110" y="50" text-anchor="middle" font-size="13" font-weight="bold" fill="#1e40af">Navegador del</text>
+      <text x="110" y="68" text-anchor="middle" font-size="13" font-weight="bold" fill="#1e40af">Cliente / Técnico</text>
+
+      <!-- Vercel -->
+      <rect x="300" y="10" width="200" height="90" rx="12" fill="#f3e8ff" stroke="#9333ea" stroke-width="2"/>
+      <text x="400" y="35" text-anchor="middle" font-size="12" font-weight="bold" fill="#6b21a8">Vercel (Servidor)</text>
+      <text x="400" y="55" text-anchor="middle" font-size="11" fill="#7c3aed">Next.js App Router</text>
+      <text x="400" y="72" text-anchor="middle" font-size="11" fill="#7c3aed">19 páginas + 8 APIs</text>
+      <text x="400" y="89" text-anchor="middle" font-size="11" fill="#7c3aed">middleware.ts (seguridad)</text>
+
+      <!-- Arrow: Browser -> Vercel -->
+      <line x1="200" y1="55" x2="298" y2="55" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="249" y="47" text-anchor="middle" font-size="10" fill="#6b7280">HTTPS</text>
+
+      <!-- Supabase -->
+      <rect x="580" y="20" width="190" height="70" rx="12" fill="#d1fae5" stroke="#16a34a" stroke-width="2"/>
+      <text x="675" y="48" text-anchor="middle" font-size="13" font-weight="bold" fill="#065f46">Supabase</text>
+      <text x="675" y="66" text-anchor="middle" font-size="11" fill="#059669">PostgreSQL + Storage</text>
+
+      <!-- Arrow: Vercel -> Supabase -->
+      <line x1="500" y1="55" x2="578" y2="55" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="539" y="47" text-anchor="middle" font-size="10" fill="#6b7280">SQL</text>
+
+      <!-- WhatsApp API -->
+      <rect x="580" y="140" width="190" height="70" rx="12" fill="#dcfce7" stroke="#22c55e" stroke-width="2"/>
+      <text x="675" y="168" text-anchor="middle" font-size="13" font-weight="bold" fill="#166534">WhatsApp API</text>
+      <text x="675" y="186" text-anchor="middle" font-size="11" fill="#15803d">Meta Cloud API</text>
+
+      <!-- Arrow: Vercel -> WhatsApp -->
+      <line x1="480" y1="100" x2="578" y2="160" stroke="#22c55e" stroke-width="2" marker-end="url(#arrow)"/>
+      <text x="510" y="120" text-anchor="middle" font-size="10" fill="#22c55e">Enviar msgs</text>
+
+      <!-- Arrow: WhatsApp -> Vercel (webhook) -->
+      <line x1="578" y1="180" x2="480" y2="85" stroke="#ea580c" stroke-width="2" stroke-dasharray="6" marker-end="url(#arrow-orange)"/>
+      <text x="545" y="148" text-anchor="middle" font-size="10" fill="#ea580c">Webhook</text>
+
+      <!-- Technician Phone -->
+      <rect x="580" y="260" width="190" height="70" rx="12" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="675" y="288" text-anchor="middle" font-size="13" font-weight="bold" fill="#92400e">Teléfono Técnico</text>
+      <text x="675" y="306" text-anchor="middle" font-size="11" fill="#a16207">Recibe WhatsApp</text>
+
+      <!-- Arrow: WhatsApp -> Phone -->
+      <line x1="675" y1="210" x2="675" y2="258" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-yellow)"/>
+
+      <!-- Gemini AI -->
+      <rect x="300" y="160" width="200" height="60" rx="12" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="400" y="185" text-anchor="middle" font-size="13" font-weight="bold" fill="#5b21b6">Google Gemini AI</text>
+      <text x="400" y="203" text-anchor="middle" font-size="11" fill="#7c3aed">Diagnóstico automático</text>
+
+      <!-- Arrow: Vercel -> Gemini -->
+      <line x1="400" y1="100" x2="400" y2="158" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrow-purple)"/>
+      <text x="430" y="130" text-anchor="middle" font-size="10" fill="#8b5cf6">API call</text>
+
+      <!-- Admin Browser -->
+      <rect x="20" y="140" width="180" height="70" rx="12" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+      <text x="110" y="168" text-anchor="middle" font-size="13" font-weight="bold" fill="#991b1b">Panel Admin</text>
+      <text x="110" y="186" text-anchor="middle" font-size="11" fill="#dc2626">/admin (con login)</text>
+
+      <!-- Arrow: Admin -> Vercel -->
+      <line x1="200" y1="175" x2="298" y2="80" stroke="#ef4444" stroke-width="2" marker-end="url(#arrow-red)"/>
+      <text x="235" y="110" text-anchor="middle" font-size="10" fill="#ef4444">Auth</text>
+
+      <!-- Client Phone -->
+      <rect x="20" y="260" width="180" height="70" rx="12" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="110" y="288" text-anchor="middle" font-size="13" font-weight="bold" fill="#92400e">Teléfono Cliente</text>
+      <text x="110" y="306" text-anchor="middle" font-size="11" fill="#a16207">Recibe confirmación</text>
+
+      <!-- Arrow: WhatsApp -> Client Phone (curved) -->
+      <path d="M580 190 Q 400 350 200 295" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6" marker-end="url(#arrow-yellow)"/>
+      <text x="380" y="300" text-anchor="middle" font-size="10" fill="#a16207">Link confirmar</text>
+
+      <!-- Legend -->
+      <rect x="20" y="365" width="760" height="45" rx="8" fill="#f8fafc" stroke="#e5e7eb"/>
+      <text x="40" y="385" font-size="11" font-weight="bold" fill="#374151">Leyenda:</text>
+      <line x1="110" y1="382" x2="140" y2="382" stroke="#6b7280" stroke-width="2"/>
+      <text x="145" y="386" font-size="10" fill="#6b7280">Conexión directa</text>
+      <line x1="250" y1="382" x2="280" y2="382" stroke="#ea580c" stroke-width="2" stroke-dasharray="6"/>
+      <text x="285" y="386" font-size="10" fill="#ea580c">Webhook/callback</text>
+      <rect x="400" y="372" width="12" height="12" rx="2" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="418" y="384" font-size="10" fill="#6b7280">Frontend</text>
+      <rect x="480" y="372" width="12" height="12" rx="2" fill="#f3e8ff" stroke="#9333ea"/>
+      <text x="498" y="384" font-size="10" fill="#6b7280">Backend</text>
+      <rect x="560" y="372" width="12" height="12" rx="2" fill="#d1fae5" stroke="#16a34a"/>
+      <text x="578" y="384" font-size="10" fill="#6b7280">Servicios externos</text>
+      <rect x="680" y="372" width="12" height="12" rx="2" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="698" y="384" font-size="10" fill="#6b7280">Dispositivos</text>
+
+      <!-- Arrow markers -->
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/></marker>
+        <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ea580c"/></marker>
+        <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b"/></marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8b5cf6"/></marker>
+        <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444"/></marker>
+      </defs>
+    </svg>
+  </div>
+</div>
+
+<!-- 5. PAGES -->
+<div class="section" id="pages">
+  <h2>5. Páginas de la App (19 en total)</h2>
+  <p>Cada página es un archivo <code>page.tsx</code> dentro de la carpeta <code>src/app/</code>. La URL de la página corresponde a la estructura de carpetas.</p>
+
+  <h3>Páginas Públicas (Cliente)</h3>
+  <div class="cards">
+    <div class="card">
+      <h4><code>/</code> — Landing Page</h4>
+      <p>Página principal con acceso diferenciado: botón para clientes (solicitar servicio) y para técnicos (registrarse).</p>
+    </div>
+    <div class="card">
+      <h4><code>/solicitar</code> — Solicitar Servicio</h4>
+      <p>Formulario completo donde el cliente describe su problema. Incluye triaje IA en tiempo real y validación con Zod.</p>
+    </div>
+    <div class="card">
+      <h4><code>/registro</code> — Registro de Técnicos</h4>
+      <p>Formulario para que técnicos se registren: datos personales, especialidades, foto de perfil y documento de identidad.</p>
+    </div>
+    <div class="card">
+      <h4><code>/confirmar/[token]</code> — Confirmación Cliente</h4>
+      <p>El cliente llega aquí desde WhatsApp para decir si quedó satisfecho o reportar un problema.</p>
+    </div>
+    <div class="card">
+      <h4><code>/politica-privacidad</code></h4>
+      <p>Política de privacidad (requerida por Meta para la app de WhatsApp).</p>
+    </div>
+    <div class="card">
+      <h4><code>/eliminacion-datos</code></h4>
+      <p>Página de eliminación de datos (requerida por Meta).</p>
+    </div>
+  </div>
+
+  <h3>Portal del Técnico</h3>
+  <div class="cards">
+    <div class="card">
+      <h4><code>/aceptar/[token]</code> — Aceptar Servicio</h4>
+      <p>Página de un solo clic donde el técnico acepta un servicio. El token es único por notificación.</p>
+    </div>
+    <div class="card">
+      <h4><code>/tecnico/[token]</code> — Portal del Técnico</h4>
+      <p>Dashboard personal del técnico con lista de servicios activos e historial. Acceso sin login, por URL con token UUID.</p>
+    </div>
+    <div class="card">
+      <h4><code>/tecnico/[token]/completar/[id]</code></h4>
+      <p>Formulario para completar un servicio: subir fotos, llenar checklist, firmar digitalmente, GPS automático.</p>
+    </div>
+    <div class="card">
+      <h4><code>/tecnico/[token]/diagnostico/[id]</code></h4>
+      <p>Página de diagnóstico donde el técnico puede revisar y agregar detalles técnicos del servicio.</p>
+    </div>
+  </div>
+
+  <h3>Panel de Administración (requiere login)</h3>
+  <div class="cards">
+    <div class="card">
+      <h4><code>/admin</code> — Dashboard</h4>
+      <p>Vista general con estadísticas: total de solicitudes, técnicos, y métricas clave.</p>
+    </div>
+    <div class="card">
+      <h4><code>/admin/solicitudes</code> — Solicitudes</h4>
+      <p>Lista con filtros por estado. Cada solicitud tiene una vista detallada con evidencias, historial de notificaciones, y botón re-notificar.</p>
+    </div>
+    <div class="card">
+      <h4><code>/admin/tecnicos</code> — Técnicos</h4>
+      <p>Lista de técnicos con opciones para verificar o rechazar. Vista detallada con documentos y especialidades.</p>
+    </div>
+    <div class="card">
+      <h4><code>/admin/carga-masiva</code> — Carga Masiva</h4>
+      <p>Upload de archivos Excel (.xlsx) en formato BITÁCORA Mabe/GE para cargar garantías de forma masiva.</p>
+    </div>
+    <div class="card">
+      <h4><code>/admin/garantias</code> — Garantías</h4>
+      <p>Dashboard de garantías con resumen por marca, tipo de equipo y estado.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 6. API -->
+<div class="section" id="api">
+  <h2>6. API Endpoints (8 en total)</h2>
+  <p>Los endpoints son como "puertas de servicio" que reciben peticiones y devuelven respuestas. Están en <code>src/app/api/</code>.</p>
+
+  <div class="cards">
+    <div class="card" style="border-left: 4px solid var(--green);">
+      <h4>POST /api/whatsapp/notify</h4>
+      <p>Busca técnicos con la especialidad correcta y les envía WhatsApp con los detalles del servicio y botón de aceptación.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--green);">
+      <h4>POST /api/whatsapp/accept</h4>
+      <p>Procesa la aceptación del técnico. Usa una actualización atómica en la base de datos para evitar que dos técnicos acepten el mismo servicio.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--green);">
+      <h4>GET/POST /api/whatsapp/webhook</h4>
+      <p>GET: Handshake de verificación con Meta. POST: Recibe eventos de WhatsApp (mensajes, confirmaciones), verifica firma HMAC, y responde 200.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--purple);">
+      <h4>POST /api/triaje</h4>
+      <p>Envía la descripción del problema a Google Gemini AI y devuelve un diagnóstico estructurado en JSON.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--teal);">
+      <h4>POST /api/completar-servicio</h4>
+      <p>Cuando el técnico completa un servicio, este endpoint guarda la evidencia y envía WhatsApp al cliente pidiendo confirmación.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--teal);">
+      <h4>POST /api/confirmar-servicio</h4>
+      <p>Procesa la confirmación del cliente (satisfecho vs. problema) y actualiza el estado de la solicitud.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--orange);">
+      <h4>POST /api/carga-masiva</h4>
+      <p>Recibe un archivo Excel, lo parsea con la librería xlsx, mapea las columnas del formato BITÁCORA, y hace un insert masivo en la base de datos.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--gray);">
+      <h4>GET /api/health</h4>
+      <p>Endpoint de salud que devuelve "OK" — útil para verificar que el servidor está funcionando.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 7. DATABASE -->
+<div class="section" id="database">
+  <h2>7. Base de Datos (5 Tablas)</h2>
+  <p>Todos los datos se guardan en Supabase (PostgreSQL). Piensa en cada tabla como una hoja de cálculo gigante:</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 800 380" width="100%" style="max-width:800px;">
+      <!-- solicitudes_servicio -->
+      <rect x="250" y="10" width="300" height="80" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+      <text x="400" y="35" text-anchor="middle" font-size="13" font-weight="bold" fill="#1e40af">solicitudes_servicio</text>
+      <text x="400" y="52" text-anchor="middle" font-size="10" fill="#3b82f6">Tabla principal — cada fila = 1 solicitud</text>
+      <text x="400" y="66" text-anchor="middle" font-size="9" fill="#6b7280">nombre, teléfono, dirección, equipo, marca,</text>
+      <text x="400" y="78" text-anchor="middle" font-size="9" fill="#6b7280">estado, técnico asignado, diagnóstico IA</text>
+
+      <!-- tecnicos -->
+      <rect x="20" y="150" width="220" height="70" rx="10" fill="#d1fae5" stroke="#16a34a" stroke-width="2"/>
+      <text x="130" y="175" text-anchor="middle" font-size="13" font-weight="bold" fill="#065f46">tecnicos</text>
+      <text x="130" y="192" text-anchor="middle" font-size="10" fill="#059669">Perfiles de técnicos</text>
+      <text x="130" y="206" text-anchor="middle" font-size="9" fill="#6b7280">nombre, whatsapp, foto, portal_token</text>
+
+      <!-- especialidades_tecnico -->
+      <rect x="20" y="270" width="220" height="60" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="2"/>
+      <text x="130" y="295" text-anchor="middle" font-size="12" font-weight="bold" fill="#166534">especialidades_tecnico</text>
+      <text x="130" y="312" text-anchor="middle" font-size="9" fill="#6b7280">tecnico_id + especialidad (ej: "Lavadoras")</text>
+
+      <!-- notificaciones_whatsapp -->
+      <rect x="290" y="150" width="220" height="70" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+      <text x="400" y="173" text-anchor="middle" font-size="12" font-weight="bold" fill="#9a3412">notificaciones_whatsapp</text>
+      <text x="400" y="190" text-anchor="middle" font-size="10" fill="#ea580c">1 registro por cada notificación</text>
+      <text x="400" y="204" text-anchor="middle" font-size="9" fill="#6b7280">token, estado, solicitud_id, tecnico_id</text>
+
+      <!-- evidencias_servicio -->
+      <rect x="560" y="150" width="220" height="70" rx="10" fill="#faf5ff" stroke="#9333ea" stroke-width="2"/>
+      <text x="670" y="175" text-anchor="middle" font-size="12" font-weight="bold" fill="#6b21a8">evidencias_servicio</text>
+      <text x="670" y="192" text-anchor="middle" font-size="10" fill="#9333ea">Fotos, checklist, firma, GPS</text>
+      <text x="670" y="206" text-anchor="middle" font-size="9" fill="#6b7280">solicitud_id, fotos[], firma_url</text>
+
+      <!-- Arrows -->
+      <line x1="130" y1="150" x2="270" y2="90" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="180" y="112" font-size="9" fill="#6b7280">asignado a</text>
+
+      <line x1="130" y1="270" x2="130" y2="222" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="155" y="250" font-size="9" fill="#6b7280">pertenece a</text>
+
+      <line x1="400" y1="150" x2="400" y2="92" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="425" y="125" font-size="9" fill="#6b7280">por solicitud</text>
+
+      <line x1="670" y1="150" x2="530" y2="90" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="620" y="112" font-size="9" fill="#6b7280">del servicio</text>
+
+      <!-- Storage -->
+      <rect x="560" y="270" width="220" height="60" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="670" y="295" text-anchor="middle" font-size="12" font-weight="bold" fill="#92400e">Supabase Storage</text>
+      <text x="670" y="312" text-anchor="middle" font-size="9" fill="#a16207">Bucket: evidencias-servicio (fotos, firmas)</text>
+
+      <line x1="670" y1="270" x2="670" y2="222" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow-yellow)"/>
+      <text x="700" y="250" font-size="9" fill="#a16207">URLs</text>
+    </svg>
+  </div>
+</div>
+
+<!-- 8. WHATSAPP -->
+<div class="section" id="whatsapp">
+  <h2>8. Integración WhatsApp</h2>
+  <p>La integración con WhatsApp funciona a través de la API de Meta (antes Facebook). Así es como fluye la comunicación:</p>
+
+  <div class="diagram">
+    <h3 style="text-align:center; margin-bottom:1rem;">Flujo de Mensajes WhatsApp</h3>
+    <div class="flow">
+      <div class="flow-box fb-blue">App (Vercel)</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-purple">Meta Cloud API</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-green">WhatsApp del Técnico</div>
+    </div>
+    <p style="text-align:center; margin: 0.5rem 0; color: var(--gray); font-size: 0.9rem;">Enviar notificaciones (la app inicia el mensaje)</p>
+
+    <div class="flow" style="margin-top: 1rem;">
+      <div class="flow-box fb-green">Técnico toca "Aceptar"</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-purple">Meta envía webhook</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-blue">App procesa aceptación</div>
+    </div>
+    <p style="text-align:center; margin: 0.5rem 0; color: var(--gray); font-size: 0.9rem;">Recibir respuestas (Meta notifica a la app via webhook)</p>
+  </div>
+
+  <h3>Datos de la Configuración Actual</h3>
+  <div class="info-grid">
+    <span class="info-label">Número:</span>
+    <span class="info-value">+57 313 4951164</span>
+    <span class="info-label">Phone Number ID:</span>
+    <span class="info-value"><code>1148716061648720</code></span>
+    <span class="info-label">WABA ID:</span>
+    <span class="info-value"><code>2354953275016882</code></span>
+    <span class="info-label">Webhook URL:</span>
+    <span class="info-value"><code>https://baird-app.vercel.app/api/whatsapp/webhook</code></span>
+    <span class="info-label">System User:</span>
+    <span class="info-value"><code>baird-api</code> (Acceso Admin)</span>
+    <span class="info-label">Verificación:</span>
+    <span class="info-value">Negocio verificado. Acceso en revisión (deadline: 31 mayo 2026)</span>
+  </div>
+
+  <h3>Seguridad del Webhook</h3>
+  <p>Cada mensaje que Meta envía al webhook incluye una firma HMAC-SHA256. La app verifica esta firma comparándola con el <code>WHATSAPP_WEBHOOK_SECRET</code> para asegurar que el mensaje realmente viene de Meta y no de un impostor.</p>
+</div>
+
+<!-- 9. STATES -->
+<div class="section" id="states">
+  <h2>9. Estados de una Solicitud</h2>
+  <p>Cada solicitud pasa por varios estados, como un paquete que se rastrea:</p>
+
+  <div class="diagram">
+    <h3 style="text-align:center; margin-bottom:1rem;">Máquina de Estados</h3>
+    <div class="state-machine">
+      <span class="state state-pending">pendiente</span>
+      <span class="flow-arrow">→</span>
+      <span class="state state-notified">notificada</span>
+      <span class="flow-arrow">→</span>
+      <span class="state state-assigned">asignada</span>
+      <span class="flow-arrow">→</span>
+      <span class="state state-process">en_proceso</span>
+      <span class="flow-arrow">→</span>
+      <span class="state state-verify">en_verificacion</span>
+    </div>
+    <div class="state-machine" style="margin-top: 1rem;">
+      <span class="state state-verify">en_verificacion</span>
+      <span class="flow-arrow">→</span>
+      <span class="state state-done">completada</span>
+      <span style="margin: 0 1rem; color: var(--gray);">ó</span>
+      <span class="state state-verify">en_verificacion</span>
+      <span class="flow-arrow">→</span>
+      <span class="state state-dispute">en_disputa</span>
+    </div>
+    <div class="state-machine" style="margin-top: 0.75rem;">
+      <span style="color: var(--gray); font-size: 0.85rem;">En cualquier momento:</span>
+      <span class="state state-cancel">cancelada</span>
+    </div>
+  </div>
+
+  <div class="cards" style="margin-top: 1rem;">
+    <div class="card">
+      <h4><span class="state state-pending" style="font-size:0.8rem;">pendiente</span></h4>
+      <p>El cliente acaba de enviar el formulario. Nadie ha sido notificado todavía.</p>
+    </div>
+    <div class="card">
+      <h4><span class="state state-notified" style="font-size:0.8rem;">notificada</span></h4>
+      <p>Se enviaron WhatsApps a los técnicos compatibles. Esperando que alguno acepte.</p>
+    </div>
+    <div class="card">
+      <h4><span class="state state-assigned" style="font-size:0.8rem;">asignada</span></h4>
+      <p>Un técnico aceptó el trabajo. Ya tiene acceso a los detalles en su portal.</p>
+    </div>
+    <div class="card">
+      <h4><span class="state state-process" style="font-size:0.8rem;">en_proceso</span></h4>
+      <p>El técnico está realizando la reparación (estado intermedio).</p>
+    </div>
+    <div class="card">
+      <h4><span class="state state-verify" style="font-size:0.8rem;">en_verificacion</span></h4>
+      <p>El técnico subió evidencia (fotos, firma). El cliente recibió link para confirmar.</p>
+    </div>
+    <div class="card">
+      <h4><span class="state state-done" style="font-size:0.8rem;">completada</span></h4>
+      <p>El cliente confirmó que está satisfecho. Servicio terminado exitosamente.</p>
+    </div>
+    <div class="card">
+      <h4><span class="state state-dispute" style="font-size:0.8rem;">en_disputa</span></h4>
+      <p>El cliente reportó un problema. Requiere intervención del administrador.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 10. SECURITY -->
+<div class="section" id="security">
+  <h2>10. Seguridad</h2>
+
+  <div class="cards">
+    <div class="card" style="border-left: 4px solid var(--green);">
+      <h4>Row Level Security (RLS)</h4>
+      <p>Supabase tiene RLS activado en las 5 tablas. Esto significa que la base de datos misma controla quién puede leer y escribir qué datos, independientemente del código de la app.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--blue);">
+      <h4>Autenticación Admin</h4>
+      <p>El panel de administración requiere login con Supabase Auth (email + contraseña). Sin login, no hay acceso a <code>/admin</code>.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--purple);">
+      <h4>Webhook HMAC</h4>
+      <p>Los webhooks de WhatsApp se verifican con firma HMAC-SHA256 para asegurar que realmente vienen de Meta.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--orange);">
+      <h4>Tokens UUID</h4>
+      <p>Los técnicos acceden a su portal con un token UUID único (no su ID). Esto hace imposible adivinar la URL de otro técnico.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--teal);">
+      <h4>Middleware de Seguridad</h4>
+      <p><code>middleware.ts</code> agrega headers de seguridad a todas las respuestas y maneja rate limiting para evitar abusos.</p>
+    </div>
+    <div class="card" style="border-left: 4px solid var(--red);">
+      <h4>Validación Zod</h4>
+      <p>Todos los datos del formulario se validan con Zod antes de guardarse. Por ejemplo, el teléfono debe ser un número colombiano válido.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 11. DEPLOY -->
+<div class="section" id="deploy">
+  <h2>11. Despliegue</h2>
+  <p>La app se despliega automáticamente en Vercel cada vez que se sube código al repositorio:</p>
+
+  <div class="diagram">
+    <div class="flow">
+      <div class="flow-box fb-blue">Código en GitHub</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-purple">Vercel detecta cambio</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-orange">Build (npm run build)</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box fb-green">Deploy automático</div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <span class="info-label">URL producción:</span>
+    <span class="info-value"><code>https://baird-app.vercel.app</code></span>
+    <span class="info-label">Plan:</span>
+    <span class="info-value">Vercel Hobby (gratuito)</span>
+    <span class="info-label">Región:</span>
+    <span class="info-value">Serverless (edge functions)</span>
+    <span class="info-label">Variables de entorno:</span>
+    <span class="info-value">8 variables configuradas en Vercel Dashboard</span>
+  </div>
+
+  <h3>Variables de Entorno</h3>
+  <p>Son valores secretos que la app necesita para funcionar pero no se guardan en el código:</p>
+  <div class="info-grid">
+    <span class="info-label">Supabase URL</span>
+    <span class="info-value">Dirección de la base de datos</span>
+    <span class="info-label">Supabase Key</span>
+    <span class="info-value">Llave para conectarse a Supabase</span>
+    <span class="info-label">Gemini API Key</span>
+    <span class="info-value">Llave para usar la IA de Google</span>
+    <span class="info-label">WhatsApp Token</span>
+    <span class="info-value">Token de autenticación con Meta API</span>
+    <span class="info-label">WhatsApp Phone ID</span>
+    <span class="info-value">Identificador del número de WhatsApp</span>
+    <span class="info-label">Webhook Tokens</span>
+    <span class="info-value">Verify token + Secret para webhooks</span>
+    <span class="info-label">App URL</span>
+    <span class="info-value">URL base de la aplicación</span>
+  </div>
+</div>
+
+<!-- 12. FILES -->
+<div class="section" id="files">
+  <h2>12. Estructura de Archivos</h2>
+  <p>Así está organizado el código del proyecto (67 archivos TypeScript en total):</p>
+
+  <div class="diagram" style="font-family: 'Fira Code', Consolas, monospace; font-size: 0.85rem; line-height: 2;">
+    <pre style="margin:0;">
+src/
+├── <strong>app/</strong>                         <span style="color:#6b7280">← Páginas y APIs (Next.js App Router)</span>
+│   ├── page.tsx                   <span style="color:#6b7280">← Landing page (/)</span>
+│   ├── solicitar/page.tsx         <span style="color:#3b82f6">← Formulario del cliente</span>
+│   ├── registro/page.tsx          <span style="color:#3b82f6">← Registro de técnicos</span>
+│   ├── aceptar/[token]/           <span style="color:#22c55e">← Aceptación de servicio</span>
+│   ├── tecnico/[token]/           <span style="color:#22c55e">← Portal del técnico</span>
+│   │   ├── completar/[id]/        <span style="color:#22c55e">← Completar servicio</span>
+│   │   └── diagnostico/[id]/      <span style="color:#22c55e">← Diagnóstico técnico</span>
+│   ├── confirmar/[token]/         <span style="color:#3b82f6">← Confirmación cliente</span>
+│   ├── admin/                     <span style="color:#dc2626">← Panel de administración</span>
+│   │   ├── login/                 <span style="color:#dc2626">← Login admin</span>
+│   │   ├── solicitudes/[id]/      <span style="color:#dc2626">← Detalle solicitud</span>
+│   │   ├── tecnicos/[id]/         <span style="color:#dc2626">← Detalle técnico</span>
+│   │   ├── carga-masiva/          <span style="color:#dc2626">← Upload Excel masivo</span>
+│   │   └── garantias/             <span style="color:#dc2626">← Dashboard garantías</span>
+│   └── <strong>api/</strong>                      <span style="color:#9333ea">← 8 endpoints del servidor</span>
+│       ├── whatsapp/notify/       <span style="color:#9333ea">← Notificar técnicos</span>
+│       ├── whatsapp/accept/       <span style="color:#9333ea">← Procesar aceptación</span>
+│       ├── whatsapp/webhook/      <span style="color:#9333ea">← Webhook de Meta</span>
+│       ├── triaje/                <span style="color:#9333ea">← IA Gemini</span>
+│       ├── completar-servicio/    <span style="color:#9333ea">← Completar + notificar</span>
+│       ├── confirmar-servicio/    <span style="color:#9333ea">← Confirmación cliente</span>
+│       ├── carga-masiva/          <span style="color:#9333ea">← Procesar Excel</span>
+│       └── health/                <span style="color:#9333ea">← Health check</span>
+│
+├── <strong>components/ui/</strong>               <span style="color:#6b7280">← 7 componentes reutilizables</span>
+│   ├── Button.tsx, Alert.tsx
+│   ├── InputField.tsx, PhoneInput.tsx
+│   ├── SelectField.tsx, TextAreaField.tsx
+│   └── DateTimeSlotPicker.tsx
+│
+├── <strong>hooks/</strong>                       <span style="color:#6b7280">← 3 hooks personalizados</span>
+│   ├── useDebounce.ts             <span style="color:#6b7280">← Esperar antes de ejecutar</span>
+│   ├── useSolicitudForm.ts        <span style="color:#6b7280">← Lógica del formulario</span>
+│   └── useTriaje.ts               <span style="color:#6b7280">← Lógica del triaje IA</span>
+│
+├── <strong>lib/</strong>                         <span style="color:#6b7280">← Lógica compartida</span>
+│   ├── supabase.ts                <span style="color:#16a34a">← Conexión a base de datos</span>
+│   ├── services/
+│   │   ├── whatsapp.service.ts    <span style="color:#ea580c">← Envío de mensajes WA</span>
+│   │   └── solicitud.service.ts   <span style="color:#ea580c">← Lógica de solicitudes</span>
+│   ├── utils/
+│   │   ├── phone.ts               <span style="color:#6b7280">← Formato de teléfonos</span>
+│   │   ├── format.ts              <span style="color:#6b7280">← Formato de moneda, fechas</span>
+│   │   └── excel-mapping.ts       <span style="color:#6b7280">← Parser de Excel BITÁCORA</span>
+│   ├── constants/
+│   │   ├── especialidades.ts      <span style="color:#6b7280">← Mapeo de especialidades</span>
+│   │   ├── estados.ts             <span style="color:#6b7280">← Estilos por estado</span>
+│   │   └── tarifas-garantia.ts    <span style="color:#6b7280">← Tarifas de garantías</span>
+│   └── validations/
+│       └── solicitud.schema.ts    <span style="color:#6b7280">← Validación Zod</span>
+│
+├── <strong>types/</strong>                       <span style="color:#6b7280">← Definiciones de tipos</span>
+│   ├── solicitud.ts
+│   └── components.ts
+│
+└── middleware.ts                  <span style="color:#6b7280">← Seguridad + rate limiting</span>
+    </pre>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="section" style="text-align: center; padding: 1.5rem;">
+  <p style="color: var(--gray); font-size: 0.9rem;">
+    <strong>Baird Service</strong> — Guía de Arquitectura<br>
+    Generado el 1 de abril de 2026 · 67 archivos TypeScript · 19 páginas · 8 APIs · 5 tablas
+  </p>
+</div>
+
+</div>
+</body>
+</html>

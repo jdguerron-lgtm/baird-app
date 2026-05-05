@@ -13,6 +13,9 @@ import {
 import { formatCOP } from '@/lib/utils/format'
 import { CodigoFallaSelector } from '@/components/ui/CodigoFallaSelector'
 import type { CodigoFalla } from '@/lib/constants/codigos-falla'
+import OathModal from '@/components/ui/OathModal'
+import SiguientePasoSelector, { type SiguientePasoData } from '@/components/ui/SiguientePasoSelector'
+import { useGps } from '@/hooks/useGps'
 
 interface Servicio {
   id: string
@@ -59,6 +62,15 @@ export default function DiagnosticoPage() {
   // Non-warranty (particular) quote fields
   const [manoObraParticular, setManoObraParticular] = useState('')
   const [repuestosParticular, setRepuestosParticular] = useState('')
+
+  // Oath del técnico — debe firmarse antes de iniciar el diagnóstico
+  const [oathFirma, setOathFirma] = useState<string | null>(null)
+
+  // Siguiente paso post-diagnóstico (4 opciones)
+  const [siguientePaso, setSiguientePaso] = useState<SiguientePasoData | null>(null)
+
+  // GPS hook
+  const { enviarPing } = useGps()
 
   // Extract model from novedades
   const modeloEquipo = useMemo(() => {
@@ -165,9 +177,30 @@ export default function DiagnosticoPage() {
       setError('Debes adjuntar al menos una foto o video del fallo')
       return
     }
+    if (!oathFirma) {
+      setError('Debes firmar la declaración bajo juramento antes de continuar')
+      return
+    }
+    if (!siguientePaso) {
+      setError('Debes elegir el siguiente paso (4 opciones)')
+      return
+    }
+    if (siguientePaso.paso === 'esperar_repuesto') {
+      if (!siguientePaso.sku?.trim() || !siguientePaso.descripcionRepuesto?.trim() || !siguientePaso.tiempoEstimado?.trim()) {
+        setError('SKU, descripción y tiempo estimado del repuesto son obligatorios')
+        return
+      }
+    }
+    if ((siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !siguientePaso.detalle?.trim()) {
+      setError('Debes describir el motivo del cierre del servicio')
+      return
+    }
 
     setEnviando(true)
     setError(null)
+
+    // Capturar GPS de la fase diagnóstico (no bloqueante en caso de fallo)
+    enviarPing(servicio.id, 'diagnostico').catch(() => {})
 
     try {
       // 1. Upload evidence files to Supabase Storage
@@ -208,6 +241,20 @@ export default function DiagnosticoPage() {
 
       let bodyPayload: Record<string, unknown>
 
+      // Datos comunes a ambos flujos
+      const oathData = {
+        oathFirma,
+        oathFirmadoAt: new Date().toISOString(),
+      }
+      const siguientePasoData = {
+        siguientePaso: siguientePaso!.paso,
+        siguientePasoDetalle: siguientePaso!.detalle?.trim() || null,
+        repuestoSku: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.sku?.trim() : null,
+        repuestoDescripcion: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.descripcionRepuesto?.trim() : null,
+        repuestoCosto: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.costoRepuesto ?? 0 : null,
+        repuestoTiempoEstimado: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.tiempoEstimado?.trim() : null,
+      }
+
       if (servicio.es_garantia) {
         // WARRANTY: calculate tariffs (hidden from technician)
         const calculo = calcularTotalGarantia(complejidad, 0, diasTranscurridos)
@@ -224,7 +271,6 @@ export default function DiagnosticoPage() {
           repuestosDetalle: requiereRepuestos ? repuestosDetalle.trim() : null,
           evidenciaUrls,
           diasTranscurridos,
-          // Fault code data
           codigoFalla: codigoFalla ? {
             codigo: codigoFalla.codigo,
             descripcion: codigoFalla.descripcion,
@@ -233,6 +279,8 @@ export default function DiagnosticoPage() {
             componente: codigoFalla.componente,
             complejidad: codigoFalla.complejidad,
           } : null,
+          ...oathData,
+          ...siguientePasoData,
         }
       } else {
         // NON-WARRANTY (PARTICULAR): send quote data
@@ -246,6 +294,8 @@ export default function DiagnosticoPage() {
           manoObraParticular: Number(manoObraParticular) || 0,
           repuestosParticular: Number(repuestosParticular) || 0,
           evidenciaUrls,
+          ...oathData,
+          ...siguientePasoData,
         }
       }
 
@@ -274,8 +324,15 @@ export default function DiagnosticoPage() {
   }
 
   // Can submit?
+  const siguientePasoListo = !!siguientePaso && (
+    siguientePaso.paso === 'reparar' ||
+    (siguientePaso.paso === 'esperar_repuesto' && !!siguientePaso.sku?.trim() && !!siguientePaso.descripcionRepuesto?.trim() && !!siguientePaso.tiempoEstimado?.trim()) ||
+    ((siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !!siguientePaso.detalle?.trim())
+  )
+
   const canSubmit = complejidad && diagnosticoTexto.length >= 10 && evidencias.length > 0
-    && (servicio?.es_garantia || Number(manoObraParticular) > 0) // Non-warranty requires quote amount
+    && oathFirma && siguientePasoListo
+    && (servicio?.es_garantia || Number(manoObraParticular) > 0)
 
   if (cargando) {
     return (
@@ -330,6 +387,19 @@ export default function DiagnosticoPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Oath modal — bloquea hasta que el técnico firme */}
+      {!oathFirma && servicio && tecnico && (
+        <OathModal
+          tecnicoNombre={tecnico.nombre_completo.split(' ')[0]}
+          equipo={`${servicio.tipo_equipo} ${servicio.marca_equipo}`}
+          onConfirm={(firma) => {
+            setOathFirma(firma)
+            // Capturar GPS de llegada cuando firma
+            enviarPing(servicio.id, 'llegada').catch(() => {})
+          }}
+        />
+      )}
+
       {/* Header */}
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
@@ -656,6 +726,14 @@ export default function DiagnosticoPage() {
             {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos o videos del fallo encontrado
           </p>
         </div>
+
+        {/* Siguiente paso — 4 opciones */}
+        <SiguientePasoSelector
+          esGarantia={servicio!.es_garantia}
+          marcaEquipo={servicio!.marca_equipo}
+          data={siguientePaso}
+          onChange={setSiguientePaso}
+        />
 
         {/* Error message */}
         {error && servicio && (

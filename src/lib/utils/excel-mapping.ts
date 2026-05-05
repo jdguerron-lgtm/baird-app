@@ -8,7 +8,8 @@ const FAMILIA_A_TIPO_EQUIPO: Record<string, TipoEquipo> = {
   'ESTUFAS':               'Estufa',
   'REFRIGERADORES':        'Nevera',
   'AIRES ACONDICIONADOS':  'Aire Acondicionado',
-  'CENTRO DE LAVADO':      'Lavadora',
+  'CENTRO DE LAVADO':      'Lavadora Secadora',  // combo 2-en-1
+  'CENTROS DE LAVADO':     'Lavadora Secadora',  // variante plural
   'LAVAVAJILLAS':          'Lavavajillas',
   'LAVADORAS':             'Lavadora',
   'SECADORAS':             'Secadora',

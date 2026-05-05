@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/horario-recordatorio",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/gps-followup",
+      "schedule": "30 9 * * *"
+    }
+  ]
+}

@@ -78,8 +78,12 @@ describe('FAMILIA_A_TIPO_EQUIPO mapping', () => {
     expect(FAMILIA_A_TIPO_EQUIPO['AIRES ACONDICIONADOS']).toBe('Aire Acondicionado')
   })
 
-  it('maps CENTRO DE LAVADO to Lavadora', () => {
-    expect(FAMILIA_A_TIPO_EQUIPO['CENTRO DE LAVADO']).toBe('Lavadora')
+  it('maps CENTRO DE LAVADO to Lavadora Secadora (combo 2-en-1)', () => {
+    expect(FAMILIA_A_TIPO_EQUIPO['CENTRO DE LAVADO']).toBe('Lavadora Secadora')
+  })
+
+  it('maps CENTROS DE LAVADO (plural) to Lavadora Secadora', () => {
+    expect(FAMILIA_A_TIPO_EQUIPO['CENTROS DE LAVADO']).toBe('Lavadora Secadora')
   })
 
   it('maps LAVAVAJILLAS to Lavavajillas', () => {

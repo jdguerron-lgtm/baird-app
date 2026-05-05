@@ -3,6 +3,12 @@ import { WA_API_BASE, notificarTecnicos } from '@/lib/services/whatsapp.service'
 
 export async function POST(request: Request) {
   try {
+    const cronSecret = process.env.CRON_SECRET
+    const authHeader = request.headers.get('authorization')
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     const { to, solicitudId } = await request.json()
 
     // Mode 2: Test full notificarTecnicos flow with a real solicitud

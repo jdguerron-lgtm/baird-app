@@ -1,0 +1,16 @@
+{
+  "cliente_nombre": "Test E2E Cliente",
+  "cliente_telefono": "57|3183723213",
+  "direccion": "Calle 100 #15-20",
+  "ciudad_pueblo": "Bogota",
+  "zona_servicio": "Chico",
+  "marca_equipo": "LG",
+  "tipo_equipo": "Lavadora",
+  "tipo_solicitud": "Reparación",
+  "novedades_equipo": "[Modelo: WM-3500] La lavadora no centrifuga al final del ciclo, hace ruido fuerte",
+  "es_garantia": true,
+  "numero_serie_factura": "TEST-E2E-001",
+  "pago_tecnico": 80000,
+  "horario_visita_1": "Lunes 8am-12pm",
+  "horario_visita_2": "Martes 2pm-6pm"
+}

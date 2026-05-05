@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 
 interface SolicitudInfo {
@@ -13,6 +13,7 @@ interface SolicitudInfo {
   pago_tecnico: number
   horario_visita_1: string
   horario_visita_2: string
+  horario_confirmado?: string | null
 }
 
 interface Props {
@@ -24,76 +25,21 @@ interface Props {
   esGarantia?: boolean
 }
 
-/**
- * Genera las opciones de horario para los proximos 3 dias habiles.
- * Cada dia tiene 2 franjas: manana y tarde.
- */
-function generarHorarios3Dias(): { fecha: string; label: string; franjas: { id: string; label: string }[] }[] {
-  const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
-  const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-
-  const resultado: { fecha: string; label: string; franjas: { id: string; label: string }[] }[] = []
-  const hoy = new Date()
-  let diasAgregados = 0
-  let offset = 1 // empezar desde manana
-
-  while (diasAgregados < 3) {
-    const dia = new Date(hoy)
-    dia.setDate(hoy.getDate() + offset)
-    const diaSemana = dia.getDay()
-
-    // Saltar domingos
-    if (diaSemana !== 0) {
-      const nombreDia = DIAS_SEMANA[diaSemana]
-      const numDia = dia.getDate()
-      const mes = MESES[dia.getMonth()]
-      const fechaStr = `${nombreDia} ${numDia} de ${mes}`
-
-      resultado.push({
-        fecha: dia.toISOString().split('T')[0],
-        label: fechaStr,
-        franjas: [
-          { id: `${dia.toISOString().split('T')[0]}_AM`, label: '8:00 AM - 12:00 PM' },
-          { id: `${dia.toISOString().split('T')[0]}_PM`, label: '2:00 PM - 5:00 PM' },
-        ],
-      })
-      diasAgregados++
-    }
-    offset++
-  }
-
-  return resultado
-}
-
 export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsignada, modeloEquipo, esGarantia }: Props) {
   const [estado, setEstado] = useState<'idle' | 'procesando' | 'ganado' | 'tomado'>(
     yaAsignada ? 'tomado' : 'idle'
   )
-  const [franjaSeleccionada, setFranjaSeleccionada] = useState<string | null>(null)
 
-  const horarios = useMemo(() => generarHorarios3Dias(), [])
-
-  // Obtener el label completo del horario seleccionado para enviar al API
-  const horarioTexto = useMemo(() => {
-    if (!franjaSeleccionada) return null
-    for (const dia of horarios) {
-      for (const franja of dia.franjas) {
-        if (franja.id === franjaSeleccionada) {
-          return `${dia.label}, ${franja.label}`
-        }
-      }
-    }
-    return null
-  }, [franjaSeleccionada, horarios])
+  // El cliente ya eligió el horario; el técnico solo lo acepta.
+  const horarioCliente = solicitud.horario_confirmado || solicitud.horario_visita_1 || 'Por coordinar'
 
   const aceptar = async () => {
-    if (!horarioTexto) return
     setEstado('procesando')
     try {
       const res = await fetch('/api/whatsapp/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, horarioSeleccionado: horarioTexto }),
+        body: JSON.stringify({ token }),
       })
       const result = await res.json()
       setEstado(result.ganado ? 'ganado' : 'tomado')
@@ -165,37 +111,11 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
               </div>
             </div>
 
-            {/* 3-day schedule picker */}
-            <div className="bg-slate-50 rounded-xl p-4">
-              <p className="text-xs text-gray-400 uppercase tracking-wide mb-3">
-                {estado === 'idle' ? 'Selecciona fecha y horario' : 'Horario seleccionado'}
-              </p>
-              <div className="space-y-3">
-                {horarios.map((dia) => (
-                  <div key={dia.fecha}>
-                    <p className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
-                      📅 {dia.label}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {dia.franjas.map((franja) => (
-                        <button
-                          key={franja.id}
-                          type="button"
-                          disabled={estado !== 'idle'}
-                          onClick={() => setFranjaSeleccionada(franja.id)}
-                          className={`text-center px-3 py-2.5 rounded-lg border-2 transition-all text-xs font-medium ${
-                            franjaSeleccionada === franja.id
-                              ? 'border-green-500 bg-green-50 text-green-800'
-                              : 'border-gray-200 bg-white text-slate-600 hover:border-gray-300'
-                          } ${estado !== 'idle' ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
-                        >
-                          {franja.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {/* Schedule chosen by the customer — read-only */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+              <p className="text-xs text-blue-700 uppercase tracking-wide mb-1 font-semibold">📅 Horario confirmado por el cliente</p>
+              <p className="text-base font-bold text-blue-900">{horarioCliente}</p>
+              <p className="text-xs text-blue-700 mt-1">El cliente ya seleccionó este horario. Si no puedes cumplirlo, no aceptes.</p>
             </div>
 
             {/* Payment highlight */}
@@ -209,27 +129,12 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
 
           {/* Action states */}
           {estado === 'idle' && (
-            <div className="space-y-2">
-              {!franjaSeleccionada && (
-                <p className="text-center text-sm text-amber-600">Selecciona un horario para continuar</p>
-              )}
-              {franjaSeleccionada && horarioTexto && (
-                <p className="text-center text-sm text-green-700 font-medium">
-                  {horarioTexto}
-                </p>
-              )}
-              <button
-                onClick={aceptar}
-                disabled={!franjaSeleccionada}
-                className={`w-full font-bold py-4 px-6 rounded-xl text-base transition-all shadow-sm ${
-                  franjaSeleccionada
-                    ? 'bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                Aceptar este servicio
-              </button>
-            </div>
+            <button
+              onClick={aceptar}
+              className="w-full font-bold py-4 px-6 rounded-xl text-base transition-all shadow-sm bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white"
+            >
+              Aceptar este servicio
+            </button>
           )}
 
           {estado === 'procesando' && (

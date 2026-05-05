@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baird Service — Flujos de Servicio</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.6; }
+
+  .header { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 2rem; text-align: center; }
+  .header h1 { font-size: 1.8rem; margin-bottom: 0.3rem; }
+  .header p { opacity: 0.85; font-size: 0.95rem; }
+
+  .tabs { display: flex; justify-content: center; gap: 0.5rem; padding: 1rem; background: white; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
+  .tab { padding: 0.6rem 1.2rem; border: 2px solid #e2e8f0; border-radius: 9999px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.2s; background: white; }
+  .tab:hover { border-color: #3b82f6; color: #3b82f6; }
+  .tab.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+  .tab.warranty { }
+  .tab.particular { }
+  .tab.architecture { }
+
+  .content { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* Flow steps */
+  .flow-step { background: white; border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 4px solid #3b82f6; position: relative; }
+  .flow-step.particular { border-left-color: #8b5cf6; }
+  .flow-step .step-number { position: absolute; top: -10px; left: -10px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800; color: white; }
+  .warranty .step-number { background: #3b82f6; }
+  .particular .step-number { background: #8b5cf6; }
+  .flow-step h3 { font-size: 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+  .flow-step .actors { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .actor { font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 9999px; font-weight: 600; }
+  .actor.customer { background: #dbeafe; color: #1e40af; }
+  .actor.tech { background: #dcfce7; color: #166534; }
+  .actor.system { background: #fef3c7; color: #92400e; }
+  .actor.admin { background: #fce7f3; color: #9d174d; }
+  .flow-step .description { font-size: 0.85rem; color: #475569; margin-bottom: 0.75rem; }
+  .flow-step .details { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .detail-item { background: #f8fafc; border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.78rem; }
+  .detail-item .label { font-weight: 600; color: #64748b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .detail-item .value { color: #1e293b; margin-top: 0.15rem; }
+
+  /* State badge */
+  .state { display: inline-block; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-weight: 700; }
+  .state.pendiente { background: #fef3c7; color: #92400e; }
+  .state.notificada { background: #e0e7ff; color: #3730a3; }
+  .state.asignada { background: #dbeafe; color: #1e40af; }
+  .state.diagnostico_pendiente { background: #e0e7ff; color: #4338ca; }
+  .state.cotizacion_enviada { background: #cffafe; color: #0e7490; }
+  .state.cotizacion_aprobada { background: #ccfbf1; color: #0f766e; }
+  .state.cotizacion_rechazada { background: #ffe4e6; color: #be123c; }
+  .state.en_proceso { background: #fef3c7; color: #b45309; }
+  .state.en_verificacion { background: #e0e7ff; color: #4338ca; }
+  .state.completada { background: #dcfce7; color: #166534; }
+  .state.en_disputa { background: #fee2e2; color: #dc2626; }
+
+  /* WhatsApp badge */
+  .wa { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; background: #dcfce7; color: #166534; padding: 0.15rem 0.5rem; border-radius: 6px; font-weight: 600; }
+  .wa::before { content: ''; display: inline-block; width: 12px; height: 12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2325D366'%3E%3Cpath d='M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z'/%3E%3Cpath d='M12 0C5.373 0 0 5.373 0 12c0 2.146.565 4.16 1.553 5.898L0 24l6.305-1.654A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75c-1.905 0-3.68-.525-5.206-1.438l-.375-.222-3.844 1.008 1.025-3.75-.244-.388A9.698 9.698 0 012.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75z'/%3E%3C/svg%3E") no-repeat center/contain; }
+
+  /* Arrow between steps */
+  .arrow { text-align: center; padding: 0.3rem 0; color: #94a3b8; font-size: 1.2rem; }
+
+  /* Architecture section */
+  .arch-card { background: white; border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .arch-card h3 { font-size: 1rem; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e2e8f0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 0.5rem; background: #f1f5f9; font-weight: 600; color: #475569; }
+  td { padding: 0.5rem; border-top: 1px solid #e2e8f0; }
+  tr:hover td { background: #f8fafc; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+  .comparison-col { background: #f8fafc; border-radius: 12px; padding: 1rem; }
+  .comparison-col h4 { font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .comparison-col.warranty h4 { color: #1e40af; }
+  .comparison-col.particular h4 { color: #7c3aed; }
+  .comparison-col ul { list-style: none; font-size: 0.8rem; }
+  .comparison-col li { padding: 0.3rem 0; border-bottom: 1px solid #e2e8f0; }
+  .comparison-col li:last-child { border-bottom: none; }
+
+  /* State machine visual */
+  .state-machine { background: #0f172a; border-radius: 12px; padding: 1.5rem; color: #e2e8f0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; overflow-x: auto; white-space: pre; line-height: 1.8; }
+  .state-machine .comment { color: #64748b; }
+  .state-machine .highlight { color: #38bdf8; font-weight: 600; }
+  .state-machine .arrow-text { color: #94a3b8; }
+  .state-machine .green { color: #4ade80; }
+  .state-machine .red { color: #f87171; }
+  .state-machine .yellow { color: #fbbf24; }
+  .state-machine .purple { color: #c084fc; }
+
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  @media (max-width: 640px) {
+    .flow-step .details { grid-template-columns: 1fr; }
+    .comparison { grid-template-columns: 1fr; }
+    .tabs { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Baird Service</h1>
+  <p>Flujos de servicio — Garantia y Particular</p>
+</div>
+
+<div class="tabs">
+  <div class="tab warranty active" onclick="showSection('warranty')">Flujo Garantia</div>
+  <div class="tab particular" onclick="showSection('particular')">Flujo Particular</div>
+  <div class="tab architecture" onclick="showSection('architecture')">Arquitectura</div>
+  <div class="tab" onclick="showSection('states')">Estados</div>
+  <div class="tab" onclick="showSection('whatsapp')">WhatsApp</div>
+</div>
+
+<div class="content">
+
+  <!-- ═══════════ WARRANTY FLOW ═══════════ -->
+  <div id="warranty" class="section active">
+    <div style="margin-bottom:1rem">
+      <h2 style="font-size:1.3rem;margin-bottom:0.3rem">Flujo de Garantia</h2>
+      <p style="font-size:0.85rem;color:#64748b">Servicios pagados por la marca (ej. Mabe/GE). El cliente no paga nada. El tecnico cobra tarifa fija segun complejidad.</p>
+    </div>
+
+    <div class="flow-step" style="border-left-color:#3b82f6">
+      <div class="step-number" style="background:#3b82f6">1</div>
+      <h3>Solicitud de servicio</h3>
+      <div class="actors">
+        <span class="actor customer">Cliente</span>
+        <span class="actor admin">Admin (carga masiva)</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El cliente llena el formulario en <code>/solicitar</code> o el admin sube un Excel (.xlsx formato BITACORA) en <code>/admin/carga-masiva</code>. El sistema guarda en Supabase, envia confirmacion por WhatsApp al cliente, y notifica a tecnicos compatibles.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/solicitar</code> o <code>POST /api/carga-masiva</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state pendiente">pendiente</span> &rarr; <span class="state notificada">notificada</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value">Confirmacion de solicitud</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al tecnico</div>
+          <div class="value"><span class="wa">nueva_solicitud_v3</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step" style="border-left-color:#3b82f6">
+      <div class="step-number" style="background:#3b82f6">2</div>
+      <h3>Aceptacion del tecnico</h3>
+      <div class="actors">
+        <span class="actor tech">Tecnico</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El tecnico hace clic en "Aceptar" en WhatsApp. La pagina <code>/aceptar/{token}</code> hace un UPDATE atomico (el primero en aceptar gana). Si otro tecnico intenta despues, recibe "servicio ya tomado".
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina</div>
+          <div class="value"><code>/aceptar/{token}</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state notificada">notificada</span> &rarr; <span class="state asignada">asignada</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al tecnico</div>
+          <div class="value"><span class="wa">servicio_asignado_tecnico_v3</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value"><span class="wa">tecnico_asignado_cliente_v4</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step" style="border-left-color:#3b82f6">
+      <div class="step-number" style="background:#3b82f6">3</div>
+      <h3>Diagnostico + Reparacion inmediata</h3>
+      <div class="actors">
+        <span class="actor tech">Tecnico</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El tecnico visita al cliente, diagnostica el problema, y llena el formulario de tarifa de garantia (codigo de complejidad, bono incentivo, codigo de falla). Luego procede directamente a reparar.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina</div>
+          <div class="value"><code>/tecnico/{token}/diagnostico/{id}</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/diagnostico</code> (branch garantia)</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state asignada">asignada</span> &rarr; <span class="state en_proceso">en_proceso</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value">Texto: "El tecnico esta trabajando en la reparacion"</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step" style="border-left-color:#3b82f6">
+      <div class="step-number" style="background:#3b82f6">4</div>
+      <h3>Completacion del servicio</h3>
+      <div class="actors">
+        <span class="actor tech">Tecnico</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El tecnico sube fotos del equipo reparado, completa el checklist de calidad, firma digital, y confirma la ubicacion GPS.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina</div>
+          <div class="value"><code>/tecnico/{token}/completar/{id}</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/completar-servicio</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state en_proceso">en_proceso</span> &rarr; <span class="state en_verificacion">en_verificacion</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value"><span class="wa">confirmar_servicio_v3</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step" style="border-left-color:#3b82f6">
+      <div class="step-number" style="background:#3b82f6">5</div>
+      <h3>Confirmacion del cliente</h3>
+      <div class="actors">
+        <span class="actor customer">Cliente</span>
+      </div>
+      <div class="description">
+        El cliente recibe un WhatsApp con boton para confirmar. Al hacer clic, ve la pagina de confirmacion donde puede marcar "Satisfecho" o "Reportar problema".
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina</div>
+          <div class="value"><code>/confirmar/{token}</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/confirmar-servicio</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado final</div>
+          <div class="value"><span class="state completada">completada</span> o <span class="state en_disputa">en_disputa</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Pago tecnico</div>
+          <div class="value">Tarifa segun complejidad + bono incentivo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PARTICULAR FLOW ═══════════ -->
+  <div id="particular" class="section">
+    <div style="margin-bottom:1rem">
+      <h2 style="font-size:1.3rem;margin-bottom:0.3rem">Flujo Particular (No-Garantia)</h2>
+      <p style="font-size:0.85rem;color:#64748b">Servicios pagados por el cliente. Tarifa de diagnostico fija ($80,000 COP) con anticipo del 50% ($40,000 COP). Despues del diagnostico, el tecnico envia cotizacion que el cliente debe aprobar.</p>
+    </div>
+
+    <div class="flow-step particular">
+      <div class="step-number">1</div>
+      <h3>Solicitud de servicio</h3>
+      <div class="actors">
+        <span class="actor customer">Cliente</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El cliente llena el formulario en <code>/solicitar</code> con <code>es_garantia = false</code>. El sistema guarda en Supabase, envia WhatsApp con tarifa de diagnostico y anticipo, y notifica a tecnicos compatibles.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/solicitar</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state pendiente">pendiente</span> &rarr; <span class="state notificada">notificada</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value"><span class="wa">solicitud_particular_cliente_v1</span><br>Incluye: tarifa diagnostico $80,000 + anticipo $40,000</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al tecnico</div>
+          <div class="value"><span class="wa">solicitud_particular_tecnico_v1</span><br>Incluye: pago diagnostico para el tecnico</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step particular">
+      <div class="step-number">2</div>
+      <h3>Aceptacion del tecnico</h3>
+      <div class="actors">
+        <span class="actor tech">Tecnico</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        Igual que garantia: clic en "Aceptar", UPDATE atomico, primer tecnico gana. Pero el estado siguiente es diferente: <span class="state diagnostico_pendiente">diagnostico_pendiente</span> en vez de <span class="state asignada">asignada</span>.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina</div>
+          <div class="value"><code>/aceptar/{token}</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state notificada">notificada</span> &rarr; <span class="state diagnostico_pendiente">diagnostico_pendiente</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al tecnico</div>
+          <div class="value"><span class="wa">servicio_asignado_tecnico_v3</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value"><span class="wa">tecnico_asignado_particular_v1</span><br>Incluye: info tecnico + tarifa + anticipo</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step particular">
+      <div class="step-number">3</div>
+      <h3>Diagnostico + Cotizacion</h3>
+      <div class="actors">
+        <span class="actor tech">Tecnico</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El tecnico visita al cliente, diagnostica el problema, y genera una cotizacion con mano de obra y repuestos. El sistema envia la cotizacion al cliente por WhatsApp con un boton para aprobar.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina tecnico</div>
+          <div class="value"><code>/tecnico/{token}/diagnostico/{id}</code><br>(muestra campos de cotizacion, no tarifa)</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/diagnostico</code> (branch particular)</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state diagnostico_pendiente">diagnostico_pendiente</span> &rarr; <span class="state cotizacion_enviada">cotizacion_enviada</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp al cliente</div>
+          <div class="value"><span class="wa">cotizacion_cliente_v1</span><br>Incluye: diagnostico, mano obra, repuestos, total + boton "Aprobar"</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step particular" style="border-left-color:#f59e0b; background:#fffbeb">
+      <div class="step-number" style="background:#f59e0b">4</div>
+      <h3>Aprobacion de cotizacion (paso extra)</h3>
+      <div class="actors">
+        <span class="actor customer">Cliente</span>
+        <span class="actor system">Sistema</span>
+      </div>
+      <div class="description">
+        El cliente abre <code>/cotizacion/{token}</code> donde ve el diagnostico, fotos de evidencia, desglose de costos, y dos botones: Aprobar o Rechazar. Si aprueba, el tecnico recibe notificacion para proceder. Si rechaza, el servicio se cierra.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Pagina cliente</div>
+          <div class="value"><code>/cotizacion/{token}</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">API</div>
+          <div class="value"><code>POST /api/aprobar-cotizacion</code></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Si APRUEBA</div>
+          <div class="value"><span class="state cotizacion_enviada">cotizacion_enviada</span> &rarr; <span class="state cotizacion_aprobada">cotizacion_aprobada</span> &rarr; <span class="state en_proceso">en_proceso</span><br><span class="wa">cotizacion_aprobada_tecnico_v1</span> al tecnico</div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Si RECHAZA</div>
+          <div class="value"><span class="state cotizacion_enviada">cotizacion_enviada</span> &rarr; <span class="state cotizacion_rechazada">cotizacion_rechazada</span><br>Texto de rechazo al tecnico</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step particular">
+      <div class="step-number">5</div>
+      <h3>Reparacion + Completacion</h3>
+      <div class="actors">
+        <span class="actor tech">Tecnico</span>
+      </div>
+      <div class="description">
+        Identico al flujo de garantia desde este punto: el tecnico repara, sube fotos, completa checklist, firma digital.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Estado</div>
+          <div class="value"><span class="state en_proceso">en_proceso</span> &rarr; <span class="state en_verificacion">en_verificacion</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">WhatsApp</div>
+          <div class="value"><span class="wa">confirmar_servicio_v3</span> al cliente</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <div class="flow-step particular">
+      <div class="step-number">6</div>
+      <h3>Confirmacion del cliente</h3>
+      <div class="actors">
+        <span class="actor customer">Cliente</span>
+      </div>
+      <div class="description">
+        Identico al flujo de garantia: el cliente confirma satisfaccion o reporta problema.
+      </div>
+      <div class="details">
+        <div class="detail-item">
+          <div class="label">Estado final</div>
+          <div class="value"><span class="state completada">completada</span> o <span class="state en_disputa">en_disputa</span></div>
+        </div>
+        <div class="detail-item">
+          <div class="label">Pago tecnico</div>
+          <div class="value">Total cotizado (mano obra + repuestos)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ ARCHITECTURE ═══════════ -->
+  <div id="architecture" class="section">
+    <h2 style="font-size:1.3rem;margin-bottom:1rem">Arquitectura del Sistema</h2>
+
+    <div class="arch-card">
+      <h3>Componentes principales</h3>
+      <table>
+        <tr><th>Componente</th><th>Tecnologia</th><th>Proposito</th></tr>
+        <tr><td>Frontend</td><td>Next.js 16 + React 19</td><td>App Router, SSR + client components</td></tr>
+        <tr><td>Backend</td><td>Next.js API Routes</td><td>Serverless functions en Vercel</td></tr>
+        <tr><td>Base de datos</td><td>Supabase (PostgreSQL)</td><td>Almacenamiento + RLS + Storage</td></tr>
+        <tr><td>Mensajeria</td><td>WhatsApp Business API</td><td>Notificaciones via Meta Cloud API v22.0</td></tr>
+        <tr><td>IA (deshabilitada)</td><td>Google Gemini 2.0 Flash</td><td>Triaje automatico de problemas</td></tr>
+        <tr><td>Deploy</td><td>Vercel</td><td>Serverless, edge, auto-deploy desde GitHub</td></tr>
+      </table>
+    </div>
+
+    <div class="arch-card">
+      <h3>Base de datos — Tablas principales</h3>
+      <table>
+        <tr><th>Tabla</th><th>Registros clave</th><th>Columnas importantes</th></tr>
+        <tr><td><code>solicitudes_servicio</code></td><td>Cada solicitud de servicio</td><td><code>estado</code>, <code>es_garantia</code>, <code>tecnico_asignado_id</code>, <code>triaje_resultado</code> (JSONB), <code>cotizacion</code> (JSONB), <code>pago_tecnico</code></td></tr>
+        <tr><td><code>tecnicos</code></td><td>Perfiles de tecnicos</td><td><code>portal_token</code>, <code>whatsapp</code>, <code>verificado</code></td></tr>
+        <tr><td><code>notificaciones_whatsapp</code></td><td>Una por tecnico notificado</td><td><code>token</code> (para aceptacion), <code>estado</code></td></tr>
+        <tr><td><code>especialidades_tecnico</code></td><td>Tecnico ↔ especialidad</td><td>Many-to-many join table</td></tr>
+        <tr><td><code>evidencias_servicio</code></td><td>Evidencia de completacion</td><td><code>fotos</code>, <code>checklist</code>, <code>firma</code>, <code>gps</code></td></tr>
+      </table>
+    </div>
+
+    <div class="arch-card">
+      <h3>Datos JSONB en solicitudes_servicio</h3>
+      <div class="comparison">
+        <div class="comparison-col warranty">
+          <h4>triaje_resultado (Garantia)</h4>
+          <ul>
+            <li><code>diagnostico_tecnico</code>: texto</li>
+            <li><code>complejidad</code>: nivel</li>
+            <li><code>codigo_complejidad</code>: codigo TSS</li>
+            <li><code>tarifa_mano_obra</code>: monto</li>
+            <li><code>bono_incentivo</code>: monto</li>
+            <li><code>total_servicio</code>: monto</li>
+            <li><code>codigo_falla</code>: objeto falla</li>
+          </ul>
+        </div>
+        <div class="comparison-col particular">
+          <h4>cotizacion (Particular)</h4>
+          <ul>
+            <li><code>diagnostico_tecnico</code>: texto</li>
+            <li><code>mano_obra</code>: monto</li>
+            <li><code>repuestos</code>: monto</li>
+            <li><code>total</code>: mano_obra + repuestos</li>
+            <li><code>token</code>: UUID aprobacion</li>
+            <li><code>cotizado_at</code>: timestamp</li>
+            <li><code>aprobado_at / rechazado_at</code></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="arch-card">
+      <h3>Modelo de pago</h3>
+      <div class="comparison">
+        <div class="comparison-col warranty">
+          <h4>Garantia</h4>
+          <ul>
+            <li>La marca paga a Baird Service</li>
+            <li>Tarifa fija segun codigo complejidad</li>
+            <li>Bono incentivo incluido</li>
+            <li>Cliente NO paga nada</li>
+            <li><code>pago_tecnico = totalServicio</code></li>
+          </ul>
+        </div>
+        <div class="comparison-col particular">
+          <h4>Particular</h4>
+          <ul>
+            <li>Cliente paga a Baird Service</li>
+            <li>Diagnostico: $80,000 COP (fijo)</li>
+            <li>Anticipo: 50% = $40,000 COP</li>
+            <li>Reparacion: segun cotizacion</li>
+            <li><code>pago_tecnico = cotizacion.total</code></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STATES ═══════════ -->
+  <div id="states" class="section">
+    <h2 style="font-size:1.3rem;margin-bottom:1rem">Maquina de Estados</h2>
+
+    <div class="arch-card">
+      <h3>Flujo de Garantia</h3>
+      <div class="state-machine"><span class="comment">// WARRANTY (es_garantia = true)</span>
+<span class="yellow">pendiente</span> <span class="arrow-text">───&gt;</span> <span class="highlight">notificada</span> <span class="arrow-text">───&gt;</span> <span class="highlight">asignada</span> <span class="arrow-text">───&gt;</span> <span class="yellow">en_proceso</span> <span class="arrow-text">───&gt;</span> <span class="purple">en_verificacion</span> <span class="arrow-text">───&gt;</span> <span class="green">completada</span>
+                                                                                   <span class="arrow-text">└──&gt;</span> <span class="red">en_disputa</span>
+                                         <span class="arrow-text">└──&gt;</span> <span class="red">cancelada</span></div>
+    </div>
+
+    <div class="arch-card">
+      <h3>Flujo Particular (No-Garantia)</h3>
+      <div class="state-machine"><span class="comment">// NON-WARRANTY (es_garantia = false)</span>
+<span class="yellow">pendiente</span> <span class="arrow-text">─&gt;</span> <span class="highlight">notificada</span> <span class="arrow-text">─&gt;</span> <span class="highlight">asignada</span> <span class="arrow-text">─&gt;</span> <span class="purple">diagnostico_pendiente</span>
+                                                    <span class="arrow-text">│</span>
+                                                    <span class="arrow-text">└──&gt;</span> <span class="highlight">cotizacion_enviada</span> <span class="arrow-text">──&gt;</span> <span class="green">cotizacion_aprobada</span> <span class="arrow-text">──&gt;</span> <span class="yellow">en_proceso</span> <span class="arrow-text">──&gt;</span> <span class="purple">en_verificacion</span> <span class="arrow-text">──&gt;</span> <span class="green">completada</span>
+                                                    <span class="arrow-text">│                      │</span>                                                          <span class="arrow-text">└──&gt;</span> <span class="red">en_disputa</span>
+                                                    <span class="arrow-text">│                      └──&gt;</span> <span class="red">cotizacion_rechazada</span>
+                                                    <span class="arrow-text">│</span>
+                                                    <span class="arrow-text">└──&gt;</span> <span class="red">cancelada</span></div>
+    </div>
+
+    <div class="arch-card">
+      <h3>Todos los estados</h3>
+      <table>
+        <tr><th>Estado</th><th>Significado</th><th>Quien actua</th><th>Flujo</th></tr>
+        <tr><td><span class="state pendiente">pendiente</span></td><td>Solicitud creada, sin notificar</td><td>Sistema</td><td>Ambos</td></tr>
+        <tr><td><span class="state notificada">notificada</span></td><td>Tecnicos notificados por WhatsApp</td><td>Sistema</td><td>Ambos</td></tr>
+        <tr><td><span class="state asignada">asignada</span></td><td>Tecnico asignado, listo para visitar</td><td>Tecnico</td><td>Ambos</td></tr>
+        <tr><td><span class="state diagnostico_pendiente">diagnostico_pendiente</span></td><td>Tecnico asignado, debe diagnosticar</td><td>Tecnico</td><td>Particular</td></tr>
+        <tr><td><span class="state cotizacion_enviada">cotizacion_enviada</span></td><td>Cotizacion enviada, esperando cliente</td><td>Cliente</td><td>Particular</td></tr>
+        <tr><td><span class="state cotizacion_aprobada">cotizacion_aprobada</span></td><td>Cliente aprobo, tecnico puede reparar</td><td>Sistema</td><td>Particular</td></tr>
+        <tr><td><span class="state cotizacion_rechazada">cotizacion_rechazada</span></td><td>Cliente rechazo la cotizacion</td><td>Cliente</td><td>Particular</td></tr>
+        <tr><td><span class="state en_proceso">en_proceso</span></td><td>Tecnico reparando</td><td>Tecnico</td><td>Ambos</td></tr>
+        <tr><td><span class="state en_verificacion">en_verificacion</span></td><td>Esperando confirmacion del cliente</td><td>Cliente</td><td>Ambos</td></tr>
+        <tr><td><span class="state completada">completada</span></td><td>Servicio terminado y confirmado</td><td>—</td><td>Ambos</td></tr>
+        <tr><td><span class="state en_disputa">en_disputa</span></td><td>Cliente reporto un problema</td><td>Admin</td><td>Ambos</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════ WHATSAPP ═══════════ -->
+  <div id="whatsapp" class="section">
+    <h2 style="font-size:1.3rem;margin-bottom:1rem">Templates WhatsApp</h2>
+
+    <div class="arch-card">
+      <h3>Templates de Garantia</h3>
+      <table>
+        <tr><th>Template</th><th>Usado en</th><th>Destino</th></tr>
+        <tr><td><span class="wa">nueva_solicitud_v3</span></td><td><code>notificarTecnicos()</code></td><td>Tecnico</td></tr>
+        <tr><td><span class="wa">servicio_no_disponible_v3</span></td><td><code>procesarAceptacion()</code></td><td>Tecnico (tarde)</td></tr>
+        <tr><td><span class="wa">servicio_asignado_tecnico_v3</span></td><td><code>procesarAceptacion()</code></td><td>Tecnico</td></tr>
+        <tr><td><span class="wa">tecnico_asignado_cliente_v4</span></td><td><code>procesarAceptacion()</code></td><td>Cliente</td></tr>
+        <tr><td><span class="wa">confirmar_servicio_v3</span></td><td><code>completar-servicio</code></td><td>Cliente</td></tr>
+        <tr><td><span class="wa">registro_bienvenida_v3</span></td><td><code>notificar-registro</code></td><td>Tecnico nuevo</td></tr>
+      </table>
+    </div>
+
+    <div class="arch-card">
+      <h3>Templates Particulares (No-Garantia)</h3>
+      <table>
+        <tr><th>Template</th><th>Usado en</th><th>Destino</th></tr>
+        <tr><td><span class="wa">solicitud_particular_cliente_v1</span></td><td><code>POST /api/solicitar</code></td><td>Cliente</td></tr>
+        <tr><td><span class="wa">solicitud_particular_tecnico_v1</span></td><td><code>notificarTecnicos()</code></td><td>Tecnico</td></tr>
+        <tr><td><span class="wa">tecnico_asignado_particular_v1</span></td><td><code>procesarAceptacion()</code></td><td>Cliente</td></tr>
+        <tr><td><span class="wa">cotizacion_cliente_v1</span></td><td><code>enviarCotizacionCliente()</code></td><td>Cliente</td></tr>
+        <tr><td><span class="wa">cotizacion_aprobada_tecnico_v1</span></td><td><code>notificarCotizacionAprobada()</code></td><td>Tecnico</td></tr>
+      </table>
+    </div>
+
+    <div class="arch-card">
+      <h3>Reglas importantes de WhatsApp</h3>
+      <div style="font-size:0.85rem;color:#475569">
+        <p style="margin-bottom:0.5rem"><strong>Ventana de 24 horas:</strong> Los mensajes de texto libre solo se pueden enviar si el cliente envio un mensaje al negocio en las ultimas 24 horas. Los templates se pueden enviar en cualquier momento.</p>
+        <p style="margin-bottom:0.5rem"><strong>Nombres de templates:</strong> Deben coincidir exactamente con lo aprobado en Meta Business Manager. Si se elimina un template, hay un cooldown de 4 semanas antes de reusar el mismo nombre.</p>
+        <p><strong>Numero:</strong> +57 313 4951164 | Phone ID: <code>1148716061648720</code> | WABA: <code>2354953275016882</code></p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

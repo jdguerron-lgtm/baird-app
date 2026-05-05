@@ -1,6 +1,6 @@
 # Baird Service
 
-Marketplace for white-line appliance repair services in Colombia. Connects customers with verified technicians via AI triage and WhatsApp coordination.
+Marketplace for white-line appliance repair services in Colombia. Connects customers with verified technicians via AI triage and WhatsApp coordination. The platform handles two distinct service flows: **warranty repairs** (paid by the brand) and **non-warranty (particular) repairs** (paid by the customer after quote approval).
 
 ## Commands
 
@@ -18,7 +18,7 @@ npm run test:watch # Vitest (watch mode)
 - **Styling:** Tailwind CSS v4 (inline classes, no CSS modules)
 - **Database:** Supabase (PostgreSQL) — singleton client at `src/lib/supabase.ts`
 - **AI:** Google Gemini 2.0 Flash (`@google/generative-ai`) — temporarily disabled
-- **Messaging:** WhatsApp Business API (Meta Cloud)
+- **Messaging:** WhatsApp Business API (Meta Cloud API v22.0)
 - **Validation:** Zod v4
 - **Deploy:** Vercel (serverless/edge)
 
@@ -26,81 +26,265 @@ npm run test:watch # Vitest (watch mode)
 
 ```
 src/
-├── app/                    # Next.js App Router pages
-│   ├── solicitar/          # Customer service request form
-│   ├── registro/           # Technician registration
-│   ├── aceptar/[token]/    # 1-click acceptance page for technicians
-│   ├── tecnico/[token]/    # Technician portal (service list, completion)
-│   │   └── completar/[id]/ # Service completion form (photos, checklist, signature)
-│   ├── confirmar/[token]/  # Customer satisfaction confirmation page
-│   ├── cotizacion/[token]/ # Customer quote approval page (non-warranty)
-│   ├── admin/              # Admin panel (auth-guarded)
-│   │   ├── solicitudes/    # Solicitudes list + detail (with evidence view)
-│   │   ├── tecnicos/       # Technician management
-│   │   ├── carga-masiva/   # Bulk Excel upload for warranty services
-│   │   └── garantias/      # Warranty dashboard (summary by brand/equipment)
-│   └── api/                # API routes
-│       ├── solicitar/           # Service request: insert + WhatsApp confirm + notify techs
-│       ├── diagnostico/         # Technician diagnosis: save + WhatsApp to customer
-│       ├── triaje/              # Gemini AI diagnosis
-│       ├── health/              # Health check
-│       ├── carga-masiva/        # Bulk Excel upload processing + WhatsApp confirm + notify
-│       ├── completar-servicio/  # Service completion + WhatsApp to customer
-│       ├── confirmar-servicio/  # Customer confirmation + WhatsApp to technician
-│       ├── aprobar-cotizacion/  # Quote approval/rejection (non-warranty)
-│       └── whatsapp/            # notify (admin-only), accept, webhook
-├── components/ui/          # Reusable UI components (Button, InputField, PhoneInput, etc.)
-├── hooks/                  # useDebounce, useSolicitudForm, useTriaje
+├── app/                        # Next.js App Router pages
+│   ├── solicitar/              # Customer service request form
+│   ├── registro/               # Technician registration
+│   ├── aceptar/[token]/        # 1-click acceptance page for technicians
+│   ├── tecnico/[token]/        # Technician portal (service list, history)
+│   │   ├── diagnostico/[id]/   # Diagnosis form (warranty tariff OR particular quote)
+│   │   └── completar/[id]/     # Service completion form (photos, checklist, signature)
+│   ├── confirmar/[token]/      # Customer satisfaction confirmation page
+│   ├── cotizacion/[token]/     # Customer quote approval page (non-warranty only)
+│   ├── admin/                  # Admin panel (auth-guarded)
+│   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view)
+│   │   ├── tecnicos/           # Technician management
+│   │   ├── carga-masiva/       # Bulk Excel upload for warranty services
+│   │   └── garantias/          # Warranty dashboard (summary by brand/equipment)
+│   └── api/                    # API routes
+│       ├── solicitar/              # Service request: insert + WhatsApp confirm + notify techs
+│       ├── diagnostico/            # Technician diagnosis: warranty tariff OR particular quote
+│       ├── aprobar-cotizacion/     # Quote approval/rejection by customer (non-warranty)
+│       ├── completar-servicio/     # Service completion + WhatsApp to customer
+│       ├── confirmar-servicio/     # Customer confirmation + WhatsApp to technician
+│       ├── triaje/                 # Gemini AI diagnosis (disabled)
+│       ├── health/                 # Health check
+│       ├── carga-masiva/           # Bulk Excel upload processing
+│       └── whatsapp/               # notify (admin-only), accept, webhook
+├── components/ui/              # Reusable UI: Button, InputField, PhoneInput, etc.
+├── hooks/                      # useDebounce, useSolicitudForm, useTriaje
 ├── lib/
-│   ├── supabase.ts         # Supabase client singleton — always import from here
-│   ├── constants/          # TIPO_A_ESPECIALIDAD mapping, ESTADO_ESTILOS/LABELS
-│   ├── services/           # whatsapp.service.ts, solicitud.service.ts
-│   ├── utils/              # phone.ts, format.ts, excel-mapping.ts
-│   └── validations/        # Zod schemas (solicitud.schema.ts)
-├── types/                  # Domain types (solicitud.ts)
-└── middleware.ts            # Rate limiting + security headers
+│   ├── supabase.ts             # Supabase client singleton — always import from here
+│   ├── constants/
+│   │   ├── especialidades.ts   # TIPO_A_ESPECIALIDAD mapping
+│   │   └── estados.ts          # ESTADO_ESTILOS, ESTADO_LABELS (styling + labels per state)
+│   ├── services/
+│   │   ├── whatsapp.service.ts # All WhatsApp logic (notify, accept, quote, confirm)
+│   │   └── solicitud.service.ts
+│   ├── utils/
+│   │   ├── phone.ts            # Phone parsing/formatting utilities
+│   │   ├── format.ts           # formatCOP() and other formatters
+│   │   └── excel-mapping.ts    # BITACORA Excel → solicitud mapper
+│   └── validations/            # Zod schemas (solicitud.schema.ts)
+├── types/
+│   └── solicitud.ts            # Domain types, state machine, constants
+└── middleware.ts               # Rate limiting + security headers
+
 legal/                          # Legal documents (Baird Service SAS)
-├── 01-terminos-y-condiciones.docx      # Términos y Condiciones de Uso
-├── 02-politica-de-privacidad.docx      # Política de Privacidad (Ley 1581)
-├── 03-contrato-tecnico.docx            # Contrato de Prestación de Servicios - Técnico
-├── 04-acuerdo-cliente.docx             # Acuerdo de Servicio al Cliente
-├── 05-politica-tratamiento-datos.docx  # Política de Tratamiento de Datos Personales
-├── 06-politica-cookies.docx            # Política de Cookies
-├── 07-exoneracion-responsabilidad.docx # Exoneración de Responsabilidad / Disclaimer
-└── 08-acuerdo-nivel-servicio-tecnicos.docx # SLA para Técnicos
+├── 01-terminos-y-condiciones.docx
+├── 02-politica-de-privacidad.docx
+├── 03-contrato-tecnico.docx
+├── 04-acuerdo-cliente.docx
+├── 05-politica-tratamiento-datos.docx
+├── 06-politica-cookies.docx
+├── 07-exoneracion-responsabilidad.docx
+└── 08-acuerdo-nivel-servicio-tecnicos.docx
 ```
 
-## Key Data Flows
+## How the Two Flows Work
 
-### WARRANTY Flow (es_garantia = true)
-1. **Customer request / Bulk upload:** Form or Excel → Supabase insert → WhatsApp confirmation → notificarTecnicos() with `nueva_solicitud_v3`
-2. **Technician acceptance:** Token link → atomic UPDATE → estado: `asignada` → WhatsApp `tecnico_asignado_cliente_v4` to customer
-3. **Diagnosis:** Portal → warranty tariff calculation → POST /api/diagnostico → estado: `en_proceso` → WhatsApp "working on repair"
-4. **Completion:** Photos + checklist + signature → POST /api/completar-servicio → WhatsApp `confirmar_servicio_v3` to customer
-5. **Confirmation:** Customer confirms → estado: `completada` or `en_disputa`
+The entire platform splits into two flows based on the `es_garantia` boolean field on each `solicitud_servicio`. This field is set at creation time and never changes. Every service function checks this field to decide which path to follow.
+
+### Key Difference
+
+| Aspect | Warranty | Non-Warranty (Particular) |
+|--------|----------|---------------------------|
+| **Who pays** | Brand (e.g. Mabe/GE) pays Baird | Customer pays Baird |
+| **Pricing** | Fixed tariff by complexity code | Technician quotes after diagnosis |
+| **Customer pays upfront** | Nothing | 50% of diagnostic fee ($40,000 COP) |
+| **Diagnosis result** | Tech proceeds to repair immediately | Quote sent to customer for approval |
+| **Extra step** | None | Customer must approve/reject quote |
+| **WhatsApp templates** | `nueva_solicitud_v3`, `tecnico_asignado_cliente_v4` | `solicitud_particular_*`, `cotizacion_cliente_v1` |
+
+### WARRANTY Flow (es_garantia = true) — Customer-first scheduling (v2 2026-04-27)
+
+```
+1. REQUEST        Customer form (or bulk Excel upload)
+                  → Supabase insert (estado: pendiente_horario, horario_token: uuid)
+                  → WhatsApp cliente_seleccion_horario_v1 (CTA → /horario/{token})
+                  → NO tech notification yet
+
+2. SCHEDULE       Customer opens /horario/{token}, picks 1 of 2 horarios
+   CONFIRMATION   → Reads T&C + signs acceptance checkbox
+                  → POST /api/confirmar-horario { token, opcion: 1|2 }
+                  → estado: notificada, tyc_aceptados_at, tyc_version, horario_confirmado
+                  → notificarTecnicos() sends nueva_solicitud_v3 to matching techs
+                  → If timeout 24h+12h: state → sin_agendar (cron horario-recordatorio)
+
+3. ACCEPTANCE     Tech clicks "Aceptar" in WhatsApp
+                  → GET /aceptar/{token} → atomic UPDATE (first wins)
+                  → estado: asignada
+                  → WhatsApp servicio_asignado_tecnico_v3 to tech
+                  → WhatsApp tecnico_asignado_cliente_v5 to customer (T&C link)
+
+4. DIAGNOSIS      Tech opens /tecnico/{token}/diagnostico/{id}
+                  → Oath modal (sworn statement + digital signature) → BLOCKING
+                  → GPS ping (fase: 'llegada')
+                  → Fills warranty tariff form
+                  → Picks SIGUIENTE PASO (4 options):
+                    a. reparar              → estado: en_proceso (text "trabajando en reparación")
+                    b. esperar_repuesto     → estado: esperando_repuesto + SKU obligatorio
+                                              + plantilla esperando_repuesto_cliente_v1
+                                              + insert in repuestos_pendientes
+                    c. no_reparable         → estado: finalizado_sin_reparacion (terminal)
+                                              + plantilla finalizado_sin_reparacion_v1
+                    d. negativa_cliente     → estado: cancelada_cliente (terminal)
+                  → POST /api/diagnostico (incluye oath + siguiente_paso)
+                  → GPS ping (fase: 'diagnostico')
+
+4b. PARTS RCV     Admin marks parts as received in /admin/repuestos
+                  → POST /api/repuesto-recibido
+                  → If all parts received: estado → en_proceso
+                  → WhatsApp repuesto_recibido_cliente_v1 to customer
+
+5. COMPLETION     Tech opens /tecnico/{token}/completar/{id}
+                  → Uploads photos, checklist, digital signature
+                  → GPS ping (fase: 'completado')
+                  → POST /api/completar-servicio → estado: en_verificacion
+                  → WhatsApp confirmar_servicio_v3 to customer
+
+5b. GPS FOLLOWUP  Cron /api/cron/gps-followup runs every 10 min
+                  → 30+ min after completion, checks last GPS ping vs customer location
+                  → If within 100m → evidencia.gps_flagged = true (silent admin alert)
+
+6. CONFIRMATION   Customer clicks → /confirmar/{token}
+                  → Satisfied → estado: completada
+                  → Problem → estado: en_disputa
+```
 
 ### NON-WARRANTY (Particular) Flow (es_garantia = false)
-1. **Customer request:** Form → Supabase insert → WhatsApp `solicitud_particular_cliente_v1` → notificarTecnicos() with `solicitud_particular_tecnico_v1`
-2. **Technician acceptance:** Token link → atomic UPDATE → estado: `diagnostico_pendiente` → WhatsApp `tecnico_asignado_particular_v1` to customer (includes diagnostic fee + 50% advance)
-3. **Diagnosis + Quote:** Portal → tech enters mano_obra + repuestos → POST /api/diagnostico → estado: `cotizacion_enviada` → WhatsApp `cotizacion_cliente_v1` to customer
-4. **Quote approval:** Customer visits `/cotizacion/{token}` → POST /api/aprobar-cotizacion → estado: `cotizacion_aprobada` → `en_proceso` → WhatsApp `cotizacion_aprobada_tecnico_v1` to tech
-5. **Completion + Confirmation:** Same as warranty flow from here
-
-### Common Steps
-- **Bulk upload:** Excel (.xlsx BITÁCORA format) → parse with `xlsx` → map columns → bulk insert → WhatsApp confirmation → optional notificarTecnicos()
-- **AI triage (disabled):** Description → Gemini API → structured JSON diagnosis
-
-## Solicitud State Machine
 
 ```
-WARRANTY:     pendiente → notificada → asignada → en_proceso → en_verificacion → completada
-                                                                                → en_disputa
-                                                  → cancelada
+1. REQUEST        Customer form
+                  → Supabase insert (estado: pendiente)
+                  → WhatsApp solicitud_particular_cliente_v1 to customer
+                    (includes diagnostic fee: $80,000 COP + 50% advance: $40,000 COP)
+                  → notificarTecnicos() sends solicitud_particular_tecnico_v1 to matching techs
+                  → estado: notificada
 
-NON-WARRANTY: pendiente → notificada → asignada → diagnostico_pendiente → cotizacion_enviada → cotizacion_aprobada → en_proceso → en_verificacion → completada
-                                                                        → cotizacion_rechazada                                                    → en_disputa
-                                                  → cancelada
+2. ACCEPTANCE     Technician clicks "Aceptar" button in WhatsApp
+                  → GET /aceptar/{token} → atomic UPDATE (first wins)
+                  → estado: diagnostico_pendiente    ← DIFFERENT from warranty
+                  → WhatsApp servicio_asignado_tecnico_v3 to tech
+                  → WhatsApp tecnico_asignado_particular_v1 to customer
+                    (includes tech info + diagnostic fee + advance payment info)
+
+3. DIAGNOSIS      Technician opens portal → /tecnico/{token}/diagnostico/{id}
+   + QUOTE        → Fills diagnostic + quote form (mano de obra + repuestos)
+                  → POST /api/diagnostico (non-warranty branch)
+                  → Generates cotizacion with unique approval token (UUID)
+                  → estado: cotizacion_enviada
+                  → enviarCotizacionCliente() sends cotizacion_cliente_v1 to customer
+                    (includes cost breakdown + "Aprobar" button linking to /cotizacion/{token})
+
+4. QUOTE          Customer clicks button → /cotizacion/{token}
+   APPROVAL       → Sees: diagnosis, evidence photos, cost breakdown
+                  → APPROVE: POST /api/aprobar-cotizacion {aprobado: true}
+                    → estado: cotizacion_aprobada → en_proceso
+                    → WhatsApp cotizacion_aprobada_tecnico_v1 to tech
+                  → REJECT: POST /api/aprobar-cotizacion {aprobado: false, comentario}
+                    → estado: cotizacion_rechazada
+                    → WhatsApp rejection text to tech
+
+5. COMPLETION     Same as warranty from here (photos, checklist, signature)
+                  → estado: en_verificacion → completada or en_disputa
 ```
+
+### Payment Model
+
+All payments go through Baird Service. The customer NEVER pays the technician directly.
+
+**Warranty:** The brand pays Baird a fixed tariff based on the complexity code. Baird pays the technician `totalServicio` (tariff + bonus).
+
+**Non-warranty:** The customer pays Baird the quoted total (mano de obra + repuestos). The diagnostic fee ($80,000 COP) with 50% advance ($40,000 COP) is collected before the technician visits. These constants are in `src/types/solicitud.ts` as `TARIFA_DIAGNOSTICO` and `ANTICIPO_PORCENTAJE`.
+
+## Solicitud State Machine (v2 2026-04-27 — customer-first scheduling)
+
+```
+WARRANTY:
+  pendiente_horario ─┬─→ notificada → asignada ─→ en_proceso ─→ en_verificacion → completada
+                     │                          ↘ esperando_repuesto → en_proceso         ↘ en_disputa
+                     │                          ↘ finalizado_sin_reparacion (terminal)
+                     │                          ↘ cancelada_cliente (terminal)
+                     └─→ sin_agendar (timeout 24h+12h, terminal)
+
+NON-WARRANTY:
+  pendiente_horario ─┬─→ notificada → diagnostico_pendiente → cotizacion_enviada
+                     │                                          ├─ aprobada → en_proceso (o esperando_repuesto)
+                     │                                          └─ rechazada (terminal)
+                     └─→ sin_agendar
+```
+
+**Estados terminales** (set en `ESTADOS_TERMINALES` en `src/lib/constants/estados.ts`):
+`sin_agendar`, `finalizado_sin_reparacion`, `cancelada_cliente`, `cancelada`, `completada`, `cotizacion_rechazada`.
+
+State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
+
+## Key Service Functions (whatsapp.service.ts)
+
+| Function | Purpose | Branches on es_garantia? |
+|----------|---------|--------------------------|
+| `enviarSeleccionHorarioCliente(solicitudId)` | Plantilla cliente_seleccion_horario_v1 al crear solicitud | No |
+| `enviarRecordatorioHorario(solicitudId)` | Plantilla recordatorio_horario_v1 (cron 24h) | No |
+| `notificarTecnicos(solicitudId)` | Send service request to matching technicians | Yes |
+| `procesarAceptacion(token)` | Atomic acceptance (first tech wins) | Yes |
+| `enviarEsperandoRepuestoCliente(...)` | Plantilla esperando_repuesto_cliente_v1 con SKU | No |
+| `enviarRepuestoRecibidoCliente(solicitudId)` | Plantilla repuesto_recibido_cliente_v1 | No |
+| `enviarFinalizadoSinReparacion(solicitudId, motivo)` | Plantilla finalizado_sin_reparacion_v1 | No |
+| `enviarCotizacionCliente(solicitudId)` | Send quote to customer via WhatsApp | No — non-warranty only |
+| `notificarCotizacionAprobada(solicitudId)` | Notify tech that quote was approved | No — non-warranty only |
+| `enviarMensajeTexto(telefono, texto)` | Send free-form text message | N/A |
+| `verificarFirmaWebhook(payload, signature)` | HMAC verification for Meta webhook | N/A |
+
+## API Routes
+
+| Route | Method | Purpose | Flow |
+|-------|--------|---------|------|
+| `/api/solicitar` | POST | Create request + send schedule selection | Both |
+| `/api/confirmar-horario` | POST | Customer confirms schedule, triggers tech notification | Both |
+| `/api/diagnostico` | POST | Save diagnosis + oath + siguiente_paso (4 options) | Both |
+| `/api/aprobar-cotizacion` | POST | Customer approves/rejects quote | Non-warranty only |
+| `/api/completar-servicio` | POST | Tech marks service complete | Both |
+| `/api/confirmar-servicio` | POST | Customer confirms satisfaction | Both |
+| `/api/repuesto-recibido` | POST | Admin marks parts arrived → reactivates service | Both |
+| `/api/gps-ping` | POST | Tech browser sends GPS coords by phase | Both |
+| `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
+| `/api/cron/gps-followup` | GET | Cron 10min: post-visit GPS flagging | N/A |
+| `/api/carga-masiva` | POST | Bulk Excel upload for warranty | Warranty only |
+| `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
+| `/api/triaje` | POST | AI diagnosis (disabled) | N/A |
+| `/api/health` | GET | Health check | N/A |
+
+## Customer-Facing Pages
+
+| Page | URL | Purpose |
+|------|-----|---------|
+| Service request form | `/solicitar` | Customer creates a new request |
+| **Schedule confirmation** | `/horario/{token}` | Customer picks 1 of 2 schedules + accepts T&C |
+| Quote approval | `/cotizacion/{token}` | Customer approves/rejects repair quote (non-warranty) |
+| Service confirmation | `/confirmar/{token}` | Customer confirms service was completed satisfactorily |
+| **Terms & Conditions** | `/terminos` | Public T&C page (Colombian law-compliant) |
+| Privacy Policy | `/politica-privacidad` | Existing |
+
+## Technician-Facing Pages
+
+| Page | URL | Purpose |
+|------|-----|---------|
+| Accept service | `/aceptar/{token}` | 1-click acceptance from WhatsApp notification |
+| Portal (service list) | `/tecnico/{token}` | View assigned services and history |
+| Diagnosis form | `/tecnico/{token}/diagnostico/{id}` | Oath modal + diagnosis + 4 next-step options + GPS |
+| Completion form | `/tecnico/{token}/completar/{id}` | Upload photos, checklist, signature, GPS |
+
+## Admin Pages
+
+| Page | URL | Purpose |
+|------|-----|---------|
+| Dashboard | `/admin` | KPIs and recent activity |
+| Solicitudes | `/admin/solicitudes` | Service requests list/detail |
+| Técnicos | `/admin/tecnicos` | Technician management |
+| **Repuestos** | `/admin/repuestos` | Pending parts — mark as received |
+| **Alertas GPS** | `/admin/gps-alertas` | Silent flagged services (post-visit GPS within 100m) |
+| Carga Masiva | `/admin/carga-masiva` | BITÁCORA Excel upload |
+| Garantías | `/admin/garantias` | Warranty dashboard by brand/equipment |
 
 ## Code Conventions
 
@@ -110,6 +294,7 @@ NON-WARRANTY: pendiente → notificada → asignada → diagnostico_pendiente �
 - **Hooks:** camelCase with `use` prefix
 - **Services:** camelCase + `.service.ts` suffix
 - **Constants:** SCREAMING_SNAKE_CASE
+- **Flow branching:** Always use `sol.es_garantia` to determine which flow to follow. Never hardcode state transitions without checking this field.
 
 ## Environment Variables
 
@@ -117,8 +302,8 @@ NON-WARRANTY: pendiente → notificada → asignada → diagnostico_pendiente �
 NEXT_PUBLIC_SUPABASE_URL          # Supabase project URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY     # Supabase anon key (public)
 GEMINI_API_KEY                    # Google Generative AI
-WHATSAPP_API_TOKEN                # Meta WhatsApp Business token
-WHATSAPP_PHONE_ID                 # WhatsApp phone number ID
+WHATSAPP_API_TOKEN                # Meta WhatsApp Business permanent token
+WHATSAPP_PHONE_ID                 # WhatsApp phone number ID (1148716061648720)
 WHATSAPP_WEBHOOK_VERIFY_TOKEN     # Webhook handshake token
 WHATSAPP_WEBHOOK_SECRET           # App Secret for HMAC verification
 NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
@@ -127,67 +312,97 @@ NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
 ## Gotchas
 
 - **Supabase client:** Always import from `src/lib/supabase.ts`. Never create new clients with `createClient()`.
-- **WhatsApp token:** Temporal tokens expire in 24h. Production needs a permanent system user token.
+- **WhatsApp permanent token:** Using System User `baird-api` token. Never expires. If rotated, update `WHATSAPP_API_TOKEN` in Vercel + redeploy.
 - **Serverless constraints:** In-memory state (Maps, setInterval) does NOT persist across Vercel invocations. Use external stores for rate limiting.
 - **Phone pipe format:** The `|` separator is used everywhere. `parsePhone()`, `phoneToDigits()`, and `formatearTelefono()` all handle this — consolidate to a single utility.
 - **Atomic acceptance:** `procesarAceptacion()` uses `UPDATE ... WHERE tecnico_asignado_id IS NULL` to prevent race conditions. Don't change this pattern.
-- **RLS not enabled:** Supabase tables have NO Row Level Security yet. Critical before production.
 - **ILIKE injection:** Always use `escapeLikePattern()` before interpolating user input into `.ilike()` queries.
 - **Security headers:** Define in ONE place only (middleware.ts or next.config.ts), not both.
 - **Portal token:** Each technician gets a `portal_token` UUID on first acceptance. Used for passwordless access to `/tecnico/{token}`. Never expose technician IDs in URLs.
 - **Evidence storage:** Photos and signatures stored in Supabase Storage bucket `evidencias-servicio` (public). Path pattern: `{solicitud_id}/{timestamp}_{index}.{ext}`.
 - **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.
 - **Image domains:** All external image hosts must be in `next.config.ts` `remotePatterns` (Unsplash, Supabase Storage buckets).
+- **Cotizacion token:** For non-warranty, the quote approval token is stored inside the `cotizacion` JSONB column. The `/cotizacion/{token}` page scans all `cotizacion_enviada` records to find the match — there's no direct column index on this token.
+- **WhatsApp 24h window:** Free-form text messages require the customer to have messaged the business within the last 24 hours. Template messages can be sent anytime. Always use templates for proactive outreach.
+- **Meta template names:** Must match exactly what's approved in Meta Business Manager. If deleted, there's a 4-week cooldown before reusing the same name — version the name instead (v1 → v2).
 
 ## WhatsApp Templates (Approved - Meta Business)
 
-All templates use language `es` (Spanish).
+All templates use language `es` (Spanish). Phone: +57 313 4951164 (WABA ID: 2354953275016882).
 
-### Warranty Templates
+### Customer-first scheduling (NEW v2 2026-04-27)
+| Template | Used In | Parameters | Purpose |
+|----------|---------|------------|---------|
+| `cliente_seleccion_horario_v1` | `enviarSeleccionHorarioCliente()` | cliente, equipo, horario_1, horario_2 + button(horario_token) | Cliente elige horario tras crear solicitud |
+| `recordatorio_horario_v1` | cron `horario-recordatorio` | cliente, equipo + button(horario_token) | Recordatorio si cliente no confirmó tras 24h |
+| `tecnico_asignado_cliente_v5` | `procesarAceptacion()` | cliente, tecnico, equipo, horario, telefono | REEMPLAZA v4 — agrega aviso de aprobar siguiente paso post-diagnóstico + link T&C |
+
+### Post-diagnóstico (NEW v2 2026-04-27)
+| Template | Used In | Parameters | Purpose |
+|----------|---------|------------|---------|
+| `esperando_repuesto_cliente_v1` | `enviarEsperandoRepuestoCliente()` | cliente, tecnico, equipo, sku, descripcion, tiempo_estimado | Aviso al cliente que se necesita repuesto (incluye SKU) |
+| `repuesto_recibido_cliente_v1` | `enviarRepuestoRecibidoCliente()` | cliente, equipo, tecnico | Repuesto llegó, técnico contactará para reagendar |
+| `finalizado_sin_reparacion_v1` | `enviarFinalizadoSinReparacion()` | cliente, equipo, motivo, tecnico | Equipo no es reparable (terminal) |
+
+### Warranty Templates (existentes — sin cambios)
 | Template | Used In | Parameters | Purpose |
 |----------|---------|------------|---------|
 | `nueva_solicitud_v3` | `notificarTecnicos()` | nombre, equipo, problema, ubicacion, horario, pago + button(token) | Notify technician of warranty request |
 | `servicio_no_disponible_v3` | `procesarAceptacion()` | nombre | Tell late technician the service was taken |
 | `servicio_asignado_tecnico_v3` | `procesarAceptacion()` | nombre, cliente, equipo, direccion, pago, telefono + button(portal_token) | Assignment details + client contact to technician |
-| `tecnico_asignado_cliente_v4` | `procesarAceptacion()` | cliente, tecnico, equipo, horario, telefono | Tell customer their assigned technician + schedule + no-pay warning |
 | `registro_bienvenida_v3` | `notificarRegistroTecnico()` | nombre, ciudad, especialidad | Welcome message to new technician |
 | `confirmar_servicio_v3` | `POST /api/completar-servicio` | cliente, tecnico, equipo + button(token) | Ask customer to confirm service completion |
+| `tecnico_asignado_cliente_v4` | DEPRECATED | — | Reemplazada por v5 |
 
 ### Non-Warranty (Particular) Templates
 | Template | Used In | Parameters | Purpose |
 |----------|---------|------------|---------|
-| `solicitud_particular_cliente_v1` | `POST /api/solicitar` | cliente, equipo, tarifa_diagnostico, anticipo | Confirm non-warranty request + diagnostic fee to customer |
-| `solicitud_particular_tecnico_v1` | `notificarTecnicos()` | nombre, equipo, problema, ubicacion, horario, pago_diagnostico + button(token) | Notify technician of non-warranty request |
-| `tecnico_asignado_particular_v1` | `procesarAceptacion()` | cliente, tecnico, equipo, horario, telefono, tarifa, anticipo | Tell customer tech assigned + diagnostic fee + 50% advance |
-| `cotizacion_cliente_v1` | `enviarCotizacionCliente()` | cliente, tecnico, equipo, diagnostico, mano_obra, repuestos, total + button(token) | Send repair quote to customer for approval |
-| `cotizacion_aprobada_tecnico_v1` | `notificarCotizacionAprobada()` | tecnico, cliente, equipo, total + button(portal_token) | Notify technician that quote was approved |
+| `solicitud_particular_cliente_v1` | `POST /api/solicitar` | cliente, equipo, tarifa_diagnostico, anticipo | Confirm request + diagnostic fee to customer |
+| `solicitud_particular_tecnico_v1` | `notificarTecnicos()` | nombre, equipo, problema, ubicacion, horario, pago_diagnostico + button(token) | Notify tech of non-warranty request |
+| `tecnico_asignado_particular_v1` | `procesarAceptacion()` | cliente, tecnico, equipo, horario, telefono, tarifa, anticipo | Tell customer tech assigned + fee info |
+| `cotizacion_cliente_v1` | `enviarCotizacionCliente()` | cliente, tecnico, equipo, diagnostico, mano_obra, repuestos, total + button(token) | Send repair quote for approval |
+| `cotizacion_aprobada_tecnico_v1` | `notificarCotizacionAprobada()` | tecnico, cliente, equipo, total + button(portal_token) | Notify tech that quote was approved |
 
 **Important:** Template names must match exactly what's approved in Meta Business Manager > WhatsApp Manager > Message Templates. If a template is renamed or re-created, update the name in code.
+
+**Subir nuevas plantillas:** `node --env-file=.env.local scripts/upload-templates.mjs` (lista en `scripts/upload-templates.mjs`).
+
+## Database Tables
+
+| Table | Purpose | Key Fields |
+|-------|---------|------------|
+| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB) |
+| `notificaciones_whatsapp` | One record per tech notification | token, estado, timestamps |
+| `tecnicos` | Technician profiles | portal_token, whatsapp, especialidades, verificado |
+| `especialidades_tecnico` | Many-to-many: technicians ↔ skills | tecnico_id, especialidad |
+| `evidencias_servicio` | Completion evidence | fotos, checklist, firma, oath_firma, gps_(diagnostico/completado/post_visita)_lat/lng, gps_flagged |
+| `repuestos_pendientes` (NEW) | Spare parts pending arrival | solicitud_id, sku, descripcion, costo, tiempo_estimado, estado |
+| `gps_pings` (NEW) | All GPS pings from technician browsers | solicitud_id, tecnico_id, lat, lng, fase, capturado_at |
+
+### Important JSONB Columns on solicitudes_servicio
+
+**`triaje_resultado`** — Stores the technician's diagnosis data. Structure varies by flow:
+- Warranty: `{ diagnostico_tecnico, complejidad, codigo_complejidad, tarifa_mano_obra, bono_incentivo, total_servicio, codigo_falla, ... }`
+- Non-warranty: `{ diagnostico_tecnico, complejidad, requiere_repuestos, repuestos_detalle, evidencias_diagnostico }`
+
+**`cotizacion`** (non-warranty only) — Stores the repair quote sent to the customer:
+`{ diagnostico_tecnico, mano_obra, repuestos, total, token, cotizado_at, aprobado_at?, rechazado_at?, comentario_rechazo? }`
 
 ## Testing
 
 Vitest is configured but no tests exist yet. Test files should be colocated or in a `__tests__` directory.
 
-## Database Tables
-
-- **solicitudes_servicio** — Main service request table (form fields + state + assignment)
-- **notificaciones_whatsapp** — One record per tech notification (token, estado, timestamps)
-- **tecnicos** — Technician profiles (includes `portal_token` for portal access)
-- **especialidades_tecnico** — Many-to-many linking technicians to skills
-- **evidencias_servicio** — Completion evidence (photos, checklist, signature, GPS, confirmation)
-
 ## Legal Framework
 
-All legal documents are in the `legal/` directory as .docx files, in Spanish, aligned with Colombian law. Key legal considerations:
+All legal documents are in the `legal/` directory as .docx files, in Spanish, aligned with Colombian law.
 
-- **Entity:** Baird Service SAS (Colombian SAS corporation). Placeholders [NIT], [DIRECCIÓN REGISTRADA], [REPRESENTANTE LEGAL] need to be filled in.
-- **Platform role:** Marketplace intermediary — NOT the service provider. This is critical for liability.
-- **Data protection:** Ley 1581 de 2012 + Decreto 1377 de 2013. Privacy policy and data processing policy cover all personal data collected.
-- **Technician relationship:** Independent contractor (contrato de prestación de servicios), NOT employment. Must comply with Colombian labor independence requirements.
-- **Data processors:** Supabase (AWS), Meta/WhatsApp, Google (Gemini AI), Vercel — all documented as international data transfers.
+- **Entity:** Baird Service SAS (Colombian SAS corporation). Placeholders [NIT], [DIRECCION REGISTRADA], [REPRESENTANTE LEGAL] need to be filled in.
+- **Platform role:** Marketplace intermediary — NOT the service provider. Critical for liability.
+- **Data protection:** Ley 1581 de 2012 + Decreto 1377 de 2013.
+- **Technician relationship:** Independent contractor (contrato de prestacion de servicios), NOT employment.
+- **Data processors:** Supabase (AWS), Meta/WhatsApp, Google (Gemini AI), Vercel — documented as international data transfers.
 - **Dispute resolution:** Service disputes go through `en_disputa` state with evidence review before escalation.
-- **Pending:** RLS on Supabase tables (critical before enforcing data protection policies), cookie consent banner, terms acceptance checkbox on forms.
 
 ## Current Status
 
-MVP deployed on Vercel. Full service lifecycle implemented: request → notify → accept → complete → confirm. Bulk warranty upload via Excel operational. Pending: Meta business verification for production WhatsApp with own number. See TODO.md for full roadmap.
+MVP deployed on Vercel with full dual-flow lifecycle. Warranty flow fully operational. Non-warranty flow code complete — pending Meta template approval for non-warranty WhatsApp templates. WhatsApp Cloud API v22.0 operational with permanent System User token and own number (+57 313 4951164). RLS enabled on all 5 Supabase tables. See TODO.md for full roadmap.

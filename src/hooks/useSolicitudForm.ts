@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { SolicitudFormData } from '@/types/solicitud'
+import { SolicitudFormData, calcularPagoTecnico } from '@/types/solicitud'
 import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { z } from 'zod'
 
@@ -15,7 +15,8 @@ const initialFormData: SolicitudFormData = {
   novedades_equipo: '',
   es_garantia: false,
   numero_serie_factura: '',
-  pago_tecnico: 0,
+  // Calculado automáticamente: cliente NO ingresa precio
+  pago_tecnico: calcularPagoTecnico('Lavadora', 'Diagnóstico', false),
   horario_visita_1: '',
   horario_visita_2: '',
 }
@@ -48,10 +49,18 @@ export function useSolicitudForm() {
       parsedValue = value
     }
 
-    setFormData(prev => ({
-      ...prev,
-      [name]: parsedValue,
-    }))
+    setFormData(prev => {
+      const next = { ...prev, [name]: parsedValue }
+      // Recalcular pago_tecnico cuando cambian los inputs que lo determinan
+      if (name === 'tipo_equipo' || name === 'tipo_solicitud' || name === 'es_garantia') {
+        next.pago_tecnico = calcularPagoTecnico(
+          next.tipo_equipo,
+          next.tipo_solicitud,
+          next.es_garantia,
+        )
+      }
+      return next
+    })
 
     // Limpiar error del campo cuando el usuario empieza a escribir
     if (errors[name as keyof SolicitudFormData]) {

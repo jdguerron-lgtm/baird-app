@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baird Service — Demo Completa</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --green: #10b981;
+    --green-dark: #059669;
+    --dark: #0f172a;
+    --dark2: #1e293b;
+    --gray: #64748b;
+    --light: #f8fafc;
+    --white: #ffffff;
+    --blue: #3b82f6;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --purple: #8b5cf6;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--light);
+    color: var(--dark);
+    line-height: 1.6;
+  }
+
+  /* === HERO === */
+  .hero {
+    background: linear-gradient(135deg, var(--dark) 0%, #1a2744 100%);
+    color: white;
+    padding: 60px 20px 80px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background: var(--light);
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(16,185,129,0.15);
+    border: 1px solid rgba(16,185,129,0.3);
+    color: var(--green);
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 24px;
+  }
+  .hero-badge::before {
+    content: '';
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .hero h1 {
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+  .hero h1 span { color: var(--green); }
+  .hero p {
+    font-size: 18px;
+    color: #94a3b8;
+    max-width: 600px;
+    margin: 0 auto 32px;
+  }
+  .hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+  }
+  .hero-stat { text-align: center; }
+  .hero-stat .num {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--green);
+  }
+  .hero-stat .label {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-top: 4px;
+  }
+
+  /* === NAVIGATION === */
+  .nav {
+    position: sticky;
+    top: 0;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    z-index: 100;
+    padding: 0 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .nav-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav-inner::-webkit-scrollbar { display: none; }
+  .nav-btn {
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--gray);
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  .nav-btn:hover { color: var(--dark); }
+  .nav-btn.active {
+    color: var(--green-dark);
+    border-bottom-color: var(--green);
+  }
+
+  /* === SECTIONS === */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+
+  .section {
+    padding: 60px 0;
+    display: none;
+  }
+  .section.active { display: block; }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .section-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px; height: 40px;
+    background: var(--green);
+    color: white;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 18px;
+    margin-bottom: 16px;
+  }
+  .section-header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .section-header p {
+    color: var(--gray);
+    font-size: 16px;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  /* === STEP CARDS === */
+  .step {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+    margin-bottom: 60px;
+    padding-bottom: 60px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .step.reverse .step-info { order: 2; }
+  .step.reverse .step-visual { order: 1; }
+
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .step-badge.customer { background: #dbeafe; color: #1d4ed8; }
+  .step-badge.tech { background: #dcfce7; color: #16a34a; }
+  .step-badge.whatsapp { background: #d1fae5; color: #059669; }
+  .step-badge.admin { background: #fef3c7; color: #d97706; }
+  .step-badge.system { background: #f3e8ff; color: #7c3aed; }
+
+  .step-info h3 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .step-info p {
+    color: var(--gray);
+    font-size: 15px;
+    margin-bottom: 16px;
+  }
+  .step-features {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .step-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+    color: #475569;
+  }
+  .step-features li::before {
+    content: '✓';
+    color: var(--green);
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* === VISUAL PANELS === */
+  .step-visual {
+    position: relative;
+  }
+
+  .browser-frame {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  .browser-bar {
+    background: #f1f5f9;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .browser-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  .browser-dot.red { background: #ef4444; }
+  .browser-dot.yellow { background: #f59e0b; }
+  .browser-dot.green { background: #22c55e; }
+  .browser-url {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--gray);
+    flex: 1;
+    margin-left: 8px;
+  }
+  .browser-body {
+    position: relative;
+    height: 380px;
+    overflow: hidden;
+  }
+  .browser-body iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    transform-origin: top left;
+  }
+  .browser-body img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+  }
+  .iframe-overlay {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(transparent, white);
+    pointer-events: none;
+  }
+  .try-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 8px 16px;
+    background: var(--green);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s;
+  }
+  .try-btn:hover { background: var(--green-dark); }
+
+  /* === WHATSAPP MOCKUP === */
+  .wa-mockup {
+    background: #e5ddd5;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 340px;
+    margin: 0 auto;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+  }
+  .wa-header {
+    background: #075e54;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px 8px 0 0;
+    margin: -20px -20px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wa-avatar {
+    width: 36px; height: 36px;
+    background: var(--green);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .wa-name { font-weight: 600; font-size: 14px; }
+  .wa-status { font-size: 11px; opacity: 0.8; }
+
+  .wa-msg {
+    background: white;
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 8px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+    max-width: 280px;
+  }
+  .wa-msg.sent {
+    background: #dcf8c6;
+    border-radius: 8px 0 8px 8px;
+    margin-left: auto;
+  }
+  .wa-msg .bold { font-weight: 600; }
+  .wa-msg .time {
+    display: block;
+    text-align: right;
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px;
+  }
+  .wa-btn {
+    display: block;
+    text-align: center;
+    padding: 8px;
+    background: white;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #075e54;
+    margin-top: 6px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+  }
+
+  /* === ADMIN MOCKUP === */
+  .admin-mockup {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  .admin-sidebar {
+    background: var(--dark);
+    padding: 16px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .admin-sidebar a {
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.1);
+    color: #94a3b8;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .admin-sidebar a.active {
+    background: var(--green);
+    color: white;
+  }
+  .admin-body {
+    padding: 20px;
+  }
+  .admin-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .admin-stat {
+    background: var(--light);
+    padding: 14px;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .admin-stat .num {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--dark);
+  }
+  .admin-stat .label {
+    font-size: 11px;
+    color: var(--gray);
+    margin-top: 2px;
+  }
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .admin-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--light);
+    color: var(--gray);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .admin-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .status-pill.pending { background: #fef3c7; color: #d97706; }
+  .status-pill.assigned { background: #dbeafe; color: #2563eb; }
+  .status-pill.completed { background: #dcfce7; color: #16a34a; }
+  .status-pill.notified { background: #e0e7ff; color: #4f46e5; }
+
+  /* === FLOW DIAGRAM === */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 32px 0;
+    flex-wrap: wrap;
+  }
+  .flow-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 20px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    min-width: 120px;
+    text-align: center;
+    transition: all 0.3s;
+  }
+  .flow-node:hover {
+    border-color: var(--green);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16,185,129,0.15);
+  }
+  .flow-node .icon { font-size: 24px; }
+  .flow-node .name { font-size: 13px; font-weight: 600; }
+  .flow-node .desc { font-size: 11px; color: var(--gray); }
+  .flow-arrow {
+    font-size: 20px;
+    color: var(--green);
+    padding: 0 8px;
+    flex-shrink: 0;
+  }
+
+  /* === COMPLETION MOCKUP === */
+  .completion-mockup {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    padding: 24px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  .completion-mockup h4 {
+    font-size: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 14px;
+  }
+  .checklist-box {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    background: var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 16px 0;
+  }
+  .photo-placeholder {
+    aspect-ratio: 1;
+    background: #f1f5f9;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #94a3b8;
+    border: 2px dashed #e2e8f0;
+  }
+  .photo-placeholder span { font-size: 10px; margin-top: 4px; }
+  .signature-box {
+    background: #f1f5f9;
+    border: 2px dashed #e2e8f0;
+    border-radius: 8px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 14px;
+    margin-top: 12px;
+    font-style: italic;
+  }
+
+  /* === STATE MACHINE === */
+  .state-machine {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    padding: 20px 0;
+  }
+  .state-node {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .state-arrow { color: var(--gray); font-size: 18px; }
+
+  /* === RESPONSIVE === */
+  @media (max-width: 768px) {
+    .step { grid-template-columns: 1fr; gap: 24px; }
+    .step.reverse .step-info { order: 1; }
+    .step.reverse .step-visual { order: 2; }
+    .admin-stats { grid-template-columns: repeat(2, 1fr); }
+    .hero-stats { gap: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-badge">Demo Interactiva</div>
+  <h1>Baird Service<br><span>Demo Paso a Paso</span></h1>
+  <p>Recorrido completo de la plataforma: desde la solicitud del cliente hasta la confirmacion del servicio</p>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <div class="num">8</div>
+      <div class="label">Tipos de equipos</div>
+    </div>
+    <div class="hero-stat">
+      <div class="num">6</div>
+      <div class="label">Pasos del flujo</div>
+    </div>
+    <div class="hero-stat">
+      <div class="num">&lt;15 min</div>
+      <div class="label">Asignacion promedio</div>
+    </div>
+    <div class="hero-stat">
+      <div class="num">100%</div>
+      <div class="label">Tecnicos verificados</div>
+    </div>
+  </div>
+</div>
+
+<!-- NAVIGATION -->
+<div class="nav">
+  <div class="nav-inner">
+    <button class="nav-btn active" onclick="showSection('overview')">Vista General</button>
+    <button class="nav-btn" onclick="showSection('customer')">1. Cliente Solicita</button>
+    <button class="nav-btn" onclick="showSection('whatsapp')">2. WhatsApp Notifica</button>
+    <button class="nav-btn" onclick="showSection('accept')">3. Tecnico Acepta</button>
+    <button class="nav-btn" onclick="showSection('complete')">4. Completar Servicio</button>
+    <button class="nav-btn" onclick="showSection('confirm')">5. Cliente Confirma</button>
+    <button class="nav-btn" onclick="showSection('admin')">6. Panel Admin</button>
+    <button class="nav-btn" onclick="showSection('tech-reg')">Registro Tecnico</button>
+  </div>
+</div>
+
+<!-- === SECTION: OVERVIEW === -->
+<div class="section active" id="overview">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">&#9889;</div>
+      <h2>Flujo Completo del Servicio</h2>
+      <p>Asi funciona Baird Service de principio a fin</p>
+    </div>
+
+    <div class="flow">
+      <div class="flow-node">
+        <div class="icon">&#128221;</div>
+        <div class="name">Solicitud</div>
+        <div class="desc">Cliente llena formulario</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-node">
+        <div class="icon">&#128172;</div>
+        <div class="name">WhatsApp</div>
+        <div class="desc">Tecnicos reciben alerta</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-node">
+        <div class="icon">&#9989;</div>
+        <div class="name">Aceptacion</div>
+        <div class="desc">Primero en aceptar gana</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-node">
+        <div class="icon">&#128295;</div>
+        <div class="name">Servicio</div>
+        <div class="desc">Tecnico visita y repara</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-node">
+        <div class="icon">&#128247;</div>
+        <div class="name">Evidencia</div>
+        <div class="desc">Fotos + checklist + firma</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-node">
+        <div class="icon">&#11088;</div>
+        <div class="name">Confirmacion</div>
+        <div class="desc">Cliente confirma</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 40px;">
+      <h3 style="text-align:center; margin-bottom:20px; font-size:18px;">Maquina de Estados de la Solicitud</h3>
+      <div class="state-machine">
+        <div class="state-node" style="background:#fef3c7;color:#d97706;">&#9711; pendiente</div>
+        <div class="state-arrow">&#8594;</div>
+        <div class="state-node" style="background:#e0e7ff;color:#4f46e5;">&#128172; notificada</div>
+        <div class="state-arrow">&#8594;</div>
+        <div class="state-node" style="background:#dbeafe;color:#2563eb;">&#9989; asignada</div>
+        <div class="state-arrow">&#8594;</div>
+        <div class="state-node" style="background:#bfdbfe;color:#1d4ed8;">&#128295; en_proceso</div>
+        <div class="state-arrow">&#8594;</div>
+        <div class="state-node" style="background:#c7d2fe;color:#4338ca;">&#128269; en_verificacion</div>
+        <div class="state-arrow">&#8594;</div>
+        <div class="state-node" style="background:#dcfce7;color:#16a34a;">&#10004; completada</div>
+      </div>
+      <div class="state-machine" style="margin-top:8px;">
+        <div class="state-node" style="background:#fee2e2;color:#dc2626;">&#9888; en_disputa</div>
+        <div style="padding:8px 12px;font-size:12px;color:#94a3b8;">(si el cliente reporta un problema)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: CUSTOMER === -->
+<div class="section" id="customer">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <h2>El Cliente Solicita un Servicio</h2>
+      <p>Formulario intuitivo, sin registro previo, con validacion inteligente</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge customer">&#128100; Cliente</div>
+        <h3>Formulario de Solicitud</h3>
+        <p>El cliente describe su problema de electrodomestico. El formulario captura toda la informacion necesaria para asignar al tecnico correcto.</p>
+        <ul class="step-features">
+          <li>Nombre, WhatsApp y direccion completa</li>
+          <li>Ciudad/pueblo y zona/barrio para matching geografico</li>
+          <li>Marca y tipo de equipo (8 categorias)</li>
+          <li>Tipo de servicio: Diagnostico, Reparacion, Instalacion, Mantenimiento</li>
+          <li>Soporte para solicitudes de garantia con numero de serie</li>
+          <li>Descripcion detallada del problema</li>
+          <li>Dos horarios preferidos de visita</li>
+        </ul>
+        <a href="https://baird-app.vercel.app/solicitar" target="_blank" class="try-btn">&#128073; Probar formulario en vivo</a>
+      </div>
+      <div class="step-visual">
+        <div class="browser-frame">
+          <div class="browser-bar">
+            <div class="browser-dot red"></div>
+            <div class="browser-dot yellow"></div>
+            <div class="browser-dot green"></div>
+            <div class="browser-url">baird-app.vercel.app/solicitar</div>
+          </div>
+          <div class="browser-body">
+            <iframe src="https://baird-app.vercel.app/solicitar" loading="lazy" sandbox="allow-scripts allow-same-origin"></iframe>
+            <div class="iframe-overlay"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step reverse">
+      <div class="step-info">
+        <div class="step-badge system">&#9889; Sistema</div>
+        <h3>Validacion con Zod</h3>
+        <p>Antes de enviar, el formulario valida todos los campos con esquemas Zod estrictos. Esto garantiza datos limpios y previene errores.</p>
+        <ul class="step-features">
+          <li>Telefono colombiano valido (+57)</li>
+          <li>Campos condicionales: serial requerido solo para garantias</li>
+          <li>Longitud minima/maxima en descripcion</li>
+          <li>Al menos un horario preferido seleccionado</li>
+          <li>Tipo de equipo y servicio validados contra enum</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <div style="font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+            <span style="background:#dcfce7;padding:4px 8px;border-radius:6px;">&#128737;</span> Validacion del Formulario
+          </div>
+          <div style="font-family:monospace;font-size:12px;background:#1e293b;color:#e2e8f0;padding:16px;border-radius:8px;line-height:1.8;">
+            <span style="color:#f59e0b;">const</span> solicitudSchema = z.object({<br>
+            &nbsp;&nbsp;cliente_nombre: z.string().<span style="color:#22c55e;">min</span>(2).<span style="color:#22c55e;">max</span>(100),<br>
+            &nbsp;&nbsp;cliente_telefono: z.string().<span style="color:#22c55e;">refine</span>(isValidPhone),<br>
+            &nbsp;&nbsp;tipo_equipo: z.<span style="color:#22c55e;">enum</span>([<span style="color:#f97316;">'Lavadora'</span>, ...]),<br>
+            &nbsp;&nbsp;marca_equipo: z.string().<span style="color:#22c55e;">min</span>(1),<br>
+            &nbsp;&nbsp;descripcion_problema: z.string().<span style="color:#22c55e;">min</span>(10),<br>
+            &nbsp;&nbsp;es_garantia: z.boolean(),<br>
+            &nbsp;&nbsp;numero_serie: z.string().<span style="color:#22c55e;">optional</span>(),<br>
+            }).<span style="color:#22c55e;">refine</span>(<span style="color:#94a3b8;">/* serial required if warranty */</span>)
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: WHATSAPP === -->
+<div class="section" id="whatsapp">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <h2>Notificacion por WhatsApp</h2>
+      <p>Los tecnicos verificados en la zona reciben la solicitud directamente en su WhatsApp</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge whatsapp">&#128172; WhatsApp</div>
+        <h3>Mensaje Interactivo al Tecnico</h3>
+        <p>El sistema busca automaticamente tecnicos que coincidan por especialidad y ubicacion, y les envia un mensaje de WhatsApp con los detalles del servicio.</p>
+        <ul class="step-features">
+          <li>Matching automatico por especialidad (ej: "Lavadora" &#8594; Lavadoras)</li>
+          <li>Filtrado por ciudad/zona del tecnico</li>
+          <li>Mensaje interactivo con boton "Ver y Aceptar"</li>
+          <li>Incluye: equipo, marca, problema, ubicacion, pago</li>
+          <li>Token unico con expiracion de 30 minutos</li>
+          <li>Multiples tecnicos notificados simultaneamente</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div class="wa-mockup">
+          <div class="wa-header">
+            <div class="wa-avatar">BS</div>
+            <div>
+              <div class="wa-name">Baird Service</div>
+              <div class="wa-status">en linea</div>
+            </div>
+          </div>
+          <div class="wa-msg">
+            <div class="bold">&#128295; Nueva solicitud</div>
+            <div style="margin-top:6px;">
+              &#127981; Lavadora Samsung<br>
+              &#128268; Rodamiento desgastado<br>
+              &#128205; Chapinero, Bogota<br>
+              &#128197; Lun 24 Feb, 8am-12pm
+            </div>
+            <div style="margin-top:8px;font-weight:600;color:#059669;">
+              &#128176; $180.000 COP
+            </div>
+            <div class="time">10:23 AM &#10003;&#10003;</div>
+          </div>
+          <div class="wa-btn">&#128077; Ver y Aceptar</div>
+          <div style="height:16px;"></div>
+          <div class="wa-msg sent">
+            <div class="bold">ACEPTO &#9989;</div>
+            <div class="time">10:24 AM &#10003;&#10003;</div>
+          </div>
+          <div class="wa-msg">
+            <div class="bold">&#9989; &#161;Servicio asignado!</div>
+            <div style="margin-top:4px;">Tu tecnico Carlos R. esta confirmado.</div>
+            <div style="margin-top:2px;">WhatsApp: +57 312 *** ***</div>
+            <div class="time">10:24 AM &#10003;&#10003;</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: ACCEPT === -->
+<div class="section" id="accept">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <h2>El Tecnico Acepta</h2>
+      <p>Asignacion atomica — el primero en aceptar gana</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge tech">&#128736; Tecnico</div>
+        <h3>Pagina de Aceptacion</h3>
+        <p>El tecnico hace click en "Ver y Aceptar" y llega a una pagina con todos los detalles. Al confirmar, el sistema usa una actualizacion atomica para evitar race conditions.</p>
+        <ul class="step-features">
+          <li>Link unico con token UUID (expira en 30 min)</li>
+          <li>Muestra detalles completos: equipo, problema, direccion, pago</li>
+          <li>Boton de aceptacion con un solo click</li>
+          <li>UPDATE atomico: WHERE tecnico_asignado_id IS NULL</li>
+          <li>Solo el primer tecnico logra asignarse</li>
+          <li>Notificacion automatica al cliente con datos del tecnico</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <div style="text-align:center;margin-bottom:20px;">
+            <div style="font-size:48px;margin-bottom:8px;">&#9989;</div>
+            <h4 style="font-size:18px;margin-bottom:4px;">Solicitud de Servicio</h4>
+            <p style="font-size:13px;color:#64748b;">Revisa los detalles y acepta</p>
+          </div>
+          <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:16px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+              <div><span style="color:#64748b;">Equipo:</span><br><strong>Lavadora Samsung</strong></div>
+              <div><span style="color:#64748b;">Servicio:</span><br><strong>Reparacion</strong></div>
+              <div><span style="color:#64748b;">Ubicacion:</span><br><strong>Chapinero, Bogota</strong></div>
+              <div><span style="color:#64748b;">Pago:</span><br><strong style="color:#059669;">$180.000 COP</strong></div>
+            </div>
+          </div>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;text-align:center;font-size:14px;color:#16a34a;font-weight:600;">
+            &#128274; Asignacion atomica — primer tecnico que acepta gana
+          </div>
+          <button style="width:100%;margin-top:16px;padding:14px;background:#10b981;color:white;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;">
+            &#128077; Aceptar Servicio
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="step reverse">
+      <div class="step-info">
+        <div class="step-badge system">&#9889; Sistema</div>
+        <h3>Notificaciones Post-Aceptacion</h3>
+        <p>Una vez asignado, el sistema dispara notificaciones automaticas a todas las partes involucradas.</p>
+        <ul class="step-features">
+          <li>WhatsApp al cliente: nombre y telefono del tecnico asignado</li>
+          <li>WhatsApp al tecnico: confirmacion + link al portal del tecnico</li>
+          <li>WhatsApp a otros tecnicos: "servicio ya fue tomado"</li>
+          <li>Estado cambia de "notificada" a "asignada"</li>
+          <li>Se genera portal_token UUID para acceso al portal</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div class="wa-mockup">
+          <div class="wa-header">
+            <div class="wa-avatar">BS</div>
+            <div>
+              <div class="wa-name">Baird Service</div>
+              <div class="wa-status">en linea</div>
+            </div>
+          </div>
+          <div class="wa-msg">
+            <div class="bold">&#9989; &#161;Servicio asignado!</div>
+            <div style="margin-top:6px;">
+              Hola Maria, tu tecnico ya esta confirmado.<br><br>
+              &#128736; <strong>Carlos Rodriguez</strong><br>
+              &#128222; +57 312 456 7890<br><br>
+              Coordina directamente con el la visita.
+            </div>
+            <div class="time">10:24 AM &#10003;&#10003;</div>
+          </div>
+          <div class="wa-btn">&#128172; Contactar tecnico</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: COMPLETE === -->
+<div class="section" id="complete">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <h2>Completar el Servicio</h2>
+      <p>El tecnico documenta el trabajo con fotos, checklist y firma digital</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge tech">&#128736; Portal del Tecnico</div>
+        <h3>Portal de Servicios</h3>
+        <p>Cada tecnico tiene un portal personalizado accesible via link unico (sin login). Aqui ve sus servicios activos y puede completarlos.</p>
+        <ul class="step-features">
+          <li>Acceso via /tecnico/{portal_token} (UUID)</li>
+          <li>Lista de servicios asignados con estados</li>
+          <li>Historial de servicios completados</li>
+          <li>Sin password — acceso seguro por token unico</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <div style="background:var(--dark);padding:16px 20px;color:white;">
+            <div style="font-size:16px;font-weight:700;">&#128736; Portal del Tecnico</div>
+            <div style="font-size:13px;color:#94a3b8;margin-top:4px;">Carlos Rodriguez</div>
+          </div>
+          <div style="padding:16px;">
+            <div style="font-size:13px;font-weight:600;color:#64748b;margin-bottom:12px;">SERVICIOS ACTIVOS</div>
+            <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-size:14px;font-weight:600;">Lavadora Samsung</div>
+                <div style="font-size:12px;color:#64748b;">Chapinero, Bogota &#8226; Maria G.</div>
+              </div>
+              <span class="status-pill assigned">Asignada</span>
+            </div>
+            <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-size:14px;font-weight:600;">Nevera LG</div>
+                <div style="font-size:12px;color:#64748b;">Usaquen, Bogota &#8226; Pedro L.</div>
+              </div>
+              <span class="status-pill completed">Completada</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step reverse">
+      <div class="step-info">
+        <div class="step-badge tech">&#128247; Evidencia</div>
+        <h3>Formulario de Completacion</h3>
+        <p>Al terminar la reparacion, el tecnico sube evidencia fotografica, completa un checklist de calidad y firma digitalmente.</p>
+        <ul class="step-features">
+          <li>Fotos del equipo reparado (minimo 1, maximo 5)</li>
+          <li>Checklist de calidad: funciona, limpio, sin danos</li>
+          <li>Firma digital del cliente en el dispositivo</li>
+          <li>Captura GPS automatica del lugar del servicio</li>
+          <li>Todo se almacena en Supabase Storage (bucket evidencias-servicio)</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div class="completion-mockup">
+          <h4>&#128247; Completar Servicio</h4>
+          <div style="font-size:13px;color:#64748b;margin-bottom:12px;">Sube fotos y completa el checklist</div>
+          <div class="photo-grid">
+            <div class="photo-placeholder">&#128248;<span>Antes</span></div>
+            <div class="photo-placeholder">&#128248;<span>Durante</span></div>
+            <div class="photo-placeholder">&#128248;<span>Despues</span></div>
+          </div>
+          <div style="font-size:13px;font-weight:600;margin:16px 0 8px;">Checklist de Calidad</div>
+          <div class="checklist-item"><div class="checklist-box">&#10003;</div> Equipo funcionando correctamente</div>
+          <div class="checklist-item"><div class="checklist-box">&#10003;</div> Area de trabajo limpia</div>
+          <div class="checklist-item"><div class="checklist-box">&#10003;</div> Sin danos adicionales</div>
+          <div class="checklist-item"><div class="checklist-box">&#10003;</div> Cliente informado del trabajo</div>
+          <div class="signature-box">&#9999; Firma del cliente aqui</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: CONFIRM === -->
+<div class="section" id="confirm">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">5</div>
+      <h2>Confirmacion del Cliente</h2>
+      <p>El cliente recibe un link para confirmar que el servicio fue satisfactorio</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge customer">&#128100; Cliente</div>
+        <h3>Pagina de Confirmacion</h3>
+        <p>Despues de que el tecnico completa el servicio, el cliente recibe un WhatsApp con un link para confirmar o reportar un problema.</p>
+        <ul class="step-features">
+          <li>Link unico /confirmar/{token}</li>
+          <li>Opcion: "Estoy satisfecho" &#8594; estado completada</li>
+          <li>Opcion: "Tengo un problema" &#8594; estado en_disputa</li>
+          <li>Incluye fotos del servicio como evidencia</li>
+          <li>Notificacion al admin en caso de disputa</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;padding:32px;box-shadow:0 4px 24px rgba(0,0,0,0.08);text-align:center;">
+          <div style="font-size:48px;margin-bottom:12px;">&#128269;</div>
+          <h4 style="font-size:18px;margin-bottom:8px;">Confirma tu servicio</h4>
+          <p style="font-size:14px;color:#64748b;margin-bottom:24px;">Lavadora Samsung — Reparacion en Chapinero</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <button style="padding:16px;background:#dcfce7;border:2px solid #86efac;border-radius:12px;font-size:15px;font-weight:700;color:#16a34a;cursor:pointer;">
+              &#128077;<br>Satisfecho
+            </button>
+            <button style="padding:16px;background:#fee2e2;border:2px solid #fca5a5;border-radius:12px;font-size:15px;font-weight:700;color:#dc2626;cursor:pointer;">
+              &#128078;<br>Reportar problema
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: ADMIN === -->
+<div class="section" id="admin">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">6</div>
+      <h2>Panel de Administracion</h2>
+      <p>Control total sobre solicitudes, tecnicos, garantias y carga masiva</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge admin">&#128272; Admin</div>
+        <h3>Dashboard Principal</h3>
+        <p>Vista general con metricas clave, solicitudes recientes y acceso rapido a todas las secciones de gestion.</p>
+        <ul class="step-features">
+          <li>Estadisticas en tiempo real (pendientes, verificados, rechazados)</li>
+          <li>Solicitudes activas vs total</li>
+          <li>Registros recientes de tecnicos</li>
+          <li>Login seguro con Supabase Auth (email/password)</li>
+        </ul>
+        <a href="https://baird-app.vercel.app/admin/login" target="_blank" class="try-btn">&#128272; Ver login de admin</a>
+      </div>
+      <div class="step-visual">
+        <div class="admin-mockup">
+          <div class="admin-sidebar">
+            <a class="active">Dashboard</a>
+            <a>Solicitudes</a>
+            <a>Tecnicos</a>
+            <a>Carga Masiva</a>
+            <a>Garantias</a>
+          </div>
+          <div class="admin-body">
+            <div class="admin-stats">
+              <div class="admin-stat"><div class="num">12</div><div class="label">Pendientes</div></div>
+              <div class="admin-stat"><div class="num" style="color:#16a34a;">28</div><div class="label">Verificados</div></div>
+              <div class="admin-stat"><div class="num" style="color:#dc2626;">3</div><div class="label">Rechazados</div></div>
+              <div class="admin-stat"><div class="num" style="color:#2563eb;">156</div><div class="label">Solicitudes</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step reverse">
+      <div class="step-info">
+        <div class="step-badge admin">&#128203; Gestion</div>
+        <h3>Solicitudes y Tecnicos</h3>
+        <p>Panel completo para gestionar el ciclo de vida de cada solicitud y administrar la red de tecnicos.</p>
+        <ul class="step-features">
+          <li>Lista de solicitudes con filtros por estado</li>
+          <li>Detalle con evidencia (fotos, checklist, firma)</li>
+          <li>Boton re-notificar con diagnostico de matching</li>
+          <li>Gestion de tecnicos: verificar/rechazar</li>
+          <li>Vista de perfil con foto, documento, especialidades</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div class="admin-mockup">
+          <div class="admin-sidebar">
+            <a>Dashboard</a>
+            <a class="active">Solicitudes</a>
+            <a>Tecnicos</a>
+            <a>Carga Masiva</a>
+            <a>Garantias</a>
+          </div>
+          <div class="admin-body">
+            <table class="admin-table">
+              <thead>
+                <tr><th>ID</th><th>Cliente</th><th>Equipo</th><th>Ciudad</th><th>Estado</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>#1042</td><td>Maria G.</td><td>Lavadora Samsung</td><td>Bogota</td><td><span class="status-pill completed">Completada</span></td></tr>
+                <tr><td>#1041</td><td>Pedro L.</td><td>Nevera LG</td><td>Bogota</td><td><span class="status-pill assigned">Asignada</span></td></tr>
+                <tr><td>#1040</td><td>Ana R.</td><td>Estufa Mabe</td><td>Chia</td><td><span class="status-pill notified">Notificada</span></td></tr>
+                <tr><td>#1039</td><td>Luis M.</td><td>A/C Samsung</td><td>Medellin</td><td><span class="status-pill pending">Pendiente</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge admin">&#128196; Excel</div>
+        <h3>Carga Masiva de Garantias</h3>
+        <p>Sube archivos Excel en formato BITACORA (Mabe/GE) para crear solicitudes de garantia en lote con notificacion opcional.</p>
+        <ul class="step-features">
+          <li>Formato especifico: columnas mapeadas automaticamente</li>
+          <li>Validacion fila por fila con reporte de errores</li>
+          <li>Opcion de notificar tecnicos al subir</li>
+          <li>Dashboard de garantias: resumen por marca y equipo</li>
+          <li>Maximo 10MB por archivo, solo .xlsx/.xls</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div style="background:white;border-radius:12px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+          <div style="text-align:center;padding:32px;border:2px dashed #e2e8f0;border-radius:8px;margin-bottom:16px;">
+            <div style="font-size:36px;margin-bottom:8px;">&#128196;</div>
+            <div style="font-size:14px;font-weight:600;">Arrastra tu archivo Excel aqui</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;">Formato BITACORA Mabe/GE (.xlsx)</div>
+          </div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:12px;font-size:13px;">
+            <strong style="color:#16a34a;">&#10003; Resultado:</strong> 45 filas validas, 2 con errores, 43 insertadas, 38 tecnicos notificados
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- === SECTION: TECH REGISTRATION === -->
+<div class="section" id="tech-reg">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-num">&#128736;</div>
+      <h2>Registro de Tecnicos</h2>
+      <p>Proceso de registro con verificacion de identidad y bienvenida por WhatsApp</p>
+    </div>
+
+    <div class="step">
+      <div class="step-info">
+        <div class="step-badge tech">&#128736; Tecnico</div>
+        <h3>Formulario de Registro</h3>
+        <p>Los tecnicos se registran con sus datos, fotos de verificacion y seleccion de especialidades. Reciben bienvenida por WhatsApp.</p>
+        <ul class="step-features">
+          <li>Datos personales: nombre, WhatsApp, ciudad, documento</li>
+          <li>Foto de perfil (max 2MB) + foto de documento (max 5MB)</li>
+          <li>Seleccion multiple de especialidades (8 categorias)</li>
+          <li>Opcion de aceptar servicios de garantia</li>
+          <li>Mensaje de bienvenida automatico por WhatsApp</li>
+          <li>Verificacion manual por admin antes de activar</li>
+        </ul>
+        <a href="https://baird-app.vercel.app/registro" target="_blank" class="try-btn">&#128073; Ver formulario de registro</a>
+      </div>
+      <div class="step-visual">
+        <div class="browser-frame">
+          <div class="browser-bar">
+            <div class="browser-dot red"></div>
+            <div class="browser-dot yellow"></div>
+            <div class="browser-dot green"></div>
+            <div class="browser-url">baird-app.vercel.app/registro</div>
+          </div>
+          <div class="browser-body">
+            <iframe src="https://baird-app.vercel.app/registro" loading="lazy" sandbox="allow-scripts allow-same-origin"></iframe>
+            <div class="iframe-overlay"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step reverse">
+      <div class="step-info">
+        <div class="step-badge whatsapp">&#128172; WhatsApp</div>
+        <h3>Mensaje de Bienvenida</h3>
+        <p>Inmediatamente despues del registro, el tecnico recibe un mensaje de bienvenida en su WhatsApp con el estado de su cuenta.</p>
+        <ul class="step-features">
+          <li>Mensaje interactivo con boton a Baird Service</li>
+          <li>Confirmacion de datos: ciudad y especialidad</li>
+          <li>Informa que la cuenta esta pendiente de verificacion</li>
+          <li>Patron fire-and-forget (no bloquea el registro)</li>
+        </ul>
+      </div>
+      <div class="step-visual">
+        <div class="wa-mockup">
+          <div class="wa-header">
+            <div class="wa-avatar">BS</div>
+            <div>
+              <div class="wa-name">Baird Service</div>
+              <div class="wa-status">en linea</div>
+            </div>
+          </div>
+          <div class="wa-msg">
+            <div class="bold">&#128295; &#161;Bienvenido a Baird Service!</div>
+            <div style="margin-top:6px;">
+              Hola Carlos, tu registro fue recibido exitosamente.<br><br>
+              &#128205; Ciudad: Bogota<br>
+              &#128736; Especialidad: Lavadoras<br><br>
+              Tu perfil esta <strong>pendiente de verificacion</strong>. Nuestro equipo revisara tu informacion y te notificaremos cuando tu cuenta este activa.
+            </div>
+            <div class="time">2:15 PM &#10003;&#10003;</div>
+          </div>
+          <div class="wa-btn">Ver Baird Service</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div style="background:var(--dark);color:white;padding:40px 20px;text-align:center;margin-top:40px;">
+  <div style="font-size:20px;font-weight:700;margin-bottom:8px;">Baird Service</div>
+  <div style="color:#94a3b8;font-size:14px;margin-bottom:24px;">Marketplace de reparacion de electrodomesticos en Colombia</div>
+  <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+    <a href="https://baird-app.vercel.app" target="_blank" style="color:var(--green);text-decoration:none;font-size:14px;font-weight:500;">&#127760; App en vivo</a>
+    <a href="https://baird-app.vercel.app/solicitar" target="_blank" style="color:var(--green);text-decoration:none;font-size:14px;font-weight:500;">&#128221; Solicitar servicio</a>
+    <a href="https://baird-app.vercel.app/registro" target="_blank" style="color:var(--green);text-decoration:none;font-size:14px;font-weight:500;">&#128736; Registro tecnico</a>
+    <a href="https://baird-app.vercel.app/admin" target="_blank" style="color:var(--green);text-decoration:none;font-size:14px;font-weight:500;">&#128272; Panel admin</a>
+  </div>
+  <div style="color:#475569;font-size:12px;margin-top:24px;">Demo generada el 2 de abril de 2026 &#8226; Next.js + Supabase + WhatsApp Cloud API v22.0</div>
+</div>
+
+<script>
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+  window.scrollTo({ top: document.querySelector('.nav').offsetTop, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

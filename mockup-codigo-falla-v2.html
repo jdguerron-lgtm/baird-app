@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup v2 - Código de Falla | Baird Service</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+
+  /* ====== Design Tokens (matching existing app) ====== */
+  :root {
+    --bg: #f9fafb;
+    --card: #ffffff;
+    --card-border: #f3f4f6;
+    --card-radius: 16px;
+    --text-primary: #0f172a;    /* slate-900 */
+    --text-secondary: #64748b;  /* slate-500 → gray-500 */
+    --text-muted: #9ca3af;      /* gray-400 */
+    --accent: #7c3aed;          /* purple-600 */
+    --accent-light: #ede9fe;    /* purple-100 */
+    --accent-dark: #6d28d9;     /* purple-700 */
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --success-border: #bbf7d0;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+
+  body { background: var(--bg); }
+
+  /* ====== Tab Navigation ====== */
+  .tab-nav { position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--card-border); box-shadow: var(--shadow-sm); display: flex; }
+  .tab-btn { flex: 1; padding: 14px 12px; font-size: 13px; text-align: center; cursor: pointer; border: none; background: none; color: var(--text-muted); border-bottom: 3px solid transparent; transition: all 0.2s; }
+  .tab-btn.active { color: var(--accent); font-weight: 700; border-bottom-color: var(--accent); }
+
+  /* ====== Phone Frame ====== */
+  .phone-frame { max-width: 430px; margin: 24px auto; background: var(--bg); min-height: 100vh; position: relative; }
+
+  /* ====== Header (exact match) ====== */
+  .app-header { background: var(--card); border-bottom: 1px solid var(--card-border); box-shadow: var(--shadow-sm); height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
+  .app-header .logo { font-weight: 800; font-size: 16px; color: var(--text-primary); letter-spacing: -0.3px; }
+  .app-header .badge { font-size: 11px; color: var(--accent-dark); background: var(--accent-light); padding: 4px 10px; border-radius: 999px; font-weight: 600; }
+
+  /* ====== Cards (exact match: rounded-2xl shadow-sm border border-gray-100 p-5 mb-4) ====== */
+  .card { background: var(--card); border-radius: var(--card-radius); box-shadow: var(--shadow-sm); border: 1px solid var(--card-border); padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .card .subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+
+  /* ====== Labels (exact match: text-xs font-semibold text-gray-500 uppercase tracking-wide) ====== */
+  .field-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: block; }
+
+  /* ====== Textarea (exact match) ====== */
+  .textarea { width: 100%; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 16px; font-size: 14px; resize: none; outline: none; font-family: inherit; color: var(--text-primary); }
+  .textarea:focus { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+
+  /* ====== Complexity Buttons (exact match) ====== */
+  .complexity-btn { width: 100%; text-align: left; padding: 14px 16px; border-radius: 12px; border: 2px solid #e5e7eb; background: var(--card); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .complexity-btn:hover { border-color: #d1d5db; }
+  .complexity-btn.selected { border-color: var(--accent); background: #faf5ff; }
+  .complexity-btn .code-circle { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .complexity-btn .code-circle.default { background: #f3f4f6; color: #4b5563; }
+  .complexity-btn .code-circle.active { background: var(--accent); color: white; }
+  .complexity-btn .label { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .complexity-btn .desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* ====== NEW: Fault Code Inline Selector ====== */
+  .fault-section { margin-bottom: 20px; }
+  .fault-trigger-btn {
+    width: 100%;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-radius: 12px;
+    border: 2px solid #e5e7eb; background: var(--card);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .fault-trigger-btn:hover { border-color: #d1d5db; }
+  .fault-trigger-btn.has-value { border-color: var(--accent); background: #faf5ff; }
+
+  .fault-trigger-left { display: flex; align-items: center; gap: 12px; }
+  .fault-code-badge { width: 40px; height: 40px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; }
+  .fault-code-badge.empty { background: #f3f4f6; }
+  .fault-code-badge.empty span { font-size: 18px; }
+  .fault-code-badge.filled { background: var(--accent); color: white; }
+  .fault-code-badge.filled .num { font-size: 14px; font-weight: 800; line-height: 1; }
+  .fault-code-badge.filled .lbl { font-size: 7px; text-transform: uppercase; opacity: 0.8; font-weight: 600; }
+
+  .fault-trigger-text .title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .fault-trigger-text .hint { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .fault-trigger-text .selected-desc { font-size: 12px; color: var(--accent-dark); font-weight: 500; margin-top: 1px; }
+
+  .fault-tags { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .fault-tag { font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .fault-tag.blue { background: #dbeafe; color: #1e40af; }
+  .fault-tag.gray { background: #f3f4f6; color: #4b5563; }
+  .fault-tag.orange { background: #ffedd5; color: #9a3412; }
+
+  .chevron { width: 20px; height: 20px; color: var(--text-muted); flex-shrink: 0; }
+
+  /* ====== Modal / Popup ====== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 100; align-items: flex-end; justify-content: center;
+    animation: fadeOverlay 0.2s ease;
+  }
+  .modal-overlay.open { display: flex; }
+  @keyframes fadeOverlay { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal-sheet {
+    background: var(--card); border-radius: 20px 20px 0 0;
+    width: 100%; max-width: 430px; max-height: 85vh; overflow-y: auto;
+    padding: 0; animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+  .modal-handle { width: 36px; height: 4px; background: #d1d5db; border-radius: 2px; margin: 12px auto; }
+  .modal-header { padding: 0 20px 16px; border-bottom: 1px solid var(--card-border); }
+  .modal-header h3 { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+  .modal-header p { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .modal-body { padding: 16px 20px; }
+  .modal-footer { padding: 16px 20px 32px; border-top: 1px solid var(--card-border); }
+
+  /* Search in modal */
+  .search-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 16px 12px 40px; font-size: 14px; outline: none; font-family: inherit; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 14px center; }
+  .search-input:focus { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+
+  /* Suggestion items in modal */
+  .suggestion-item {
+    display: flex; align-items: center; gap: 12px; padding: 12px;
+    border-radius: 12px; cursor: pointer; transition: all 0.15s;
+    border: 2px solid transparent; margin-bottom: 6px;
+  }
+  .suggestion-item:hover { background: #faf5ff; }
+  .suggestion-item.selected { border-color: var(--accent); background: #faf5ff; }
+
+  .suggestion-code { width: 44px; height: 44px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; }
+  .suggestion-code.default { background: #f3f4f6; color: var(--text-primary); }
+  .suggestion-code.active { background: var(--accent); color: white; }
+  .suggestion-code .num { font-size: 15px; font-weight: 800; line-height: 1.1; }
+  .suggestion-code .lbl { font-size: 7px; text-transform: uppercase; font-weight: 600; opacity: 0.7; }
+
+  .suggestion-info { flex: 1; min-width: 0; }
+  .suggestion-info .name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .suggestion-info .meta { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+
+  .match-badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; font-weight: 700; }
+  .match-badge.high { background: #dcfce7; color: #166534; }
+  .match-badge.medium { background: #fef9c3; color: #854d0e; }
+  .match-badge.low { background: #fee2e2; color: #991b1b; }
+
+  .radio-circle { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #d1d5db; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .radio-circle.checked { border-color: var(--accent); background: var(--accent); }
+
+  /* Auto-suggest banner in modal */
+  .autosuggest-banner { background: #faf5ff; border: 1px solid #ede9fe; border-radius: 12px; padding: 12px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; }
+  .autosuggest-banner .icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .autosuggest-banner .text { font-size: 12px; color: var(--accent-dark); }
+  .autosuggest-banner .text strong { font-weight: 700; }
+
+  /* Clarification popup (modal within modal feel) */
+  .clarification-popup {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    z-index: 200; align-items: center; justify-content: center; padding: 24px;
+  }
+  .clarification-popup.open { display: flex; }
+  .clarification-card {
+    background: var(--card); border-radius: 20px; width: 100%; max-width: 380px;
+    padding: 24px; animation: popIn 0.25s ease;
+  }
+  @keyframes popIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+  .clarification-card h3 { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .clarification-card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+  .clarification-option {
+    width: 100%; text-align: left; background: var(--card); border: 1.5px solid #e5e7eb;
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+    cursor: pointer; transition: all 0.15s; display: block; font-family: inherit;
+  }
+  .clarification-option:hover { border-color: var(--accent); background: #faf5ff; }
+  .clarification-option .opt-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .clarification-option .opt-code { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .clarification-cancel { width: 100%; background: none; border: none; padding: 12px; font-size: 13px; color: var(--text-muted); cursor: pointer; font-weight: 600; font-family: inherit; margin-top: 4px; }
+
+  /* ====== CTA Button (exact match) ====== */
+  .cta-btn { width: 100%; font-weight: 700; padding: 16px 24px; border-radius: 12px; font-size: 15px; border: none; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  .cta-btn.primary { background: var(--accent); color: white; }
+  .cta-btn.primary:hover { background: var(--accent-dark); }
+  .cta-btn.disabled { background: #d1d5db; color: #6b7280; cursor: not-allowed; }
+
+  /* ====== Admin View ====== */
+  .admin-container { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+  .admin-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  @media (max-width: 768px) { .admin-grid { grid-template-columns: 1fr; } }
+
+  .diag-badge-row { display: flex; align-items: center; gap: 16px; padding: 16px; background: #faf5ff; border-radius: 12px; border: 1px solid #ede9fe; margin-bottom: 16px; }
+  .diag-badge-code { width: 56px; height: 56px; border-radius: 12px; background: var(--accent); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; }
+  .diag-badge-code .num { font-size: 20px; font-weight: 800; line-height: 1; }
+  .diag-badge-code .lbl { font-size: 8px; text-transform: uppercase; opacity: 0.8; font-weight: 600; }
+  .diag-badge-info .name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .diag-badge-info .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+  /* ====== View Switching ====== */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ====== Dimmed existing ====== */
+  .existing-dimmed { opacity: 0.5; pointer-events: none; }
+  .existing-dimmed-label { text-align: center; font-size: 11px; color: var(--text-muted); padding: 8px; }
+
+  /* ====== Annotation ====== */
+  .annotation {
+    background: #fefce8; border: 1px dashed #facc15; border-radius: 10px;
+    padding: 10px 14px; margin: 12px 0; font-size: 11px; color: #854d0e;
+    display: flex; align-items: flex-start; gap: 8px;
+  }
+  .annotation .icon { font-size: 14px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- Tab Navigation -->
+<div class="tab-nav">
+  <button class="tab-btn active" onclick="showView('tecnico-empty')">📱 Sin código</button>
+  <button class="tab-btn" onclick="showView('tecnico-selected')">📱 Con código</button>
+  <button class="tab-btn" onclick="showView('popup')">💬 Popup selector</button>
+  <button class="tab-btn" onclick="showView('admin')">🖥️ Vista Admin</button>
+</div>
+
+<!-- ============================================ -->
+<!-- VIEW 1: TECHNICIAN — Before selecting code   -->
+<!-- ============================================ -->
+<div id="view-tecnico-empty" class="view active">
+<div class="phone-frame">
+  <header class="app-header">
+    <span class="logo">🔧 Baird Service</span>
+    <span class="badge">Diagnóstico</span>
+  </header>
+
+  <div style="padding: 24px 16px;">
+    <!-- Service summary (existing — dimmed for focus) -->
+    <div class="card existing-dimmed">
+      <h2>Datos del servicio</h2>
+      <div style="font-size:13px; color: var(--text-secondary); margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span>Equipo</span> <span style="font-weight:600; color:var(--text-primary);">Nevera Samsung</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span>Cliente</span> <span>María López</span>
+        </div>
+        <div>
+          <span>Problema:</span>
+          <p style="font-size:12px; margin-top:4px;">No enfría bien, ruido extraño, escarcha en congelador</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bonus banner (existing — dimmed) -->
+    <div class="card existing-dimmed" style="border: 2px solid #86efac; background: #f0fdf4;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span>💰</span>
+        <span style="font-size:13px; font-weight:700;">Bonificación por pronta solución — 1 día</span>
+      </div>
+    </div>
+
+    <!-- Diagnostic form -->
+    <div class="card">
+      <h2>Diagnóstico del técnico</h2>
+      <p class="subtitle">Registra el problema real identificado en el equipo</p>
+
+      <!-- Textarea (existing, unchanged) -->
+      <div style="margin-bottom: 20px;">
+        <label class="field-label">Problema real identificado *</label>
+        <textarea class="textarea" rows="3" readonly>El compresor no arranca. Se escucha el relay haciendo clic pero el compresor no enciende. Verifico que no hay fuga de gas.</textarea>
+      </div>
+
+      <!-- ★ NEW: Fault Code trigger button ★ -->
+      <div class="fault-section">
+        <label class="field-label">Código de falla</label>
+
+        <div class="annotation">
+          <span class="icon">👆</span>
+          <span><strong>NUEVO:</strong> Este botón aparece después del textarea. Al tocarlo abre un popup con las sugerencias automáticas basadas en lo que escribió el técnico. Es un campo más del formulario, mismo estilo que la selección de complejidad.</span>
+        </div>
+
+        <button class="fault-trigger-btn" onclick="showView('popup')">
+          <div class="fault-trigger-left">
+            <div class="fault-code-badge empty">
+              <span>🔍</span>
+            </div>
+            <div class="fault-trigger-text">
+              <div class="title">Seleccionar código de falla</div>
+              <div class="hint">Toca para ver sugerencias basadas en tu diagnóstico</div>
+            </div>
+          </div>
+          <svg class="chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <!-- Complexity (existing, dimmed) -->
+      <div class="existing-dimmed">
+        <label class="field-label">Nivel de complejidad de la reparación *</label>
+        <button class="complexity-btn">
+          <div class="code-circle default">21</div>
+          <div><div class="label">Baja</div><div class="desc">Reparación sencilla, sin cambio de piezas</div></div>
+        </button>
+        <button class="complexity-btn">
+          <div class="code-circle default">22</div>
+          <div><div class="label">Media</div><div class="desc">Cambio de piezas o ajustes complejos</div></div>
+        </button>
+      </div>
+      <p class="existing-dimmed-label">↓ Repuestos, evidencias, botón enviar (sin cambios) ↓</p>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============================================ -->
+<!-- VIEW 2: TECHNICIAN — After selecting code    -->
+<!-- ============================================ -->
+<div id="view-tecnico-selected" class="view">
+<div class="phone-frame">
+  <header class="app-header">
+    <span class="logo">🔧 Baird Service</span>
+    <span class="badge">Diagnóstico</span>
+  </header>
+
+  <div style="padding: 24px 16px;">
+    <!-- Service summary (existing — dimmed) -->
+    <div class="card existing-dimmed">
+      <h2>Datos del servicio</h2>
+      <div style="font-size:13px; color: var(--text-secondary); margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span>Equipo</span> <span style="font-weight:600; color:var(--text-primary);">Nevera Samsung</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span>Cliente</span> <span>María López</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bonus (dimmed) -->
+    <div class="card existing-dimmed" style="border: 2px solid #86efac; background: #f0fdf4;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span>💰</span> <span style="font-size:13px; font-weight:700;">Bonificación — 1 día</span>
+      </div>
+    </div>
+
+    <!-- Diagnostic form -->
+    <div class="card">
+      <h2>Diagnóstico del técnico</h2>
+      <p class="subtitle">Registra el problema real identificado en el equipo</p>
+
+      <!-- Textarea -->
+      <div style="margin-bottom: 20px;">
+        <label class="field-label">Problema real identificado *</label>
+        <textarea class="textarea" rows="3" readonly>El compresor no arranca. Se escucha el relay haciendo clic pero el compresor no enciende. Verifico que no hay fuga de gas.</textarea>
+      </div>
+
+      <!-- ★ Fault Code — SELECTED state ★ -->
+      <div class="fault-section">
+        <label class="field-label">Código de falla</label>
+
+        <div class="annotation">
+          <span class="icon">✅</span>
+          <span><strong>CON CÓDIGO SELECCIONADO:</strong> El botón ahora muestra el código elegido con sus tags. Un toque lo abre de nuevo para cambiar.</span>
+        </div>
+
+        <button class="fault-trigger-btn has-value" onclick="showView('popup')">
+          <div class="fault-trigger-left">
+            <div class="fault-code-badge filled">
+              <span class="lbl">Falla</span>
+              <span class="num">1156</span>
+            </div>
+            <div class="fault-trigger-text">
+              <div class="title">Compresor no arranca</div>
+              <div class="fault-tags">
+                <span class="fault-tag blue">REFRIGERACIÓN</span>
+                <span class="fault-tag gray">ELÉCTRICO</span>
+                <span class="fault-tag orange">Media</span>
+              </div>
+            </div>
+          </div>
+          <svg class="chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <!-- Complexity (existing) -->
+      <div style="margin-bottom: 20px;">
+        <label class="field-label">Nivel de complejidad de la reparación *</label>
+        <button class="complexity-btn selected">
+          <div class="code-circle active">22</div>
+          <div><div class="label" style="color: #6d28d9;">Media</div><div class="desc">Cambio de piezas o ajustes complejos</div></div>
+        </button>
+        <button class="complexity-btn">
+          <div class="code-circle default">21</div>
+          <div><div class="label">Baja</div><div class="desc">Reparación sencilla</div></div>
+        </button>
+      </div>
+
+      <!-- Evidence (dimmed) -->
+      <div class="existing-dimmed">
+        <label class="field-label">Evidencia del fallo *</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div style="aspect-ratio: 1; background: #e5e7eb; border-radius: 12px; display:flex; align-items:center; justify-content:center;">📷</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit button -->
+    <button class="cta-btn primary">Registrar diagnóstico</button>
+    <p style="text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 12px; padding-bottom: 32px;">
+      El formulario se ve igual que antes, solo con un campo adicional integrado
+    </p>
+  </div>
+</div>
+</div>
+
+<!-- ============================================ -->
+<!-- VIEW 3: POPUP SELECTOR (Bottom Sheet)        -->
+<!-- ============================================ -->
+<div id="view-popup" class="view">
+<div class="phone-frame" style="background: #1a1a1a;">
+
+  <!-- Dimmed background form -->
+  <header class="app-header" style="opacity: 0.3;">
+    <span class="logo">🔧 Baird Service</span>
+    <span class="badge">Diagnóstico</span>
+  </header>
+  <div style="padding: 24px 16px; opacity: 0.15;">
+    <div class="card"><h2>Formulario de diagnóstico</h2></div>
+  </div>
+
+  <!-- Bottom sheet popup -->
+  <div style="position: absolute; bottom: 0; left: 0; right: 0;">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+
+      <div class="modal-header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3>Código de falla</h3>
+          <button onclick="showView('tecnico-selected')" style="background:none; border:none; font-size:24px; color:var(--text-muted); cursor:pointer; padding:4px;">×</button>
+        </div>
+        <p>Selecciona el código que mejor describe la falla</p>
+      </div>
+
+      <div class="modal-body">
+        <!-- Auto-suggest banner -->
+        <div class="autosuggest-banner">
+          <span class="icon">✨</span>
+          <div class="text">
+            <strong>Sugerencias automáticas</strong> basadas en tu diagnóstico:
+            <em>"El compresor no arranca..."</em>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <input type="text" class="search-input" placeholder="Buscar por código o descripción..." style="margin-bottom: 16px;">
+
+        <!-- Suggestion 1 — selected -->
+        <div class="suggestion-item selected">
+          <div class="suggestion-code active">
+            <span class="lbl">Falla</span>
+            <span class="num">1156</span>
+          </div>
+          <div class="suggestion-info">
+            <div class="name">Compresor no arranca</div>
+            <div class="meta">
+              <span class="fault-tag blue">REFRIGERACIÓN</span>
+              <span class="fault-tag gray">ELÉCTRICO</span>
+              <span class="match-badge high">92%</span>
+            </div>
+          </div>
+          <div class="radio-circle checked">
+            <svg width="14" height="14" fill="white" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
+          </div>
+        </div>
+
+        <!-- Suggestion 2 -->
+        <div class="suggestion-item" onclick="this.classList.toggle('selected')">
+          <div class="suggestion-code default">
+            <span class="lbl">Falla</span>
+            <span class="num">1160</span>
+          </div>
+          <div class="suggestion-info">
+            <div class="name">Relay de arranque defectuoso</div>
+            <div class="meta">
+              <span class="fault-tag blue">REFRIGERACIÓN</span>
+              <span class="fault-tag gray">ELÉCTRICO</span>
+              <span class="match-badge medium">78%</span>
+            </div>
+          </div>
+          <div class="radio-circle"></div>
+        </div>
+
+        <!-- Suggestion 3 -->
+        <div class="suggestion-item" onclick="this.classList.toggle('selected')">
+          <div class="suggestion-code default">
+            <span class="lbl">Falla</span>
+            <span class="num">1178</span>
+          </div>
+          <div class="suggestion-info">
+            <div class="name">Bobina de compresor abierta</div>
+            <div class="meta">
+              <span class="fault-tag blue">REFRIGERACIÓN</span>
+              <span class="fault-tag gray">UNIDAD REFRIG.</span>
+              <span class="match-badge medium">65%</span>
+            </div>
+          </div>
+          <div class="radio-circle"></div>
+        </div>
+
+        <!-- Suggestion 4 -->
+        <div class="suggestion-item" onclick="this.classList.toggle('selected')">
+          <div class="suggestion-code default">
+            <span class="lbl">Falla</span>
+            <span class="num">1934</span>
+          </div>
+          <div class="suggestion-info">
+            <div class="name">Falta de gas refrigerante</div>
+            <div class="meta">
+              <span class="fault-tag blue">REFRIGERACIÓN</span>
+              <span class="fault-tag gray">GAS</span>
+              <span class="match-badge low">41%</span>
+            </div>
+          </div>
+          <div class="radio-circle"></div>
+        </div>
+
+        <!-- Annotation: clarification -->
+        <div class="annotation" style="margin-top: 16px;">
+          <span class="icon">💬</span>
+          <span><strong>PREGUNTA DE ACLARACIÓN:</strong> Si el match más alto es < 60%, el popup muestra primero una pregunta para precisar antes de listar sugerencias. <a href="#" onclick="event.preventDefault(); document.getElementById('view-popup').style.display='none'; document.getElementById('view-clarification').style.display='block'; document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); document.querySelectorAll('.tab-btn')[2].classList.add('active');" style="color:var(--accent); font-weight:600;">Ver ejemplo →</a></span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="cta-btn primary" onclick="showView('tecnico-selected')">
+          Confirmar código 1156
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============================================ -->
+<!-- VIEW 3b: CLARIFICATION POPUP                 -->
+<!-- ============================================ -->
+<div id="view-clarification" class="view">
+<div class="phone-frame" style="background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;">
+  <div class="clarification-card">
+    <div style="text-align: center; margin-bottom: 16px;">
+      <span style="font-size: 32px;">🔍</span>
+    </div>
+    <h3 style="text-align: center;">Necesitamos precisar la falla</h3>
+    <p style="text-align: center;">Tu diagnóstico puede corresponder a varias fallas. ¿Cuál describe mejor el problema?</p>
+
+    <button class="clarification-option" onclick="showView('popup')">
+      <div class="opt-label">El compresor intenta arrancar pero se detiene</div>
+      <div class="opt-code">Código 1156 · Relay hace clic repetidamente</div>
+    </button>
+
+    <button class="clarification-option" onclick="showView('popup')">
+      <div class="opt-label">El compresor no hace ningún ruido</div>
+      <div class="opt-code">Código 1162 · Posible falla eléctrica total</div>
+    </button>
+
+    <button class="clarification-option" onclick="showView('popup')">
+      <div class="opt-label">El compresor arranca pero se apaga a los segundos</div>
+      <div class="opt-code">Código 1178 · Protección térmica activada</div>
+    </button>
+
+    <button class="clarification-cancel" onclick="showView('popup')">
+      Omitir y elegir manualmente
+    </button>
+
+    <div class="annotation" style="margin-top: 8px;">
+      <span class="icon">📌</span>
+      <span>Este popup solo aparece cuando la confianza es baja. Es un diálogo centrado que no agrega scroll al formulario — el técnico responde y vuelve al flujo normal.</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============================================ -->
+<!-- VIEW 4: ADMIN DETAIL                         -->
+<!-- ============================================ -->
+<div id="view-admin" class="view">
+<div class="admin-container">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+      <h1 style="font-size: 22px; font-weight: 800; color: var(--text-primary);">Detalle de Solicitud</h1>
+      <p style="font-size: 13px; color: var(--text-muted);">ID: sol_abc123 · Garantía Samsung</p>
+    </div>
+    <span style="padding: 8px 16px; background: #dbeafe; color: #1e40af; border-radius: 999px; font-size: 13px; font-weight: 700;">EN PROCESO</span>
+  </div>
+
+  <div class="admin-grid">
+    <div>
+      <!-- Service info (existing, dimmed) -->
+      <div class="card existing-dimmed">
+        <h2 style="font-size:14px; color: var(--text-secondary);">Información del servicio</h2>
+        <div style="margin-top: 12px; font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div><span style="color:var(--text-muted);">Cliente:</span> <strong>María López</strong></div>
+          <div><span style="color:var(--text-muted);">Equipo:</span> <strong>Nevera Samsung</strong></div>
+          <div><span style="color:var(--text-muted);">Zona:</span> Norte, Bogotá</div>
+          <div><span style="color:var(--text-muted);">Tipo:</span> <span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">Garantía</span></div>
+        </div>
+      </div>
+
+      <!-- ★ NEW: Diagnosis + Fault Code card ★ -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+          <h2 style="font-size:14px; color: var(--text-secondary); margin:0;">Diagnóstico del técnico</h2>
+        </div>
+
+        <div class="annotation">
+          <span class="icon">✨</span>
+          <span><strong>NUEVO:</strong> El código de falla aparece como un badge prominente arriba del diagnóstico escrito. Los tags muestran familia, sistema, componente y complejidad de un vistazo.</span>
+        </div>
+
+        <!-- Fault code badge -->
+        <div class="diag-badge-row">
+          <div class="diag-badge-code">
+            <span class="lbl">Falla</span>
+            <span class="num">1156</span>
+          </div>
+          <div class="diag-badge-info">
+            <div class="name">Compresor no arranca</div>
+            <div class="tags">
+              <span class="fault-tag blue">REFRIGERACIÓN</span>
+              <span class="fault-tag gray">ELÉCTRICO</span>
+              <span class="fault-tag gray">COMPRESOR</span>
+              <span class="fault-tag orange">Media</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Diagnosis text -->
+        <div style="margin-bottom: 16px;">
+          <label style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Diagnóstico:</label>
+          <p style="font-size: 13px; color: var(--text-primary); margin-top: 4px; line-height: 1.5;">
+            El compresor no arranca. Se escucha el relay haciendo clic pero el compresor no enciende. Verifico que no hay fuga de gas.
+          </p>
+        </div>
+
+        <!-- Metadata grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding-top: 16px; border-top: 1px solid var(--card-border); font-size: 12px;">
+          <div>
+            <span style="color: var(--text-muted);">Complejidad</span>
+            <p style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">Media (Cod. 22)</p>
+          </div>
+          <div>
+            <span style="color: var(--text-muted);">Diagnosticado</span>
+            <p style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">15 Abr, 10:30 AM</p>
+          </div>
+          <div>
+            <span style="color: var(--text-muted);">Repuestos</span>
+            <p style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">Sí — Relay arranque</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evidence (dimmed) -->
+      <div class="card existing-dimmed">
+        <h2 style="font-size:14px; color: var(--text-secondary);">Evidencias (sin cambios)</h2>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px;">
+          <div style="aspect-ratio:1; background:#e5e7eb; border-radius:8px;"></div>
+          <div style="aspect-ratio:1; background:#e5e7eb; border-radius:8px;"></div>
+          <div style="aspect-ratio:1; background:#e5e7eb; border-radius:8px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div>
+      <div class="card existing-dimmed">
+        <h2 style="font-size:14px; color: var(--text-secondary);">Técnico asignado</h2>
+        <div style="margin-top: 12px;">
+          <p style="font-weight: 600; font-size: 14px;">Carlos Pérez</p>
+          <p style="font-size: 12px; color: var(--text-muted);">Bogotá · Verificado</p>
+        </div>
+      </div>
+      <div class="card existing-dimmed">
+        <h2 style="font-size:14px; color: var(--text-secondary);">Timeline</h2>
+        <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted); line-height: 2;">
+          ✅ Creada — 14 Abr<br>
+          ✅ Notificada — 14 Abr<br>
+          ✅ Asignada — 14 Abr<br>
+          🔵 En proceso — 15 Abr
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+  const viewEl = document.getElementById('view-' + name);
+  if (viewEl) {
+    viewEl.classList.add('active');
+    viewEl.style.display = 'block';
+  }
+
+  // Handle clarification as special case
+  if (name === 'clarification') {
+    document.getElementById('view-clarification').style.display = 'block';
+    document.querySelectorAll('.tab-btn')[2].classList.add('active');
+    return;
+  }
+
+  // Hide clarification when switching away
+  const clarEl = document.getElementById('view-clarification');
+  if (clarEl && name !== 'clarification') clarEl.style.display = 'none';
+
+  // Map view names to tab indices
+  const tabMap = { 'tecnico-empty': 0, 'tecnico-selected': 1, 'popup': 2, 'admin': 3 };
+  if (tabMap[name] !== undefined) {
+    document.querySelectorAll('.tab-btn')[tabMap[name]].classList.add('active');
+  }
+}
+</script>
+
+</body>
+</html>

@@ -252,20 +252,50 @@ export default function CompletarServicioPage() {
         }
       }
 
-      // 3. Insert evidence record
-      const { error: insertErr } = await supabase
+      // 3. Upsert evidence record — fila puede existir si oath ya creó una desde diagnóstico
+      const { data: existente } = await supabase
         .from('evidencias_servicio')
-        .insert({
-          solicitud_id: servicio.id,
-          tecnico_id: tecnico.id,
-          fotos: fotoUrls,
-          checklist,
-          firma_url: firmaUrl,
-          gps_lat: gps?.lat ?? null,
-          gps_lng: gps?.lng ?? null,
-        })
+        .select('id')
+        .eq('solicitud_id', servicio.id)
+        .eq('tecnico_id', tecnico.id)
+        .maybeSingle()
 
-      if (insertErr) throw new Error(insertErr.message)
+      const evidenciaPayload = {
+        fotos: fotoUrls,
+        checklist,
+        firma_url: firmaUrl,
+        gps_lat: gps?.lat ?? null,
+        gps_lng: gps?.lng ?? null,
+        gps_completado_lat: gps?.lat ?? null,
+        gps_completado_lng: gps?.lng ?? null,
+        completado_at: new Date().toISOString(),
+      }
+
+      if (existente) {
+        const { error: updErr } = await supabase
+          .from('evidencias_servicio')
+          .update(evidenciaPayload)
+          .eq('id', existente.id)
+        if (updErr) throw new Error(updErr.message)
+      } else {
+        const { error: insertErr } = await supabase
+          .from('evidencias_servicio')
+          .insert({
+            solicitud_id: servicio.id,
+            tecnico_id: tecnico.id,
+            ...evidenciaPayload,
+          })
+        if (insertErr) throw new Error(insertErr.message)
+      }
+
+      // Registrar ping GPS de fase 'completado' para auditoría posterior (cron post-visita)
+      if (gps) {
+        fetch('/api/gps-ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ solicitudId: servicio.id, fase: 'completado', lat: gps.lat, lng: gps.lng }),
+        }).catch(() => {})
+      }
 
       // 4. Update solicitud estado
       await supabase

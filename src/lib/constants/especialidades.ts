@@ -4,6 +4,7 @@
 export const TIPO_A_ESPECIALIDAD: Record<string, string> = {
   'Lavadora':           'Lavadoras',
   'Secadora':           'Lavadoras',
+  'Lavadora Secadora':  'Lavadoras',  // combo 2-en-1 — comparte especialidad
   'Lavavajillas':       'Lavadoras',
   'Nevera':             'Neveras y Nevecones',
   'Nevecón':            'Neveras y Nevecones',
