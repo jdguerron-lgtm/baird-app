@@ -53,8 +53,9 @@ export const solicitudFormSchema = z.object({
   pago_tecnico: z
     .number({ error: 'Ingresa un valor numérico válido' })
     .int('El valor debe ser un número entero')
-    .min(20000, 'El pago mínimo es $20.000 COP')
-    .max(10000000, 'El pago máximo es $10.000.000 COP'),
+    .min(0, 'El pago no puede ser negativo')
+    .max(10000000, 'El pago máximo es $10.000.000 COP')
+    .default(0),
 
   horario_visita_1: nonEmptyString('El primer horario de visita')
     .max(100, 'El horario no puede exceder 100 caracteres'),

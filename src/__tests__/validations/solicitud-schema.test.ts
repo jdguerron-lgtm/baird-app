@@ -48,10 +48,18 @@ describe('solicitudFormSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('rejects pago_tecnico below 20000', () => {
+  it('accepts pago_tecnico of 0 (price set later by Baird Service)', () => {
     const result = solicitudFormSchema.safeParse({
       ...VALID_DATA,
-      pago_tecnico: 10000,
+      pago_tecnico: 0,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects negative pago_tecnico', () => {
+    const result = solicitudFormSchema.safeParse({
+      ...VALID_DATA,
+      pago_tecnico: -100,
     })
     expect(result.success).toBe(false)
   })

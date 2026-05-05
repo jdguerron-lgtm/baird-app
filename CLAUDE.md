@@ -138,6 +138,7 @@ NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
 - **Evidence storage:** Photos and signatures stored in Supabase Storage bucket `evidencias-servicio` (public). Path pattern: `{solicitud_id}/{timestamp}_{index}.{ext}`.
 - **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.
 - **Image domains:** All external image hosts must be in `next.config.ts` `remotePatterns` (Unsplash, Supabase Storage buckets).
+- **`pago_tecnico` is NOT customer-set:** The `/solicitar` form does NOT collect a price. `pago_tecnico` defaults to `0` on insert and is set later: by admin (bulk upload / admin panel), by warranty tariff calculation (`tarifas-garantia.ts`), or by technician quote (non-warranty `cotizacion_cliente_v1` flow). Schema accepts `[0, 10000000]`.
 
 ## WhatsApp Templates (Approved - Meta Business)
 

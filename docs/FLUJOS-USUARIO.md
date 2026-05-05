@@ -64,6 +64,7 @@ El cliente completa un formulario web para solicitar la reparacion de un electro
    - Ciudad/Pueblo
    - Zona de servicio (Norte, Sur, Centro, etc.)
    - Horarios de visita preferidos (selector de 3 dias habiles, AM/PM)
+   - **Nota:** El cliente NO ingresa el valor del servicio. El precio lo define Baird Service (admin) o se calcula automaticamente (tarifas de garantia / cotizacion del tecnico para particulares).
 3. **Envia la solicitud**
 4. **Recibe confirmacion** en pantalla con ID de seguimiento
 

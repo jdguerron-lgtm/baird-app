@@ -177,7 +177,7 @@ curl "https://tu-url.ngrok-free.app/api/whatsapp/webhook?hub.mode=subscribe&hub.
 ### 8d. Crear una solicitud de prueba
 1. Abrir `http://localhost:3000/solicitar`
 2. Completar el formulario con un número de WhatsApp real (que esté en tu lista de prueba)
-3. Ingresar un valor de pago y dos horarios
+3. Seleccionar dos horarios preferidos (el valor del servicio lo define Baird Service, no el cliente)
 4. Enviar la solicitud
 
 ### 8e. Verificar que llega el mensaje

@@ -390,25 +390,6 @@ export default function SolicitarServicio() {
                       />
                     </div>
 
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                      <InputField
-                        label="Valor del servicio (COP)"
-                        name="pago_tecnico"
-                        type="number"
-                        value={formData.pago_tecnico === 0 ? '' : String(formData.pago_tecnico)}
-                        onChange={handleChange}
-                        placeholder="Mínimo $20.000"
-                        error={errors.pago_tecnico}
-                        icon={<BoltIcon className="w-5 h-5 mr-2 text-green-600" />}
-                        min={20000}
-                        max={10000000}
-                        required
-                      />
-                      <p className="text-xs text-green-700 mt-2">
-                        💡 Este valor se mostrará al técnico antes de que decida aceptar. Mínimo $20.000 COP.
-                        El pago se realiza directamente a Baird Service por medios electrónicos. No se acepta efectivo.
-                      </p>
-                    </div>
                   </div>
                 </div>
 
