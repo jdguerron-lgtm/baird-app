@@ -82,7 +82,7 @@ submitSolicitud()
         │
         ▼
 Supabase INSERT → solicitudes_servicio
-  (estado: 'pendiente', pago_tecnico calculado, triaje guardado)
+  (estado: 'pendiente', pago_tecnico = 0 por defecto — lo define Baird Service / tarifas garantia / cotizacion tecnico)
         │
         ▼
 POST /api/whatsapp/notify
@@ -199,7 +199,7 @@ Estado: pendiente de verificación
 | `numero_serie_factura` | text | Número de serie (si es garantía) |
 | `estado` | text | `pendiente` / `notificada` / `asignada` / `en_progreso` / `completada` / `cancelada` |
 | `tecnico_id` | UUID | FK al técnico asignado (NULL hasta que alguien acepta) |
-| `pago_tecnico` | integer | ⏳ Monto COP para el técnico |
+| `pago_tecnico` | integer | Monto COP para el técnico — NO lo ingresa el cliente; lo define Baird Service / tarifas de garantía / cotización del técnico |
 | `triaje_resultado` | jsonb | ⏳ JSON del análisis IA guardado |
 | `notificados_at` | timestamp | ⏳ Cuándo se enviaron los mensajes WhatsApp |
 
