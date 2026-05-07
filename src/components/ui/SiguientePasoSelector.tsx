@@ -5,23 +5,14 @@ import type { SiguientePasoDiagnostico } from '@/types/solicitud'
 export interface SiguientePasoData {
   paso: SiguientePasoDiagnostico
   detalle: string
-  // Solo si paso === 'esperar_repuesto'
-  sku?: string
-  descripcionRepuesto?: string
-  costoRepuesto?: number
-  tiempoEstimado?: string
 }
 
 interface Props {
-  esGarantia: boolean
   data: SiguientePasoData | null
   onChange: (data: SiguientePasoData | null) => void
-  marcaEquipo?: string
+  /** Si el técnico ya agregó productos necesarios arriba, deshabilita la advertencia. */
+  tieneProductosNecesarios?: boolean
 }
-
-// Marcas que usan el portal Serviplus (Mabe/GE) para búsqueda de SKU/repuestos
-const MARCAS_SERVIPLUS = ['mabe', 'ge', 'general electric', 'centrales']
-const URL_SERVIPLUS = 'https://visualizador.serviplus.com.mx/index.html'
 
 const OPCIONES: Array<{
   paso: SiguientePasoDiagnostico
@@ -60,7 +51,7 @@ const OPCIONES: Array<{
   },
 ]
 
-export default function SiguientePasoSelector({ esGarantia, data, onChange, marcaEquipo }: Props) {
+export default function SiguientePasoSelector({ data, onChange, tieneProductosNecesarios }: Props) {
   const update = (patch: Partial<SiguientePasoData>) => {
     if (!data) return
     onChange({ ...data, ...patch })
@@ -69,10 +60,6 @@ export default function SiguientePasoSelector({ esGarantia, data, onChange, marc
   const seleccionar = (paso: SiguientePasoDiagnostico) => {
     onChange({ paso, detalle: '' })
   }
-
-  const esMarcaServiplus = !!marcaEquipo && MARCAS_SERVIPLUS.some(m =>
-    marcaEquipo.toLowerCase().includes(m)
-  )
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
@@ -106,85 +93,12 @@ export default function SiguientePasoSelector({ esGarantia, data, onChange, marc
       </div>
 
       {data?.paso === 'esperar_repuesto' && (
-        <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-bold text-fuchsia-900">📦 Detalle del repuesto</h3>
-          <p className="text-xs text-fuchsia-800">
-            {esGarantia
-              ? 'En garantía el repuesto NO tiene costo para el cliente — lo cubre el fabricante. Aún así debes especificar el SKU exacto para que admin lo gestione.'
-              : 'En servicio particular, el costo del repuesto debe estar incluido en la cotización aparte. Aquí solo el SKU para seguimiento.'}
-          </p>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                SKU del repuesto *
-              </label>
-              {esMarcaServiplus && (
-                <a
-                  href={URL_SERVIPLUS}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-fuchsia-700 underline font-medium flex items-center gap-1 hover:text-fuchsia-900"
-                >
-                  🔍 Buscar SKU en Serviplus (Mabe/GE) ↗
-                </a>
-              )}
-            </div>
-            <input
-              type="text"
-              value={data.sku ?? ''}
-              onChange={(e) => update({ sku: e.target.value.toUpperCase() })}
-              placeholder="Ej: WM-PCB-7421"
-              className="w-full border border-gray-200 rounded-lg py-2 px-3 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
-            />
-            {esMarcaServiplus && (
-              <p className="text-[11px] text-fuchsia-700 mt-1">
-                💡 Esta marca usa Serviplus. Busca el SKU exacto del repuesto en el portal antes de continuar.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-              Descripción del repuesto *
-            </label>
-            <input
-              type="text"
-              value={data.descripcionRepuesto ?? ''}
-              onChange={(e) => update({ descripcionRepuesto: e.target.value })}
-              placeholder="Ej: Tarjeta electrónica de control"
-              className="w-full border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
-            />
-          </div>
-
-          {!esGarantia && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                Costo del repuesto (COP)
-              </label>
-              <input
-                type="number"
-                value={data.costoRepuesto ?? ''}
-                onChange={(e) => update({ costoRepuesto: Number(e.target.value) || 0 })}
-                placeholder="Ej: 250000"
-                min="0"
-                className="w-full border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
-              />
-            </div>
+        <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-4 text-sm text-fuchsia-900">
+          {tieneProductosNecesarios ? (
+            <>📦 Listaste los repuestos arriba. El equipo Baird fijará precio y tiempo de entrega antes de notificar al cliente.</>
+          ) : (
+            <>⚠️ Indicaste que hay que esperar repuesto pero <strong>no agregaste ningún producto necesario</strong>. Sube y agrega el SKU y descripción del repuesto en la sección &quot;Productos necesarios&quot;.</>
           )}
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-              Tiempo estimado de llegada *
-            </label>
-            <input
-              type="text"
-              value={data.tiempoEstimado ?? ''}
-              onChange={(e) => update({ tiempoEstimado: e.target.value })}
-              placeholder="Ej: 5 días hábiles"
-              className="w-full border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
-            />
-          </div>
         </div>
       )}
 

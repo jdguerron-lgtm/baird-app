@@ -5,6 +5,19 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
 
+interface ProductoNecesario {
+  sku: string
+  descripcion: string
+  cantidad: number
+  precio_unitario?: number
+  subtotal?: number
+}
+
+interface ProductoRecomendado {
+  nombre: string
+  descripcion: string
+}
+
 interface DatosCotizacion {
   solicitud: {
     id: string
@@ -22,6 +35,9 @@ interface DatosCotizacion {
     repuestos: number
     repuestos_detalle: string | null
     total: number
+    tiempo_entrega?: string | null
+    productos_necesarios?: ProductoNecesario[]
+    productos_recomendados?: ProductoRecomendado[]
     evidencias_diagnostico: string[]
     cotizado_at: string
     token: string
@@ -256,8 +272,50 @@ export default function CotizacionPage() {
             </div>
           )}
 
-          {/* Parts detail */}
-          {cotizacion.repuestos_detalle && (
+          {/* Productos necesarios */}
+          {cotizacion.productos_necesarios && cotizacion.productos_necesarios.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-bold text-gray-700 mb-2">🔧 Repuestos requeridos</h3>
+              <div className="space-y-2">
+                {cotizacion.productos_necesarios.map((p, i) => (
+                  <div key={i} className="bg-gray-50 rounded-xl p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">{p.descripcion}</p>
+                        <p className="text-xs text-gray-500 font-mono mt-0.5">SKU: {p.sku} · cant: {p.cantidad}</p>
+                      </div>
+                      {typeof p.subtotal === 'number' && (
+                        <span className="text-sm font-semibold text-slate-700 shrink-0">
+                          ${formatCOP(p.subtotal)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Productos recomendados */}
+          {cotizacion.productos_recomendados && cotizacion.productos_recomendados.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-bold text-gray-700 mb-1">✨ Recomendados (opcional)</h3>
+              <p className="text-xs text-gray-500 mb-2">
+                Productos opcionales que el técnico recomienda. No incluyen costo en esta cotización.
+              </p>
+              <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside bg-blue-50 rounded-xl p-3">
+                {cotizacion.productos_recomendados.map((p, i) => (
+                  <li key={i}>
+                    <span className="font-semibold">{p.nombre}</span>
+                    {p.descripcion && <span className="text-gray-500"> — {p.descripcion}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Legacy repuestos_detalle (back-compat con cotizaciones antiguas) */}
+          {cotizacion.repuestos_detalle && !cotizacion.productos_necesarios?.length && (
             <div className="mb-4">
               <h3 className="text-sm font-bold text-gray-700 mb-1">🔧 Detalle de repuestos</h3>
               <p className="text-sm text-gray-600 bg-gray-50 rounded-xl p-3">
@@ -286,6 +344,11 @@ export default function CotizacionPage() {
                 <span className="font-bold text-blue-600">${formatCOP(cotizacion.total)} COP</span>
               </div>
             </div>
+            {cotizacion.tiempo_entrega && (
+              <div className="bg-blue-50 rounded-xl p-3 mt-3 text-sm text-blue-900">
+                ⏱ Tiempo de entrega estimado: <strong>{cotizacion.tiempo_entrega}</strong>
+              </div>
+            )}
           </div>
         </div>
 

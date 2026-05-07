@@ -15,7 +15,10 @@ import { CodigoFallaSelector } from '@/components/ui/CodigoFallaSelector'
 import type { CodigoFalla } from '@/lib/constants/codigos-falla'
 import OathModal from '@/components/ui/OathModal'
 import SiguientePasoSelector, { type SiguientePasoData } from '@/components/ui/SiguientePasoSelector'
+import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
+import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import { useGps } from '@/hooks/useGps'
+import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 
 interface Servicio {
   id: string
@@ -51,17 +54,16 @@ export default function DiagnosticoPage() {
   // Form state
   const [diagnosticoTexto, setDiagnosticoTexto] = useState('')
   const [complejidad, setComplejidad] = useState<ComplejidadServicio | null>(null)
-  const [requiereRepuestos, setRequiereRepuestos] = useState(false)
-  const [repuestosDetalle, setRepuestosDetalle] = useState('')
   const [evidencias, setEvidencias] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
 
   // Fault code (warranty only)
   const [codigoFalla, setCodigoFalla] = useState<CodigoFalla | null>(null)
 
-  // Non-warranty (particular) quote fields
-  const [manoObraParticular, setManoObraParticular] = useState('')
-  const [repuestosParticular, setRepuestosParticular] = useState('')
+  // Productos necesarios (SKU + desc + cantidad — sin precio) y recomendados (sin precio)
+  // El equipo Baird (admin) fija precio y tiempo de entrega antes de notificar al cliente.
+  const [productosNecesarios, setProductosNecesarios] = useState<ProductoNecesario[]>([])
+  const [productosRecomendados, setProductosRecomendados] = useState<ProductoRecomendado[]>([])
 
   // Oath del técnico — debe firmarse antes de iniciar el diagnóstico
   const [oathFirma, setOathFirma] = useState<string | null>(null)
@@ -185,11 +187,19 @@ export default function DiagnosticoPage() {
       setError('Debes elegir el siguiente paso (4 opciones)')
       return
     }
-    if (siguientePaso.paso === 'esperar_repuesto') {
-      if (!siguientePaso.sku?.trim() || !siguientePaso.descripcionRepuesto?.trim() || !siguientePaso.tiempoEstimado?.trim()) {
-        setError('SKU, descripción y tiempo estimado del repuesto son obligatorios')
-        return
-      }
+    if (siguientePaso.paso === 'esperar_repuesto' && productosNecesarios.length === 0) {
+      setError('Si seleccionaste "esperar repuesto" debes agregar al menos un producto necesario con SKU.')
+      return
+    }
+    const productoIncompleto = productosNecesarios.find(p => !p.sku.trim() || !p.descripcion.trim() || !p.cantidad)
+    if (productoIncompleto) {
+      setError('Cada producto necesario debe tener SKU, descripción y cantidad.')
+      return
+    }
+    const recomendadoIncompleto = productosRecomendados.find(p => !p.nombre.trim())
+    if (recomendadoIncompleto) {
+      setError('Cada recomendación debe tener al menos un nombre.')
+      return
     }
     if ((siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !siguientePaso.detalle?.trim()) {
       setError('Debes describir el motivo del cierre del servicio')
@@ -249,10 +259,18 @@ export default function DiagnosticoPage() {
       const siguientePasoData = {
         siguientePaso: siguientePaso!.paso,
         siguientePasoDetalle: siguientePaso!.detalle?.trim() || null,
-        repuestoSku: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.sku?.trim() : null,
-        repuestoDescripcion: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.descripcionRepuesto?.trim() : null,
-        repuestoCosto: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.costoRepuesto ?? 0 : null,
-        repuestoTiempoEstimado: siguientePaso!.paso === 'esperar_repuesto' ? siguientePaso!.tiempoEstimado?.trim() : null,
+        // El técnico ya no envía precio ni tiempo de entrega del repuesto.
+        // El equipo Baird (admin) los fija desde /admin/cotizaciones-pendientes
+        // o /admin/repuestos antes de notificar al cliente.
+        productosNecesarios: productosNecesarios.map(p => ({
+          sku: p.sku.trim().toUpperCase(),
+          descripcion: p.descripcion.trim(),
+          cantidad: Math.max(1, p.cantidad || 1),
+        })),
+        productosRecomendados: productosRecomendados.map(p => ({
+          nombre: p.nombre.trim(),
+          descripcion: p.descripcion.trim(),
+        })),
       }
 
       if (servicio.es_garantia) {
@@ -267,8 +285,6 @@ export default function DiagnosticoPage() {
           tarifaManoObra: calculo.manoObra,
           bonoIncentivo: calculo.bono,
           totalServicio: calculo.total,
-          requiereRepuestos,
-          repuestosDetalle: requiereRepuestos ? repuestosDetalle.trim() : null,
           evidenciaUrls,
           diasTranscurridos,
           codigoFalla: codigoFalla ? {
@@ -283,16 +299,12 @@ export default function DiagnosticoPage() {
           ...siguientePasoData,
         }
       } else {
-        // NON-WARRANTY (PARTICULAR): send quote data
+        // NON-WARRANTY (PARTICULAR): solo diagnóstico + productos. Admin fija precios.
         bodyPayload = {
           solicitudId: servicio.id,
           portalToken: token,
           diagnostico: diagnosticoTexto.trim(),
           complejidad,
-          requiereRepuestos,
-          repuestosDetalle: requiereRepuestos ? repuestosDetalle.trim() : null,
-          manoObraParticular: Number(manoObraParticular) || 0,
-          repuestosParticular: Number(repuestosParticular) || 0,
           evidenciaUrls,
           ...oathData,
           ...siguientePasoData,
@@ -324,15 +336,17 @@ export default function DiagnosticoPage() {
   }
 
   // Can submit?
+  const productosCompletos = productosNecesarios.every(p => p.sku.trim() && p.descripcion.trim() && p.cantidad > 0)
+  const recomendadosCompletos = productosRecomendados.every(p => p.nombre.trim())
+
   const siguientePasoListo = !!siguientePaso && (
     siguientePaso.paso === 'reparar' ||
-    (siguientePaso.paso === 'esperar_repuesto' && !!siguientePaso.sku?.trim() && !!siguientePaso.descripcionRepuesto?.trim() && !!siguientePaso.tiempoEstimado?.trim()) ||
+    (siguientePaso.paso === 'esperar_repuesto' && productosNecesarios.length > 0 && productosCompletos) ||
     ((siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !!siguientePaso.detalle?.trim())
   )
 
   const canSubmit = complejidad && diagnosticoTexto.length >= 10 && evidencias.length > 0
-    && oathFirma && siguientePasoListo
-    && (servicio?.es_garantia || Number(manoObraParticular) > 0)
+    && oathFirma && siguientePasoListo && productosCompletos && recomendadosCompletos
 
   if (cargando) {
     return (
@@ -370,8 +384,8 @@ export default function DiagnosticoPage() {
             <h1 className="text-2xl font-bold text-green-700 mb-2">Diagnostico registrado</h1>
             <p className="text-gray-500 text-sm mb-6">
               {servicio?.es_garantia
-                ? 'Tu diagnostico ha sido registrado exitosamente. Ahora puedes proceder con la reparacion. Cuando termines, completa el servicio con las evidencias del trabajo realizado.'
-                : 'Tu diagnostico y cotizacion han sido enviados al cliente para aprobacion. Te notificaremos cuando el cliente responda.'}
+                ? 'Tu diagnóstico fue registrado. El equipo Baird coordina con el cliente la aprobación del siguiente paso (incluyendo tiempo de entrega si requiere repuesto).'
+                : 'Tu diagnóstico y la lista de repuestos quedaron registrados. El equipo Baird fijará precio y tiempo de entrega y enviará la cotización al cliente. Te notificaremos cuando el cliente responda.'}
             </p>
             <button
               onClick={() => router.push(`/tecnico/${token}`)}
@@ -597,76 +611,26 @@ export default function DiagnosticoPage() {
             </div>
           </div>
 
-          {/* Spare parts */}
-          <div className="mb-5">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={requiereRepuestos}
-                onChange={(e) => setRequiereRepuestos(e.target.checked)}
-                className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-              />
-              <span className="text-sm text-slate-700 font-medium">Requiere repuestos</span>
-            </label>
-            {requiereRepuestos && (
-              <textarea
-                value={repuestosDetalle}
-                onChange={(e) => setRepuestosDetalle(e.target.value)}
-                placeholder="Detalla los repuestos necesarios (referencia, cantidad)..."
-                rows={2}
-                className="w-full mt-2 border border-gray-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-              />
-            )}
+          {/* Nota: el precio y tiempo de entrega de repuestos los fija el equipo Baird tras revisar el diagnóstico */}
+          <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="text-xs text-amber-900">
+              💡 <strong>Nuevo flujo:</strong> tú indicas qué repuestos se necesitan; el equipo Baird fija precio y tiempo de entrega antes de enviar la cotización al cliente.
+            </p>
           </div>
-
-          {/* NON-WARRANTY: Quote pricing fields */}
-          {!servicio!.es_garantia && (
-            <div className="mb-5 bg-blue-50 rounded-xl p-4 border border-blue-200">
-              <h3 className="text-sm font-bold text-slate-900 mb-3">💰 Cotizacion de reparacion</h3>
-              <p className="text-xs text-gray-500 mb-3">
-                Ingresa el costo estimado de la reparacion. Esta cotizacion sera enviada al cliente para su aprobacion.
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                    Mano de obra (COP) *
-                  </label>
-                  <input
-                    type="number"
-                    value={manoObraParticular}
-                    onChange={(e) => setManoObraParticular(e.target.value)}
-                    placeholder="Ej: 120000"
-                    min="0"
-                    className="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                    Repuestos (COP)
-                  </label>
-                  <input
-                    type="number"
-                    value={repuestosParticular}
-                    onChange={(e) => setRepuestosParticular(e.target.value)}
-                    placeholder="Ej: 250000 (0 si no aplica)"
-                    min="0"
-                    className="w-full border border-gray-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                {(Number(manoObraParticular) > 0 || Number(repuestosParticular) > 0) && (
-                  <div className="bg-white rounded-lg p-3 border border-blue-100">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Total cotizacion:</span>
-                      <span className="font-bold text-blue-700">
-                        ${formatCOP((Number(manoObraParticular) || 0) + (Number(repuestosParticular) || 0))} COP
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Productos necesarios (SKUs requeridos) */}
+        <ProductosNecesariosForm
+          productos={productosNecesarios}
+          onChange={setProductosNecesarios}
+          marcaEquipo={servicio!.marca_equipo}
+        />
+
+        {/* Productos recomendados (limpiadores, accesorios — opcional) */}
+        <ProductosRecomendadosForm
+          productos={productosRecomendados}
+          onChange={setProductosRecomendados}
+        />
 
         {/* Evidence upload */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
@@ -727,12 +691,11 @@ export default function DiagnosticoPage() {
           </p>
         </div>
 
-        {/* Siguiente paso — 4 opciones */}
+        {/* Siguiente paso — 4 opciones (los detalles del repuesto van en Productos necesarios) */}
         <SiguientePasoSelector
-          esGarantia={servicio!.es_garantia}
-          marcaEquipo={servicio!.marca_equipo}
           data={siguientePaso}
           onChange={setSiguientePaso}
+          tieneProductosNecesarios={productosNecesarios.length > 0}
         />
 
         {/* Error message */}

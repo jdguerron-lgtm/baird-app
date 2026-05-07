@@ -61,6 +61,7 @@ export type EstadoSolicitud =
   | 'cotizacion_aprobada'          // Non-warranty: customer approved quote
   | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote
   | 'esperando_repuesto'           // NEW: post-diagnóstico, repuesto pendiente
+  | 'pendiente_pricing'            // NEW (2026-05-07): técnico envió diagnóstico, admin debe fijar precio/tiempo
   | 'reagendamiento_pendiente'     // NEW: cliente pidió reagendar después de aceptación; espera nuevo horario
   | 'finalizado_sin_reparacion'    // NEW: equipo no reparable (terminal)
   | 'cancelada_cliente'            // NEW: cliente rechazó proceder con reparación (terminal)
@@ -81,8 +82,31 @@ export type SiguientePasoDiagnostico =
 export interface RepuestoRequerido {
   sku: string
   descripcion: string
-  costo?: number          // 0 en garantía (lo cubre el fabricante)
-  tiempo_estimado: string // ej: "3-5 días hábiles"
+  costo?: number          // 0 en garantía. En particular: lo fija admin tras diagnóstico.
+  tiempo_estimado: string // ej: "3-5 días hábiles" — fijado por admin
+}
+
+/**
+ * Producto necesario para la reparación (cotización particular o repuesto garantía).
+ * El técnico aporta SKU, descripción y cantidad.
+ * El admin de Baird fija precio_unitario tras revisar (solo aplica para particular).
+ */
+export interface ProductoNecesario {
+  sku: string
+  descripcion: string
+  cantidad: number
+  precio_unitario?: number  // admin fills (non-warranty)
+  subtotal?: number          // computed: cantidad * precio_unitario
+}
+
+/**
+ * Producto recomendado al cliente (no obligatorio para la reparación).
+ * Ejemplo: limpiadores, productos de mantenimiento. Sin SKU obligatorio,
+ * sin precio (informativo). El cliente decide si los incluye.
+ */
+export interface ProductoRecomendado {
+  nombre: string
+  descripcion: string
 }
 
 // Versión vigente de los Términos y Condiciones
@@ -109,6 +133,7 @@ export const ESTADOS_CANCELABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
   'asignada',
   'diagnostico_pendiente',
   'verificacion_pendiente',
+  'pendiente_pricing',
   'cotizacion_enviada',
   'esperando_repuesto',
   'reagendamiento_pendiente',
@@ -129,16 +154,34 @@ export const HORARIO_FINAL_TIMEOUT_HORAS = 36 // sin_agendar tras 24h + 12h adic
 // Tokens de aceptación de técnicos: ahora 3h (era 30 min) — coordinar con TOKEN_EXPIRATION_MS en whatsapp.service.ts
 
 // Cotización de reparación (non-warranty)
+//
+// v2 2026-05-07: el técnico solo aporta diagnóstico + lista de productos
+// (necesarios + recomendados). El admin de Baird fija mano_obra,
+// precio_unitario por producto y tiempo_entrega antes de notificar al cliente.
+//
+// Mientras pendiente_precio=true, los campos mano_obra/repuestos/total son 0.
 export interface CotizacionReparacion {
   diagnostico_tecnico: string
+  // Tech aporta:
+  productos_necesarios?: ProductoNecesario[]   // SKUs requeridos para la reparación
+  productos_recomendados?: ProductoRecomendado[] // opcionales (limpiadores, etc.)
+  // Admin fija:
+  pendiente_precio?: boolean
+  pricing_set_at?: string
+  pricing_set_by?: string
+  tiempo_entrega?: string                       // ej: "3-5 días hábiles"
+  // Totales (admin completa):
   mano_obra: number
-  repuestos: number
+  repuestos: number      // suma de subtotales de productos_necesarios
+  total: number          // mano_obra + repuestos
+  // Legacy / compat:
   repuestos_detalle?: string
-  total: number
+  // Evidencias y metadata:
   evidencias_diagnostico?: string[]
   cotizado_at: string
   aprobado_at?: string
   rechazado_at?: string
+  comentario_rechazo?: string
   token: string                // Token for customer approval page
 }
 

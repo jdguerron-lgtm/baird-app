@@ -211,6 +211,57 @@ All payments go through Baird Service. The customer NEVER pays the technician di
 
 **Non-warranty:** The customer pays Baird the quoted total (mano de obra + repuestos). The diagnostic fee ($80,000 COP) with 50% advance ($40,000 COP) is collected before the technician visits. These constants are in `src/types/solicitud.ts` as `TARIFA_DIAGNOSTICO` and `ANTICIPO_PORCENTAJE`.
 
+## Admin Pricing Gate (v1 2026-05-07)
+
+A partir del diagnóstico, el técnico **NO fija precios ni tiempo de entrega del repuesto**. Solo aporta diagnóstico, lista de **productos necesarios** (SKU + descripción + cantidad) y lista de **productos recomendados** (nombre + descripción, sin SKU obligatorio — limpiadores, accesorios). El equipo Baird (admin) revisa y completa precio/tiempo antes de notificar al cliente.
+
+**Por qué:** evita que el técnico fije precios ad-hoc y permite que Baird mantenga consistencia comercial.
+
+**Estado nuevo `pendiente_pricing`** — viene tras el diagnóstico cuando se requiere pricing:
+- Particular: SIEMPRE (admin fija mano_obra + precio_unitario por producto + tiempo_entrega).
+- Garantía: solo si el siguiente paso es `esperar_repuesto` (admin fija tiempo_entrega; precio = 0 cubierto por marca).
+
+**Flujo:**
+```
+Diagnóstico técnico
+       │
+       ▼
+  Productos Necesarios (SKUs)
+  Productos Recomendados (sin SKU)
+       │
+       ▼
+   pendiente_pricing  ──→  /admin/cotizaciones-pendientes (admin fija precios)
+       │                        │
+       │                        ▼
+       │              POST /api/cotizacion-precios
+       │                        │
+       ├──────── Particular ────┴──→ cotizacion_enviada → cliente decide
+       └──────── Garantía  ─────┴──→ verificacion_pendiente → cliente aprueba paso
+```
+
+**Componentes UI:**
+- `src/components/ui/ProductosNecesariosForm.tsx` — lista de SKUs (link a Serviplus visible para Mabe/GE).
+- `src/components/ui/ProductosRecomendadosForm.tsx` — lista informativa sin precio.
+- `src/app/admin/cotizaciones-pendientes/page.tsx` — admin fija precios + tiempo, dispara notificación.
+- `src/app/cotizacion/[token]/page.tsx` — muestra productos con subtotales + recomendados sin precio + tiempo de entrega.
+
+**Estructura JSONB `cotizacion`** (con back-compat):
+```ts
+{
+  diagnostico_tecnico: string,
+  productos_necesarios: [{ sku, descripcion, cantidad, precio_unitario, subtotal }],
+  productos_recomendados: [{ nombre, descripcion }],
+  pendiente_precio: boolean,        // true hasta que admin completa
+  pricing_set_at?: string,
+  tiempo_entrega?: string,
+  mano_obra: number,                 // 0 hasta que admin completa
+  repuestos: number,                 // suma de subtotales (computada)
+  total: number,                     // mano_obra + repuestos
+  // Legacy: repuestos_detalle (texto libre, queda para back-compat)
+  evidencias_diagnostico, cotizado_at, aprobado_at, rechazado_at, comentario_rechazo, token
+}
+```
+
 ## Customer Self-Service (v1 2026-05-06)
 
 Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente puede ver el estado actual, **cancelar** o **reagendar** sin pasar por admin. El token (`cliente_token`) es UUID durable y se incluye en el response de `POST /api/solicitar`.
@@ -227,13 +278,25 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 - `/api/confirmar-horario` no se modifica. El reagendamiento usa su propio endpoint que setea `horario_confirmado` directo.
 - La cancelación tardía no se distingue como estado separado; queda como `cancelada` con flag en audit.
 
-## Solicitud State Machine (v3 2026-05-06 — customer self-service)
+## Solicitud State Machine (v4 2026-05-07 — admin pricing gate)
 
 ```
 WARRANTY:
-  pendiente_horario ─┬─→ notificada → asignada ─→ en_proceso ─→ en_verificacion → completada
-                     │                          ↘ esperando_repuesto → en_proceso         ↘ en_disputa
-                     │                          ↘ verificacion_pendiente (post-diagnóstico)
+  pendiente_horario ─┬─→ notificada → asignada → diagnóstico
+                     │                              │
+                     │      ┌── reparar/no_reparable/negativa ──→ verificacion_pendiente
+                     │      │
+                     │      └── esperar_repuesto ──→ pendiente_pricing → admin fija tiempo
+                     │                                     │
+                     │                                     ▼
+                     │                              verificacion_pendiente
+                     │                                     │
+                     │              cliente aprueba ──┬────┘
+                     │                                 ▼
+                     │                          en_proceso o esperando_repuesto
+                     │                                 │
+                     │                                 ▼
+                     │                          en_verificacion → completada | en_disputa
                      │                          ↘ finalizado_sin_reparacion (terminal)
                      │                          ↘ cancelada_cliente (terminal)
                      │                          ↘ reagendamiento_pendiente ↻ asignada
@@ -241,10 +304,16 @@ WARRANTY:
                      └─→ sin_agendar (timeout 24h+12h, terminal)
 
 NON-WARRANTY:
-  pendiente_horario ─┬─→ notificada → diagnostico_pendiente → cotizacion_enviada
+  pendiente_horario ─┬─→ notificada → diagnostico_pendiente → diagnóstico técnico
+                     │                       │
+                     │                       ▼
+                     │                pendiente_pricing → admin fija precios + tiempo
+                     │                       │
+                     │                       ▼
+                     │                cotizacion_enviada
+                     │                       ├─ aprobada → en_proceso (o esperando_repuesto)
+                     │                       └─ rechazada (terminal)
                      │                       ↘ reagendamiento_pendiente ↻ diagnostico_pendiente
-                     │                                                ├─ aprobada → en_proceso (o esperando_repuesto)
-                     │                                                └─ rechazada (terminal)
                      └─→ sin_agendar
 ```
 
@@ -290,6 +359,7 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 | `/api/verificar-paso` | POST | Customer approves/rejects post-diagnosis next step | Warranty only |
 | `/api/solicitud/cancelar` | POST | Cliente cancela desde portal /servicio | Both |
 | `/api/solicitud/reagendar` | POST | Cliente reagenda desde portal /servicio | Both |
+| `/api/cotizacion-precios` | POST | Admin fija precios + tiempo de entrega tras diagnóstico | Both (lógica difiere) |
 | `/api/repuesto-recibido` | POST | Admin marks parts arrived → reactivates service | Both |
 | `/api/gps-ping` | POST | Tech browser sends GPS coords by phase | Both |
 | `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
