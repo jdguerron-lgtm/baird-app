@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
 
     const formData = parsed.data
     const horarioToken = crypto.randomUUID()
+    const clienteToken = crypto.randomUUID()
 
     // Recalcular pago_tecnico server-side para evitar manipulación del cliente.
     // El frontend lo envía pero la fuente de verdad es la tabla TARIFAS_MANTENIMIENTO.
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
       numero_serie_factura: formData.es_garantia ? formData.numero_serie_factura : null,
       estado: 'pendiente_horario' as const,
       horario_token: horarioToken,
+      cliente_token: clienteToken,
     }
 
     const { data: solicitud, error: insertErr } = await supabase
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest) {
       success: true,
       id: solicitud.id,
       horario_token: horarioToken,
+      cliente_token: clienteToken,
       whatsapp_enviado: waEnviado,
     })
   } catch (error) {

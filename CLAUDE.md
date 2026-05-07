@@ -35,17 +35,31 @@ src/
 │   │   └── completar/[id]/     # Service completion form (photos, checklist, signature)
 │   ├── confirmar/[token]/      # Customer satisfaction confirmation page
 │   ├── cotizacion/[token]/     # Customer quote approval page (non-warranty only)
+│   ├── servicio/[token]/       # Customer self-service portal (cancel/reschedule)
+│   ├── horario/[token]/        # Customer schedule selection (after creating request)
+│   ├── verificar-paso/[token]/ # Customer approval of next-step (post-diagnosis, warranty)
+│   ├── terminos/               # Public Terms & Conditions page
 │   ├── admin/                  # Admin panel (auth-guarded)
 │   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view)
 │   │   ├── tecnicos/           # Technician management
+│   │   ├── repuestos/          # Pending parts dashboard
+│   │   ├── gps-alertas/        # Silent flagged services (post-visit GPS within 100m)
 │   │   ├── carga-masiva/       # Bulk Excel upload for warranty services
 │   │   └── garantias/          # Warranty dashboard (summary by brand/equipment)
 │   └── api/                    # API routes
 │       ├── solicitar/              # Service request: insert + WhatsApp confirm + notify techs
+│       ├── confirmar-horario/      # Customer schedule confirmation → notify techs
 │       ├── diagnostico/            # Technician diagnosis: warranty tariff OR particular quote
 │       ├── aprobar-cotizacion/     # Quote approval/rejection by customer (non-warranty)
 │       ├── completar-servicio/     # Service completion + WhatsApp to customer
 │       ├── confirmar-servicio/     # Customer confirmation + WhatsApp to technician
+│       ├── verificar-paso/         # Customer approval of post-diagnosis next step
+│       ├── solicitud/              # Customer self-service (NEW 2026-05-06)
+│       │   ├── cancelar/           #   POST: cancel service request from /servicio portal
+│       │   └── reagendar/          #   POST: reschedule from /servicio portal
+│       ├── repuesto-recibido/      # Admin marks parts arrived → reactivates service
+│       ├── gps-ping/               # Tech browser GPS ping by phase
+│       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup)
 │       ├── triaje/                 # Gemini AI diagnosis (disabled)
 │       ├── health/                 # Health check
 │       ├── carga-masiva/           # Bulk Excel upload processing
@@ -197,25 +211,49 @@ All payments go through Baird Service. The customer NEVER pays the technician di
 
 **Non-warranty:** The customer pays Baird the quoted total (mano de obra + repuestos). The diagnostic fee ($80,000 COP) with 50% advance ($40,000 COP) is collected before the technician visits. These constants are in `src/types/solicitud.ts` as `TARIFA_DIAGNOSTICO` and `ANTICIPO_PORCENTAJE`.
 
-## Solicitud State Machine (v2 2026-04-27 — customer-first scheduling)
+## Customer Self-Service (v1 2026-05-06)
+
+Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente puede ver el estado actual, **cancelar** o **reagendar** sin pasar por admin. El token (`cliente_token`) es UUID durable y se incluye en el response de `POST /api/solicitar`.
+
+**Política aplicada:**
+- **Cutoff 4h** antes del horario para "cancelación a tiempo". Pasado ese punto la cancelación es válida pero queda con `cancelado_tarde=true` (impacta liquidación al técnico para garantía y no-reembolso del anticipo para particular).
+- **Token único por solicitud** (no por acción) — más simple para el cliente y para el admin.
+- **Reagendar conserva técnico:** si ya había aceptación, se mantiene `tecnico_asignado_id` y se le notifica el cambio por WhatsApp libre. Si pasamos por `reagendamiento_pendiente` la transición es transitoria y vuelve a `asignada`/`diagnostico_pendiente`.
+- **Máximo 2 reagendamientos por solicitud** (`MAX_REAGENDAMIENTOS_CLIENTE`). Pasado el tope, fall-back a admin.
+- **Audit append-only** en `solicitud_eventos` — cada cancelación/reagendamiento registra `tipo`, `estado_previo/nuevo`, `actor`, `motivo`, `payload` JSONB. No se borra nada.
+
+**Decisiones explícitas (NO baked-in):**
+- No se cambian las plantillas Meta existentes (mantener compatibilidad). El portal se descubre vía URL admin / referencia futura en plantillas.
+- `/api/confirmar-horario` no se modifica. El reagendamiento usa su propio endpoint que setea `horario_confirmado` directo.
+- La cancelación tardía no se distingue como estado separado; queda como `cancelada` con flag en audit.
+
+## Solicitud State Machine (v3 2026-05-06 — customer self-service)
 
 ```
 WARRANTY:
   pendiente_horario ─┬─→ notificada → asignada ─→ en_proceso ─→ en_verificacion → completada
                      │                          ↘ esperando_repuesto → en_proceso         ↘ en_disputa
+                     │                          ↘ verificacion_pendiente (post-diagnóstico)
                      │                          ↘ finalizado_sin_reparacion (terminal)
                      │                          ↘ cancelada_cliente (terminal)
+                     │                          ↘ reagendamiento_pendiente ↻ asignada
+                     │                          ↘ cancelada (cliente desde /servicio, terminal)
                      └─→ sin_agendar (timeout 24h+12h, terminal)
 
 NON-WARRANTY:
   pendiente_horario ─┬─→ notificada → diagnostico_pendiente → cotizacion_enviada
-                     │                                          ├─ aprobada → en_proceso (o esperando_repuesto)
-                     │                                          └─ rechazada (terminal)
+                     │                       ↘ reagendamiento_pendiente ↻ diagnostico_pendiente
+                     │                                                ├─ aprobada → en_proceso (o esperando_repuesto)
+                     │                                                └─ rechazada (terminal)
                      └─→ sin_agendar
 ```
 
 **Estados terminales** (set en `ESTADOS_TERMINALES` en `src/lib/constants/estados.ts`):
 `sin_agendar`, `finalizado_sin_reparacion`, `cancelada_cliente`, `cancelada`, `completada`, `cotizacion_rechazada`.
+
+**Estado transitorio `reagendamiento_pendiente`** — usado solo si el cliente reagenda mientras el técnico ya estaba asignado; vuelve inmediatamente a `asignada`/`diagnostico_pendiente` con `horario_confirmado` actualizado.
+
+**Estados desde los que el cliente puede cancelar/reagendar** están definidos en `src/types/solicitud.ts` como `ESTADOS_CANCELABLES_POR_CLIENTE` y `ESTADOS_REAGENDABLES_POR_CLIENTE`. Tope: `MAX_REAGENDAMIENTOS_CLIENTE = 2` por solicitud.
 
 State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 
@@ -232,8 +270,12 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 | `enviarFinalizadoSinReparacion(solicitudId, motivo)` | Plantilla finalizado_sin_reparacion_v1 | No |
 | `enviarCotizacionCliente(solicitudId)` | Send quote to customer via WhatsApp | No — non-warranty only |
 | `notificarCotizacionAprobada(solicitudId)` | Notify tech that quote was approved | No — non-warranty only |
+| `procesarCancelacionCliente(token, motivo)` | Cancela la solicitud desde /servicio portal — actualiza estado, invalida notifs, avisa al cliente y al técnico | Sí (audit en `solicitud_eventos`) |
+| `procesarReagendamientoCliente(token, horario, motivo?)` | Reagenda manteniendo técnico asignado si lo hay; incrementa `reagendamientos_count` (max 2) | Sí (audit en `solicitud_eventos`) |
 | `enviarMensajeTexto(telefono, texto)` | Send free-form text message | N/A |
 | `verificarFirmaWebhook(payload, signature)` | HMAC verification for Meta webhook | N/A |
+
+**Test gate:** todas las primitivas (`enviarPlantilla`, `enviarMensajeTexto`, `enviarImagen`, `enviarMensajeInteractivo`) verifican `BAIRD_TEST_PHONE_WHITELIST`. Si la env está definida (CSV de digits con país, p.ej. `573134951164`), los envíos a números fuera de la lista se omiten silenciosamente con un log `[WhatsApp][test-mode] Skipping ...`. Vacío/no definido → comportamiento normal (envía a todos). Útil para probar nuevos flujos sin alertar a técnicos reales.
 
 ## API Routes
 
@@ -245,6 +287,9 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 | `/api/aprobar-cotizacion` | POST | Customer approves/rejects quote | Non-warranty only |
 | `/api/completar-servicio` | POST | Tech marks service complete | Both |
 | `/api/confirmar-servicio` | POST | Customer confirms satisfaction | Both |
+| `/api/verificar-paso` | POST | Customer approves/rejects post-diagnosis next step | Warranty only |
+| `/api/solicitud/cancelar` | POST | Cliente cancela desde portal /servicio | Both |
+| `/api/solicitud/reagendar` | POST | Cliente reagenda desde portal /servicio | Both |
 | `/api/repuesto-recibido` | POST | Admin marks parts arrived → reactivates service | Both |
 | `/api/gps-ping` | POST | Tech browser sends GPS coords by phase | Both |
 | `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
@@ -259,9 +304,11 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 | Page | URL | Purpose |
 |------|-----|---------|
 | Service request form | `/solicitar` | Customer creates a new request |
-| **Schedule confirmation** | `/horario/{token}` | Customer picks 1 of 2 schedules + accepts T&C |
-| Quote approval | `/cotizacion/{token}` | Customer approves/rejects repair quote (non-warranty) |
-| Service confirmation | `/confirmar/{token}` | Customer confirms service was completed satisfactorily |
+| **Schedule confirmation** | `/horario/{horario_token}` | Customer picks fecha + franja + accepts T&C |
+| **Self-service portal** | `/servicio/{cliente_token}` | Cancela / reagenda. Token durable, vive en `solicitudes_servicio.cliente_token` |
+| **Verificar siguiente paso** | `/verificar-paso/{verificacion_paso_token}` | Cliente aprueba/rechaza el siguiente paso post-diagnóstico (garantía) |
+| Quote approval | `/cotizacion/{cotizacion.token}` | Customer approves/rejects repair quote (non-warranty) |
+| Service confirmation | `/confirmar/{confirmacion_token}` | Customer confirms service was completed satisfactorily |
 | **Terms & Conditions** | `/terminos` | Public T&C page (Colombian law-compliant) |
 | Privacy Policy | `/politica-privacidad` | Existing |
 
@@ -307,6 +354,11 @@ WHATSAPP_PHONE_ID                 # WhatsApp phone number ID (1148716061648720)
 WHATSAPP_WEBHOOK_VERIFY_TOKEN     # Webhook handshake token
 WHATSAPP_WEBHOOK_SECRET           # App Secret for HMAC verification
 NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
+BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. "573134951164").
+                                  # Si está definida, las primitivas WhatsApp omiten cualquier
+                                  # envío a un número fuera de la lista. Útil en dev para no
+                                  # alertar a técnicos reales. Vacío/no definido = comportamiento
+                                  # normal (envía a todos).
 ```
 
 ## Gotchas
@@ -325,6 +377,8 @@ NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
 - **Cotizacion token:** For non-warranty, the quote approval token is stored inside the `cotizacion` JSONB column. The `/cotizacion/{token}` page scans all `cotizacion_enviada` records to find the match — there's no direct column index on this token.
 - **WhatsApp 24h window:** Free-form text messages require the customer to have messaged the business within the last 24 hours. Template messages can be sent anytime. Always use templates for proactive outreach.
 - **Meta template names:** Must match exactly what's approved in Meta Business Manager. If deleted, there's a 4-week cooldown before reusing the same name — version the name instead (v1 → v2).
+- **Cliente self-service token:** `solicitudes_servicio.cliente_token` es UUID durable, distinto de los demás tokens por acción (`horario_token`, `verificacion_paso_token`, `cotizacion.token`). Usado por `/servicio/{token}` y por las APIs `/api/solicitud/cancelar` + `/api/solicitud/reagendar`. Se genera al crear la solicitud (default DB + override server-side en `/api/solicitar`).
+- **WhatsApp 24h y fotos del técnico:** las plantillas se pueden enviar en cualquier momento, pero los mensajes de tipo `image` (free-form) requieren que el cliente haya enviado un mensaje en las últimas 24h. Como el flujo customer-first no garantiza que el cliente escriba, las fotos del técnico se exponen también en `/servicio/{cliente_token}` para que la verificación de identidad no dependa del envío de imagen.
 
 ## WhatsApp Templates (Approved - Meta Business)
 
@@ -371,13 +425,14 @@ All templates use language `es` (Spanish). Phone: +57 313 4951164 (WABA ID: 2354
 
 | Table | Purpose | Key Fields |
 |-------|---------|------------|
-| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB) |
+| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count |
 | `notificaciones_whatsapp` | One record per tech notification | token, estado, timestamps |
 | `tecnicos` | Technician profiles | portal_token, whatsapp, especialidades, verificado |
 | `especialidades_tecnico` | Many-to-many: technicians ↔ skills | tecnico_id, especialidad |
 | `evidencias_servicio` | Completion evidence | fotos, checklist, firma, oath_firma, gps_(diagnostico/completado/post_visita)_lat/lng, gps_flagged |
-| `repuestos_pendientes` (NEW) | Spare parts pending arrival | solicitud_id, sku, descripcion, costo, tiempo_estimado, estado |
-| `gps_pings` (NEW) | All GPS pings from technician browsers | solicitud_id, tecnico_id, lat, lng, fase, capturado_at |
+| `repuestos_pendientes` | Spare parts pending arrival | solicitud_id, sku, descripcion, costo, tiempo_estimado, estado |
+| `gps_pings` | All GPS pings from technician browsers | solicitud_id, tecnico_id, lat, lng, fase, capturado_at |
+| `solicitud_eventos` (NEW 2026-05-06) | Append-only audit log para cancelaciones, reagendamientos y cambios manuales de admin | solicitud_id, tipo, estado_previo, estado_nuevo, actor, motivo, payload (JSONB), ocurrido_at |
 
 ### Important JSONB Columns on solicitudes_servicio
 

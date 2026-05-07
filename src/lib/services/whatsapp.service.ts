@@ -3,6 +3,11 @@ import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch } from '@/lib/utils/format'
+import {
+  ESTADOS_CANCELABLES_POR_CLIENTE,
+  ESTADOS_REAGENDABLES_POR_CLIENTE,
+  MAX_REAGENDAMIENTOS_CLIENTE,
+} from '@/types/solicitud'
 
 export const WA_API_BASE = 'https://graph.facebook.com/v22.0'
 
@@ -14,6 +19,30 @@ export { phoneToDigits as formatearTelefono } from '@/lib/utils/phone'
 const TOKEN_EXPIRATION_MS = 3 * 60 * 60 * 1000 // 3 hours
 
 // ─────────────────────────────────────────
+// Test-mode whitelist (opt-in via env)
+// Si BAIRD_TEST_PHONE_WHITELIST está definida, los envíos a números fuera
+// de la lista se omiten silenciosamente (con log) — útil para probar
+// flujos nuevos en dev sin alertar a técnicos reales.
+// Formato: "573134951164,573001234567" (digits con país, separados por coma).
+// Vacío/no definido = comportamiento normal (envía a todos).
+// ─────────────────────────────────────────
+function isPhoneAllowed(rawPhone: string): boolean {
+  const whitelist = process.env.BAIRD_TEST_PHONE_WHITELIST?.trim()
+  if (!whitelist) return true
+  const allowed = whitelist
+    .split(',')
+    .map(s => s.trim().replace(/\D/g, ''))
+    .filter(Boolean)
+  if (allowed.length === 0) return true
+  const digits = phoneToDigits(rawPhone)
+  return allowed.includes(digits)
+}
+
+function logFiltrado(primitive: string, raw: string): void {
+  console.log(`[WhatsApp][test-mode] Skipping ${primitive} to ${phoneToDigits(raw)} (not in BAIRD_TEST_PHONE_WHITELIST)`)
+}
+
+// ─────────────────────────────────────────
 // Funciones de envío (primitivas)
 // ─────────────────────────────────────────
 
@@ -22,6 +51,11 @@ export async function enviarMensajeTexto(para: string, texto: string): Promise<v
   const token = process.env.WHATSAPP_API_TOKEN
 
   if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
+
+  if (!isPhoneAllowed(para)) {
+    logFiltrado('enviarMensajeTexto', para)
+    return
+  }
 
   const res = await fetch(`${WA_API_BASE}/${phoneId}/messages`, {
     method: 'POST',
@@ -50,6 +84,13 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
 
   if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
 
+  if (!isPhoneAllowed(para)) {
+    logFiltrado('enviarImagen', para)
+    return
+  }
+
+  const toDigits = phoneToDigits(para)
+
   const res = await fetch(`${WA_API_BASE}/${phoneId}/messages`, {
     method: 'POST',
     headers: {
@@ -59,16 +100,32 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: phoneToDigits(para),
+      to: toDigits,
       type: 'image',
       image: { link: urlImagen, caption },
     }),
   })
 
+  const body = await res.json().catch(() => ({}))
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`WhatsApp image error ${res.status}: ${JSON.stringify(err)}`)
+    console.error(`[WhatsApp][image] HTTP ${res.status} sending to ${toDigits} url=${urlImagen}:`, JSON.stringify(body))
+    throw new Error(`WhatsApp image error ${res.status}: ${JSON.stringify(body)}`)
   }
+
+  // Meta a veces responde 200 con un objeto error en el body — capturarlo.
+  if (body.error) {
+    console.error(`[WhatsApp][image] 200 OK pero body con error a ${toDigits} url=${urlImagen}:`, JSON.stringify(body.error))
+    throw new Error(`WhatsApp image API error: ${JSON.stringify(body.error)}`)
+  }
+
+  // Sospecha frecuente: customer fuera de la ventana 24h. Meta responde 200
+  // pero el message_status puede venir como "failed" o no entregarse.
+  const messageStatus = body.messages?.[0]?.message_status
+  if (messageStatus && messageStatus !== 'accepted') {
+    console.warn(`[WhatsApp][image] message_status=${messageStatus} para ${toDigits} url=${urlImagen}`)
+  }
+  console.log(`[WhatsApp][image] sent to ${toDigits} url=${urlImagen}, message_id=${body.messages?.[0]?.id ?? 'unknown'}`)
 }
 
 export async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<void> {
@@ -76,6 +133,11 @@ export async function enviarPlantilla(para: string, templateName: string, langua
   const token = process.env.WHATSAPP_API_TOKEN
 
   if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
+
+  if (!isPhoneAllowed(para)) {
+    logFiltrado(`enviarPlantilla(${templateName})`, para)
+    return
+  }
 
   const toNumber = phoneToDigits(para)
   const template: Record<string, unknown> = {
@@ -137,6 +199,11 @@ async function enviarMensajeInteractivo(options: {
   const token = process.env.WHATSAPP_API_TOKEN
 
   if (!phoneId || !token) throw new Error('Variables de entorno WhatsApp no configuradas')
+
+  if (!isPhoneAllowed(options.para)) {
+    logFiltrado('enviarMensajeInteractivo', options.para)
+    return
+  }
 
   const interactive: Record<string, unknown> = {
     type: 'cta_url',
@@ -552,13 +619,22 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     ]).catch(console.error)
   }
 
-  // 6. Enviar foto de perfil y documento del técnico al cliente
+  // 6. Enviar foto de perfil y documento del técnico al cliente.
+  //
+  // ⚠️ Limitación Meta WhatsApp: los mensajes tipo `image` (free-form) requieren
+  // que el cliente haya enviado un mensaje al negocio en las últimas 24h.
+  // En el flujo customer-first el cliente solo interactúa vía botones URL
+  // (que NO abren la ventana 24h), así que estos envíos suelen fallar con
+  // error #131047 ("Re-engagement message"). Lo capturamos en el log para
+  // diagnóstico, pero la fuente de verdad para verificación de identidad
+  // del técnico es /servicio/{cliente_token}, que muestra ambas fotos sin
+  // depender de WhatsApp.
   if (tecnico?.foto_perfil_url) {
     await enviarImagen(
       sol.cliente_telefono,
       tecnico.foto_perfil_url,
       `📷 ${tecnico.nombre_completo} — Tu técnico asignado`
-    ).catch(console.error)
+    ).catch(err => console.error('[procesarAceptacion] foto perfil falló (24h?):', err))
   }
 
   if (tecnico?.foto_documento_url) {
@@ -566,7 +642,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       sol.cliente_telefono,
       tecnico.foto_documento_url,
       `🪪 ${tecnico.tipo_documento ?? 'Documento'}: ${tecnico.numero_documento ?? ''} — Identificación verificada`
-    ).catch(console.error)
+    ).catch(err => console.error('[procesarAceptacion] foto documento falló (24h?):', err))
   }
 
   // 7. Marcar este token como aceptado e invalidar los demás
@@ -1041,6 +1117,264 @@ export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok:
   }
 
   return { ok: true }
+}
+
+// ─────────────────────────────────────────
+// Self-service del cliente: cancelar / reagendar
+// ─────────────────────────────────────────
+
+/**
+ * Inserta un evento en la bitácora append-only.
+ * No lanza si falla — el log no debe romper el flujo principal.
+ */
+async function logEvento(params: {
+  solicitudId: string
+  tipo: 'cancelacion' | 'reagendamiento' | 'reagendamiento_confirmado' | 'cancelacion_revertida' | 'cambio_estado_admin' | 'nota_admin'
+  estadoPrevio: string | null
+  estadoNuevo: string | null
+  actor: string
+  motivo?: string | null
+  payload?: Record<string, unknown>
+}): Promise<void> {
+  try {
+    await supabase.from('solicitud_eventos').insert({
+      solicitud_id: params.solicitudId,
+      tipo: params.tipo,
+      estado_previo: params.estadoPrevio,
+      estado_nuevo: params.estadoNuevo,
+      actor: params.actor,
+      motivo: params.motivo ?? null,
+      payload: params.payload ?? {},
+    })
+  } catch (err) {
+    console.error('[logEvento] Error inserting event:', err)
+  }
+}
+
+export interface CancelacionResult {
+  ok: boolean
+  estado_previo?: string
+  cancelado_tarde?: boolean
+  error?: string
+}
+
+/**
+ * Procesa la cancelación de una solicitud iniciada por el cliente desde
+ * el portal /servicio/{cliente_token}.
+ *
+ * Reglas:
+ * - Solo permitido desde estados en ESTADOS_CANCELABLES_POR_CLIENTE.
+ * - Si había técnico asignado, se le notifica vía texto (24h-window OK porque
+ *   tuvo interacción reciente). Se marca cancelado_tarde=true para
+ *   diferencia de liquidación.
+ * - Las notificaciones activas a técnicos se invalidan.
+ * - Estado final = 'cancelada' (no se distingue cancelada_cliente que está
+ *   reservado para la rama post-diagnóstico actual).
+ */
+export async function procesarCancelacionCliente(
+  clienteToken: string,
+  motivo: string,
+): Promise<CancelacionResult> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, horario_confirmado_at, es_garantia')
+    .eq('cliente_token', clienteToken)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Token inválido' }
+
+  if (!ESTADOS_CANCELABLES_POR_CLIENTE.has(sol.estado)) {
+    return { ok: false, estado_previo: sol.estado, error: `No se puede cancelar desde el estado "${sol.estado}"` }
+  }
+
+  const fueTarde = !!sol.tecnico_asignado_id
+
+  // 1. Update solicitud a cancelada
+  const { error: updErr } = await supabase
+    .from('solicitudes_servicio')
+    .update({
+      estado: 'cancelada',
+      cancelado_at: new Date().toISOString(),
+      cancelado_por: 'cliente',
+      motivo_cancelacion: motivo.substring(0, 500),
+      cancelado_tarde: fueTarde,
+    })
+    .eq('id', sol.id)
+
+  if (updErr) {
+    return { ok: false, estado_previo: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
+  }
+
+  // 2. Invalidar notificaciones activas a técnicos (pre-aceptación)
+  await supabase
+    .from('notificaciones_whatsapp')
+    .update({ estado: 'invalidado' })
+    .eq('solicitud_id', sol.id)
+    .eq('estado', 'enviado')
+
+  // 3. Notificar al cliente (texto libre — está dentro de su 24h por la interacción)
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const clienteNombre = sol.cliente_nombre.split(' ')[0]
+  await enviarMensajeTexto(
+    sol.cliente_telefono,
+    `Hola ${clienteNombre}, hemos cancelado tu solicitud de ${equipo}. Si necesitas reagendarla más adelante, puedes crear una nueva solicitud en https://baird-app.vercel.app/solicitar 🔧`,
+  ).catch(err => console.error('[procesarCancelacionCliente] error notificando cliente:', err))
+
+  // 4. Notificar al técnico asignado (si lo hay)
+  if (sol.tecnico_asignado_id) {
+    const { data: tec } = await supabase
+      .from('tecnicos')
+      .select('whatsapp, nombre_completo')
+      .eq('id', sol.tecnico_asignado_id)
+      .single()
+    if (tec?.whatsapp) {
+      const tecNombre = tec.nombre_completo.split(' ')[0]
+      const horario = sol.horario_confirmado || 'sin horario confirmado'
+      await enviarMensajeTexto(
+        tec.whatsapp,
+        `Hola ${tecNombre}, el cliente ${sol.cliente_nombre} canceló su servicio de ${equipo} (horario: ${horario}). Si ya estabas en camino o gastaste tiempo, repórtalo a Baird Service para gestionar la liquidación. — Baird Service`,
+      ).catch(err => console.error('[procesarCancelacionCliente] error notificando técnico:', err))
+    }
+  }
+
+  // 5. Audit
+  await logEvento({
+    solicitudId: sol.id,
+    tipo: 'cancelacion',
+    estadoPrevio: sol.estado,
+    estadoNuevo: 'cancelada',
+    actor: 'cliente',
+    motivo,
+    payload: {
+      cancelado_tarde: fueTarde,
+      tenia_tecnico_asignado: !!sol.tecnico_asignado_id,
+      horario_confirmado: sol.horario_confirmado,
+      es_garantia: sol.es_garantia,
+    },
+  })
+
+  return { ok: true, estado_previo: sol.estado, cancelado_tarde: fueTarde }
+}
+
+export interface ReagendamientoResult {
+  ok: boolean
+  estado_previo?: string
+  reagendamientos_count?: number
+  error?: string
+}
+
+/**
+ * Procesa un reagendamiento iniciado por el cliente.
+ *
+ * - Pre-aceptación (`pendiente_horario`, `notificada`): conserva el
+ *   horario_token, invalida notificaciones activas a técnicos, vuelve a
+ *   estado `notificada` con el nuevo horario y NO repuebla la cola
+ *   (los técnicos verán el horario actualizado en el portal). Si no hay
+ *   notifs activas, regresa a `pendiente_horario` para que el flujo normal
+ *   las reenvíe.
+ * - Post-aceptación (`asignada`, `diagnostico_pendiente`,
+ *   `reagendamiento_pendiente`): conserva técnico, actualiza horario,
+ *   notifica al técnico vía texto. Estado pasa a `reagendamiento_pendiente`
+ *   transitoriamente y regresa al estado pre-reagendamiento (asignada o
+ *   diagnostico_pendiente) inmediatamente — preservando el flujo.
+ */
+export async function procesarReagendamientoCliente(
+  clienteToken: string,
+  nuevoHorario: string,
+  motivo?: string,
+): Promise<ReagendamientoResult> {
+  const horarioLimpio = nuevoHorario.trim()
+  if (!horarioLimpio || horarioLimpio.length > 200) {
+    return { ok: false, error: 'Horario inválido' }
+  }
+
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, reagendamientos_count, es_garantia')
+    .eq('cliente_token', clienteToken)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Token inválido' }
+
+  if (!ESTADOS_REAGENDABLES_POR_CLIENTE.has(sol.estado)) {
+    return { ok: false, estado_previo: sol.estado, error: `No se puede reagendar desde el estado "${sol.estado}"` }
+  }
+
+  const count = sol.reagendamientos_count ?? 0
+  if (count >= MAX_REAGENDAMIENTOS_CLIENTE) {
+    return { ok: false, estado_previo: sol.estado, error: `Llegaste al máximo de ${MAX_REAGENDAMIENTOS_CLIENTE} reagendamientos. Contáctanos por WhatsApp para asistencia.` }
+  }
+
+  const horarioPrevio = sol.horario_confirmado
+  const tieneTecnico = !!sol.tecnico_asignado_id
+
+  // Determinar nuevo estado. Pre-aceptación mantenemos en notificada (si ya
+  // notificamos) o pendiente_horario (si todavía no). Post-aceptación
+  // conservamos el estado actual (asignada / diagnostico_pendiente).
+  const estadoNuevo = tieneTecnico
+    ? sol.estado === 'reagendamiento_pendiente'
+      ? (sol.es_garantia ? 'asignada' : 'diagnostico_pendiente')
+      : sol.estado
+    : sol.estado === 'pendiente_horario'
+      ? 'pendiente_horario'
+      : 'notificada'
+
+  const { error: updErr } = await supabase
+    .from('solicitudes_servicio')
+    .update({
+      horario_confirmado: horarioLimpio,
+      horario_confirmado_at: new Date().toISOString(),
+      estado: estadoNuevo,
+      reagendamientos_count: count + 1,
+      ultimo_reagendado_at: new Date().toISOString(),
+    })
+    .eq('id', sol.id)
+
+  if (updErr) {
+    return { ok: false, estado_previo: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
+  }
+
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const clienteNombre = sol.cliente_nombre.split(' ')[0]
+
+  // Confirmar al cliente
+  await enviarMensajeTexto(
+    sol.cliente_telefono,
+    `Hola ${clienteNombre} 👋 Tu servicio de ${equipo} fue reagendado para: ${horarioLimpio}. ${tieneTecnico ? 'Ya le avisamos al técnico asignado.' : 'Estamos buscando un técnico verificado y te avisamos cuando alguno acepte.'}`,
+  ).catch(err => console.error('[procesarReagendamientoCliente] error notificando cliente:', err))
+
+  // Notificar técnico asignado si lo hay
+  if (tieneTecnico && sol.tecnico_asignado_id) {
+    const { data: tec } = await supabase
+      .from('tecnicos')
+      .select('whatsapp, nombre_completo')
+      .eq('id', sol.tecnico_asignado_id)
+      .single()
+    if (tec?.whatsapp) {
+      const tecNombre = tec.nombre_completo.split(' ')[0]
+      await enviarMensajeTexto(
+        tec.whatsapp,
+        `Hola ${tecNombre}, el cliente ${sol.cliente_nombre} reagendó el servicio de ${equipo}. Nuevo horario: ${horarioLimpio}. Si no puedes asistir, contáctanos por este chat.`,
+      ).catch(err => console.error('[procesarReagendamientoCliente] error notificando técnico:', err))
+    }
+  }
+
+  await logEvento({
+    solicitudId: sol.id,
+    tipo: 'reagendamiento',
+    estadoPrevio: sol.estado,
+    estadoNuevo,
+    actor: 'cliente',
+    motivo: motivo ?? null,
+    payload: {
+      horario_previo: horarioPrevio,
+      horario_nuevo: horarioLimpio,
+      tenia_tecnico_asignado: tieneTecnico,
+      reagendamientos_count: count + 1,
+    },
+  })
+
+  return { ok: true, estado_previo: sol.estado, reagendamientos_count: count + 1 }
 }
 
 /**

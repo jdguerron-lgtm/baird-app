@@ -61,6 +61,7 @@ export type EstadoSolicitud =
   | 'cotizacion_aprobada'          // Non-warranty: customer approved quote
   | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote
   | 'esperando_repuesto'           // NEW: post-diagnóstico, repuesto pendiente
+  | 'reagendamiento_pendiente'     // NEW: cliente pidió reagendar después de aceptación; espera nuevo horario
   | 'finalizado_sin_reparacion'    // NEW: equipo no reparable (terminal)
   | 'cancelada_cliente'            // NEW: cliente rechazó proceder con reparación (terminal)
   | 'en_proceso'
@@ -86,6 +87,41 @@ export interface RepuestoRequerido {
 
 // Versión vigente de los Términos y Condiciones
 export const TYC_VERSION = '2026.04.27'
+
+// ──────────────────────────────────────────────────────────
+// Self-service (cliente cancela / reagenda desde WhatsApp)
+// ──────────────────────────────────────────────────────────
+// Tiempo mínimo antes del horario en que la cancelación es "a tiempo".
+// Por debajo del cutoff la solicitud se cancela igual, pero queda marcada
+// como tardía para liquidación al técnico (visita-en-falso garantía) o
+// no-reembolso del anticipo (particular).
+export const CANCELACION_CUTOFF_HORAS = 4
+
+// Máximo de reagendamientos que el cliente puede hacer por sí mismo.
+// Pasado este número, el flujo cae a admin manual.
+export const MAX_REAGENDAMIENTOS_CLIENTE = 2
+
+/** Estados desde los cuales el cliente puede cancelar por sí mismo */
+export const ESTADOS_CANCELABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
+  'pendiente',
+  'pendiente_horario',
+  'notificada',
+  'asignada',
+  'diagnostico_pendiente',
+  'verificacion_pendiente',
+  'cotizacion_enviada',
+  'esperando_repuesto',
+  'reagendamiento_pendiente',
+])
+
+/** Estados desde los cuales el cliente puede reagendar por sí mismo */
+export const ESTADOS_REAGENDABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
+  'pendiente_horario',
+  'notificada',
+  'asignada',
+  'diagnostico_pendiente',
+  'reagendamiento_pendiente',
+])
 
 // Timeouts del flujo de horario — extendidos para no romper enlaces durante la jornada del cliente
 export const HORARIO_TIMEOUT_HORAS = 24       // recordatorio tras 24h
@@ -208,6 +244,33 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   verificacion_paso_decision?: 'aprobado' | 'rechazado'
   verificacion_paso_at?: string
   verificacion_paso_comentario?: string
+  // Self-service (cliente cancela / reagenda)
+  cliente_token?: string
+  cancelado_at?: string
+  cancelado_por?: 'cliente' | 'tecnico' | 'admin' | 'sistema'
+  motivo_cancelacion?: string
+  cancelado_tarde?: boolean
+  reagendamientos_count?: number
+  ultimo_reagendado_at?: string
+}
+
+// Evento append-only en la tabla solicitud_eventos.
+export interface SolicitudEvento {
+  id: number
+  solicitud_id: string
+  tipo:
+    | 'cancelacion'
+    | 'reagendamiento'
+    | 'reagendamiento_confirmado'
+    | 'cancelacion_revertida'
+    | 'cambio_estado_admin'
+    | 'nota_admin'
+  estado_previo: string | null
+  estado_nuevo: string | null
+  actor: string | null
+  motivo: string | null
+  payload: Record<string, unknown>
+  ocurrido_at: string
 }
 
 // Tipo para respuesta de triaje de IA (deshabilitado temporalmente — ver TODO.md)

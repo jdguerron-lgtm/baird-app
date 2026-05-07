@@ -107,9 +107,26 @@ export default function PortalTecnicoPage() {
     )
   }
 
-  const activos = servicios.filter(s => ['asignada', 'en_proceso'].includes(s.estado))
+  const activos = servicios.filter(s => [
+    'asignada',
+    'diagnostico_pendiente',
+    'cotizacion_enviada',
+    'cotizacion_aprobada',
+    'esperando_repuesto',
+    'reagendamiento_pendiente',
+    'verificacion_pendiente',
+    'en_proceso',
+  ].includes(s.estado))
   const enVerificacion = servicios.filter(s => s.estado === 'en_verificacion')
-  const historial = servicios.filter(s => ['completada', 'cancelada', 'en_disputa'].includes(s.estado))
+  const historial = servicios.filter(s => [
+    'completada',
+    'cancelada',
+    'cancelada_cliente',
+    'cotizacion_rechazada',
+    'finalizado_sin_reparacion',
+    'sin_agendar',
+    'en_disputa',
+  ].includes(s.estado))
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -201,8 +218,18 @@ export default function PortalTecnicoPage() {
 }
 
 function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string }) {
-  const needsDiagnostic = s.estado === 'asignada'
-  const canComplete = s.estado === 'en_proceso' && !s.tiene_evidencia
+  // El técnico puede iniciar diagnóstico tras aceptar:
+  //  - Garantía → estado 'asignada'
+  //  - Particular → estado 'diagnostico_pendiente'
+  const needsDiagnostic = s.estado === 'asignada' || s.estado === 'diagnostico_pendiente'
+  const canComplete = (s.estado === 'en_proceso' || s.estado === 'cotizacion_aprobada') && !s.tiene_evidencia
+  const esperaInfo: string | null =
+    s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
+    : s.estado === 'esperando_repuesto' ? 'Esperando llegada del repuesto'
+    : s.estado === 'verificacion_pendiente' ? 'Cliente verificando siguiente paso'
+    : s.estado === 'reagendamiento_pendiente' ? 'Cliente reagendando'
+    : s.estado === 'en_verificacion' ? 'Esperando confirmación del cliente'
+    : null
 
   // Extract model from novedades if present
   const modeloMatch = s.novedades_equipo.match(/^\[Modelo:\s*(.+?)\]\s*/)
@@ -260,8 +287,8 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
                 Completar servicio
               </Link>
             )}
-            {s.estado === 'en_verificacion' && (
-              <span className="text-xs text-amber-600 font-medium">Esperando confirmacion del cliente</span>
+            {!needsDiagnostic && !canComplete && esperaInfo && (
+              <span className="text-xs text-amber-600 font-medium">{esperaInfo}</span>
             )}
           </div>
         </div>

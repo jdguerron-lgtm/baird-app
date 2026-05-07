@@ -30,6 +30,7 @@ interface Solicitud {
   estado: string
   tecnico_asignado_id: string | null
   created_at: string
+  cliente_token: string | null
 }
 
 interface Tecnico {
@@ -361,6 +362,14 @@ export default function SolicitudDetalle() {
               <dt className="text-xs text-gray-500">WhatsApp</dt>
               <dd className="text-sm font-medium text-slate-900">{solicitud.cliente_telefono}</dd>
             </div>
+            {solicitud.cliente_token && (
+              <div>
+                <dt className="text-xs text-gray-500">Portal cliente (cancelar/reagendar)</dt>
+                <dd className="text-xs font-mono text-slate-700 bg-gray-50 p-2 rounded-lg break-all">
+                  /servicio/{solicitud.cliente_token}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-xs text-gray-500">Direccion</dt>
               <dd className="text-sm text-slate-900">{solicitud.direccion}</dd>
