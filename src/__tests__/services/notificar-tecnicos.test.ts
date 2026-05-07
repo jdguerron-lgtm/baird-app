@@ -50,6 +50,7 @@ const TECNICO = {
   nombre_completo: 'Carlos Tecnico',
   whatsapp: '3009876543',
   ciudad_pueblo: 'Bogota',
+  estado_verificacion: 'verificado',
 }
 
 describe('notificarTecnicos', () => {
@@ -67,7 +68,7 @@ describe('notificarTecnicos', () => {
         return queryBuilder({ data: SOLICITUD, error: null })
       }
       if (table === 'especialidades_tecnico') {
-        return queryBuilder({ data: [{ tecnico_id: 'tec-001' }], error: null })
+        return queryBuilder({ data: [{ tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' }], error: null })
       }
       if (table === 'tecnicos') {
         return queryBuilder({ data: [TECNICO], error: null })
@@ -114,7 +115,7 @@ describe('notificarTecnicos', () => {
         return queryBuilder({ data: SOLICITUD, error: null })
       }
       if (table === 'especialidades_tecnico') {
-        return queryBuilder({ data: [{ tecnico_id: 'tec-001' }], error: null })
+        return queryBuilder({ data: [{ tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' }], error: null })
       }
       if (table === 'tecnicos') {
         // Query returns empty — no verified tecnicos in the city

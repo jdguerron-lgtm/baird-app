@@ -287,9 +287,11 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     return { notificados: 0, matched: 0, errors: [`Sin especialidades registradas en BD`] }
   }
 
-  const especialidadesUnicas = [...new Set(especialidades.map(e => e.especialidad))]
+  // null-safe: si algún registro tiene especialidad NULL, lo tratamos como string vacío
+  // en vez de crashear con `normalizeForMatch(undefined)`.
+  const especialidadesUnicas = [...new Set(especialidades.map(e => e.especialidad ?? ''))]
   const tecnicoIds = especialidades
-    .filter((e: { especialidad: string }) => normalizeForMatch(e.especialidad) === especialidadNorm)
+    .filter((e: { especialidad: string | null }) => normalizeForMatch(e.especialidad ?? '') === especialidadNorm)
     .map((e: { tecnico_id: string }) => e.tecnico_id)
 
   if (tecnicoIds.length === 0) {

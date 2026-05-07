@@ -24,8 +24,17 @@ describe('formatearTelefono', () => {
     expect(formatearTelefono('+57 300 123 4567')).toBe('573001234567')
   })
 
-  it('returns raw digits for non-Colombian format', () => {
-    expect(formatearTelefono('1234567890')).toBe('1234567890')
+  it('prepends 57 to ambiguous 10-digit numbers without country code', () => {
+    // Behaviour change (commit 60a109e): treat any short raw number as
+    // Colombian by default. Callers must pass `code|number` if non-CO.
+    expect(formatearTelefono('1234567890')).toBe('571234567890')
+  })
+
+  // Known limitation (phone.ts:36-40): even pipe-format with non-CO code
+  // gets force-prefixed with 57. Documented here so future fixes can flip
+  // this expectation. See improvement-plan.md.
+  it('force-prefixes 57 even on pipe format with non-CO code (current behaviour)', () => {
+    expect(formatearTelefono('1|2025550100')).toBe('5712025550100')
   })
 
   it('handles empty string', () => {
