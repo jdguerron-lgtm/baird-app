@@ -312,6 +312,42 @@ export default function SolicitudDetalle() {
     cargar()
   }, [id])
 
+  // Polling mientras esperamos acción del cliente: si la solicitud está en
+  // pendiente_horario (o sin_agendar tras timeout) y admin tiene la página
+  // abierta, refrescamos cada 10s para que el botón "Selección de horario
+  // al cliente" pase a "Notificar técnicos" en cuanto el cliente confirme
+  // su horario en el webview — sin necesidad de F5.
+  //
+  // Nota: solo refrescamos los campos que afectan el botón (estado +
+  // horario_confirmado_at + tecnico_asignado_id), no toda la página.
+  useEffect(() => {
+    if (!solicitud) return
+    const estado = solicitud.estado
+    const enEspera = estado === 'pendiente_horario' || estado === 'sin_agendar'
+    if (!enEspera) return
+
+    const intervalo = setInterval(async () => {
+      const { data: fresca } = await supabase
+        .from('solicitudes_servicio')
+        .select('estado, horario_confirmado, horario_confirmado_at, tecnico_asignado_id')
+        .eq('id', id)
+        .single()
+
+      if (!fresca) return
+
+      const cambio =
+        fresca.estado !== solicitud.estado ||
+        fresca.horario_confirmado_at !== solicitud.horario_confirmado_at ||
+        fresca.tecnico_asignado_id !== solicitud.tecnico_asignado_id
+
+      if (cambio) {
+        setSolicitud(prev => (prev ? { ...prev, ...fresca } : prev))
+      }
+    }, 10000)
+
+    return () => clearInterval(intervalo)
+  }, [id, solicitud])
+
   if (cargando) {
     return (
       <div className="p-8 flex justify-center">
@@ -704,6 +740,18 @@ export default function SolicitudDetalle() {
                     })
                     const data = await res.json()
                     setReenvioResult(data)
+
+                    // Refrescar la fila para que el botón refleje el estado
+                    // post-acción (e.g., sin_agendar → pendiente_horario tras
+                    // revivir, o notificada tras cliente confirma).
+                    const { data: fresca } = await supabase
+                      .from('solicitudes_servicio')
+                      .select('estado, horario_confirmado, horario_confirmado_at, tecnico_asignado_id')
+                      .eq('id', id)
+                      .single()
+                    if (fresca) {
+                      setSolicitud(prev => (prev ? { ...prev, ...fresca } : prev))
+                    }
                   } catch (e) {
                     setReenvioResult({ error: e instanceof Error ? e.message : String(e) })
                   }
