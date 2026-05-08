@@ -100,3 +100,87 @@ Las migraciones no traen rollback automático. Si necesitas revertir una columna
 - Tablas con RLS habilitado: `repuestos_pendientes`, `gps_pings`, `solicitud_eventos`.
 - Tablas sin RLS: `solicitudes_servicio`, `tecnicos`, `especialidades_tecnico`, `notificaciones_whatsapp`, `evidencias_servicio`.
 - Toda la app usa el `anon_key`. Para producción seria, queda pendiente habilitar RLS en las 5 tablas restantes (ver `improvement-plan.md`).
+
+## Hallazgos del audit (2026-05-07) — backlog de migraciones futuras
+
+El audit detectó issues que requieren cambios de schema. Cuando se prioricen, crear migraciones nuevas:
+
+### Crítico
+
+```sql
+-- M-NEXT-A: Storage privado para documentos de identidad (PII).
+-- Hoy `tecnicos-documentos` es público. Cualquier URL filtra la cédula.
+-- Acción manual en Dashboard:
+--   Storage → tecnicos-documentos → Settings → toggle "Public" OFF.
+--   Cambiar uploadHelpers.ts a createSignedUrl(filename, 3600).
+-- Idem (severidad menor) para tecnicos-fotos y evidencias-servicio.
+
+-- M-NEXT-B: RLS en notificaciones_whatsapp (riesgo: token público + sin RLS).
+ALTER TABLE notificaciones_whatsapp ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_role_all_notifs" ON notificaciones_whatsapp;
+CREATE POLICY "service_role_all_notifs" ON notificaciones_whatsapp
+  FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- Mientras la app use anon_key sin JWT-claims, la única política viable
+-- es permitir lectura/UPDATE solo cuando el filtro por token coincide.
+-- PostgREST evalúa esto con `current_setting('request.jwt.claims', true)`,
+-- pero como no usamos JWT custom, la opción práctica es mover los endpoints
+-- afectados a un service_role server-side y dejar la tabla cerrada al anon.
+-- Mientras tanto, no habilitar RLS sin migrar los endpoints.
+```
+
+### Alta
+
+```sql
+-- M-NEXT-C: Columna generada para cotizacion.token con índice único.
+-- Elimina antipatrón "load all + filter in JS" en aprobar-cotizacion y /cotizacion/[token].
+ALTER TABLE solicitudes_servicio
+  ADD COLUMN cotizacion_token uuid GENERATED ALWAYS AS ((cotizacion->>'token')::uuid) STORED;
+
+CREATE UNIQUE INDEX idx_solicitudes_cotizacion_token
+  ON solicitudes_servicio(cotizacion_token)
+  WHERE cotizacion_token IS NOT NULL;
+
+-- Tras aplicar, refactor en código:
+--   src/app/api/aprobar-cotizacion/route.ts:21-38
+--   src/app/cotizacion/[token]/page.tsx:58-67
+-- Reemplazar load-all + .find() por .eq('cotizacion_token', token).
+```
+
+### Media
+
+```sql
+-- M-NEXT-D: Índices secundarios faltantes.
+CREATE INDEX IF NOT EXISTS idx_tecnicos_portal_token
+  ON tecnicos(portal_token) WHERE portal_token IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_solicitudes_tecnico_asignado
+  ON solicitudes_servicio(tecnico_asignado_id)
+  WHERE tecnico_asignado_id IS NOT NULL;
+```
+
+### Baja
+
+```sql
+-- M-NEXT-E: TTL / cleanup de tablas append-only.
+-- Programar como cron job (pg_cron en Supabase requiere extension):
+DELETE FROM gps_pings
+  WHERE capturado_at < NOW() - INTERVAL '2 years';
+
+DELETE FROM notificaciones_whatsapp
+  WHERE enviado_at < NOW() - INTERVAL '6 months'
+  AND estado IN ('expirado', 'invalidado', 'error');
+
+-- solicitud_eventos NO se purga — es audit log permanente para soporte/disputas.
+```
+
+## Race conditions identificadas (cambios de código, no schema)
+
+No requieren migración — solo refactor. Documentado para no olvidar:
+
+- `src/app/api/aprobar-cotizacion/route.ts:57-80` — dos UPDATEs secuenciales sin guard. Fix: combinar en uno solo o agregar `.eq('estado', 'cotizacion_enviada')` al primer UPDATE.
+- `src/app/api/confirmar-horario/route.ts:54` — UPDATE acepta cualquier estado previo. Fix: `.is('horario_confirmado_at', null)` como guard atómico.
+- `src/app/api/cron/horario-recordatorio/route.ts:56,65` — UPDATEs sin guard. Fix similar.
+
+**Patrón modelo**: `procesarAceptacion` en `src/lib/services/whatsapp.service.ts` usa `.is('tecnico_asignado_id', null)` como guard atómico — copiarlo cuando aplique.

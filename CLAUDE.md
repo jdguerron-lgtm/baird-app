@@ -444,7 +444,10 @@ BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. 
 - **Evidence storage:** Photos and signatures stored in Supabase Storage bucket `evidencias-servicio` (public). Path pattern: `{solicitud_id}/{timestamp}_{index}.{ext}`.
 - **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.
 - **Image domains:** All external image hosts must be in `next.config.ts` `remotePatterns` (Unsplash, Supabase Storage buckets).
-- **Cotizacion token:** For non-warranty, the quote approval token is stored inside the `cotizacion` JSONB column. The `/cotizacion/{token}` page scans all `cotizacion_enviada` records to find the match — there's no direct column index on this token.
+- **Cotizacion token:** For non-warranty, the quote approval token is stored inside the `cotizacion` JSONB column. The `/cotizacion/{token}` page scans all `cotizacion_enviada` records to find the match — there's no direct column index on this token. **Antipatrón conocido**: ver "Filtros JSONB" en sección Supabase Architecture; refactorizar a columna generada `cotizacion_token` con índice cuando crezca el volumen.
+- **Estado pre-deploy:** antes de deployar verifica que las migraciones pendientes en `supabase/migrations/` ya estén aplicadas en producción. Si una migración falta, código nuevo que escribe a un estado inexistente o columna nueva fallará en runtime con un `CHECK violation` o `column does not exist`. **Cuidado especial con columnas JSONB**: si agregas un campo a un tipo TS (ej. `cotizacion`, `triaje_resultado`) que se persiste en una columna que aún no existe en la base, Supabase responde con `"Could not find the 'X' column of 'Y' in the schema cache"` y rompe el endpoint. Si creas una columna nueva, agrega `NOTIFY pgrst, 'reload schema';` al final de la migración para que PostgREST la reconozca sin esperar al refresh automático.
+- **Storage público y PII:** los buckets `tecnicos-documentos`, `tecnicos-fotos`, `evidencias-servicio` están todos públicos via `getPublicUrl()`. La cédula del técnico es accesible a quien tenga la URL — pendiente migrar a `createSignedUrl()` (TTL 1h) en `src/lib/uploadHelpers.ts`. **No publicar URLs de documentos en lugares públicos**.
+- **RLS gap:** `solicitudes_servicio`, `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `especialidades_tecnico` aún no tienen RLS habilitado. Toda la seguridad depende de tokens UUID en URLs y validación en API routes. Nunca expongas IDs sin token.
 - **WhatsApp 24h window:** Free-form text messages require the customer to have messaged the business within the last 24 hours. Template messages can be sent anytime. Always use templates for proactive outreach.
 - **Meta template names:** Must match exactly what's approved in Meta Business Manager. If deleted, there's a 4-week cooldown before reusing the same name — version the name instead (v1 → v2).
 - **Cliente self-service token:** `solicitudes_servicio.cliente_token` es UUID durable, distinto de los demás tokens por acción (`horario_token`, `verificacion_paso_token`, `cotizacion.token`). Usado por `/servicio/{token}` y por las APIs `/api/solicitud/cancelar` + `/api/solicitud/reagendar`. Se genera al crear la solicitud (default DB + override server-side en `/api/solicitar`).
@@ -506,12 +509,178 @@ All templates use language `es` (Spanish). Phone: +57 313 4951164 (WABA ID: 2354
 
 ### Important JSONB Columns on solicitudes_servicio
 
-**`triaje_resultado`** — Stores the technician's diagnosis data. Structure varies by flow:
-- Warranty: `{ diagnostico_tecnico, complejidad, codigo_complejidad, tarifa_mano_obra, bono_incentivo, total_servicio, codigo_falla, ... }`
-- Non-warranty: `{ diagnostico_tecnico, complejidad, requiere_repuestos, repuestos_detalle, evidencias_diagnostico }`
+**`triaje_resultado`** — Diagnóstico del técnico. Forma según flujo:
+- Warranty (v2 2026-05-07): `{ diagnostico_tecnico, complejidad, codigo_complejidad, tarifa_mano_obra, bono_incentivo, total_servicio, productos_necesarios[], productos_recomendados[], codigo_falla, ... }`
+- Non-warranty (v2 2026-05-07): `{ diagnostico_tecnico, complejidad, productos_necesarios[], productos_recomendados[], evidencias_diagnostico }`
+- Legacy (pre-2026-05-07): `{ ..., requiere_repuestos, repuestos_detalle }` — el código maneja ambas formas con fallback.
 
-**`cotizacion`** (non-warranty only) — Stores the repair quote sent to the customer:
-`{ diagnostico_tecnico, mano_obra, repuestos, total, token, cotizado_at, aprobado_at?, rechazado_at?, comentario_rechazo? }`
+**`cotizacion`** (non-warranty only, v2 2026-05-07):
+```
+{
+  diagnostico_tecnico,
+  productos_necesarios: [{ sku, descripcion, cantidad, precio_unitario?, subtotal? }],
+  productos_recomendados: [{ nombre, descripcion }],
+  pendiente_precio: boolean,           // true hasta que admin completa
+  pricing_set_at?, pricing_set_by?,
+  tiempo_entrega?,                     // admin lo fija
+  mano_obra, repuestos, total,         // 0 hasta que admin completa
+  repuestos_detalle?,                  // legacy back-compat
+  evidencias_diagnostico, cotizado_at, aprobado_at?, rechazado_at?, comentario_rechazo?,
+  token                                // para /cotizacion/{token}
+}
+```
+
+## Supabase Architecture
+
+### Cliente único + anon key
+Todo el código (tanto API routes server-side como páginas client-side) usa **un único Supabase client** con `NEXT_PUBLIC_SUPABASE_ANON_KEY` declarado en `src/lib/supabase.ts`. Nunca crees clientes nuevos con `createClient()`. Para operaciones privilegiadas usaríamos un client con `service_role` — actualmente no está configurado, así que todas las operaciones pasan por las políticas RLS (donde existen).
+
+### Migraciones — orden y aplicación
+Todas las migraciones viven en `supabase/migrations/`. **No usamos el Supabase CLI**; se aplican manualmente en el SQL Editor del dashboard. Son idempotentes (`IF NOT EXISTS`, `DROP IF EXISTS` antes de `CREATE`).
+
+| Migración | Lo que cambia |
+|---|---|
+| `add_solicitud_fields.sql` | Tabla `solicitudes_servicio` base |
+| `add_whatsapp_fields.sql` | Tabla `notificaciones_whatsapp` |
+| `add_verification_fields*.sql` | Verificación de técnicos |
+| `fix_especialidades_table.sql` | Many-to-many `especialidades_tecnico` |
+| `20260327_portal_evidencias.sql` | Bucket evidencias + portal_token |
+| `20260427_customer_first_scheduling.sql` | Customer-first flow + `repuestos_pendientes` + `gps_pings` |
+| `20260428_verificacion_paso.sql` | Verificación de siguiente paso post-diagnóstico |
+| `20260506_cliente_self_service.sql` | `cliente_token` + cancelar/reagendar + `solicitud_eventos` |
+| `20260507_admin_pricing_gate.sql` | Estado `pendiente_pricing` + `repuestos_pendientes.tiempo_estimado` nullable |
+| `20260508_fix_cotizacion_column.sql` | **HOTFIX** — agrega columna `cotizacion JSONB` que estaba referenciada en código pero nunca creada |
+| `20260508_fix_tecnicos_columns.sql` | **HOTFIX** — agrega `acepta_garantias` + `especialidad_principal` en `tecnicos` (mismo bug histórico que el de `cotizacion`) |
+
+Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/README.md`.
+
+### RLS por tabla (estado actual)
+
+| Tabla | RLS | Acceso anon | Notas |
+|---|---|---|---|
+| `solicitudes_servicio` | ❌ | full (sin RLS) | Toda la seguridad depende de tokens UUID en URLs |
+| `tecnicos` | ❌ | full | Idem — `portal_token` es el secret |
+| `especialidades_tecnico` | ❌ | full | OK, datos no sensibles |
+| `evidencias_servicio` | ❌ | full | Token `confirmacion_token` para cliente |
+| `notificaciones_whatsapp` | ❌ | full | Riesgo: token único como secret; sin RLS un atacante podría aceptar masivamente |
+| `repuestos_pendientes` | ✅ | `SELECT true` | service_role = ALL |
+| `gps_pings` | ✅ | `INSERT true` | service_role = ALL; SELECT requiere service_role |
+| `solicitud_eventos` | ✅ | `SELECT true`, `INSERT true` | service_role = ALL |
+
+**Pendiente para producción seria** (ver `improvement-plan.md`): habilitar RLS en las 5 tablas con ❌ y políticas que filtren por `cliente_token`/`portal_token`.
+
+### Storage buckets
+
+| Bucket | Contenido | Acceso |
+|---|---|---|
+| `evidencias-servicio` | Fotos del diagnóstico y completación | **Público** (`getPublicUrl`) |
+| `tecnicos-fotos` | Foto de perfil del técnico | **Público** |
+| `tecnicos-documentos` | Documento de identidad del técnico (PII) | **Público** ⚠️ |
+
+⚠️ **Riesgo conocido:** `tecnicos-documentos` es público — cualquiera con la URL puede descargar la cédula. **Pendiente migrar a signed URLs** (TTL 1h) usando `createSignedUrl()` en `src/lib/uploadHelpers.ts`. Mismo aplica con menor severidad a las otras dos.
+
+Path pattern (todos):
+- evidencias: `{solicitud_id}/{timestamp}_{index}.{ext}` o `{solicitud_id}/diagnostico_{timestamp}_{i}.{ext}`
+- fotos/documentos técnicos: `{tecnico_id}/...`
+
+### Patrones de query
+
+#### Atomic update (anti race-condition) — **patrón modelo**
+Cuando dos requests pueden mutar la misma fila, usa un `WHERE` adicional que actúe como guard. Ejemplo en `procesarAceptacion` (`src/lib/services/whatsapp.service.ts`):
+
+```ts
+// Solo el primer técnico que llega gana la asignación.
+const { data: updated, error } = await supabase
+  .from('solicitudes_servicio')
+  .update({ tecnico_asignado_id: tecId, estado: 'asignada' })
+  .eq('id', solicitudId)
+  .is('tecnico_asignado_id', null)   // ← guard: solo si nadie ganó aún
+  .select('*')
+  .single()
+
+if (error || !updated) {
+  // alguien más ya ganó la carrera; tratar como "ya tomado"
+}
+```
+
+Aplica también a transiciones de estado donde el actor anterior podría disparar dos veces. Patrón seguro:
+```ts
+.eq('estado', 'cotizacion_enviada')   // guard: solo si todavía está en este estado
+```
+
+**Lugares donde se necesita revisar este patrón** (audit 2026-05-07):
+- `src/app/api/aprobar-cotizacion/route.ts:57-80` — hace dos UPDATEs separados sin guard, race posible.
+- `src/app/api/confirmar-horario/route.ts:54` — agregar `.is('horario_confirmado_at', null)` al UPDATE.
+- `src/app/api/cron/horario-recordatorio/route.ts:56,65` — UPDATE sin guard.
+
+#### Filtros JSONB — **antipatrón a evitar**
+**No** cargues toda la tabla y filtres en JS por un campo dentro de un JSONB. Hoy ocurren dos casos con `cotizacion->>'token'`:
+
+```ts
+// ❌ ANTIPATTERN — escala mal:
+const { data: solicitudes } = await supabase
+  .from('solicitudes_servicio')
+  .select('*')
+  .eq('estado', 'cotizacion_enviada')
+const sol = solicitudes?.find(s => (s.cotizacion as { token?: string })?.token === token)
+```
+
+Lugares afectados (2026-05-07):
+- `src/app/api/aprobar-cotizacion/route.ts:21-38`
+- `src/app/cotizacion/[token]/page.tsx:58-67`
+
+Fix preferido: **columna generada + índice único**:
+```sql
+ALTER TABLE solicitudes_servicio
+  ADD COLUMN cotizacion_token uuid GENERATED ALWAYS AS ((cotizacion->>'token')::uuid) STORED;
+CREATE UNIQUE INDEX idx_cotizacion_token ON solicitudes_servicio(cotizacion_token)
+  WHERE cotizacion_token IS NOT NULL;
+```
+Luego: `.eq('cotizacion_token', token)`.
+
+#### Tokens en columnas dedicadas
+Usa columnas UUID dedicadas (con índice) para todo lo que se busque por token. Hoy: `horario_token`, `cliente_token`, `verificacion_paso_token`, `portal_token` (en `tecnicos`), `confirmacion_token` (en `evidencias_servicio`). Todos tienen índices o son `UNIQUE`.
+
+### Tablas append-only — crecimiento y limpieza
+
+Tres tablas crecen indefinidamente sin política de borrado:
+
+| Tabla | Volumen estimado/solicitud | Proyección 5 años (5k sol/año) |
+|---|---|---|
+| `gps_pings` | 4–20 rows | ~100k–500k rows |
+| `notificaciones_whatsapp` | 1–20 rows | ~25k–500k rows |
+| `solicitud_eventos` | 5–20 rows | ~125k–500k rows |
+
+A escala actual no es problema. Para producción de largo plazo, agregar un cron de limpieza:
+```sql
+DELETE FROM gps_pings WHERE capturado_at < NOW() - INTERVAL '2 years';
+DELETE FROM notificaciones_whatsapp
+  WHERE enviado_at < NOW() - INTERVAL '6 months'
+  AND estado IN ('expirado', 'invalidado', 'error');
+```
+
+### CHECK constraints
+Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El último vigente está en `20260507_admin_pricing_gate.sql:11-33` y enumera 20 estados — sincronizado 1:1 con `EstadoSolicitud` en `src/types/solicitud.ts`. Si agregas un nuevo estado **debes**:
+1. Sumarlo al union type en `solicitud.ts`.
+2. Crear nueva migración con el constraint completo (no `ADD ... IN (...)` parcial).
+3. Agregar label/color en `src/lib/constants/estados.ts`.
+4. Aplicar en Supabase **antes** del deploy.
+
+Otros constraints relevantes: `siguiente_paso`, `verificacion_paso_decision`, `cancelado_por`, `repuestos_pendientes.estado`, `gps_pings.fase`, `solicitud_eventos.tipo`. Todos en sus respectivas migraciones.
+
+### Auth admin
+El admin panel (`/admin/*`) usa Supabase Auth (`supabase.auth.getSession()` en `src/app/admin/layout.tsx`). Login via `/admin/login` con email/password contra Supabase. Sin sesión válida, redirect a login. **Las API routes admin no validan sesión** — hoy se asume que el sidebar admin es la única forma de llegar a ellas, lo cual es frágil. Endurecer con JWT check pendiente.
+
+### Auditoría / observabilidad
+Todo cambio relevante (cancelación, reagendamiento, cambio manual de admin) escribe a `solicitud_eventos` (append-only). Pattern:
+```ts
+await supabase.from('solicitud_eventos').insert({
+  solicitud_id, tipo, estado_previo, estado_nuevo,
+  actor: 'cliente' | 'tecnico' | 'admin' | 'sistema',
+  motivo, payload: { ... }
+})
+```
+Implementación en `logEvento()` de `src/lib/services/whatsapp.service.ts`. Los inserts NUNCA bloquean el flujo principal — siempre dentro de try/catch.
 
 ## Testing
 
