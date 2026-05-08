@@ -679,7 +679,36 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
     .single()
 
   if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
-  if (!sol.horario_token) return { ok: false, error: 'horario_token no generado' }
+
+  // Self-heal: si la solicitud es vieja (creada antes de la migración
+  // 20260427_customer_first_scheduling.sql o vía la versión vieja de
+  // carga-masiva) puede no tener horario_token. En vez de fallar,
+  // generamos uno nuevo y lo persistimos atómicamente.
+  let horarioToken = sol.horario_token as string | null
+  if (!horarioToken) {
+    const nuevoToken = crypto.randomUUID()
+    const { data: updated, error: updErr } = await supabase
+      .from('solicitudes_servicio')
+      .update({ horario_token: nuevoToken })
+      .eq('id', solicitudId)
+      .is('horario_token', null)
+      .select('horario_token')
+      .single()
+    if (updErr || !updated?.horario_token) {
+      // Carrera: otro proceso pudo haberle puesto un token; releer.
+      const { data: refetch } = await supabase
+        .from('solicitudes_servicio')
+        .select('horario_token')
+        .eq('id', solicitudId)
+        .single()
+      horarioToken = refetch?.horario_token ?? null
+      if (!horarioToken) {
+        return { ok: false, error: `No se pudo generar horario_token: ${updErr?.message ?? 'desconocido'}` }
+      }
+    } else {
+      horarioToken = updated.horario_token
+    }
+  }
 
   const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
   const cliente = sol.cliente_nombre.split(' ')[0]
@@ -699,7 +728,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
         type: 'button',
         sub_type: 'url',
         index: '0',
-        parameters: [{ type: 'text', text: sol.horario_token }],
+        parameters: [{ type: 'text', text: horarioToken }],
       },
     ])
     return { ok: true }
