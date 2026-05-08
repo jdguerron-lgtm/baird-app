@@ -16,6 +16,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260506_cliente_self_service.sql`** | **PENDIENTE** | cliente_token + cancelar/reagendar + solicitud_eventos |
 | **`20260507_admin_pricing_gate.sql`** | **PENDIENTE** | estado `pendiente_pricing` + repuestos_pendientes.tiempo_estimado nullable |
 | **`20260508_fix_cotizacion_column.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega columna faltante `cotizacion JSONB` en solicitudes_servicio (rompía POST /api/diagnostico no-garantía) |
+| **`20260508_fix_tecnicos_columns.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega `acepta_garantias` + `especialidad_principal` en tecnicos (rompía registro de técnicos). Incluye backfill desde especialidades_tecnico |
 
 ## Cómo aplicar las pendientes
 
@@ -23,7 +24,8 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 2. Pega el contenido de `20260506_cliente_self_service.sql` y ejecuta. Espera "Success".
 3. Pega el contenido de `20260507_admin_pricing_gate.sql` y ejecuta.
 4. Pega el contenido de `20260508_fix_cotizacion_column.sql` y ejecuta. **(HOTFIX urgente — sin esto, todo diagnóstico no-garantía falla.)**
-5. Corre la verificación de abajo.
+5. Pega el contenido de `20260508_fix_tecnicos_columns.sql` y ejecuta. **(HOTFIX urgente — sin esto, el registro de técnicos falla.)**
+6. Corre la verificación de abajo.
 
 > **Importante**: el orden importa. `20260507` espera la columna y constraint reagendados por `20260506`.
 
@@ -78,6 +80,13 @@ SELECT
   CASE WHEN COUNT(*) = 1 THEN 'OK ✅' ELSE 'FALTA ❌' END AS check_cotizacion_column
 FROM information_schema.columns
 WHERE table_name = 'solicitudes_servicio' AND column_name = 'cotizacion';
+
+-- 8. Columnas tecnicos existen (HOTFIX 20260508)
+SELECT
+  CASE WHEN COUNT(*) = 2 THEN 'OK ✅' ELSE 'FALTA ❌ ' || (2 - COUNT(*))::text END AS check_tecnicos_columns
+FROM information_schema.columns
+WHERE table_name = 'tecnicos'
+  AND column_name IN ('acepta_garantias', 'especialidad_principal');
 ```
 
 Si alguna fila vuelve `FALTA ❌`, vuelve a ejecutar la migración correspondiente — son idempotentes.
