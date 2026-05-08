@@ -59,9 +59,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })
     }
 
+    // Estados terminales o no-revivibles — no tiene sentido reenviar nada.
+    const ESTADOS_NO_REENVIABLES = new Set([
+      'completada',
+      'cancelada',
+      'cancelada_cliente',
+      'cotizacion_rechazada',
+      'finalizado_sin_reparacion',
+      'en_disputa',
+    ])
+    if (ESTADOS_NO_REENVIABLES.has(sol.estado)) {
+      return NextResponse.json(
+        { error: `La solicitud está en estado "${sol.estado}" — no se puede reenviar.` },
+        { status: 409 },
+      )
+    }
+
+    // GUARD CRÍTICO: el flujo arranca con el cliente eligiendo horario.
+    // No se puede avanzar a notificar técnicos hasta que el cliente haya
+    // confirmado horario (horario_confirmado_at IS NOT NULL).
+    //
+    // Si todavía no confirmó (incluyendo el caso sin_agendar tras timeout),
+    // re-enviamos la plantilla de selección de horario al cliente.
     const necesitaHorarioCliente =
-      !sol.horario_confirmado_at &&
-      (sol.estado === 'pendiente_horario' || sol.estado === 'sin_agendar')
+      !sol.horario_confirmado_at || sol.estado === 'sin_agendar'
 
     if (necesitaHorarioCliente) {
       // Si expiró, revivir a pendiente_horario para que el cliente pueda confirmar
@@ -81,12 +102,12 @@ export async function POST(req: NextRequest) {
         errors: result.ok ? 0 : 1,
         diagnostico: result.ok ? [] : [result.error ?? 'Error desconocido'],
         mensaje: result.ok
-          ? 'Plantilla de selección de horario re-enviada al cliente'
+          ? 'Plantilla de selección de horario re-enviada al cliente. Cuando confirme, los técnicos serán notificados automáticamente.'
           : `No se pudo re-enviar al cliente: ${result.error ?? 'error desconocido'}`,
       })
     }
 
-    // Resto: re-notificar técnicos compatibles
+    // Cliente ya confirmó horario → re-notificar técnicos compatibles.
     const result = await notificarTecnicos(solicitudId)
 
     return NextResponse.json({

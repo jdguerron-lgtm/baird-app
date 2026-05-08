@@ -31,6 +31,7 @@ interface Solicitud {
   tecnico_asignado_id: string | null
   created_at: string
   cliente_token: string | null
+  horario_confirmado_at: string | null
 }
 
 interface Tecnico {
@@ -652,25 +653,27 @@ export default function SolicitudDetalle() {
         </div>
       )}
 
-      {/* Re-send WhatsApp notification — branch por estado */}
+      {/* Re-send WhatsApp notification — gateado por horario_confirmado_at */}
       {(() => {
-        // El flujo arranca con horario del cliente. Si todavía no confirmó
-        // (pendiente_horario o sin_agendar), reenviar significa pedirle de
-        // nuevo el horario, no notificar técnicos.
+        // GUARD: el flujo siempre arranca con el cliente eligiendo horario.
+        // Mientras horario_confirmado_at sea NULL (o el estado sea sin_agendar
+        // tras timeout), reenviar significa pedirle al cliente que defina
+        // fecha — NUNCA notificar técnicos. Esta UI refleja el guard que
+        // /api/whatsapp/notify aplica server-side.
         const necesitaHorarioCliente =
-          solicitud.estado === 'pendiente_horario' || solicitud.estado === 'sin_agendar'
+          !solicitud.horario_confirmado_at || solicitud.estado === 'sin_agendar'
 
         const titulo = necesitaHorarioCliente
           ? 'Reenviar selección de horario al cliente'
-          : 'Reenviar notificación WhatsApp'
+          : 'Reenviar notificación WhatsApp a técnicos'
         const descripcion = necesitaHorarioCliente
           ? solicitud.estado === 'sin_agendar'
-            ? 'La solicitud expiró. Reactivarla y enviar de nuevo la plantilla al cliente para que elija fecha y franja horaria.'
-            : 'El cliente aún no ha confirmado horario. Reenviar la plantilla para que lo seleccione.'
-          : 'Enviar de nuevo la notificación a los técnicos compatibles.'
+            ? 'La solicitud expiró. Al reenviar, se reactivará a pendiente_horario y el cliente recibirá la plantilla para elegir fecha y franja horaria. Los técnicos NO se notifican hasta que el cliente confirme.'
+            : 'El cliente aún no ha confirmado horario. Mientras eso no pase no se puede notificar a técnicos — al reenviar se le envía la plantilla de selección de horario.'
+          : 'El cliente ya confirmó horario. Esto envía de nuevo la oferta a los técnicos compatibles.'
         const labelBoton = necesitaHorarioCliente
           ? 'Enviar selección de horario al cliente'
-          : 'Enviar notificación a técnicos'
+          : 'Notificar técnicos'
 
         return (
           <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">

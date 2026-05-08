@@ -33,7 +33,12 @@ export default function CargaMasivaPage() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [resultado, setResultado] = useState<UploadResult | null>(null)
-  const [notificar, setNotificar] = useState(false)
+  // Default ON: customer-first scheduling implica que el cliente debe recibir
+  // la plantilla de selección de horario al cargar. Si admin lo apaga, las
+  // solicitudes quedan en pendiente_horario sin enviar nada — usar el botón
+  // "Reenviar selección de horario al cliente" en /admin/solicitudes/[id]
+  // para enviar después.
+  const [notificar, setNotificar] = useState(true)
   const [defaultPago, setDefaultPago] = useState(80000)
   const [defaultHorario1, setDefaultHorario1] = useState('8:00 AM - 12:00 PM')
   const [defaultHorario2, setDefaultHorario2] = useState('2:00 PM - 5:00 PM')
@@ -243,7 +248,7 @@ export default function CargaMasivaPage() {
                   className="w-4 h-4 rounded border-gray-300"
                 />
                 <span className="text-sm text-slate-700">
-                  Notificar técnicos por WhatsApp al cargar
+                  Enviar selección de horario al cliente al cargar
                 </span>
               </label>
             </div>
@@ -393,7 +398,7 @@ export default function CargaMasivaPage() {
             </button>
             {notificar && (
               <span className="text-xs text-amber-600 font-medium">
-                Se notificarán técnicos por WhatsApp
+                Se enviará al cliente la plantilla de selección de horario por WhatsApp
               </span>
             )}
           </div>
@@ -422,7 +427,7 @@ export default function CargaMasivaPage() {
             {notificar && (
               <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                 <p className="text-2xl font-bold text-purple-700">{resultado.notificados}</p>
-                <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Notificados</p>
+                <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Templates enviados</p>
               </div>
             )}
           </div>
@@ -430,7 +435,7 @@ export default function CargaMasivaPage() {
           {/* Notification diagnostic */}
           {notificar && resultado.notificados === 0 && resultado.notifDiagnostico && resultado.notifDiagnostico.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-amber-800 mb-2">No se notificaron técnicos</p>
+              <p className="text-sm font-semibold text-amber-800 mb-2">No se enviaron plantillas a clientes</p>
               {resultado.notifDiagnostico.map((d, i) => (
                 <p key={i} className="text-xs text-amber-700 mt-1">{d}</p>
               ))}

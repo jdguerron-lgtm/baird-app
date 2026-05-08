@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
+import crypto from 'crypto'
 import { supabase } from '@/lib/supabase'
 import { parseExcelData, type MappedSolicitud } from '@/lib/utils/excel-mapping'
-import { notificarTecnicos, enviarMensajeTexto } from '@/lib/services/whatsapp.service'
-import { phoneToDigits } from '@/lib/utils/phone'
+import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 
 async function verificarAuth(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -80,13 +80,27 @@ export async function POST(req: NextRequest) {
     const results: { fila: number; success: boolean; id?: string; error?: string }[] = []
     const insertedIds: string[] = []
 
+    // Insert con customer-first scheduling: estado=pendiente_horario y
+    // horario_token. NO notificamos técnicos hasta que el cliente confirme
+    // horario via /horario/{token} → /api/confirmar-horario. Esto unifica
+    // el flujo de garantía con el flujo particular (ambos arrancan con el
+    // cliente eligiendo fecha y aceptando T&C).
     for (const row of valid) {
       // Strip modelo_equipo before inserting (not a DB column, embedded in novedades_equipo)
       const { modelo_equipo: _modelo, ...solicitud } = row.mapped as MappedSolicitud & { modelo_equipo?: string }
 
+      const horarioToken = crypto.randomUUID()
+      const dataToInsert = {
+        ...solicitud,
+        estado: 'pendiente_horario' as const,
+        horario_token: horarioToken,
+        // cliente_token tiene DEFAULT gen_random_uuid() en la DB (migración
+        // 20260506_cliente_self_service.sql), así que se autogenera.
+      }
+
       const { data, error } = await supabase
         .from('solicitudes_servicio')
-        .insert([solicitud])
+        .insert([dataToInsert])
         .select('id')
         .single()
 
@@ -104,44 +118,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Send WhatsApp confirmation to each customer + optionally notify technicians
-    let notificados = 0
-    const notifDiagnostico: string[] = []
-    for (const row of valid) {
-      if (!row.mapped) continue
-      const sol = row.mapped as MappedSolicitud
-      const matchingResult = results.find(r => r.fila === row.fila)
-      if (!matchingResult?.success || !matchingResult.id) continue
+    // Send schedule selection template to each customer (customer-first).
+    // Si admin desactivó el toggle `notificar`, las solicitudes quedan en
+    // pendiente_horario silenciosamente — el cron horario-recordatorio las
+    // empujará a las 24h o admin puede usar el botón "Reenviar selección
+    // de horario al cliente" en /admin/solicitudes/[id].
+    let templatesEnviadas = 0
+    const sendErrors: string[] = []
 
-      // Send confirmation to customer
-      try {
-        const telefono = phoneToDigits(sol.cliente_telefono)
-        if (telefono) {
-          const nombre = sol.cliente_nombre.split(' ')[0]
-          const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
-          await enviarMensajeTexto(
-            sol.cliente_telefono,
-            `👋 Hola ${nombre}, recibimos tu solicitud de servicio para tu ${equipo}.\n\n🔍 Estamos buscando técnicos verificados en tu zona. Te notificaremos cuando un técnico acepte tu servicio. ✅\n\n🔧 Baird Service`
-          )
-        }
-      } catch (err) {
-        console.warn(`[carga-masiva] Customer notification failed for fila ${row.fila}:`, err instanceof Error ? err.message : String(err))
-      }
+    if (notificar) {
+      for (const row of valid) {
+        const matchingResult = results.find(r => r.fila === row.fila)
+        if (!matchingResult?.success || !matchingResult.id) continue
 
-      // Notify matching technicians
-      if (notificar) {
         try {
-          const result = await notificarTecnicos(matchingResult.id)
-          if (result.notificados > 0) {
-            notificados++
-          } else if (result.errors.length > 0) {
-            // Only add unique diagnostic messages
-            for (const err of result.errors) {
-              if (!notifDiagnostico.includes(err)) notifDiagnostico.push(err)
-            }
+          const result = await enviarSeleccionHorarioCliente(matchingResult.id)
+          if (result.ok) {
+            templatesEnviadas++
+          } else if (result.error && !sendErrors.includes(result.error)) {
+            sendErrors.push(result.error)
           }
         } catch (err) {
-          console.warn(`[carga-masiva] Technician notification failed for solicitud ${matchingResult.id}:`, err instanceof Error ? err.message : String(err))
+          const msg = err instanceof Error ? err.message : String(err)
+          console.warn(`[carga-masiva] enviarSeleccionHorarioCliente falló para fila ${row.fila}:`, msg)
+          if (!sendErrors.includes(msg)) sendErrors.push(msg)
         }
       }
     }
@@ -153,8 +153,10 @@ export async function POST(req: NextRequest) {
       invalidas: invalid.length,
       insertadas: results.filter(r => r.success).length,
       erroresInsert: results.filter(r => !r.success).length,
-      notificados,
-      notifDiagnostico: notifDiagnostico.length > 0 ? notifDiagnostico : undefined,
+      // Mantenemos `notificados` por back-compat con la UI; ahora cuenta
+      // plantillas de selección de horario enviadas al cliente.
+      notificados: templatesEnviadas,
+      notifDiagnostico: sendErrors.length > 0 ? sendErrors : undefined,
       detalles: results,
       filasInvalidas: invalid.map(r => ({
         fila: r.fila,
