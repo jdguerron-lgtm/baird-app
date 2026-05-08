@@ -652,54 +652,76 @@ export default function SolicitudDetalle() {
         </div>
       )}
 
-      {/* Re-send WhatsApp notification */}
-      <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Reenviar notificacion WhatsApp
-        </h2>
-        <p className="text-xs text-gray-500 mb-3">
-          Envia de nuevo la notificacion a los tecnicos compatibles.
-        </p>
+      {/* Re-send WhatsApp notification — branch por estado */}
+      {(() => {
+        // El flujo arranca con horario del cliente. Si todavía no confirmó
+        // (pendiente_horario o sin_agendar), reenviar significa pedirle de
+        // nuevo el horario, no notificar técnicos.
+        const necesitaHorarioCliente =
+          solicitud.estado === 'pendiente_horario' || solicitud.estado === 'sin_agendar'
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={async () => {
-              setReenviando(true)
-              setReenvioResult(null)
-              try {
-                const { data: { session } } = await supabase.auth.getSession()
-                if (!session) {
-                  setReenvioResult({ error: 'Sesión expirada. Inicia sesión de nuevo.' })
+        const titulo = necesitaHorarioCliente
+          ? 'Reenviar selección de horario al cliente'
+          : 'Reenviar notificación WhatsApp'
+        const descripcion = necesitaHorarioCliente
+          ? solicitud.estado === 'sin_agendar'
+            ? 'La solicitud expiró. Reactivarla y enviar de nuevo la plantilla al cliente para que elija fecha y franja horaria.'
+            : 'El cliente aún no ha confirmado horario. Reenviar la plantilla para que lo seleccione.'
+          : 'Enviar de nuevo la notificación a los técnicos compatibles.'
+        const labelBoton = necesitaHorarioCliente
+          ? 'Enviar selección de horario al cliente'
+          : 'Enviar notificación a técnicos'
+
+        return (
+          <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              {titulo}
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">{descripcion}</p>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={async () => {
+                  setReenviando(true)
+                  setReenvioResult(null)
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession()
+                    if (!session) {
+                      setReenvioResult({ error: 'Sesión expirada. Inicia sesión de nuevo.' })
+                      setReenviando(false)
+                      return
+                    }
+                    const res = await fetch('/api/whatsapp/notify', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`,
+                      },
+                      body: JSON.stringify({ solicitudId: id }),
+                    })
+                    const data = await res.json()
+                    setReenvioResult(data)
+                  } catch (e) {
+                    setReenvioResult({ error: e instanceof Error ? e.message : String(e) })
+                  }
                   setReenviando(false)
-                  return
-                }
-                const res = await fetch('/api/whatsapp/notify', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`,
-                  },
-                  body: JSON.stringify({ solicitudId: id }),
-                })
-                const data = await res.json()
-                setReenvioResult(data)
-              } catch (e) {
-                setReenvioResult({ error: e instanceof Error ? e.message : String(e) })
-              }
-              setReenviando(false)
-            }}
-            disabled={reenviando}
-            className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {reenviando ? 'Enviando...' : 'Enviar notificacion'}
-          </button>
+                }}
+                disabled={reenviando}
+                className={`px-4 py-2 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                  necesitaHorarioCliente
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
+              >
+                {reenviando ? 'Enviando...' : labelBoton}
+              </button>
 
-          {solicitud.estado === 'asignada' && (
-            <span className="text-xs text-yellow-700 bg-yellow-50 px-3 py-1.5 rounded-lg">
-              Esta solicitud ya fue asignada. Si reenvia, solo se notificara pero no se reasignara.
-            </span>
-          )}
-        </div>
+              {solicitud.estado === 'asignada' && (
+                <span className="text-xs text-yellow-700 bg-yellow-50 px-3 py-1.5 rounded-lg">
+                  Esta solicitud ya fue asignada. Si reenvia, solo se notificara pero no se reasignara.
+                </span>
+              )}
+            </div>
 
         {reenvioResult && (
           <div className={`mt-4 rounded-lg p-4 ${
@@ -750,6 +772,8 @@ export default function SolicitudDetalle() {
           </div>
         )}
       </div>
+        )
+      })()}
 
       {/* Matching diagnostics */}
       <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
