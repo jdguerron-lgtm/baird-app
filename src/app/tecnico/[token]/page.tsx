@@ -64,20 +64,27 @@ export default function PortalTecnicoPage() {
         .order('created_at', { ascending: false })
 
       if (sols) {
-        // Check which ones have evidence already
+        // Marcamos un servicio como "ya completado por el técnico" SOLO cuando
+        // su fila de evidencias tiene completado_at. La fila se crea antes
+        // (desde /api/diagnostico para guardar el oath), así que su mera
+        // existencia no implica que el servicio esté terminado — sin este
+        // chequeo el botón "Completar servicio" desaparecía después del
+        // diagnóstico y el técnico no podía cerrar el flujo.
         const solIds = sols.map(s => s.id)
         const { data: evidencias } = await supabase
           .from('evidencias_servicio')
-          .select('solicitud_id')
+          .select('solicitud_id, completado_at')
           .in('solicitud_id', solIds.length > 0 ? solIds : ['none'])
 
-        const evidenciaSet = new Set(evidencias?.map(e => e.solicitud_id) ?? [])
+        const completadoSet = new Set(
+          (evidencias ?? []).filter(e => e.completado_at).map(e => e.solicitud_id)
+        )
 
         setServicios(sols.map(s => ({
           ...s,
           estado: s.estado ?? 'pendiente',
           pago_tecnico: s.pago_tecnico ?? 0,
-          tiene_evidencia: evidenciaSet.has(s.id),
+          tiene_evidencia: completadoSet.has(s.id),
         })))
       }
 
