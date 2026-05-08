@@ -77,12 +77,45 @@ export async function POST(req: NextRequest) {
       console.error('[confirmar-horario] notificarTecnicos falló:', err)
     }
 
+    // 4. Si nadie recibió la notificación (0 técnicos disponibles o todos
+    //    fallaron), registrar evento de admin para visibilidad. La fila
+    //    quedó en estado 'notificada' pero realmente nadie está al tanto —
+    //    admin necesita saber para resolver manualmente (e.g., asignar
+    //    técnico de otra zona o avisar al cliente que hay demora).
+    const notifFalla = !notifResult || notifResult.notificados === 0
+    if (notifFalla) {
+      try {
+        await supabase.from('solicitud_eventos').insert({
+          solicitud_id: sol.id,
+          tipo: 'nota_admin',
+          estado_previo: 'pendiente_horario',
+          estado_nuevo: 'notificada',
+          actor: 'sistema',
+          motivo: 'Cliente confirmó horario pero ningún técnico fue notificado',
+          payload: {
+            horario_confirmado: horarioElegido,
+            matched: notifResult?.matched ?? 0,
+            notificados: 0,
+            errors: notifResult?.errors ?? [],
+            requiere_intervencion_admin: true,
+          },
+        })
+      } catch (err) {
+        console.error('[confirmar-horario] No se pudo registrar evento de admin:', err)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       horario: horarioElegido,
       notificados: notifResult?.notificados ?? 0,
       matched: notifResult?.matched ?? 0,
       errors: notifResult?.errors ?? [],
+      // Warning visible al cliente cuando no hay técnicos en la zona —
+      // HorarioSelector lo muestra para que el cliente sepa que hay demora.
+      warning: notifFalla
+        ? 'Tu horario fue registrado, pero en este momento no encontramos técnicos disponibles en tu zona. El equipo Baird te contactará para ofrecerte alternativas.'
+        : null,
     })
   } catch (error) {
     console.error('Error en /api/confirmar-horario:', error)

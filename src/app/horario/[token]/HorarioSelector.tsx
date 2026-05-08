@@ -62,6 +62,7 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
   const [enviando, setEnviando] = useState(false)
   const [resultado, setResultado] = useState<'success' | 'error' | null>(null)
   const [mensajeError, setMensajeError] = useState('')
+  const [warning, setWarning] = useState<string | null>(null)
 
   const equipo = `${solicitud.tipo_equipo} ${solicitud.marca_equipo}`
   const cliente = solicitud.cliente_nombre.split(' ')[0]
@@ -109,10 +110,17 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Horario confirmado</h1>
             <p className="text-gray-600 mb-2">Hola {cliente}, agendamos tu servicio para:</p>
             <p className="text-lg font-semibold text-gray-900 mb-6">🕐 {horarioSeleccionado}</p>
-            <p className="text-sm text-gray-600">
-              Estamos buscando un técnico verificado en {solicitud.ciudad_pueblo}.
-              Te avisaremos por WhatsApp cuando uno acepte tu servicio. 🔧
-            </p>
+            {warning ? (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 text-left">
+                <p className="font-semibold mb-1">⚠️ Buscando alternativas</p>
+                <p>{warning}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">
+                Estamos buscando un técnico verificado en {solicitud.ciudad_pueblo}.
+                Te avisaremos por WhatsApp cuando uno acepte tu servicio. 🔧
+              </p>
+            )}
           </div>
           <GestionarServicioLink clienteToken={solicitud.cliente_token} />
         </div>
@@ -138,6 +146,10 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
 
       if (!res.ok) {
         throw new Error(data.error || 'Error confirmando horario')
+      }
+
+      if (typeof data?.warning === 'string' && data.warning) {
+        setWarning(data.warning)
       }
 
       setResultado('success')

@@ -584,6 +584,67 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 
 ---
 
+## Verificación detallada del flujo confirmar-horario → notificar-técnicos (2026-05-08)
+
+Este es el momento más sensible del customer-first scheduling. El cliente
+acaba de elegir fecha y aceptar T&C; el sistema debe confirmar y avanzar
+inmediatamente a notificar técnicos. Trace verificado paso a paso:
+
+```
+HorarioSelector.tsx (webview cliente)
+  ├── Usuario elige fecha + franja
+  ├── Acepta T&C
+  └── POST /api/confirmar-horario { token: horario_token, horario: string }
+              │
+              ▼
+/api/confirmar-horario (server, maxDuration=60s)
+  1. Validar token + estado=pendiente_horario           ← rechazo si no aplica
+  2. Atomic UPDATE solicitudes_servicio
+       SET horario_confirmado, horario_confirmado_at,
+           estado='notificada', notificados_at,
+           tyc_aceptados_at, tyc_version='2026.04.27'
+       WHERE id = sol.id AND horario_confirmado_at IS NULL  ← guard
+  3. notificarTecnicos(sol.id):
+       - Find técnicos verificados en zona con la especialidad
+       - Insert N filas en notificaciones_whatsapp (cada una con UUID token)
+       - Send `nueva_solicitud_v3` (warranty) o
+              `solicitud_particular_tecnico_v1` (particular)
+              en paralelo (Promise.allSettled)
+       - Si notificados > 0: re-confirma estado='notificada'
+  4. Si notificados == 0: insert en solicitud_eventos
+       tipo='nota_admin', payload.requiere_intervencion_admin=true
+  5. Response: { success, horario, notificados, matched, errors[], warning? }
+              │
+              ▼
+HorarioSelector.tsx success view
+  - Si warning presente: muestra banner amber con la advertencia
+  - Si no: muestra "Te avisaremos cuando un técnico acepte"
+```
+
+**Estado de la fila en cada caso:**
+
+| Caso | estado tras /api/confirmar-horario | Cliente sabe? | Admin sabe? |
+|---|---|---|---|
+| Hay técnicos compatibles disponibles | `notificada` | ✅ in-app + cuando técnico acepte por WA | ✅ panel normal |
+| 0 técnicos en zona o todos sin especialidad | `notificada` (estado correcto se mantuvo del paso 2) | ✅ in-app warning ("buscando alternativas") | ✅ evento `nota_admin` con `requiere_intervencion_admin: true` |
+| Técnicos encontrados pero todos los WA fallan | `notificada` | ⚠️ in-app dice "te avisaremos" pero realmente nadie está al tanto | ✅ evento + errors[] en logs |
+| API throw inesperado | atomic UPDATE puede haber pasado o no | ❌ in-app muestra error | ⚠️ solo logs |
+
+**Garantías del flujo:**
+- ✅ El UPDATE de horario_confirmado es atómico — un cliente no puede confirmar dos veces (`.is('horario_confirmado_at', null)` como guard).
+- ✅ Si el cliente refresca la página después de confirmar, ve la vista de "Horario confirmado" (no permite re-confirmar).
+- ✅ La búsqueda de técnicos respeta filtros: `estado_verificacion='verificado'` + especialidad por tipo_equipo + ciudad parcialmente normalizada (accent/case-insensitive).
+- ✅ Si `notificarTecnicos` falla por excepción, el catch loguea y la response indica `notificados: 0`. El cliente recibe warning.
+- ✅ El estado del flujo es visible al admin: solicitud queda en `notificada` (siempre, post-confirm); si nadie fue notificado, hay un evento `nota_admin` flag para investigar.
+
+**Gaps conocidos del flujo confirmar-horario → técnicos:**
+
+| # | Gap | Severidad | Mitigación actual / Fix futuro |
+|---|---|---|---|
+| H1 | Cliente NO recibe WhatsApp de confirmación tras elegir horario — solo in-app. Cierra el webview, queda esperando el `tecnico_asignado_*` (puede tardar horas) sin saber que su confirmación se procesó. | 🟡 medio | Plantilla `horario_confirmado_cliente_v1` — JSON listo en `docs/WHATSAPP_TEMPLATES.md` Backlog J. |
+| H2 | Si 0 técnicos compatibles, cliente ve warning in-app pero no recibe nada por WA — depende de que abra el webview de nuevo. | 🟡 medio | Cubrir con la misma plantilla J en variante "demora". |
+| H3 | Re-notificar tras reagendamiento del cliente en `/servicio/{token}`. Hoy el técnico asignado recibe texto libre, pero los técnicos no-asignados con notif activa ven el horario viejo en su WA (la DB tiene el nuevo). | 🟢 bajo | Idempotente — los técnicos ven el horario actual cuando entran al portal del servicio. |
+
 ## Gaps conocidos — flujo GARANTÍA (re-revisado 2026-05-08)
 
 Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de la ventana 24h de Meta. Todas las plantillas siempre llegan; los textos libres y mensajes `image` solo si el destinatario envió mensaje al business en las últimas 24h. Como el cliente solo abre webviews vía botones URL (no abre la ventana 24h), los textos libres al cliente fallan **casi siempre**.

@@ -447,6 +447,56 @@ Cubren los gaps detectados al revisar el flujo de garantía (2026-05-08). Cada u
 ```
 8 parámetros. Cuando Meta apruebe, mover invocaciones a `_v2` y deprecar `_v1`.
 
+#### J. `horario_confirmado_cliente_v1`
+**Gap (H1, H2 en FLOWS.md)**: tras elegir horario en `/horario/{token}`, el cliente solo ve confirmación in-app — no recibe WhatsApp de "horario registrado, buscando técnico". Cierra el webview y queda en suspenso hasta que un técnico acepte (puede tardar horas) o que abra de nuevo la URL.
+
+**Disparo sugerido**: en `/api/confirmar-horario` después de `notificarTecnicos`. Body con 4 params (cliente, equipo, horario, ciudad).
+
+```js
+{
+  name: 'horario_confirmado_cliente_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        '✅ Hola {{1}}, registramos el horario para tu {{2}}:\n\n' +
+        '🕐 {{3}}\n\n' +
+        'Estamos buscando un técnico verificado en {{4}}. Te avisaremos por WhatsApp cuando alguno acepte tu servicio.',
+      example: { body_text: [['Juan', 'Lavadora Mabe', 'lunes 12 de mayo · 8am-12pm', 'Bogotá']] },
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
+
+Variante opcional con HEADER + URL button al portal:
+
+```js
+// Si quieres incluir botón al portal del cliente (recomendado).
+// Requiere parámetro extra para cliente_token.
+{
+  ...,
+  components: [
+    { type: 'HEADER', format: 'TEXT', text: 'Horario confirmado' },
+    {
+      type: 'BODY',
+      text: 'Hola {{1}}, registramos el horario para tu {{2}}: {{3}}.\n\n' +
+            'Estamos buscando técnico verificado en {{4}}. Te avisaremos cuando alguno acepte.',
+      example: { body_text: [['Juan', 'Lavadora Mabe', 'lunes 12 de mayo · 8am-12pm', 'Bogotá']] },
+    },
+    {
+      type: 'BUTTONS',
+      buttons: [
+        { type: 'URL', text: 'Gestionar servicio', url: `${APP_URL}/servicio/{{1}}`, example: [`${APP_URL}/servicio/...`] },
+      ],
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
+
 ### Baja prioridad (nice to have)
 
 #### I. `servicio_confirmado_tecnico_v1`
