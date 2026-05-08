@@ -84,6 +84,55 @@ export default function SolicitudDetalle() {
   const [cargando, setCargando] = useState(true)
   const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
   const [reenviando, setReenviando] = useState(false)
+  const [exportando, setExportando] = useState(false)
+  const [errorExport, setErrorExport] = useState<string | null>(null)
+
+  const handleDescargarResumen = async () => {
+    setErrorExport(null)
+    setExportando(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorExport('Sesión expirada. Inicia sesión de nuevo.')
+        setExportando(false)
+        return
+      }
+      const res = await fetch('/api/admin/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ ids: [id] }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        let msg = `Error ${res.status}`
+        try {
+          const j = JSON.parse(text)
+          if (j?.error) msg = j.error
+        } catch { /* respuesta no es JSON */ }
+        setErrorExport(msg)
+        setExportando(false)
+        return
+      }
+      const blob = await res.blob()
+      const cd = res.headers.get('content-disposition') ?? ''
+      const match = cd.match(/filename="([^"]+)"/)
+      const filename = match?.[1] ?? `baird-solicitud-${id.slice(0, 8)}.xlsx`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setErrorExport(e instanceof Error ? e.message : 'Error desconocido')
+    }
+    setExportando(false)
+  }
 
   async function runDiagnostics(sol: Solicitud) {
     const steps: MatchDiagnostic[] = []
@@ -373,17 +422,33 @@ export default function SolicitudDetalle() {
       </Link>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-6 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Solicitud #{solicitud.id.slice(0, 8)}</h1>
           <p className="text-sm text-gray-500 mt-1">
             Creada el {new Date(solicitud.created_at).toLocaleString('es-CO')}
           </p>
         </div>
-        <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${ESTADO_ESTILOS[solicitud.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-          {ESTADO_LABELS[solicitud.estado] ?? solicitud.estado}
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDescargarResumen}
+            disabled={exportando}
+            className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Descarga un Excel con cliente, técnico, evidencias, fotos, eventos y GPS de esta solicitud"
+          >
+            {exportando ? 'Generando…' : '📥 Descargar resumen'}
+          </button>
+          <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${ESTADO_ESTILOS[solicitud.estado] ?? 'bg-gray-100 text-gray-600'}`}>
+            {ESTADO_LABELS[solicitud.estado] ?? solicitud.estado}
+          </span>
+        </div>
       </div>
+
+      {errorExport && (
+        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+          {errorExport}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 

@@ -39,6 +39,8 @@ export default function SolicitudesAdmin() {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [eliminando, setEliminando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [exportando, setExportando] = useState(false)
+  const [errorExport, setErrorExport] = useState<string | null>(null)
 
   useEffect(() => {
     const cargar = async () => {
@@ -119,6 +121,58 @@ export default function SolicitudesAdmin() {
     }
   }
 
+  const handleExport = async (idsParaExportar?: string[]) => {
+    setErrorExport(null)
+    setExportando(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorExport('Sesión expirada. Inicia sesión de nuevo.')
+        setExportando(false)
+        return
+      }
+
+      const res = await fetch('/api/admin/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(idsParaExportar && idsParaExportar.length > 0 ? { ids: idsParaExportar } : {}),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        let msg = `Error ${res.status}`
+        try {
+          const j = JSON.parse(text)
+          if (j?.error) msg = j.error
+        } catch { /* respuesta no es JSON */ }
+        setErrorExport(msg)
+        setExportando(false)
+        return
+      }
+
+      const blob = await res.blob()
+      // Extraer filename del header si viene
+      const cd = res.headers.get('content-disposition') ?? ''
+      const match = cd.match(/filename="([^"]+)"/)
+      const filename = match?.[1] ?? `baird-resumen-${Date.now()}.xlsx`
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setErrorExport(e instanceof Error ? e.message : 'Error desconocido')
+    }
+    setExportando(false)
+  }
+
   const handleEliminar = async () => {
     if (seleccionados.size === 0) return
     setEliminando(true)
@@ -161,12 +215,28 @@ export default function SolicitudesAdmin() {
   return (
     <div className="p-6 lg:p-8 max-w-6xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Solicitudes</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {solicitudes.length} solicitud{solicitudes.length !== 1 ? 'es' : ''} registrada{solicitudes.length !== 1 ? 's' : ''}
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Solicitudes</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {solicitudes.length} solicitud{solicitudes.length !== 1 ? 'es' : ''} registrada{solicitudes.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <button
+          onClick={() => handleExport()}
+          disabled={exportando || solicitudes.length === 0}
+          className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          title="Exporta TODAS las solicitudes con cliente, técnico, evidencias, fotos, eventos y GPS en un solo Excel"
+        >
+          {exportando ? 'Generando…' : '📥 Descargar resumen Excel'}
+        </button>
       </div>
+
+      {errorExport && (
+        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+          {errorExport}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -202,6 +272,13 @@ export default function SolicitudesAdmin() {
           <span className="text-sm font-semibold text-red-800">
             {seleccionados.size} seleccionada{seleccionados.size !== 1 ? 's' : ''}
           </span>
+          <button
+            onClick={() => handleExport([...seleccionados])}
+            disabled={exportando}
+            className="px-4 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+          >
+            {exportando ? 'Generando…' : '📥 Descargar selección'}
+          </button>
           {!confirmDelete ? (
             <button
               onClick={() => setConfirmDelete(true)}

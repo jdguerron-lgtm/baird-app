@@ -372,6 +372,7 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 | `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
 | `/api/cron/gps-followup` | GET | Cron 10min: post-visit GPS flagging | N/A |
 | `/api/carga-masiva` | POST | Bulk Excel upload for warranty | Warranty only |
+| `/api/admin/export` | POST | Admin: descarga `.xlsx` con resumen completo de solicitudes (cliente, técnico, evidencias, fotos, eventos, GPS, cotización). Body: `{ ids?: string[] }` — sin IDs exporta todas. | Both |
 | `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
 | `/api/triaje` | POST | AI diagnosis (disabled) | N/A |
 | `/api/health` | GET | Health check | N/A |
@@ -409,6 +410,19 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 | **Alertas GPS** | `/admin/gps-alertas` | Silent flagged services (post-visit GPS within 100m) |
 | Carga Masiva | `/admin/carga-masiva` | BITÁCORA Excel upload |
 | Garantías | `/admin/garantias` | Warranty dashboard by brand/equipment |
+
+**Exportación de resumen** (botón **📥 Descargar resumen Excel**):
+- En `/admin/solicitudes` → exporta TODAS las visibles. Si hay filas seleccionadas con checkbox, aparece **📥 Descargar selección** que solo exporta esas.
+- En `/admin/solicitudes/[id]` → botón en el header exporta solo esa solicitud.
+- Endpoint server-side: `POST /api/admin/export` (auth admin via `Authorization: Bearer <session.access_token>`). Genera `.xlsx` con 7 hojas:
+  1. **Solicitudes** — fila plana por solicitud con todas las columnas + nombre/whatsapp/documento del técnico asignado + URLs hyperlink (portal cliente, selección horario, verificar paso, detalle admin).
+  2. **Notificaciones WA** — cada `notificaciones_whatsapp` con técnico, estado, timestamps + URL `/aceptar/{token}` clickeable.
+  3. **Eventos** — `solicitud_eventos` (audit log: cancelaciones, reagendamientos, notas admin).
+  4. **Evidencias** — checklist + firma cliente + oath técnico + GPS (4 fases) + fotos expandidas como columnas separadas con hyperlinks.
+  5. **GPS pings** — todos los `gps_pings` con link directo a Google Maps.
+  6. **Repuestos** — `repuestos_pendientes` con SKU, costo, tiempo, estado.
+  7. **Cotizaciones** — productos necesarios y recomendados de cada cotización JSONB, expandidos a una fila por producto.
+- Filename: `baird-resumen-todas-{ts}.xlsx` o `baird-resumen-{N}-solicitudes-{ts}.xlsx`.
 
 ## Code Conventions
 
