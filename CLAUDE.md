@@ -96,10 +96,16 @@ legal/                          # Legal documents (Baird Service SAS)
 
 ## Documentación de referencia
 
-- **`docs/FLOWS.md`** — Flujos end-to-end completos (warranty + particular + side flows), todas las plantillas WhatsApp en contexto, puntos de decisión del cliente verificados línea-por-línea, gaps conocidos, plan de testing manual.
-- **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de TODAS las plantillas con parámetros + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en su lugar canónico (`scripts/upload-templates.mjs` + este doc) → (3) subir a Meta para aprobación. **Léelo antes de tocar cualquier mensaje WhatsApp**.
+> 🧭 **Empezá siempre por `docs/INDEX.md`** — es el hub de navegación con la
+> tabla "¿qué doc abro para...?" y el pipeline de actualización (qué docs
+> tocar cuando cambias X). Diseñado para que iteraciones futuras
+> (humanas o LLM) encuentren contexto sin duplicar.
+
+- **`docs/INDEX.md`** — **HUB DE NAVEGACIÓN.** Tabla de tareas comunes ↔ doc específico, mapa completo de docs, pipeline de actualización (qué docs tocar para cada tipo de cambio), tags útiles para grep, health check.
+- **`docs/FLOWS.md`** — Flujos end-to-end (warranty + particular + side flows), todas las plantillas WhatsApp en contexto, puntos de decisión del cliente verificados línea-por-línea, gaps conocidos, plan de testing manual.
+- **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de las 16 plantillas + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en `scripts/upload-templates.mjs` + este doc → (3) subir a Meta para aprobación. Backlog de plantillas nuevas con JSON listo. **Léelo antes de tocar cualquier mensaje WhatsApp**.
 - **`supabase/migrations/README.md`** — Orden de aplicación, verificación SQL, hallazgos del audit + backlog de migraciones.
-- **`docs/FLUJOS-USUARIO.md`** — DEPRECATED (state machine v1, marzo 2026). No actualizar; usar `FLOWS.md` en su lugar.
+- **`docs/FLUJOS-USUARIO.md`** — DEPRECATED (state machine v1, marzo 2026). No actualizar.
 
 ## How the Two Flows Work
 

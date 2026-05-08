@@ -3,6 +3,12 @@
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
 > Última actualización: 2026-05-08.
 
+> 🧭 **Ver también**:
+> - `docs/INDEX.md` — hub de navegación.
+> - `docs/FLOWS.md` — cuándo se dispara cada plantilla en el flujo end-to-end.
+> - `scripts/upload-templates.mjs` — fuente canónica del JSON de cada plantilla.
+> - `CLAUDE.md` § "Gotchas" → "WhatsApp 24h window" — diferencia template vs free-form.
+
 ---
 
 ## ⚠️ Proceso obligatorio para crear o modificar una plantilla

@@ -2,6 +2,11 @@
 
 Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard de Supabase (no usamos el CLI). Todas son idempotentes (`IF NOT EXISTS`, `DROP ... IF EXISTS` antes de `CREATE`).
 
+> 🧭 **Ver también**:
+> - `docs/INDEX.md` — hub de navegación. Tabla "¿qué doc abro para...?".
+> - `CLAUDE.md` § "Supabase Architecture" — RLS, storage, atomic update pattern.
+> - `docs/FLOWS.md` § "Verificación detallada del flujo" — qué cambia en estado en cada paso.
+
 ## Orden de aplicación (alfanumérico)
 
 | Archivo | Estado | Qué hace |

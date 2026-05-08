@@ -183,7 +183,7 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
   const phone = parsePhone(raw.telefono)
   const tipoEquipo = mapFamilia(raw.familia)
   const marca = extractBrand(raw.modelo)
-  const _esGarantia = raw.tipo_servicio.toUpperCase().includes('GARANTÍA') || raw.tipo_servicio.toUpperCase().includes('GARANTIA')
+  const esGarantia = raw.tipo_servicio.toUpperCase().includes('GARANTÍA') || raw.tipo_servicio.toUpperCase().includes('GARANTIA')
 
   // Extract model code (e.g., "PM6042GV0" from "PM6042GV0 / CUBIERTA EMPOTRE 60 CM MABE NEG")
   const modeloParts = raw.modelo.split(' / ')
@@ -241,7 +241,7 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
     tipo_equipo: tipoEquipo!,
     tipo_solicitud: 'Reparación',
     novedades_equipo: novedadesConModelo.slice(0, 1000),
-    es_garantia: true, // Carga masiva siempre es garantía MABE
+    es_garantia: esGarantia, // Detectado del campo tipo_servicio del Excel
     numero_serie_factura: raw.orden,
     pago_tecnico: defaultPago,
     horario_visita_1: defaultHorario1,

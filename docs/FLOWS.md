@@ -7,6 +7,12 @@
 > **Última actualización: 2026-05-08** (post admin pricing gate v1).
 > Reemplaza a `docs/FLUJOS-USUARIO.md` (obsoleto, state machine v1).
 
+> 🧭 **Ver también**:
+> - `docs/INDEX.md` — hub de navegación. Si llegaste acá sin contexto, empezá por ahí.
+> - `docs/WHATSAPP_TEMPLATES.md` — catálogo de las plantillas Meta + proceso de cambio.
+> - `supabase/migrations/README.md` — estados, columnas, hotfixes pendientes.
+> - `CLAUDE.md` — convenciones, gotchas, env vars.
+
 ---
 
 ## Tabla de contenido
