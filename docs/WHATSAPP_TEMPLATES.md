@@ -21,19 +21,7 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
 | `CLAUDE.md` | Resumen para agentes de IA. |
 
-**Plantillas que aún NO están en `upload-templates.mjs`** (gap a cerrar — viven solo en Meta):
-- `nueva_solicitud_v3`
-- `servicio_asignado_tecnico_v3`
-- `servicio_no_disponible_v3`
-- `confirmar_servicio_v3`
-- `registro_bienvenida_v3`
-- `solicitud_particular_tecnico_v1`
-- `tecnico_asignado_particular_v1`
-- `solicitud_particular_cliente_v1`
-- `cotizacion_cliente_v1`
-- `cotizacion_aprobada_tecnico_v1`
-
-Si vas a tocar alguna de estas, **primero búscala en Meta**, copia su definición a `upload-templates.mjs` para tenerla como código, y desde ahí trabajas.
+**Estado de cobertura del script (2026-05-08):** las 15 plantillas en uso por el código ya están todas registradas en `scripts/upload-templates.mjs`. La única plantilla huérfana es `solicitud_particular_cliente_v1`, que existe en Meta pero no se invoca desde el código — está documentada como **DEPRECATED** abajo. No la borres durante 4 semanas mínimo (cooldown Meta).
 
 ### Paso 2 — Actualizar la plantilla en su lugar canónico
 
@@ -98,7 +86,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/horario/{horario_token}` — display "Confirmar horario"
 - **Propósito**: empujar al cliente que aún no abrió el primer enlace.
 
-#### `nueva_solicitud_v3` ⚠️ NO en script
+#### `nueva_solicitud_v3` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarTecnicos(solicitudId)` cuando `es_garantia=true`
 - **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [...])`
 - **Destino**: técnico
@@ -107,7 +95,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: ofrecer servicio garantía a técnicos compatibles.
 - **Pendiente**: backfill a `upload-templates.mjs`.
 
-#### `solicitud_particular_tecnico_v1` ⚠️ NO en script
+#### `solicitud_particular_tecnico_v1` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarTecnicos(solicitudId)` cuando `es_garantia=false`
 - **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [...])`
 - **Destino**: técnico
@@ -115,20 +103,20 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/aceptar/{token_notif}` — display "Aceptar"
 - **Propósito**: ofrecer servicio particular a técnicos compatibles.
 
-#### `solicitud_particular_cliente_v1` ⚠️ NO en script
-- **Disparo**: hoy posiblemente legacy — verificar uso vivo.
-- **Destino**: cliente
-- **Propósito**: confirmación inicial al cliente particular sobre tarifa de diagnóstico + anticipo (50%).
+#### `solicitud_particular_cliente_v1` ⚠️ DEPRECATED
+- **NO está en `upload-templates.mjs`** y **NO se invoca desde el código**.
+- Plantilla huérfana en Meta. Antes del rediseño customer-first (v2 2026-04-27) probablemente confirmaba al cliente particular tras crear la solicitud — hoy ese rol lo cumple `cliente_seleccion_horario_v1` (compartida entre garantía y particular).
+- **No la borres** durante 4 semanas mínimo (cooldown Meta). Si quieres limpiarla, usa `--delete` y respeta el cooldown antes de reusar el nombre.
 
 ### Asignación
 
-#### `servicio_no_disponible_v3` ⚠️ NO en script
+#### `servicio_no_disponible_v3` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `procesarAceptacion()` — perdedores de la carrera atómica
 - **Destino**: técnicos perdedores
 - **Body** (1 param): `nombre`
 - **Propósito**: avisar que el servicio ya fue tomado.
 
-#### `servicio_asignado_tecnico_v3` ⚠️ NO en script
+#### `servicio_asignado_tecnico_v3` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `procesarAceptacion()` — ganador
 - **Destino**: técnico ganador
 - **Body** (6 params): `nombre`, `cliente`, `equipo`, `direccion`, `pago`, `telefono_cliente`
@@ -143,7 +131,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Sin botón** (info-only)
 - **Propósito**: avisar al cliente que ya tiene técnico asignado (warranty).
 
-#### `tecnico_asignado_particular_v1` ⚠️ NO en script
+#### `tecnico_asignado_particular_v1` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `procesarAceptacion()` cuando `es_garantia=false`
 - **Destino**: cliente
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `horario`, `telefono_tecnico`, `tarifa_diagnostico`, `anticipo`
@@ -159,7 +147,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/verificar-paso/{verificacion_paso_token}` — display "Aprobar paso"
 - **Propósito**: cliente aprueba/rechaza el siguiente paso del técnico (4 opciones: reparar, esperar_repuesto, no_reparable, negativa_cliente).
 
-#### `cotizacion_cliente_v1` ⚠️ NO en script
+#### `cotizacion_cliente_v1` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `enviarCotizacionCliente(solicitudId)` (particular post-pricing admin)
 - **Destino**: cliente
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `diagnostico`, `mano_obra`, `repuestos`, `total`
@@ -169,7 +157,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Post-decisión cliente
 
-#### `cotizacion_aprobada_tecnico_v1` ⚠️ NO en script
+#### `cotizacion_aprobada_tecnico_v1` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarCotizacionAprobada(solicitudId)`
 - **Destino**: técnico
 - **Body** (4 params): `tecnico`, `cliente`, `equipo`, `total`
@@ -202,7 +190,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Final
 
-#### `confirmar_servicio_v3` ⚠️ NO en script
+#### `confirmar_servicio_v3` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `POST /api/completar-servicio`
 - **Destino**: cliente
 - **Body** (3 params): `cliente`, `tecnico`, `equipo`
@@ -211,7 +199,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Onboarding
 
-#### `registro_bienvenida_v3` ⚠️ NO en script
+#### `registro_bienvenida_v3` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarRegistroTecnico(tecnicoId)` post-registro
 - **Destino**: técnico recién registrado
 - **Body** (3 params): `nombre`, `ciudad`, `especialidad`
@@ -267,15 +255,222 @@ Si rotas el token: actualiza `WHATSAPP_API_TOKEN` en Vercel **y** re-deploy. Los
 
 ## Backlog — plantillas pendientes de crear
 
-Identificadas en `docs/FLOWS.md` sección "Gaps conocidos":
+Cubren los gaps detectados al revisar el flujo de garantía (2026-05-08). Cada una con JSON listo para pegar en `scripts/upload-templates.mjs` cuando se priorice. **Ninguna está creada en Meta todavía** — no las invoques desde código hasta que estén `APPROVED`.
 
-1. `solicitud_expirada_v1` — cuando timeout 36h pasa a `sin_agendar` (cliente queda colgado hoy).
-2. `cotizacion_rechazada_cliente_v1` — confirmación al cliente de que su rechazo se registró.
-3. `paso_aprobado_cliente_v1` — opcional, reemplaza el texto libre actual.
-4. `tecnico_asignado_cliente_v6` con `HEADER` tipo `IMAGE` — para mandar foto del técnico sin depender de la ventana 24h.
-5. `gestionar_servicio_v1` con botón URL a `/servicio/{cliente_token}` — para que el cliente acceda al portal de cancelación/reagendamiento sin depender de URLs guardadas.
+### Alta prioridad (cierran gaps activos en producción)
 
-Cuando se prioricen: agregar a `scripts/upload-templates.mjs`, documentar acá, subir a Meta. Sin esto, la app no las puede usar.
+#### A. `solicitud_expirada_cliente_v1`
+**Gap**: cuando el cron `horario-recordatorio` mueve a `sin_agendar` tras 36h sin confirmación, el cliente NO recibe ningún mensaje. Queda pensando que el horario sigue abierto.
+**Disparo sugerido**: agregar a `/api/cron/horario-recordatorio` justo después del UPDATE a `sin_agendar`.
+
+```js
+{
+  name: 'solicitud_expirada_cliente_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        'Hola {{1}}, no recibimos la confirmación de horario para tu {{2}} y por eso cerramos la solicitud. ' +
+        'Si todavía necesitas el servicio, puedes crear una nueva en cualquier momento.',
+      example: { body_text: [['Juan', 'Lavadora Mabe']] },
+    },
+    {
+      type: 'BUTTONS',
+      buttons: [
+        { type: 'URL', text: 'Crear nueva solicitud', url: `${APP_URL}/solicitar`, example: [`${APP_URL}/solicitar`] },
+      ],
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
+
+#### B. `paso_aprobado_cliente_v1`
+**Gap**: cuando cliente aprueba `reparar` o `negativa_cliente` en `/verificar-paso`, hoy se le manda solo texto libre — depende de ventana 24h. Muchos clientes no reciben confirmación por WhatsApp.
+**Disparo sugerido**: en `/api/verificar-paso` para `reparar` y `negativa_cliente`, reemplazar el texto libre por esta plantilla.
+
+```js
+{
+  name: 'paso_aprobado_cliente_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        '✅ Hola {{1}}, registramos tu aprobación para tu {{2}}.\n\n' +
+        'Acción: {{3}}\n\n' +
+        '{{4}}',
+      example: {
+        body_text: [[
+          'Juan',
+          'Lavadora Mabe',
+          'Proceder con la reparación',
+          'El técnico Carlos procederá según lo acordado. Te avisaremos al completar el servicio.',
+        ]],
+      },
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
+
+#### C. `paso_rechazado_cliente_v1`
+**Gap**: cliente rechaza paso en `/verificar-paso` → estado=en_disputa, pero solo ve in-app. Sin plantilla de confirmación. **Disparo sugerido**: en `/api/verificar-paso` rama rechazo.
+
+```js
+{
+  name: 'paso_rechazado_cliente_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        'Hola {{1}}, registramos tu rechazo del siguiente paso propuesto para tu {{2}}.\n\n' +
+        'El equipo de Baird Service se pondrá en contacto contigo en las próximas horas para resolver la situación. ' +
+        'Mientras tanto, no realices ningún pago al técnico.',
+      example: { body_text: [['Juan', 'Lavadora Mabe']] },
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
+
+#### D. `paso_resuelto_tecnico_v1`
+**Gap**: cuando cliente aprueba/rechaza el siguiente paso, al técnico solo se le manda texto libre — depende de su ventana 24h.
+**Disparo sugerido**: en `/api/verificar-paso`, ambas ramas, reemplazar texto libre por plantilla con dos parámetros (decisión + acción).
+
+```js
+{
+  name: 'paso_resuelto_tecnico_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        'Hola {{1}}, el cliente {{2}} {{3}} el siguiente paso para {{4}}.\n\n' +
+        '{{5}}',
+      example: {
+        body_text: [[
+          'Carlos',
+          'Juan Pérez',
+          'APROBÓ',
+          'Lavadora Mabe',
+          'Procede según lo acordado. Si llegas a sospechar algo, contacta a Baird Service antes de actuar.',
+        ]],
+      },
+    },
+    {
+      type: 'BUTTONS',
+      buttons: [
+        { type: 'URL', text: 'Abrir portal', url: `${APP_URL}/tecnico/{{1}}`, example: [`${APP_URL}/tecnico/...`] },
+      ],
+    },
+  ],
+}
+```
+
+#### E. `repuesto_recibido_tecnico_v1`
+**Gap**: hoy el técnico recibe texto libre cuando admin marca el repuesto como recibido — depende de su ventana 24h. Mejor usar plantilla.
+**Disparo sugerido**: reemplazar el texto libre en `/api/repuesto-recibido` por esta plantilla.
+
+```js
+{
+  name: 'repuesto_recibido_tecnico_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        '📦 Hola {{1}}, los repuestos para el servicio de {{2}} ({{3}}) ya llegaron.\n\n' +
+        'El servicio está listo para retomarse. Coordina con el cliente la nueva visita y, cuando termines, abre el portal para subir las evidencias.',
+      example: { body_text: [['Carlos', 'Lavadora Mabe', 'Juan Pérez']] },
+    },
+    {
+      type: 'BUTTONS',
+      buttons: [
+        { type: 'URL', text: 'Abrir portal', url: `${APP_URL}/tecnico/{{1}}`, example: [`${APP_URL}/tecnico/...`] },
+      ],
+    },
+  ],
+}
+```
+
+#### F. `gestionar_servicio_v1`
+**Gap**: el cliente accede al portal `/servicio/{cliente_token}` solo si abre un webview que contenga el `<GestionarServicioLink>` (hoy en /horario, /verificar-paso, /cotizacion). Ideal sería tenerlo en WhatsApp directo en momentos clave.
+**Disparo sugerido**: opt-in. Inicialmente, agregar al final de `/api/confirmar-horario` para que el cliente reciba el portal-link justo después de elegir horario.
+
+```js
+{
+  name: 'gestionar_servicio_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        'Hola {{1}}, este es tu enlace permanente para gestionar el servicio de tu {{2}}.\n\n' +
+        '🔧 Desde acá puedes cancelar o cambiar la fecha en cualquier momento mientras el técnico no haya completado el servicio.',
+      example: { body_text: [['Juan', 'Lavadora Mabe']] },
+    },
+    {
+      type: 'BUTTONS',
+      buttons: [
+        { type: 'URL', text: 'Gestionar servicio', url: `${APP_URL}/servicio/{{1}}`, example: [`${APP_URL}/servicio/...`] },
+      ],
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
+
+### Media prioridad (mejoran UX, no son bloqueantes)
+
+#### G. `tecnico_asignado_cliente_v6` con HEADER IMAGE
+**Gap**: las fotos del técnico (perfil + documento) se mandan como mensajes free-form `image` separados — fallan ~siempre por ventana 24h. La plantilla actual `_v5` es solo texto.
+**Solución**: nueva versión `_v6` con `HEADER` tipo `IMAGE` para incluir la foto en el mismo mensaje template. Requiere subir el media_id al endpoint de Meta primero.
+- Body params iguales que `_v5`. Header: `{ type: 'HEADER', format: 'IMAGE' }`.
+- Cuando se envía: `components: [{ type: 'header', parameters: [{ type: 'image', image: { link: foto_perfil_url } }] }, { type: 'body', ... }]`.
+- También agregar BUTTON URL al portal cliente.
+- Cuando Meta apruebe, deprecar `_v5` y mover invocaciones a `_v6`.
+
+#### H. `cotizacion_cliente_v2`
+**Gap**: post-admin-pricing-gate, ahora siempre se fija `tiempo_entrega` — pero la plantilla `_v1` no lo incluye. Hoy se omite del WhatsApp; el cliente lo ve en la página `/cotizacion/{token}`.
+**Solución**: nueva versión `_v2` con un parámetro extra:
+```
+'... 🧾 Total: {{7}} COP\n⏱ Tiempo estimado: {{8}}\n\n...'
+```
+8 parámetros. Cuando Meta apruebe, mover invocaciones a `_v2` y deprecar `_v1`.
+
+### Baja prioridad (nice to have)
+
+#### I. `servicio_confirmado_tecnico_v1`
+**Gap**: cuando el cliente confirma satisfacción del servicio (estado=completada), el técnico no recibe aviso WhatsApp del cierre exitoso. Solo lo ve si abre el portal.
+**Solución**: plantilla simple de cierre con calificación.
+
+```js
+{
+  name: 'servicio_confirmado_tecnico_v1',
+  category: 'UTILITY',
+  language: 'es',
+  components: [
+    {
+      type: 'BODY',
+      text:
+        '✅ Hola {{1}}, el cliente {{2}} confirmó satisfacción del servicio de {{3}}. ' +
+        'Calificación: {{4}}/10.\n\n' +
+        'Servicio cerrado exitosamente. Próxima liquidación te llegará en el ciclo correspondiente.',
+      example: { body_text: [['Carlos', 'Juan Pérez', 'Lavadora Mabe', '10']] },
+    },
+    { type: 'FOOTER', text: 'Baird Service' },
+  ],
+}
+```
 
 ---
 

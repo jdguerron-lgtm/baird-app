@@ -584,31 +584,30 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 
 ---
 
-## Gaps conocidos
+## Gaps conocidos — flujo GARANTÍA (re-revisado 2026-05-08)
 
-### 🔴 Mayor — afectan UX
+Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de la ventana 24h de Meta. Todas las plantillas siempre llegan; los textos libres y mensajes `image` solo si el destinatario envió mensaje al business en las últimas 24h. Como el cliente solo abre webviews vía botones URL (no abre la ventana 24h), los textos libres al cliente fallan **casi siempre**.
 
-1. **`sin_agendar` sin notificación final.** Cliente queda colgado pensando que el horario sigue abierto. **Fix**: plantilla `solicitud_expirada_v1` con botón a `/solicitar` para crear nueva.
+| # | Momento | Hoy | Estado | Fix propuesto |
+|---|---|---|---|---|
+| 1 | `sin_agendar` (timeout 36h) | NADA al cliente | 🔴 mayor | Plantilla `solicitud_expirada_cliente_v1` (Backlog A) |
+| 2 | Aceptación: foto perfil + documento del técnico | `image` free-form | 🔴 mayor | Plantilla `tecnico_asignado_cliente_v6` con HEADER IMAGE (Backlog G) — mitigación actual: fotos también en `/servicio/{cliente_token}` |
+| 3 | Cliente aprueba `reparar` en /verificar-paso | texto libre al cliente | 🔴 mayor | `paso_aprobado_cliente_v1` (Backlog B) |
+| 4 | Cliente aprueba `negativa_cliente` | texto libre al cliente | 🔴 mayor | `paso_aprobado_cliente_v1` (B) — mismo template, parámetro distinto |
+| 5 | Cliente RECHAZA siguiente paso | NADA al cliente (solo in-app) | 🔴 mayor | `paso_rechazado_cliente_v1` (Backlog C) |
+| 6 | Cliente decide → técnico se entera | texto libre al técnico | 🟡 medio | `paso_resuelto_tecnico_v1` (Backlog D) |
+| 7 | Admin marca repuesto recibido → técnico | texto libre al técnico | 🟡 medio | `repuesto_recibido_tecnico_v1` (Backlog E) |
+| 8 | Cliente confirma satisfacción → técnico | NADA al técnico (solo portal) | 🟢 nice-to-have | `servicio_confirmado_tecnico_v1` (Backlog I) |
+| 9 | Acceso del cliente al portal de gestión | solo via webviews | 🟡 medio | `gestionar_servicio_v1` (Backlog F) — enviar tras confirmar horario |
 
-2. **Fotos del técnico (24h window).** Las imágenes free-form a veces fallan. **Mitigación actual**: portal `/servicio/{cliente_token}` con las fotos. **Fix durable**: nueva plantilla `tecnico_asignado_cliente_v6` con `HEADER` tipo `IMAGE` (requiere aprobación Meta 1-3 días).
+**JSON listo para subir** de cada plantilla en `docs/WHATSAPP_TEMPLATES.md` sección "Backlog".
 
-### 🟡 Menores — bajo impacto pero conviene cerrar
+### Gaps que NO requieren plantillas (cambios de código pendientes)
 
-3. **`cotizacion_rechazada` sin plantilla final al cliente.** El cliente recibe solo confirmación in-app. **Fix**: plantilla `cotizacion_rechazada_cliente_v1` confirmando que el rechazo se registró.
-
-4. **Aprobación de paso post-verificación usa textos libres.** Funciona pero depende de 24h. **Fix**: plantilla `paso_aprobado_cliente_v1` (genérica).
-
-5. **`/api/aprobar-cotizacion` race condition.** Hace dos UPDATEs separados (`cotizacion_aprobada` → `en_proceso`) sin guard atómico. **Fix**: agregar `.eq('estado', 'cotizacion_enviada')` al primer UPDATE o consolidar en uno solo.
-
-6. **JSONB filter antipattern en `/api/aprobar-cotizacion` y `/cotizacion/[token]`.** Cargan toda la tabla y filtran por `cotizacion.token` en JS. **Fix**: columna generada `cotizacion_token` con índice único (ver `supabase/migrations/README.md` sección "M-NEXT-C").
-
-### 🟢 Documentadas pero no urgentes
-
-7. **`/servicio/{cliente_token}` no se envía proactivamente al cliente** — accede vía URL guardada, copiada por admin, o futura plantilla `gestionar_servicio_v1`.
-
-8. **No hay reminder pre-visita** — entre confirmación de horario y aceptación del técnico no hay mensaje intermedio. Si la solicitud queda largo tiempo en `notificada` (sin técnico), el cliente puede perder visibilidad.
-
-9. **Auth de admin API routes.** Las rutas en `/api/cotizacion-precios`, `/api/repuesto-recibido`, etc. no validan sesión Supabase Auth — confían en que solo el sidebar admin las invoca. Cualquiera con la URL puede pegarles.
+10. **`/api/aprobar-cotizacion` race condition.** Hace dos UPDATEs separados (`cotizacion_aprobada` → `en_proceso`) sin guard atómico. **Fix**: agregar `.eq('estado', 'cotizacion_enviada')` al primer UPDATE o consolidar en uno solo.
+11. **JSONB filter antipattern en `/api/aprobar-cotizacion` y `/cotizacion/[token]`.** Cargan toda la tabla y filtran por `cotizacion.token` en JS. **Fix**: columna generada `cotizacion_token` con índice único (ver `supabase/migrations/README.md` sección "M-NEXT-C").
+12. **No hay reminder pre-visita** entre confirmación de horario y aceptación del técnico. Si la solicitud queda largo tiempo en `notificada`, el cliente puede perder visibilidad.
+13. **Auth de admin API routes.** `/api/cotizacion-precios`, `/api/repuesto-recibido` etc. no validan sesión Supabase Auth — confían en que solo el sidebar admin las invoca.
 
 ---
 

@@ -223,6 +223,348 @@ const TEMPLATES = [
       { type: 'FOOTER', text: 'Baird Service' },
     ],
   },
+
+  // ─────────────────────────────────────────────────────────────────────
+  // BACKFILL 2026-05-08 — plantillas que ya estaban aprobadas en Meta
+  // pero no estaban registradas como código aquí. Las definiciones reflejan
+  // el contrato que ya consume `whatsapp.service.ts` y los endpoints del
+  // proyecto. Si Meta tiene una versión ligeramente distinta de body, esta
+  // se acepta como nueva versión cuando se sube con el mismo nombre.
+  // ─────────────────────────────────────────────────────────────────────
+
+  // 7. Notificar a técnicos garantía — oferta inicial
+  // Llamado por: notificarTecnicos() cuando es_garantia=true
+  {
+    name: 'nueva_solicitud_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Nueva solicitud disponible',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, tienes una nueva solicitud de garantía:\n\n' +
+          '🔧 Equipo: {{2}}\n' +
+          '⚠️ Problema: {{3}}\n' +
+          '📍 Ubicación: {{4}}\n' +
+          '🕐 Horario: {{5}}\n' +
+          '💰 Pago: {{6}}\n\n' +
+          'Si la aceptas, recibirás los datos completos del cliente. Solo el primer técnico que la acepte gana el servicio.',
+        example: {
+          body_text: [[
+            'Carlos',
+            'Lavadora Mabe',
+            'No centrifuga',
+            'Chapinero, Bogotá',
+            'lunes 6 de mayo · 8am-12pm',
+            'GARANTIA - Sin cobro',
+          ]],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Aceptar servicio',
+            url: `${APP_URL}/aceptar/{{1}}`,
+            example: [`${APP_URL}/aceptar/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 8. Notificar técnico que llegó tarde a aceptar
+  // Llamado por: procesarAceptacion() — perdedores
+  {
+    name: 'servicio_no_disponible_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, otro técnico aceptó esta solicitud antes que tú. ' +
+          'Te avisaremos por WhatsApp cuando llegue una nueva oportunidad en tu zona. ¡Suerte la próxima!',
+        example: { body_text: [['Carlos']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 9. Confirmar asignación al técnico ganador
+  // Llamado por: procesarAceptacion() — ganador
+  {
+    name: 'servicio_asignado_tecnico_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: '¡Servicio asignado!',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, has aceptado el servicio:\n\n' +
+          '👤 Cliente: {{2}}\n' +
+          '🔧 Equipo: {{3}}\n' +
+          '📍 Dirección: {{4}}\n' +
+          '💰 Pago: {{5}}\n' +
+          '📞 Contacto: {{6}}\n\n' +
+          'Coordina la visita con el cliente. Antes de iniciar, abre el portal para firmar el oath y registrar el diagnóstico.',
+        example: {
+          body_text: [[
+            'Carlos',
+            'Juan Pérez',
+            'Lavadora Mabe',
+            'Calle 100 #15-20, Chapinero',
+            'GARANTIA - Sin cobro',
+            '+573001234567',
+          ]],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir portal',
+            url: `${APP_URL}/tecnico/{{1}}`,
+            example: [`${APP_URL}/tecnico/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 10. Notificar a técnicos particular — oferta inicial
+  // Llamado por: notificarTecnicos() cuando es_garantia=false
+  {
+    name: 'solicitud_particular_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Nueva solicitud particular',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, tienes una nueva solicitud particular (no garantía):\n\n' +
+          '🔧 Equipo: {{2}}\n' +
+          '⚠️ Problema: {{3}}\n' +
+          '📍 Ubicación: {{4}}\n' +
+          '🕐 Horario: {{5}}\n' +
+          '💰 Pago diagnóstico: {{6}}\n\n' +
+          'El cliente paga via Baird Service tras tu diagnóstico — nunca aceptes pago directo en efectivo. Solo el primer técnico que acepte gana el servicio.',
+        example: {
+          body_text: [[
+            'Carlos',
+            'Nevera LG',
+            'No enfría',
+            'Cedritos, Bogotá',
+            'martes 7 de mayo · 2pm-5pm',
+            '$80,000 COP',
+          ]],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Aceptar servicio',
+            url: `${APP_URL}/aceptar/{{1}}`,
+            example: [`${APP_URL}/aceptar/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 11. Confirmar al cliente que tiene técnico asignado (particular)
+  // Llamado por: procesarAceptacion() cuando es_garantia=false
+  {
+    name: 'tecnico_asignado_particular_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu técnico Baird Service',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, ya tienes técnico asignado:\n\n' +
+          '👨‍🔧 Técnico: {{2}}\n' +
+          '🔧 Equipo: {{3}}\n' +
+          '🕐 Horario: {{4}}\n' +
+          '📞 Contacto: {{5}}\n\n' +
+          '💰 Tarifa diagnóstico: {{6}} COP\n' +
+          '💵 Anticipo (50%): {{7}} COP\n\n' +
+          'Tu técnico llegará en el horario acordado. Tras el diagnóstico recibirás la cotización para aprobar antes de cualquier reparación. Nunca pagues en efectivo al técnico — todo se factura via Baird Service.',
+        example: {
+          body_text: [[
+            'Juan',
+            'Carlos Pérez',
+            'Nevera LG',
+            'martes 7 de mayo · 2pm-5pm',
+            '+573001234567',
+            '80,000',
+            '40,000',
+          ]],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 12. Cotización al cliente para aprobar (particular)
+  // Llamado por: enviarCotizacionCliente() — POST admin pricing
+  {
+    name: 'cotizacion_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Cotización lista para tu aprobación',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el técnico {{2}} terminó el diagnóstico de tu {{3}}:\n\n' +
+          '🔍 Diagnóstico: {{4}}\n\n' +
+          '💰 Mano de obra: {{5}} COP\n' +
+          '🔩 Repuestos: {{6}} COP\n' +
+          '🧾 Total: {{7}} COP\n\n' +
+          'Si apruebas, el técnico procede con la reparación. Todos los pagos se gestionan via Baird Service.',
+        example: {
+          body_text: [[
+            'Juan',
+            'Carlos',
+            'Nevera LG',
+            'Compresor en mal estado, requiere reemplazo',
+            '150,000',
+            '280,000',
+            '430,000',
+          ]],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Aprobar cotización',
+            url: `${APP_URL}/cotizacion/{{1}}`,
+            example: [`${APP_URL}/cotizacion/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 13. Notificar técnico que cliente aprobó cotización (particular)
+  // Llamado por: notificarCotizacionAprobada()
+  {
+    name: 'cotizacion_aprobada_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          '✅ Hola {{1}}, el cliente {{2}} aprobó la cotización para {{3}}.\n\n' +
+          'Total aprobado: {{4}} COP\n\n' +
+          'Procede con la reparación según lo acordado. Cuando termines, abre el portal para subir fotos, checklist y firma del cliente.',
+        example: { body_text: [['Carlos', 'Juan Pérez', 'Nevera LG', '430,000']] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir portal',
+            url: `${APP_URL}/tecnico/{{1}}`,
+            example: [`${APP_URL}/tecnico/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 14. Pedir confirmación al cliente tras completar el servicio
+  // Llamado por: POST /api/completar-servicio
+  {
+    name: 'confirmar_servicio_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Servicio completado — confirma',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el técnico {{2}} terminó el servicio de tu {{3}}.\n\n' +
+          'Por favor confirma si quedaste satisfecho/a o reporta cualquier problema. Tu calificación nos ayuda a mantener la calidad del servicio.',
+        example: { body_text: [['Juan', 'Carlos Pérez', 'Lavadora Mabe']] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Confirmar servicio',
+            url: `${APP_URL}/confirmar/{{1}}`,
+            example: [`${APP_URL}/confirmar/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 15. Bienvenida al técnico recién registrado
+  // Llamado por: notificarRegistroTecnico()
+  {
+    name: 'registro_bienvenida_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Bienvenido a Baird Service',
+      },
+      {
+        type: 'BODY',
+        text:
+          '👋 Hola {{1}}, gracias por registrarte como técnico en Baird Service.\n\n' +
+          '📍 Ciudad: {{2}}\n' +
+          '🔧 Especialidad: {{3}}\n\n' +
+          'Tu cuenta está pendiente de verificación por el equipo de Baird Service. ' +
+          'Una vez aprobada, comenzarás a recibir solicitudes de servicio en tu zona. ' +
+          'Te avisaremos por WhatsApp cuando estés activo/a.',
+        example: { body_text: [['Carlos', 'Bogotá', 'Lavadoras']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
 ]
 
 async function listExisting() {
