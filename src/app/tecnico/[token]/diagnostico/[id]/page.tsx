@@ -74,10 +74,15 @@ export default function DiagnosticoPage() {
   // GPS hook
   const { enviarPing } = useGps()
 
-  // Extract model from novedades
+  // Extract model from novedades. Normalizamos a mayúsculas + trim porque
+  // Serviplus es case-sensitive en el parámetro ?p= y los códigos de modelo
+  // de Mabe/GE convencionalmente son uppercase. Eliminamos espacios para
+  // evitar URL con %20 al final que el portal puede no manejar.
   const modeloEquipo = useMemo(() => {
     const match = servicio?.novedades_equipo?.match(/^\[Modelo:\s*(.+?)\]\s*/)
-    return match ? match[1] : null
+    if (!match) return null
+    const normalizado = match[1].trim().replace(/\s+/g, '').toUpperCase()
+    return normalizado || null
   }, [servicio])
 
   const novedadesSinModelo = useMemo(() => {
