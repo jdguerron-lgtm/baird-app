@@ -1,0 +1,623 @@
+# Flujos de servicio — Baird Service
+
+> Documento canónico de los flujos end-to-end con cada plantilla WhatsApp,
+> punto de decisión del cliente, y verificación de continuidad de la
+> comunicación.
+>
+> **Última actualización: 2026-05-08** (post admin pricing gate v1).
+> Reemplaza a `docs/FLUJOS-USUARIO.md` (obsoleto, state machine v1).
+
+---
+
+## Tabla de contenido
+
+1. [Principios del diseño](#principios-del-diseño)
+2. [Flujo GARANTÍA (es_garantia=true)](#flujo-garantía-es_garantiatrue)
+3. [Flujo PARTICULAR (es_garantia=false)](#flujo-particular-es_garantiafalse)
+4. [Side flow: Cliente cancela / reagenda](#side-flow-cliente-cancela--reagenda)
+5. [Puntos de decisión del cliente — verificación](#puntos-de-decisión-del-cliente--verificación)
+6. [Catálogo de plantillas WhatsApp](#catálogo-de-plantillas-whatsapp)
+7. [Estados terminales y continuidad de comunicación](#estados-terminales-y-continuidad-de-comunicación)
+8. [Gaps conocidos](#gaps-conocidos)
+
+---
+
+## Principios del diseño
+
+1. **Customer-first scheduling.** Toda solicitud (garantía o particular) arranca con el cliente proponiendo y confirmando el horario antes de notificar técnicos. No hay diferencia entre los dos flujos en este paso.
+2. **Admin pricing gate** (v1 2026-05-07). El técnico no fija precios ni tiempos de entrega. El equipo Baird los completa antes de que el cliente reciba la cotización o la verificación de paso.
+3. **Cliente siempre tiene la última palabra.** En ambos flujos hay un paso de aprobación explícito tras el diagnóstico (verificar paso para garantía, aprobar cotización para particular).
+4. **Self-service durante todo el ciclo.** El cliente puede cancelar o reagendar desde `/servicio/{cliente_token}` mientras el estado lo permita.
+5. **Audit append-only.** Cancelaciones, reagendamientos y cambios admin escriben en `solicitud_eventos` sin borrado.
+6. **Atomic state transitions** para evitar race conditions cuando dos partes actúan al tiempo.
+
+---
+
+## Flujo GARANTÍA (es_garantia=true)
+
+La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El cliente no paga. El técnico recibe pago + bono TSS por pronta solución.
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 1. CREACIÓN DE SOLICITUD                                                 │
+│ Origen: /solicitar (cliente) o /admin/carga-masiva (admin Excel)         │
+│ POST /api/solicitar  →  src/app/api/solicitar/route.ts                   │
+│                                                                           │
+│ DB:  estado=pendiente_horario                                            │
+│      horario_token=uuid (acción específica)                              │
+│      cliente_token=uuid (durable, para /servicio portal)                 │
+│                                                                           │
+│ 📩 → CLIENTE: cliente_seleccion_horario_v1                               │
+│   Header: "Solicitud recibida en Baird Service"                          │
+│   Body: cliente, equipo, horario_1, horario_2                            │
+│   Botón: "Confirmar horario" → /horario/{horario_token}                  │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (cliente abre webview)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 1b. (TIMEOUT — opcional) Si pasan 24h sin confirmar                      │
+│ Cron /api/cron/horario-recordatorio ejecuta cada 1h                      │
+│                                                                           │
+│ 📩 → CLIENTE: recordatorio_horario_v1                                    │
+│   Body: cliente, equipo                                                  │
+│   Botón: "Confirmar horario" (mismo horario_token)                       │
+│                                                                           │
+│ Si pasan 36h totales sin confirmar:                                      │
+│   → estado=sin_agendar (terminal)                                        │
+│   ⚠️ NO se envía plantilla final al cliente — gap conocido (ver §8)     │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 2. CLIENTE CONFIRMA HORARIO                                              │
+│ POST /api/confirmar-horario { token, horario }                           │
+│                                                                           │
+│ DB:  estado=notificada                                                   │
+│      horario_confirmado=<string elegido>                                 │
+│      tyc_aceptados_at, tyc_version                                       │
+│                                                                           │
+│ Backend dispara notificarTecnicos(solicitudId).                          │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 3. NOTIFICAR TÉCNICOS COMPATIBLES                                        │
+│ Filtro: especialidad ≈ tipo_equipo + ciudad ≈ ciudad_pueblo +            │
+│         estado_verificacion='verificado'                                 │
+│                                                                           │
+│ Por cada técnico (en paralelo):                                          │
+│   notificaciones_whatsapp.insert(token=uuid)                             │
+│                                                                           │
+│ 📩 → TÉCNICO N: nueva_solicitud_v3                                       │
+│   Body: nombre, equipo, problema, ubicacion, horario, "GARANTIA - Sin    │
+│         cobro"                                                           │
+│   Botón: "Aceptar" → /aceptar/{token_notif}                              │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (un técnico hace click)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 4. ACEPTACIÓN ATÓMICA                                                    │
+│ procesarAceptacion(token) en whatsapp.service.ts:380-660                 │
+│                                                                           │
+│ UPDATE solicitudes_servicio                                              │
+│   SET tecnico_asignado_id=X, estado='asignada'                           │
+│   WHERE id=Y AND tecnico_asignado_id IS NULL  ← guard atómico            │
+│                                                                           │
+│ Solo el primer técnico gana. Los demás reciben:                          │
+│ 📩 → TÉCNICOS perdedores: servicio_no_disponible_v3                      │
+│                                                                           │
+│ Al ganador:                                                              │
+│ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v3                       │
+│   Body: nombre, cliente, equipo, direccion, "GARANTIA - Sin cobro",      │
+│         teléfono cliente                                                 │
+│   Botón: "Ver portal" → /tecnico/{portal_token}                          │
+│                                                                           │
+│ Al cliente:                                                              │
+│ 📩 → CLIENTE: tecnico_asignado_cliente_v5                                │
+│   Body: cliente, técnico, equipo, horario, teléfono técnico              │
+│                                                                           │
+│ 📷 → CLIENTE: imagen tecnico.foto_perfil_url                             │
+│      (caption: "📷 {nombre} — Tu técnico asignado")                      │
+│ 🪪 → CLIENTE: imagen tecnico.foto_documento_url                          │
+│      (caption: "🪪 CC {numero} — Identificación verificada")             │
+│                                                                           │
+│ ⚠️ Las 2 imágenes son free-form — Meta exige ventana 24h del cliente.    │
+│    En customer-first la ventana 24h NO está abierta (cliente solo tocó   │
+│    botones URL). Falla con error #131047 "Re-engagement message".        │
+│    MITIGACIÓN: las fotos también se renderizan en                        │
+│    /servicio/{cliente_token} (server-fetched, sin WhatsApp).             │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (técnico llega al sitio)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 5. DIAGNÓSTICO POR EL TÉCNICO                                            │
+│ Página /tecnico/{portal_token}/diagnostico/{id}                          │
+│                                                                           │
+│ Tech firma oath, sube evidencias (foto/video del fallo), describe        │
+│ diagnóstico, selecciona complejidad, código de falla, productos          │
+│ necesarios (SKU+desc+cantidad) y productos recomendados (sin precio).    │
+│ Elige siguiente paso (4 opciones).                                       │
+│                                                                           │
+│ POST /api/diagnostico                                                    │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+            ┌─────────┬───────────┼─────────────┬──────────────┐
+            │         │           │             │              │
+            ▼         ▼           ▼             ▼              ▼
+       reparar   esperar_repuesto  no_reparable  negativa_cliente
+            │         │           │             │
+            │         ▼           │             │
+            │  ┌──────────────┐   │             │
+            │  │ pendiente_   │   │             │
+            │  │ pricing      │   │             │
+            │  │ (admin fija  │   │             │
+            │  │  tiempo)     │   │             │
+            │  └──────────────┘   │             │
+            │         │           │             │
+            │         ▼           │             │
+            │  POST /api/         │             │
+            │  cotizacion-precios │             │
+            │         │           │             │
+            ▼         ▼           ▼             ▼
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ 6. VERIFICACIÓN POR EL CLIENTE                                       │
+   │ DB: estado=verificacion_pendiente                                    │
+   │     verificacion_paso_token=uuid                                     │
+   │                                                                       │
+   │ 📩 → CLIENTE: verificar_siguiente_paso_v1                            │
+   │   Body: cliente, técnico, equipo, diagnóstico, acción propuesta      │
+   │   Botón: "Aprobar paso" → /verificar-paso/{verificacion_paso_token}  │
+   │                                                                       │
+   │ Cliente abre el webview y ve:                                        │
+   │   - Saludo + nombre del técnico                                      │
+   │   - Diagnóstico técnico completo                                     │
+   │   - Acción propuesta (con icono según paso) + detalle del repuesto   │
+   │     si aplica                                                         │
+   │   - Recordatorio T&C ("no pagues directo al técnico")                │
+   │   - Botón verde "✅ Aprobar — {acción}"                              │
+   │   - Botón rojo "🚫 No estoy de acuerdo" (abre textarea de motivo)    │
+   └──────────────────────────────────────────────────────────────────────┘
+                                  │
+                       ┌──────────┴──────────┐
+                       ▼                     ▼
+                  APROBADO                 RECHAZADO
+                       │                     │
+                       ▼                     ▼
+   ┌──────────────────────────┐  ┌──────────────────────────────────┐
+   │ POST /api/verificar-paso │  │ POST /api/verificar-paso         │
+   │ { decision: 'aprobado' } │  │ { decision: 'rechazado',         │
+   │                          │  │   comentario: '...' }            │
+   │ Transiciona según paso:  │  │                                  │
+   │  - reparar →             │  │ DB: estado=en_disputa            │
+   │    en_proceso            │  │ verificacion_paso_decision=      │
+   │  - esperar_repuesto →    │  │   'rechazado'                    │
+   │    esperando_repuesto    │  │                                  │
+   │  - no_reparable →        │  │ 📩 → TÉCNICO: texto libre        │
+   │    finalizado_sin_       │  │   "Cliente RECHAZÓ. No procedas. │
+   │    reparacion (terminal) │  │    Admin contactará."            │
+   │  - negativa_cliente →    │  │                                  │
+   │    cancelada_cliente     │  │ Admin debe intervenir manualmente│
+   │    (terminal)            │  │ desde /admin/solicitudes/[id].   │
+   │                          │  │                                  │
+   │ Plus WhatsApps:          │  │                                  │
+   │  Si reparar:             │  │                                  │
+   │   📩 → CLIENTE texto:    │  │                                  │
+   │     "Aprobaste reparación│  │                                  │
+   │      Te avisamos al      │  │                                  │
+   │      completar"          │  │                                  │
+   │   📩 → TÉCNICO texto:    │  │                                  │
+   │     "APROBÓ - procede"   │  │                                  │
+   │  Si esperar_repuesto:    │  │                                  │
+   │   📩 → CLIENTE:          │  │                                  │
+   │     esperando_repuesto_  │  │                                  │
+   │     cliente_v1           │  │                                  │
+   │     (sku + desc + tiempo)│  │                                  │
+   │  Si no_reparable:        │  │                                  │
+   │   📩 → CLIENTE:          │  │                                  │
+   │     finalizado_sin_      │  │                                  │
+   │     reparacion_v1        │  │                                  │
+   │     (motivo, terminal)   │  │                                  │
+   │  Si negativa_cliente:    │  │                                  │
+   │   📩 → CLIENTE texto:    │  │                                  │
+   │     "Decisión registrada"│  │                                  │
+   └──────────────────────────┘  └──────────────────────────────────┘
+                       │
+                       ▼  (rama "reparar" o "esperar_repuesto" → en_proceso)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 6b. (Si esperar_repuesto) ADMIN MARCA REPUESTO RECIBIDO                  │
+│ Página /admin/repuestos                                                  │
+│ POST /api/repuesto-recibido { repuestoId }                               │
+│                                                                           │
+│ Cuando todos los repuestos de la solicitud están 'recibido':             │
+│ DB:  estado=esperando_repuesto → en_proceso                              │
+│                                                                           │
+│ 📩 → CLIENTE: repuesto_recibido_cliente_v1                               │
+│   Body: cliente, equipo, técnico                                         │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (técnico hace la reparación)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 7. COMPLETAR SERVICIO                                                    │
+│ Página /tecnico/{portal_token}/completar/{id}                            │
+│ Tech sube fotos finales, checklist, firma del cliente, GPS de salida.    │
+│                                                                           │
+│ POST /api/completar-servicio                                             │
+│ DB:  estado=en_verificacion                                              │
+│                                                                           │
+│ 📩 → CLIENTE: confirmar_servicio_v3                                      │
+│   Body: cliente, técnico, equipo                                         │
+│   Botón: "Confirmar servicio" → /confirmar/{confirmacion_token}          │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                       ┌──────────┴──────────┐
+                       ▼                     ▼
+             SATISFECHO + rating       REPORTA PROBLEMA
+                       │                     │
+                       ▼                     ▼
+              estado=completada       estado=en_disputa
+              (terminal)              (admin)
+                                  │
+                       ▼  (cron de 10 min)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 7b. GPS FOLLOWUP (silencioso)                                            │
+│ Cron /api/cron/gps-followup ejecuta cada 10 min.                         │
+│ 30+ min después de completar, valida si el ping post-visita del técnico  │
+│ está a <100m de la dirección del cliente.                                │
+│ Si sí → evidencias_servicio.gps_flagged=true.                            │
+│ Visible en /admin/gps-alertas. NO genera notificación al cliente —       │
+│ es señal interna para investigación.                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flujo PARTICULAR (es_garantia=false)
+
+El cliente paga a Baird por el servicio. La cotización es admin-pricing-gated (v1 2026-05-07).
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 1. CREACIÓN DE SOLICITUD                                                 │
+│ Idéntico a garantía. Mismo POST /api/solicitar.                          │
+│ DB: estado=pendiente_horario, horario_token, cliente_token               │
+│                                                                           │
+│ 📩 → CLIENTE: cliente_seleccion_horario_v1 (mismo template)              │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+[Pasos 1b–2 idénticos a garantía: timeout, cliente confirma horario, etc.]
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 3. NOTIFICAR TÉCNICOS                                                    │
+│ 📩 → TÉCNICO N: solicitud_particular_tecnico_v1                          │
+│   Body: nombre, equipo, problema, ubicacion, horario, pago_diagnostico   │
+│   Botón: "Aceptar" → /aceptar/{token_notif}                              │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 4. ACEPTACIÓN ATÓMICA                                                    │
+│ Misma lógica atómica que en garantía.                                    │
+│ DB: estado=diagnostico_pendiente (NO 'asignada' como en garantía)        │
+│                                                                           │
+│ Al ganador:                                                              │
+│ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v3                       │
+│ Al cliente:                                                              │
+│ 📩 → CLIENTE: tecnico_asignado_particular_v1                             │
+│   Body: cliente, técnico, equipo, horario, tel, tarifa, anticipo         │
+│ 📷🪪 → CLIENTE: fotos del técnico (mismo caveat 24h)                     │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (técnico llega)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 5. DIAGNÓSTICO + COTIZACIÓN-DRAFT                                        │
+│ Tech firma oath, sube evidencias, escribe diagnóstico, lista productos   │
+│ necesarios (SKU+desc+cantidad) y recomendados (sin precio). Elige        │
+│ siguiente paso (4 opciones).                                             │
+│                                                                           │
+│ ⚠️ NUEVO 2026-05-07: el tech NO ingresa precios ni tiempos.              │
+│                                                                           │
+│ POST /api/diagnostico                                                    │
+│                                                                           │
+│ DB:  estado=pendiente_pricing                                            │
+│      cotizacion={ diagnostico, productos_necesarios[], productos_        │
+│                   recomendados[], pendiente_precio: true,                │
+│                   mano_obra: 0, repuestos: 0, total: 0,                  │
+│                   token: uuid }                                          │
+│                                                                           │
+│ NO se envía cotización al cliente todavía.                               │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 6. ADMIN FIJA PRECIOS Y TIEMPO                                           │
+│ Página /admin/cotizaciones-pendientes (admin auth)                       │
+│ Modal muestra diagnóstico + productos. Admin ingresa:                    │
+│   - mano_obra (COP)                                                      │
+│   - precio_unitario por cada producto necesario                          │
+│   - tiempo_entrega (texto libre, ej. "3-5 días hábiles")                 │
+│                                                                           │
+│ POST /api/cotizacion-precios                                             │
+│                                                                           │
+│ DB:  estado=cotizacion_enviada                                           │
+│      cotizacion={ ..., pendiente_precio: false, pricing_set_at,          │
+│                   mano_obra, repuestos, total, tiempo_entrega }          │
+│      pago_tecnico=total                                                  │
+│      repuestos_pendientes.costo + tiempo_estimado se sincronizan         │
+│                                                                           │
+│ 📩 → CLIENTE: cotizacion_cliente_v1                                      │
+│   Body: cliente, técnico, equipo, diagnóstico, mano_obra, repuestos,     │
+│         total                                                            │
+│   Botón: "Aprobar cotización" → /cotizacion/{cotizacion.token}           │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (cliente abre webview)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 7. CLIENTE APRUEBA / RECHAZA COTIZACIÓN                                  │
+│ Página /cotizacion/{token} muestra:                                      │
+│   - Datos del técnico (nombre)                                           │
+│   - Diagnóstico técnico completo                                         │
+│   - Fotos de evidencia del diagnóstico                                   │
+│   - Productos necesarios con SKU + cantidad + subtotal                   │
+│   - Productos recomendados (sin precio, opcional)                        │
+│   - Desglose: mano de obra + repuestos = total                           │
+│   - Tiempo de entrega                                                    │
+│   - Aviso de pago via Baird Service                                      │
+│   - Botón verde "✅ Aprobar cotización"                                  │
+│   - Botón rojo "❌ Rechazar cotización" (con textarea de comentario)     │
+│                                                                           │
+│ POST /api/aprobar-cotizacion { token, aprobado: bool, comentario? }      │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                       ┌──────────┴──────────┐
+                       ▼                     ▼
+                  APROBADA                 RECHAZADA
+                       │                     │
+                       ▼                     ▼
+   ┌──────────────────────────┐  ┌──────────────────────────────────┐
+   │ DB:                      │  │ DB: estado=cotizacion_rechazada  │
+   │   estado=cotizacion_     │  │     cotizacion.rechazado_at      │
+   │   aprobada               │  │     comentario_rechazo           │
+   │   cotizacion.aprobado_at │  │   (terminal)                     │
+   │                          │  │                                  │
+   │ Inmediatamente:          │  │ 📩 → TÉCNICO texto libre:        │
+   │   estado=en_proceso      │  │   "Cliente rechazó. {motivo}.    │
+   │                          │  │    Servicio cerrado."            │
+   │ 📩 → TÉCNICO:            │  │                                  │
+   │   cotizacion_aprobada_   │  │ ⚠️ Cliente solo ve in-app        │
+   │   tecnico_v1             │  │   confirmación — no recibe       │
+   │   Body: tec, cliente,    │  │   plantilla final (gap §8)       │
+   │         equipo, total    │  │                                  │
+   │   Botón: "Ver portal" →  │  │                                  │
+   │   /tecnico/{portal_token}│  │                                  │
+   └──────────────────────────┘  └──────────────────────────────────┘
+                       │
+                       ▼  (técnico procede con la reparación)
+[Pasos 6b-7 igual que garantía: si necesita repuesto y admin marca recibido,
+ luego completar servicio + confirmación del cliente]
+```
+
+---
+
+## Side flow: Cliente cancela / reagenda
+
+Cliente abre `/servicio/{cliente_token}` (URL incluida en plantillas iniciales o copiada por admin desde `/admin/solicitudes/[id]`).
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Portal /servicio/{cliente_token}                                         │
+│ Servidor (RSC) lee solicitud por cliente_token, muestra:                 │
+│   - Estado actual (badge + label)                                        │
+│   - Equipo, ubicación, horario_confirmado                                │
+│   - Datos del técnico asignado (nombre, foto perfil, foto documento)     │
+│   - Botones según estado:                                                │
+│       Cancelar (si estado ∈ ESTADOS_CANCELABLES_POR_CLIENTE)             │
+│       Reagendar (si estado ∈ ESTADOS_REAGENDABLES_POR_CLIENTE            │
+│                  y reagendamientos_count < 2)                            │
+└──────────────────────────────────────────────────────────────────────────┘
+            │                                       │
+   ┌────────┴────────┐                    ┌────────┴────────┐
+   ▼                 ▼                    ▼                 ▼
+CANCELAR     (modal con motivo)     REAGENDAR     (modal con fecha+franja)
+   │                                       │
+   ▼                                       ▼
+POST /api/solicitud/cancelar          POST /api/solicitud/reagendar
+{ token, motivo }                     { token, horario, motivo? }
+
+DB:                                   DB:
+  estado=cancelada                      horario_confirmado=<nuevo>
+  cancelado_at, cancelado_por='cliente' horario_confirmado_at=now()
+  motivo_cancelacion                    reagendamientos_count++
+  cancelado_tarde si tenía técnico      ultimo_reagendado_at
+                                        Si pre-aceptación:
+                                          estado=notificada (mantiene)
+                                        Si post-aceptación:
+                                          estado conserva (asignada o
+                                          diagnostico_pendiente)
+                                          tecnico_asignado_id intacto
+
+📩 → CLIENTE texto libre:             📩 → CLIENTE texto libre:
+  "Hola {n}, cancelamos tu              "Hola {n}, reagendamos a {h}.
+   solicitud de {equipo}. Si             Avisamos al técnico."
+   necesitas, crea una nueva
+   en /solicitar"
+
+📩 → TÉCNICO texto libre (si hay):    📩 → TÉCNICO texto libre (si hay):
+  "Cliente {n} canceló {equipo}        "Cliente {n} reagendó a {h}.
+   horario {h}. Si gastaste              Si no puedes asistir, contacta."
+   tiempo, repórtalo a Baird"
+
+Notifs activas a otros técnicos       (Notifs ya invalidadas si tech
+se invalidan:                          aceptó; si pre-aceptación quedan
+  UPDATE notificaciones_whatsapp       activas con horario actualizado
+    SET estado='invalidado'            visible en su portal)
+    WHERE estado='enviado'
+
+Audit:                                Audit:
+  solicitud_eventos.insert(             solicitud_eventos.insert(
+    tipo='cancelacion',                   tipo='reagendamiento',
+    payload: cancelado_tarde,             payload: horario_previo,
+             tenia_tecnico,                        horario_nuevo,
+             es_garantia)                          reagendamientos_count)
+```
+
+**Caveat textos libres**: dependen de que el cliente/técnico haya enviado un mensaje al negocio en las últimas 24h. Si Meta los rechaza con #131047, queda registrado en log + audit, pero el cliente sí ve el cambio in-app (el portal refresca después de la acción).
+
+---
+
+## Puntos de decisión del cliente — verificación
+
+Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rechazar**:
+
+### 1. Confirmación de horario inicial
+| Aspecto | Detalle |
+|---|---|
+| Plantilla | `cliente_seleccion_horario_v1` |
+| URL en botón | `/horario/{horario_token}` |
+| Página | `src/app/horario/[token]/page.tsx` + `HorarioSelector.tsx` |
+| API | `POST /api/confirmar-horario` |
+| Acción | Cliente elige fecha + franja, acepta T&C, confirma |
+| ✅ Verificado | Botón Confirmar en HorarioSelector líneas 305-313 |
+
+### 2. Verificación de paso post-diagnóstico (GARANTÍA)
+| Aspecto | Detalle |
+|---|---|
+| Plantilla | `verificar_siguiente_paso_v1` |
+| URL en botón | `/verificar-paso/{verificacion_paso_token}` |
+| Página | `src/app/verificar-paso/[token]/page.tsx` + `VerificarPasoView.tsx` |
+| API | `POST /api/verificar-paso` |
+| Acción | Cliente aprueba (botón verde) o rechaza con motivo (botón rojo + textarea) |
+| ✅ Verificado | Botones en VerificarPasoView líneas 151-167 |
+| ✅ Audit | Decisión queda en `verificacion_paso_decision` y `verificacion_paso_at` |
+
+### 3. Aprobación de cotización (PARTICULAR)
+| Aspecto | Detalle |
+|---|---|
+| Plantilla | `cotizacion_cliente_v1` |
+| URL en botón | `/cotizacion/{cotizacion.token}` (token dentro del JSONB) |
+| Página | `src/app/cotizacion/[token]/page.tsx` |
+| API | `POST /api/aprobar-cotizacion` |
+| Acción | Cliente aprueba o rechaza con comentario opcional |
+| ✅ Verificado | Botones en cotizacion/[token]/page.tsx líneas 303-316 |
+| ✅ Trigger post-pricing | Solo se envía DESPUÉS de que admin completa precios vía /api/cotizacion-precios |
+
+### 4. Confirmación final del servicio (ambos flujos)
+| Aspecto | Detalle |
+|---|---|
+| Plantilla | `confirmar_servicio_v3` |
+| URL en botón | `/confirmar/{confirmacion_token}` |
+| Página | `src/app/confirmar/[token]/page.tsx` |
+| API | `POST /api/confirmar-servicio` |
+| Acción | Cliente confirma satisfecho (rating 1-10) o reporta problema |
+
+### 5. Self-service permanente
+Botón implícito (URL): `/servicio/{cliente_token}`. No hay plantilla dedicada hoy — cliente accede vía URL guardada o admin se la pasa. **Pendiente**: agregar plantilla `gestionar_servicio_v1` cuando Meta apruebe.
+
+---
+
+## Catálogo de plantillas WhatsApp
+
+Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
+
+### Pre-asignación (común a ambos flujos)
+| Template | Disparo | Destino |
+|---|---|---|
+| `cliente_seleccion_horario_v1` | POST /api/solicitar | Cliente |
+| `recordatorio_horario_v1` | Cron 24h post-creación si no confirmó | Cliente |
+| `nueva_solicitud_v3` | notificarTecnicos (warranty) | Técnicos compatibles |
+| `solicitud_particular_tecnico_v1` | notificarTecnicos (particular) | Técnicos compatibles |
+| `servicio_no_disponible_v3` | procesarAceptacion — perdedores | Técnicos perdedores |
+| `servicio_asignado_tecnico_v3` | procesarAceptacion — ganador | Técnico ganador |
+| `tecnico_asignado_cliente_v5` | procesarAceptacion (warranty) | Cliente |
+| `tecnico_asignado_particular_v1` | procesarAceptacion (particular) | Cliente |
+| `solicitud_particular_cliente_v1` | (legacy — verificar uso) | Cliente |
+| `registro_bienvenida_v3` | notificarRegistroTecnico | Técnico recién registrado |
+
+### Post-diagnóstico
+| Template | Disparo | Destino |
+|---|---|---|
+| `verificar_siguiente_paso_v1` | enviarVerificacionPasoCliente (warranty) | Cliente |
+| `cotizacion_cliente_v1` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
+| `cotizacion_aprobada_tecnico_v1` | notificarCotizacionAprobada | Técnico |
+| `esperando_repuesto_cliente_v1` | enviarEsperandoRepuestoCliente (post-aprobación cliente) | Cliente |
+| `repuesto_recibido_cliente_v1` | enviarRepuestoRecibidoCliente (admin marca recibido) | Cliente |
+| `finalizado_sin_reparacion_v1` | enviarFinalizadoSinReparacion (terminal) | Cliente |
+
+### Final
+| Template | Disparo | Destino |
+|---|---|---|
+| `confirmar_servicio_v3` | POST /api/completar-servicio | Cliente |
+
+### Texto libre (no plantilla)
+- Aceptación/rechazo de paso post-verificación → texto al técnico ("Cliente APROBÓ"/"Cliente RECHAZÓ")
+- Cancelación cliente → texto al cliente y al técnico
+- Reagendamiento cliente → texto al cliente y al técnico
+- Cotización rechazada → texto al técnico
+
+⚠️ Todos los textos libres requieren ventana 24h del destinatario. Implementación es best-effort con `.catch(console.error)`.
+
+---
+
+## Estados terminales y continuidad de comunicación
+
+| Estado terminal | Cómo llega aquí | ¿Cliente recibe WhatsApp final? | ¿Resuelto? |
+|---|---|---|---|
+| `completada` | Cliente confirma satisfecho post-completación | ✅ in-app success page | ✅ |
+| `en_disputa` | Cliente reporta problema o rechaza paso | ✅ in-app success page; admin contacta manualmente | ⚠️ depende de admin |
+| `cancelada` | Cliente cancela desde /servicio | ✅ texto libre best-effort + in-app | ✅ |
+| `cancelada_cliente` | Cliente aprueba "negativa_cliente" en verificar-paso | ✅ texto libre best-effort | ✅ |
+| `finalizado_sin_reparacion` | Cliente aprueba "no_reparable" en verificar-paso | ✅ `finalizado_sin_reparacion_v1` (plantilla) | ✅ |
+| `cotizacion_rechazada` | Cliente rechaza en /cotizacion | ⚠️ Solo in-app — **NO recibe plantilla final** | gap menor |
+| `sin_agendar` | Timeout 36h sin confirmar horario | ⚠️ NO se envía nada — **gap mayor** | ❌ |
+
+---
+
+## Gaps conocidos
+
+### 🔴 Mayor — afectan UX
+
+1. **`sin_agendar` sin notificación final.** Cliente queda colgado pensando que el horario sigue abierto. **Fix**: plantilla `solicitud_expirada_v1` con botón a `/solicitar` para crear nueva.
+
+2. **Fotos del técnico (24h window).** Las imágenes free-form a veces fallan. **Mitigación actual**: portal `/servicio/{cliente_token}` con las fotos. **Fix durable**: nueva plantilla `tecnico_asignado_cliente_v6` con `HEADER` tipo `IMAGE` (requiere aprobación Meta 1-3 días).
+
+### 🟡 Menores — bajo impacto pero conviene cerrar
+
+3. **`cotizacion_rechazada` sin plantilla final al cliente.** El cliente recibe solo confirmación in-app. **Fix**: plantilla `cotizacion_rechazada_cliente_v1` confirmando que el rechazo se registró.
+
+4. **Aprobación de paso post-verificación usa textos libres.** Funciona pero depende de 24h. **Fix**: plantilla `paso_aprobado_cliente_v1` (genérica).
+
+5. **`/api/aprobar-cotizacion` race condition.** Hace dos UPDATEs separados (`cotizacion_aprobada` → `en_proceso`) sin guard atómico. **Fix**: agregar `.eq('estado', 'cotizacion_enviada')` al primer UPDATE o consolidar en uno solo.
+
+6. **JSONB filter antipattern en `/api/aprobar-cotizacion` y `/cotizacion/[token]`.** Cargan toda la tabla y filtran por `cotizacion.token` en JS. **Fix**: columna generada `cotizacion_token` con índice único (ver `supabase/migrations/README.md` sección "M-NEXT-C").
+
+### 🟢 Documentadas pero no urgentes
+
+7. **`/servicio/{cliente_token}` no se envía proactivamente al cliente** — accede vía URL guardada, copiada por admin, o futura plantilla `gestionar_servicio_v1`.
+
+8. **No hay reminder pre-visita** — entre confirmación de horario y aceptación del técnico no hay mensaje intermedio. Si la solicitud queda largo tiempo en `notificada` (sin técnico), el cliente puede perder visibilidad.
+
+9. **Auth de admin API routes.** Las rutas en `/api/cotizacion-precios`, `/api/repuesto-recibido`, etc. no validan sesión Supabase Auth — confían en que solo el sidebar admin las invoca. Cualquiera con la URL puede pegarles.
+
+---
+
+## Para validar end-to-end (testing manual)
+
+Workflow recomendado para QA con `BAIRD_TEST_PHONE_WHITELIST=57<tu-celular>`:
+
+1. **Crear solicitud particular** desde /solicitar con tu teléfono.
+2. Recibir `cliente_seleccion_horario_v1`. Click → /horario/{token}.
+3. Elegir horario, aceptar T&C, confirmar.
+4. (Como técnico) Recibir `solicitud_particular_tecnico_v1`. Click Aceptar.
+5. Recibir `tecnico_asignado_particular_v1` + intentar fotos (probable que fallen).
+6. Abrir `/servicio/{cliente_token}` desde admin/solicitudes/[id]. Verificar que las fotos del técnico SE MUESTRAN ahí.
+7. (Como técnico) Abrir /tecnico/{portal_token}/diagnostico/{id}. Llenar diagnóstico, agregar productos necesarios + recomendados. Submit.
+8. Verificar que aparece en `/admin/cotizaciones-pendientes`. Fijar precios y tiempo.
+9. Recibir `cotizacion_cliente_v1` con desglose. Click → /cotizacion/{token}.
+10. Aprobar la cotización. Verificar que el técnico recibe `cotizacion_aprobada_tecnico_v1`.
+11. (Como técnico) Completar servicio en /tecnico/{token}/completar/{id}.
+12. Recibir `confirmar_servicio_v3`. Click → /confirmar/{token}. Calificar 10/10.
+
+Para garantía: igual pero `/admin/carga-masiva` o /solicitar con `es_garantia=true`. En el paso 8 admin solo fija tiempo (precio = 0). En paso 9 cliente recibe `verificar_siguiente_paso_v1` (no cotización).
+
+Para self-service: en cualquier paso 2-9, abrir `/servicio/{cliente_token}` y cancelar/reagendar. Verificar que las notifs activas a técnicos se invalidan y que el técnico asignado (si hay) recibe el aviso.

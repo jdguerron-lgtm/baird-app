@@ -1,7 +1,11 @@
-# Flujos de Usuario — Baird Service
+# Flujos de Usuario — Baird Service (DEPRECATED)
 
-> Documentacion de los flujos completos de la plataforma.
-> Ultima actualizacion: 2026-03-31
+> ⚠️ **DOCUMENTO OBSOLETO** — última actualización 2026-03-31, anterior al
+> rediseño customer-first scheduling (v2 abril 2026), customer self-service
+> (v1 mayo 2026), y admin pricing gate (v1 mayo 2026).
+>
+> **Usar `docs/FLOWS.md`** como referencia actual. Este archivo se conserva
+> solo como histórico — no actualizar.
 
 ---
 

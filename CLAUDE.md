@@ -94,6 +94,13 @@ legal/                          # Legal documents (Baird Service SAS)
 └── 08-acuerdo-nivel-servicio-tecnicos.docx
 ```
 
+## Documentación de referencia
+
+- **`docs/FLOWS.md`** — Flujos end-to-end completos (warranty + particular + side flows), todas las plantillas WhatsApp en contexto, puntos de decisión del cliente verificados línea-por-línea, gaps conocidos, plan de testing manual.
+- **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de TODAS las plantillas con parámetros + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en su lugar canónico (`scripts/upload-templates.mjs` + este doc) → (3) subir a Meta para aprobación. **Léelo antes de tocar cualquier mensaje WhatsApp**.
+- **`supabase/migrations/README.md`** — Orden de aplicación, verificación SQL, hallazgos del audit + backlog de migraciones.
+- **`docs/FLUJOS-USUARIO.md`** — DEPRECATED (state machine v1, marzo 2026). No actualizar; usar `FLOWS.md` en su lugar.
+
 ## How the Two Flows Work
 
 The entire platform splits into two flows based on the `es_garantia` boolean field on each `solicitud_servicio`. This field is set at creation time and never changes. Every service function checks this field to decide which path to follow.
@@ -456,6 +463,10 @@ BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. 
 ## WhatsApp Templates (Approved - Meta Business)
 
 All templates use language `es` (Spanish). Phone: +57 313 4951164 (WABA ID: 2354953275016882).
+
+> 📋 **Documento canónico**: `docs/WHATSAPP_TEMPLATES.md` lista todas las plantillas con sus parámetros y el **proceso obligatorio para crear/modificar**: (1) revisar dónde está documentada → (2) actualizarla en `scripts/upload-templates.mjs` + el doc → (3) subir a Meta vía script y esperar aprobación. **Antes de tocar cualquier mensaje, lee ese archivo.**
+>
+> La tabla resumen abajo es solo referencia rápida.
 
 ### Customer-first scheduling (NEW v2 2026-04-27)
 | Template | Used In | Parameters | Purpose |
