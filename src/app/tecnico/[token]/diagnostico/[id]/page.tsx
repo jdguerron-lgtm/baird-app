@@ -624,6 +624,7 @@ export default function DiagnosticoPage() {
           productos={productosNecesarios}
           onChange={setProductosNecesarios}
           marcaEquipo={servicio!.marca_equipo}
+          modeloEquipo={modeloEquipo}
         />
 
         {/* Productos recomendados (limpiadores, accesorios — opcional) */}

@@ -6,13 +6,22 @@ interface Props {
   productos: ProductoNecesario[]
   onChange: (productos: ProductoNecesario[]) => void
   marcaEquipo?: string
+  /** Modelo del equipo (extraído de novedades_equipo). Si se pasa, el link
+   * Serviplus se pre-rellena con ?p={modelo} para ir directo al despiece. */
+  modeloEquipo?: string | null
 }
 
 const MARCAS_SERVIPLUS = ['mabe', 'ge', 'general electric', 'centrales']
-const URL_SERVIPLUS = 'https://visualizador.serviplus.com.mx/index.html'
+const SERVIPLUS_BASE = 'https://visualizador.serviplus.com.mx/consultas/visualmdlo.html'
 
-export default function ProductosNecesariosForm({ productos, onChange, marcaEquipo }: Props) {
+function urlServiplus(modelo?: string | null): string {
+  const m = modelo?.trim()
+  return m ? `${SERVIPLUS_BASE}?p=${encodeURIComponent(m)}` : SERVIPLUS_BASE
+}
+
+export default function ProductosNecesariosForm({ productos, onChange, marcaEquipo, modeloEquipo }: Props) {
   const esMarcaServiplus = !!marcaEquipo && MARCAS_SERVIPLUS.some(m => marcaEquipo.toLowerCase().includes(m))
+  const linkServiplus = urlServiplus(modeloEquipo)
 
   const agregar = () => {
     onChange([...productos, { sku: '', descripcion: '', cantidad: 1 }])
@@ -32,12 +41,13 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
         <h2 className="text-lg font-bold text-slate-900">Productos necesarios</h2>
         {esMarcaServiplus && (
           <a
-            href={URL_SERVIPLUS}
+            href={linkServiplus}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs text-fuchsia-700 underline font-medium hover:text-fuchsia-900 shrink-0 ml-2"
+            title={modeloEquipo ? `Buscar despiece para modelo ${modeloEquipo}` : 'Buscar SKU en Serviplus'}
           >
-            🔍 Buscar SKU Serviplus ↗
+            🔍 {modeloEquipo ? `Buscar despiece ${modeloEquipo}` : 'Buscar SKU Serviplus'} ↗
           </a>
         )}
       </div>
