@@ -17,6 +17,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260507_admin_pricing_gate.sql`** | **PENDIENTE** | estado `pendiente_pricing` + repuestos_pendientes.tiempo_estimado nullable |
 | **`20260508_fix_cotizacion_column.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega columna faltante `cotizacion JSONB` en solicitudes_servicio (rompía POST /api/diagnostico no-garantía) |
 | **`20260508_fix_tecnicos_columns.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega `acepta_garantias` + `especialidad_principal` en tecnicos (rompía registro de técnicos). Incluye backfill desde especialidades_tecnico |
+| **`20260508_fix_completado_at_default.sql`** | **PENDIENTE — HOTFIX URGENTE** | Drop DEFAULT NOW() de evidencias_servicio.completado_at + backfill rows mal seteadas (rompía botón "Completar servicio" tras diagnóstico) |
 
 ## Cómo aplicar las pendientes
 
@@ -25,7 +26,8 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 3. Pega el contenido de `20260507_admin_pricing_gate.sql` y ejecuta.
 4. Pega el contenido de `20260508_fix_cotizacion_column.sql` y ejecuta. **(HOTFIX urgente — sin esto, todo diagnóstico no-garantía falla.)**
 5. Pega el contenido de `20260508_fix_tecnicos_columns.sql` y ejecuta. **(HOTFIX urgente — sin esto, el registro de técnicos falla.)**
-6. Corre la verificación de abajo.
+6. Pega el contenido de `20260508_fix_completado_at_default.sql` y ejecuta. **(HOTFIX urgente — sin esto, el técnico no puede completar servicios tras hacer diagnóstico.)**
+7. Corre la verificación de abajo.
 
 > **Importante**: el orden importa. `20260507` espera la columna y constraint reagendados por `20260506`.
 
@@ -87,6 +89,27 @@ SELECT
 FROM information_schema.columns
 WHERE table_name = 'tecnicos'
   AND column_name IN ('acepta_garantias', 'especialidad_principal');
+
+-- 9. completado_at YA NO tiene DEFAULT NOW() (HOTFIX 20260508)
+SELECT
+  CASE WHEN column_default IS NULL THEN 'OK ✅'
+       ELSE 'FALTA ❌ default todavía es: ' || column_default END AS check_completado_at_default
+FROM information_schema.columns
+WHERE table_name = 'evidencias_servicio' AND column_name = 'completado_at';
+
+-- 10. Backfill de completado_at: filas activas no deben tener completado_at
+SELECT
+  CASE WHEN COUNT(*) = 0 THEN 'OK ✅'
+       ELSE 'INVESTIGAR: ' || COUNT(*)::text || ' filas activas con completado_at seteado' END
+       AS check_completado_at_backfill
+FROM evidencias_servicio e
+JOIN solicitudes_servicio s ON s.id = e.solicitud_id
+WHERE e.completado_at IS NOT NULL
+  AND e.firma_url IS NULL
+  AND (e.fotos IS NULL OR array_length(e.fotos, 1) IS NULL)
+  AND s.estado IN ('asignada','diagnostico_pendiente','pendiente_pricing',
+                   'verificacion_pendiente','cotizacion_enviada','cotizacion_aprobada',
+                   'esperando_repuesto','reagendamiento_pendiente','en_proceso');
 ```
 
 Si alguna fila vuelve `FALTA ❌`, vuelve a ejecutar la migración correspondiente — son idempotentes.

@@ -116,6 +116,13 @@ export async function POST(req: NextRequest) {
         .update({ oath_firma: oathFirma, oath_firmado_at: oathFirmadoAt })
         .eq('id', evExistente.id)
     } else {
+      // IMPORTANTE: completado_at: null explícito.
+      // El schema original (20260327) define la columna con DEFAULT NOW(),
+      // así que omitirlo hace que Postgres la setee al insertar — y entonces
+      // el portal del técnico marcaría el servicio como "ya completado"
+      // antes de que el técnico haga la completación real. La migración
+      // 20260508_fix_completado_at_default.sql elimina el default; este
+      // explícito es defensa adicional por si la migración no se aplicó.
       await supabase
         .from('evidencias_servicio')
         .insert({
@@ -126,6 +133,7 @@ export async function POST(req: NextRequest) {
           confirmacion_token: crypto.randomUUID(),
           fotos: [],
           checklist: {},
+          completado_at: null,
         })
     }
 
