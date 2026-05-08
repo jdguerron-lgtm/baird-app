@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 
 interface Props {
   token: string
@@ -15,6 +16,7 @@ interface Props {
   repuestoDescripcion: string | null
   yaResuelto: boolean
   decisionPrevia: 'aprobado' | 'rechazado' | null
+  clienteToken?: string | null
 }
 
 const ICONOS: Record<string, string> = {
@@ -34,7 +36,7 @@ const TITULOS: Record<string, string> = {
 export default function VerificarPasoView({
   token, cliente, equipo, tecnico, diagnostico,
   siguientePaso, accion, repuestoSku, repuestoDescripcion,
-  yaResuelto, decisionPrevia,
+  yaResuelto, decisionPrevia, clienteToken,
 }: Props) {
   const [mostrandoRechazo, setMostrandoRechazo] = useState(false)
   const [comentarioRechazo, setComentarioRechazo] = useState('')
@@ -51,16 +53,19 @@ export default function VerificarPasoView({
     const aprobado = dec === 'aprobado'
     return (
       <main className="min-h-screen bg-gray-50 px-4 py-12">
-        <div className="mx-auto max-w-md rounded-2xl bg-white p-8 shadow-lg text-center">
-          <div className="text-5xl mb-4">{aprobado ? '✅' : '⚠️'}</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            {aprobado ? 'Aprobado' : 'Rechazado'}
-          </h1>
-          <p className="text-gray-600">
-            {aprobado
-              ? `Aprobaste la acción "${titulo.toLowerCase()}". El técnico fue notificado y procederá según lo acordado.`
-              : 'Registramos tu rechazo. La solicitud quedó en disputa — el equipo de Baird Service se pondrá en contacto contigo pronto.'}
-          </p>
+        <div className="mx-auto max-w-md">
+          <div className="rounded-2xl bg-white p-8 shadow-lg text-center">
+            <div className="text-5xl mb-4">{aprobado ? '✅' : '⚠️'}</div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              {aprobado ? 'Aprobado' : 'Rechazado'}
+            </h1>
+            <p className="text-gray-600">
+              {aprobado
+                ? `Aprobaste la acción "${titulo.toLowerCase()}". El técnico fue notificado y procederá según lo acordado.`
+                : 'Registramos tu rechazo. La solicitud quedó en disputa — el equipo de Baird Service se pondrá en contacto contigo pronto.'}
+            </p>
+          </div>
+          <GestionarServicioLink clienteToken={clienteToken} />
         </div>
       </main>
     )
@@ -198,6 +203,8 @@ export default function VerificarPasoView({
             </>
           )}
         </div>
+
+        <GestionarServicioLink clienteToken={clienteToken} />
       </div>
     </main>
   )

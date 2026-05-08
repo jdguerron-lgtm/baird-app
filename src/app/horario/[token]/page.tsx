@@ -28,7 +28,8 @@ export default async function ConfirmarHorarioPage({ params }: Props) {
       horario_confirmado,
       horario_confirmado_at,
       estado,
-      es_garantia
+      es_garantia,
+      cliente_token
     `)
     .eq('horario_token', token)
     .single()

@@ -24,7 +24,8 @@ export default async function VerificarPasoPage({ params }: Props) {
       verificacion_paso_decision,
       verificacion_paso_at,
       tecnico_asignado_id,
-      triaje_resultado
+      triaje_resultado,
+      cliente_token
     `)
     .eq('verificacion_paso_token', token)
     .single()
@@ -67,6 +68,7 @@ export default async function VerificarPasoPage({ params }: Props) {
       repuestoDescripcion={repuesto?.descripcion ?? null}
       yaResuelto={!!sol.verificacion_paso_decision}
       decisionPrevia={sol.verificacion_paso_decision as 'aprobado' | 'rechazado' | null}
+      clienteToken={sol.cliente_token}
     />
   )
 }

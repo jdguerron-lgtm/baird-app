@@ -511,8 +511,19 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 | API | `POST /api/confirmar-servicio` |
 | Acción | Cliente confirma satisfecho (rating 1-10) o reporta problema |
 
-### 5. Self-service permanente
-Botón implícito (URL): `/servicio/{cliente_token}`. No hay plantilla dedicada hoy — cliente accede vía URL guardada o admin se la pasa. **Pendiente**: agregar plantilla `gestionar_servicio_v1` cuando Meta apruebe.
+### 5. Self-service permanente — visible en cada webview
+URL: `/servicio/{cliente_token}`. Desde 2026-05-08 el componente `<GestionarServicioLink>` (en `src/components/ui/GestionarServicioLink.tsx`) se renderiza en todos los webviews del cliente:
+
+| Webview | Cuándo lo ve el cliente |
+|---|---|
+| `/horario/{horario_token}` | Al elegir horario y al ver "horario confirmado" |
+| `/verificar-paso/{verificacion_paso_token}` | Al aprobar/rechazar siguiente paso (warranty) |
+| `/cotizacion/{cotizacion.token}` | Al aprobar/rechazar cotización (particular) |
+| `/servicio/{cliente_token}` | Es el portal mismo |
+
+El componente muestra el copy: *"¿Necesitas cancelar o cambiar la fecha? Aplica para servicios en garantía y servicios particulares. Hasta 4 horas antes del horario podés cancelar sin costo, y reagendar hasta 2 veces."* + link al portal.
+
+**Pendiente**: agregar plantilla `gestionar_servicio_v1` cuando Meta apruebe, para que el link viaje también vía WhatsApp y el cliente pueda llegar al portal sin haber abierto otro webview primero.
 
 ---
 

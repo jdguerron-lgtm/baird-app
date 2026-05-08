@@ -117,6 +117,7 @@ export default function PortalTecnicoPage() {
   const activos = servicios.filter(s => [
     'asignada',
     'diagnostico_pendiente',
+    'pendiente_pricing',
     'cotizacion_enviada',
     'cotizacion_aprobada',
     'esperando_repuesto',
@@ -231,7 +232,8 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
   const needsDiagnostic = s.estado === 'asignada' || s.estado === 'diagnostico_pendiente'
   const canComplete = (s.estado === 'en_proceso' || s.estado === 'cotizacion_aprobada') && !s.tiene_evidencia
   const esperaInfo: string | null =
-    s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
+    s.estado === 'pendiente_pricing' ? 'Baird está fijando precio y tiempo de entrega'
+    : s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
     : s.estado === 'esperando_repuesto' ? 'Esperando llegada del repuesto'
     : s.estado === 'verificacion_pendiente' ? 'Cliente verificando siguiente paso'
     : s.estado === 'reagendamiento_pendiente' ? 'Cliente reagendando'

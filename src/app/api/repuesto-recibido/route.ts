@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarRepuestoRecibidoCliente } from '@/lib/services/whatsapp.service'
+import {
+  enviarRepuestoRecibidoCliente,
+  enviarMensajeTexto,
+} from '@/lib/services/whatsapp.service'
 
 /**
  * POST /api/repuesto-recibido
@@ -50,16 +53,49 @@ export async function POST(req: NextRequest) {
     const todosRecibidos = !pendientes || pendientes.length === 0
 
     if (todosRecibidos) {
-      await supabase
+      // Atomic transition: solo cambia si seguía en esperando_repuesto.
+      // Evita carrera si admin marca dos repuestos casi al mismo tiempo o
+      // si cliente cancela mientras admin recibe.
+      const { data: updated } = await supabase
         .from('solicitudes_servicio')
         .update({ estado: 'en_proceso' })
         .eq('id', repuesto.solicitud_id)
         .eq('estado', 'esperando_repuesto')
+        .select('id, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+        .single()
 
-      // Notificar al cliente
+      // Notificar al cliente (plantilla — funciona aunque ventana 24h cerrada)
       await enviarRepuestoRecibidoCliente(repuesto.solicitud_id).catch(err => {
-        console.error('Error notificando cliente:', err)
+        console.error('[repuesto-recibido] Error notificando cliente:', err)
       })
+
+      // Notificar al técnico asignado (texto libre — el técnico suele tener
+      // ventana 24h abierta porque interactuó al aceptar y al diagnosticar).
+      // Esto es la señal para que el técnico vuelva al portal y complete el
+      // servicio: el estado ya es en_proceso, así que el botón "Completar
+      // servicio" estará visible al abrir /tecnico/{portal_token}.
+      if (updated?.tecnico_asignado_id) {
+        const { data: tec } = await supabase
+          .from('tecnicos')
+          .select('nombre_completo, whatsapp, portal_token')
+          .eq('id', updated.tecnico_asignado_id)
+          .single()
+
+        if (tec?.whatsapp) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
+          const nombreTec = tec.nombre_completo.split(' ')[0]
+          const equipo = `${updated.tipo_equipo} ${updated.marca_equipo}`
+          const portalUrl = tec.portal_token
+            ? `${appUrl}/tecnico/${tec.portal_token}`
+            : ''
+          const linkLine = portalUrl ? `\n\nAbre tu portal: ${portalUrl}` : ''
+
+          await enviarMensajeTexto(
+            tec.whatsapp,
+            `📦 Hola ${nombreTec}, los repuestos ya llegaron para el servicio de ${equipo} (${updated.cliente_nombre}). El servicio está en *en_proceso*: ya puedes coordinar la visita y completar la reparación.${linkLine}\n\n— Baird Service`,
+          ).catch(err => console.error('[repuesto-recibido] Error notificando técnico:', err))
+        }
+      }
     }
 
     return NextResponse.json({ success: true, todos_recibidos: todosRecibidos })

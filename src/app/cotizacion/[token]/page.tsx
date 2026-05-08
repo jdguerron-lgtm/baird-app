@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
+import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 
 interface ProductoNecesario {
   sku: string
@@ -25,6 +26,7 @@ interface DatosCotizacion {
     marca_equipo: string
     cliente_nombre: string
     novedades_equipo: string
+    cliente_token: string | null
   }
   tecnico: {
     nombre_completo: string
@@ -58,7 +60,7 @@ export default function CotizacionPage() {
       // Find solicitud by cotizacion token (search all cotizacion_enviada)
       const { data: solicitudes } = await supabase
         .from('solicitudes_servicio')
-        .select('id, tipo_equipo, marca_equipo, cliente_nombre, novedades_equipo, estado, cotizacion, tecnico_asignado_id')
+        .select('id, tipo_equipo, marca_equipo, cliente_nombre, novedades_equipo, estado, cotizacion, tecnico_asignado_id, cliente_token')
         .in('estado', ['cotizacion_enviada', 'cotizacion_aprobada', 'cotizacion_rechazada', 'en_proceso'])
 
       const sol = solicitudes?.find(s => {
@@ -104,6 +106,7 @@ export default function CotizacionPage() {
           marca_equipo: sol.marca_equipo,
           cliente_nombre: sol.cliente_nombre,
           novedades_equipo: sol.novedades_equipo,
+          cliente_token: sol.cliente_token ?? null,
         },
         tecnico: tec,
         cotizacion: sol.cotizacion as DatosCotizacion['cotizacion'],
@@ -404,6 +407,9 @@ export default function CotizacionPage() {
             </div>
           </div>
         )}
+
+        {/* Self-service portal link — cancelar o reagendar fuera de este flujo */}
+        <GestionarServicioLink clienteToken={solicitud.cliente_token} />
 
         {/* Footer */}
         <p className="text-center text-xs text-gray-400 pb-4">

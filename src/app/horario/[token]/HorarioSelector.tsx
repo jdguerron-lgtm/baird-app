@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
+import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 
 interface SolicitudData {
   id: string
@@ -16,6 +17,7 @@ interface SolicitudData {
   horario_confirmado_at: string | null
   estado: string | null
   es_garantia: boolean
+  cliente_token: string | null
 }
 
 interface Props {
@@ -101,15 +103,18 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
 
     return (
       <main className="min-h-screen bg-gray-50 px-4 py-12">
-        <div className="mx-auto max-w-md rounded-2xl bg-white p-8 shadow-lg text-center">
-          <div className="text-5xl mb-4">✅</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Horario confirmado</h1>
-          <p className="text-gray-600 mb-2">Hola {cliente}, agendamos tu servicio para:</p>
-          <p className="text-lg font-semibold text-gray-900 mb-6">🕐 {horarioSeleccionado}</p>
-          <p className="text-sm text-gray-600">
-            Estamos buscando un técnico verificado en {solicitud.ciudad_pueblo}.
-            Te avisaremos por WhatsApp cuando uno acepte tu servicio. 🔧
-          </p>
+        <div className="mx-auto max-w-md">
+          <div className="rounded-2xl bg-white p-8 shadow-lg text-center">
+            <div className="text-5xl mb-4">✅</div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Horario confirmado</h1>
+            <p className="text-gray-600 mb-2">Hola {cliente}, agendamos tu servicio para:</p>
+            <p className="text-lg font-semibold text-gray-900 mb-6">🕐 {horarioSeleccionado}</p>
+            <p className="text-sm text-gray-600">
+              Estamos buscando un técnico verificado en {solicitud.ciudad_pueblo}.
+              Te avisaremos por WhatsApp cuando uno acepte tu servicio. 🔧
+            </p>
+          </div>
+          <GestionarServicioLink clienteToken={solicitud.cliente_token} />
         </div>
       </main>
     )
@@ -311,6 +316,8 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
             {enviando ? 'Confirmando...' : '✅ Confirmar horario y agendar'}
           </button>
         </div>
+
+        <GestionarServicioLink clienteToken={solicitud.cliente_token} />
       </div>
     </main>
   )
