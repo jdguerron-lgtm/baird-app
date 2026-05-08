@@ -19,6 +19,15 @@ import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    console.log('[diagnostico] POST', {
+      solicitudId: body.solicitudId,
+      es_garantia_hint: body.codigoComplejidad ? 'warranty' : 'particular',
+      siguientePaso: body.siguientePaso,
+      productos_necesarios_count: Array.isArray(body.productosNecesarios) ? body.productosNecesarios.length : 0,
+      productos_recomendados_count: Array.isArray(body.productosRecomendados) ? body.productosRecomendados.length : 0,
+      evidencia_urls_count: Array.isArray(body.evidenciaUrls) ? body.evidenciaUrls.length : 0,
+      tiene_oath: !!body.oathFirma,
+    })
     const {
       solicitudId,
       portalToken,
@@ -188,7 +197,13 @@ export async function POST(req: NextRequest) {
           verificacion_paso_token: verificacionToken,
         })
         .eq('id', sol.id)
-      if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      if (updateErr) {
+        console.error('[diagnostico] UPDATE solicitudes_servicio falló:', updateErr)
+        const hint = updateErr.message?.includes('estado_check')
+          ? ' (sugerencia: aplicar migración 20260507_admin_pricing_gate.sql en Supabase)'
+          : ''
+        return NextResponse.json({ error: updateErr.message + hint }, { status: 500 })
+      }
 
       // Insertar repuestos pendientes (sin costo ni tiempo — admin los fija)
       if (siguientePaso === 'esperar_repuesto' && necesarios.length > 0) {
@@ -259,7 +274,13 @@ export async function POST(req: NextRequest) {
           siguiente_paso_at: new Date().toISOString(),
         })
         .eq('id', sol.id)
-      if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      if (updateErr) {
+        console.error('[diagnostico] UPDATE solicitudes_servicio falló:', updateErr)
+        const hint = updateErr.message?.includes('estado_check')
+          ? ' (sugerencia: aplicar migración 20260507_admin_pricing_gate.sql en Supabase)'
+          : ''
+        return NextResponse.json({ error: updateErr.message + hint }, { status: 500 })
+      }
 
       // Insertar repuestos pendientes (sin costo — admin lo fija al cotizar)
       if (necesarios.length > 0) {

@@ -736,15 +736,34 @@ export default function DiagnosticoPage() {
           )}
         </button>
 
-        {!canSubmit && !enviando && (
-          <p className="text-center text-xs text-gray-400 -mt-4 mb-8">
-            {!diagnosticoTexto || diagnosticoTexto.length < 10
-              ? 'Describe el problema encontrado'
+        {!canSubmit && !enviando && (() => {
+          // Cover ALL validation conditions in canSubmit + show first failing
+          const motivo =
+            !diagnosticoTexto || diagnosticoTexto.length < 10
+              ? 'Describe el problema encontrado (mínimo 10 caracteres)'
               : !complejidad
                 ? 'Selecciona el nivel de complejidad'
-                : 'Adjunta al menos una foto o video del fallo'}
-          </p>
-        )}
+                : evidencias.length === 0
+                  ? 'Adjunta al menos una foto o video del fallo'
+                  : !oathFirma
+                    ? 'Firma la declaración bajo juramento (botón al inicio)'
+                    : !siguientePaso
+                      ? 'Elige el siguiente paso (4 opciones)'
+                      : siguientePaso.paso === 'esperar_repuesto' && productosNecesarios.length === 0
+                        ? 'Agrega al menos un repuesto con SKU en la sección "Productos necesarios"'
+                        : !productosCompletos
+                          ? 'Completa SKU, descripción y cantidad en cada repuesto'
+                          : !recomendadosCompletos
+                            ? 'Cada recomendación debe tener nombre'
+                            : (siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !siguientePaso.detalle?.trim()
+                              ? 'Describe el motivo del cierre del servicio'
+                              : 'Faltan datos por completar'
+          return (
+            <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 -mt-4 mb-8">
+              ⚠️ {motivo}
+            </p>
+          )
+        })()}
       </div>
     </div>
   )
