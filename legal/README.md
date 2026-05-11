@@ -116,6 +116,22 @@ Los siguientes campos deben completarse antes de uso final:
 5. Implementar proceso de consentimiento para datos personales
 6. Documentar cumplimiento en auditorías internas
 
+## Cambios pendientes para sincronizar con `.docx`
+
+La página pública [`/terminos`](../src/app/terminos/page.tsx) avanza más rápido que estos documentos `.docx`. Cuando regenere los `.docx`, asegúrese de que reflejen estos cambios:
+
+- **Versión vigente: 2026.05.10** (constante `TYC_VERSION` en `src/types/solicitud.ts`).
+- **Nueva sección 8 "Visita programada y compromiso de presencia"** — cláusula informativa de no-show:
+  - Compromiso de presencia del cliente en la franja horaria.
+  - Cancelación o reagendamiento sin costo hasta 4 horas antes.
+  - Si el cliente no está y no canceló a tiempo: el servicio se cierra y debe solicitarse de nuevo. **No hay penalidad económica** — pero ni MABE, ni Baird, ni el cliente cubren el costo del desplazamiento del técnico.
+  - 2 inasistencias → confirmación obligatoria por llamada en futuras solicitudes.
+  - 3+ inasistencias → suspensión del acceso a la plataforma.
+  - Excepciones: emergencia médica, fuerza mayor declarada por autoridad, error del técnico/Baird (dirección errónea, llegada fuera de franja).
+- **Renumeración**: las secciones 8-14 anteriores ahora son 9-15.
+
+Para el detalle del protocolo operativo de no-show (lado técnico, evidencia obligatoria, etc.) ver [`docs/PROTOCOLO-VISITA.md`](../docs/PROTOCOLO-VISITA.md).
+
 ---
 
 Generado mediante script Node.js con librería `docx` el 13 de abril de 2026.

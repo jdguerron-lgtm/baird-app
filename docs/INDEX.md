@@ -5,7 +5,7 @@
 > que corresponde y abre el doc específico**. Esto evita drift y
 > duplicación.
 >
-> **Última revisión: 2026-05-08.**
+> **Última revisión: 2026-05-10.**
 
 ---
 
@@ -14,6 +14,9 @@
 | Tu objetivo | Doc a leer | Sección |
 |---|---|---|
 | **Entender los flujos completos** (warranty, particular, side flows) | `docs/FLOWS.md` | Todo |
+| **Cambiar una tarifa, bono, margen, fórmula de pago** | `docs/TARIFAS.md` | "Cómo cambiar una tarifa" |
+| **Calcular cuánto paga el cliente / recibe el técnico / margen Baird** | `docs/TARIFAS.md` | "Garantía MABE" o "Particular" |
+| **Implementar verificación T-24h / no-show** | `docs/PROTOCOLO-VISITA.md` | Todo |
 | **Cambiar un mensaje de WhatsApp** (texto, params, plantilla) | `docs/WHATSAPP_TEMPLATES.md` | "Proceso obligatorio para crear o modificar una plantilla" + catálogo |
 | **Agregar un estado nuevo** a la state machine | `CLAUDE.md` § "Solicitud State Machine" + `supabase/migrations/README.md` ("Cómo aplicar las pendientes") |
 | **Aplicar migración Supabase** | `supabase/migrations/README.md` | "Cómo aplicar las pendientes" |
@@ -34,6 +37,8 @@
 | Doc | Para qué sirve | Cuándo lo lees | Cuándo lo actualizas |
 |---|---|---|---|
 | **`CLAUDE.md`** (raíz) | Contexto general del proyecto. Auto-cargado por Claude Code en cada sesión. Resumen de arquitectura, conventions, env vars, gotchas. | Siempre primero. | Cuando agregas un nuevo flujo, env var, gotcha, sección de admin, o convención. |
+| **`docs/TARIFAS.md`** | Doc canónico de tarifas. MABE garantía (Tipo D + bonos + weekend + margen 22%) y particular multi-marca (× 1.19 IVA × 1.10 margen Baird). Apéndices: marco tributario 2026, pasarelas, decisión reseller vs marketplace. | Antes de tocar cualquier cálculo de pago, agregar bono/recargo, o cambiar margen. | Tras cambiar una tarifa, modificar el modelo de margen, agregar marca nueva al flujo garantía, o cambiar IVA por reforma DIAN. |
+| **`docs/PROTOCOLO-VISITA.md`** | Verificación T-24h / T-2h / llegada / no-show. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
 | **`docs/FLOWS.md`** | Diagramas paso-a-paso de cada flujo end-to-end con cada plantilla WhatsApp en su contexto, puntos de decisión del cliente, gaps conocidos, plan de testing manual. | Cuando vas a tocar el state machine, agregar una página customer-facing, o entender dónde se manda qué WhatsApp. | Tras cambiar el state machine, agregar/cambiar una plantilla en el flujo, o mover un disparo de WhatsApp. |
 | **`docs/WHATSAPP_TEMPLATES.md`** | Catálogo de las 16 plantillas Meta, parámetros, disparo, copy completo. **Define el proceso obligatorio de cambio de plantilla.** Backlog de plantillas nuevas con JSON listo. | Antes de tocar cualquier mensaje WhatsApp. | Tras cambiar params de una plantilla, agregar una nueva, o subirla a Meta. |
 | **`supabase/migrations/README.md`** | Lista ordenada de migraciones, status (aplicada/pendiente), hotfixes, verificación SQL post-apply, backlog de migraciones futuras. | Antes de aplicar una migración o cuando hay drift schema↔código. | Tras crear nueva migración o aplicar una. |
@@ -56,6 +61,16 @@
 ---
 
 ## 🔄 Pipeline de actualización (qué docs tocar cuando cambias algo)
+
+### Cambias una tarifa, bono, margen o fórmula de pago
+1. Editar el módulo correspondiente en `src/lib/constants/tarifas/`:
+   - MABE garantía → `tarifas/mabe.ts`
+   - Particular → `tarifas/particular.ts`
+2. `docs/TARIFAS.md` — actualizar la tabla y los ejemplos de "casos extremos"
+3. Si afecta cálculos persistidos: validar que `triaje_resultado` y `cotizacion` JSONB sigan compatibles con datos viejos
+4. Si cambia `MARGEN_BAIRD_*` o `IVA_TARIFA`: comunicar al equipo de operaciones
+5. `npm test` para confirmar
+6. Si agrega columna nueva (`cumple_ta`, `cumple_encuesta`, etc.): seguir pipeline "Agregas una nueva tabla / columna"
 
 ### Cambias un mensaje WhatsApp (texto, params)
 1. `scripts/upload-templates.mjs` — actualizar el JSON de la plantilla
@@ -138,7 +153,11 @@ Cuando busques referencias en código, estos son los identificadores estables:
 | `isPhoneAllowed` / `BAIRD_TEST_PHONE_WHITELIST` | Filtro de envíos en dev |
 | `ESTADOS_TERMINALES` / `ESTADOS_CANCELABLES_POR_CLIENTE` / `ESTADOS_REAGENDABLES_POR_CLIENTE` | Sets de estados con semántica |
 | `TIPO_A_ESPECIALIDAD` | Mapping tipo_equipo → especialidad técnico |
-| `calcularPagoTecnico` | Lógica de tarifa servicio |
+| `calcularPagoTecnico` | Lógica de tarifa servicio (legacy) |
+| `calcularTarifaMABE` | Cálculo completo garantía MABE Tipo D — tarifa + bono + weekend + margen Baird 22% |
+| `calcularTarifaParticular` | Cálculo completo particular — costo técnico × 1.19 IVA × 1.10 margen Baird |
+| `TARIFAS_MABE_TIPO_D` / `BONOS_CON_ENCUESTA` / `RECARGO_FIN_DE_SEMANA` | Constantes MABE |
+| `MARGEN_BAIRD_GARANTIA` / `MARGEN_BAIRD_PARTICULAR` | Constantes de margen |
 | `parseExcelData` | Mapeo BITÁCORA Excel → solicitud |
 
 ---
@@ -174,6 +193,7 @@ Verificación SQL post-migración: ver `supabase/migrations/README.md` § "Verif
   - `20260508_fix_cotizacion_column.sql` — agrega columna cotizacion JSONB faltante
   - `20260508_fix_tecnicos_columns.sql` — agrega acepta_garantias + especialidad_principal
   - `20260508_backfill_horario_token.sql` — backfill UUID a filas sin token
+  - `20260510_no_show_protocolo.sql` — estado no_show_cliente + columnas auditoría tarifas + tabla cliente_historial
 - **Plantillas Meta pendientes**: 9 plantillas en backlog (A-I + J en `docs/WHATSAPP_TEMPLATES.md`). Ninguna bloquea producción — son mejoras de comunicación.
 
 ---

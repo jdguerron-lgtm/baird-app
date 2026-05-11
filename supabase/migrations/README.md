@@ -23,6 +23,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260508_fix_cotizacion_column.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega columna faltante `cotizacion JSONB` en solicitudes_servicio (rompía POST /api/diagnostico no-garantía) |
 | **`20260508_fix_tecnicos_columns.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega `acepta_garantias` + `especialidad_principal` en tecnicos (rompía registro de técnicos). Incluye backfill desde especialidades_tecnico |
 | **`20260508_fix_completado_at_default.sql`** | **PENDIENTE — HOTFIX URGENTE** | Drop DEFAULT NOW() de evidencias_servicio.completado_at + backfill rows mal seteadas (rompía botón "Completar servicio" tras diagnóstico) |
+| **`20260510_no_show_protocolo.sql`** | **PENDIENTE** | Estado terminal `no_show_cliente`, columna `evidencia_no_show` JSONB, columnas auditoría de tarifa MABE (cumple_ta, cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado), tabla nueva `cliente_historial`, tipos extra en `solicitud_eventos`. Ver `docs/PROTOCOLO-VISITA.md` y `docs/TARIFAS.md` |
 
 ## Cómo aplicar las pendientes
 
@@ -32,9 +33,10 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 4. Pega el contenido de `20260508_fix_cotizacion_column.sql` y ejecuta. **(HOTFIX urgente — sin esto, todo diagnóstico no-garantía falla.)**
 5. Pega el contenido de `20260508_fix_tecnicos_columns.sql` y ejecuta. **(HOTFIX urgente — sin esto, el registro de técnicos falla.)**
 6. Pega el contenido de `20260508_fix_completado_at_default.sql` y ejecuta. **(HOTFIX urgente — sin esto, el técnico no puede completar servicios tras hacer diagnóstico.)**
-7. Corre la verificación de abajo.
+7. Pega el contenido de `20260510_no_show_protocolo.sql` y ejecuta. (No es hotfix urgente; sin esto, el protocolo de visita queda en modo manual y la auditoría detallada de tarifas no se persiste.)
+8. Corre la verificación de abajo.
 
-> **Importante**: el orden importa. `20260507` espera la columna y constraint reagendados por `20260506`.
+> **Importante**: el orden importa. `20260507` espera la columna y constraint reagendados por `20260506`. `20260510` extiende el CHECK constraint de `solicitud_eventos` y `solicitudes_servicio.estado` reemplazándolos completos — debe ir después de `20260507`.
 
 ## Verificación post-aplicación
 

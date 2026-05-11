@@ -102,6 +102,8 @@ legal/                          # Legal documents (Baird Service SAS)
 > (humanas o LLM) encuentren contexto sin duplicar.
 
 - **`docs/INDEX.md`** — **HUB DE NAVEGACIÓN.** Tabla de tareas comunes ↔ doc específico, mapa completo de docs, pipeline de actualización (qué docs tocar para cada tipo de cambio), tags útiles para grep, health check.
+- **`docs/TARIFAS.md`** — **Doc canónico de tarifas.** MABE garantía (Tipo D + bonos por días + encuesta + recargo weekend + margen Baird 22%) y particular multi-marca (técnico ingresa costo, sistema multiplica × 1.19 IVA × 1.10 margen Baird). Apéndices: marco tributario 2026, pasarelas split-payment, decisión reseller vs marketplace. **Léelo antes de tocar cualquier cálculo de pago**.
+- **`docs/PROTOCOLO-VISITA.md`** — Protocolo de verificación T-24h / T-2h / llegada / no-show. Modelo "no-show: nadie paga" con evidencia obligatoria. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes.
 - **`docs/FLOWS.md`** — Flujos end-to-end (warranty + particular + side flows), todas las plantillas WhatsApp en contexto, puntos de decisión del cliente verificados línea-por-línea, gaps conocidos, plan de testing manual.
 - **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de las 16 plantillas + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en `scripts/upload-templates.mjs` + este doc → (3) subir a Meta para aprobación. Backlog de plantillas nuevas con JSON listo. **Léelo antes de tocar cualquier mensaje WhatsApp**.
 - **`supabase/migrations/README.md`** — Orden de aplicación, verificación SQL, hallazgos del audit + backlog de migraciones.
@@ -224,52 +226,66 @@ All payments go through Baird Service. The customer NEVER pays the technician di
 
 **Non-warranty:** The customer pays Baird the quoted total (mano de obra + repuestos). The diagnostic fee ($80,000 COP) with 50% advance ($40,000 COP) is collected before the technician visits. These constants are in `src/types/solicitud.ts` as `TARIFA_DIAGNOSTICO` and `ANTICIPO_PORCENTAJE`.
 
-## Admin Pricing Gate (v1 2026-05-07)
+## Admin Pricing Gate (v2 2026-05-10) — solo Garantía + esperar_repuesto
 
-A partir del diagnóstico, el técnico **NO fija precios ni tiempo de entrega del repuesto**. Solo aporta diagnóstico, lista de **productos necesarios** (SKU + descripción + cantidad) y lista de **productos recomendados** (nombre + descripción, sin SKU obligatorio — limpiadores, accesorios). El equipo Baird (admin) revisa y completa precio/tiempo antes de notificar al cliente.
+A partir del 2026-05-10, el admin pricing gate aplica **solo** a un caso:
 
-**Por qué:** evita que el técnico fije precios ad-hoc y permite que Baird mantenga consistencia comercial.
+- **Garantía + `esperar_repuesto`**: el admin fija `tiempo_entrega` antes de notificar al cliente. El precio MABE ya está fijo por tarifario (Tipo D, ver `docs/TARIFAS.md`).
 
-**Estado nuevo `pendiente_pricing`** — viene tras el diagnóstico cuando se requiere pricing:
-- Particular: SIEMPRE (admin fija mano_obra + precio_unitario por producto + tiempo_entrega).
-- Garantía: solo si el siguiente paso es `esperar_repuesto` (admin fija tiempo_entrega; precio = 0 cubierto por marca).
+**Particular (v2)** ya **NO** pasa por admin gate. El técnico ingresa su `costoTecnico` (mano de obra + repuestos) en el formulario de diagnóstico, y `/api/diagnostico` calcula automáticamente el total al cliente con la fórmula `costoTecnico × 1.19 IVA × 1.10 margen Baird`. La cotización se envía al cliente inmediatamente. Ver `docs/TARIFAS.md` § "Particular".
 
-**Flujo:**
+**Estado `pendiente_pricing`** — solo se usa hoy para garantía con `esperar_repuesto`. Para particular el flujo va directo a `cotizacion_enviada`.
+
+**Flujo (v2 2026-05-10):**
 ```
 Diagnóstico técnico
        │
-       ▼
-  Productos Necesarios (SKUs)
-  Productos Recomendados (sin SKU)
+       ├── PARTICULAR: técnico también ingresa costoTecnico ─→ /api/diagnostico
+       │                                                            │
+       │                                                            ▼
+       │                                              cotizacion_enviada (auto)
+       │                                                            │
+       │                                                            ▼
+       │                                                   cliente decide
        │
-       ▼
-   pendiente_pricing  ──→  /admin/cotizaciones-pendientes (admin fija precios)
-       │                        │
-       │                        ▼
-       │              POST /api/cotizacion-precios
-       │                        │
-       ├──────── Particular ────┴──→ cotizacion_enviada → cliente decide
-       └──────── Garantía  ─────┴──→ verificacion_pendiente → cliente aprueba paso
+       └── GARANTÍA: solo SKUs + descripción ─→ /api/diagnostico
+                              │
+                              ├── reparar/no_reparable/negativa → verificacion_pendiente
+                              └── esperar_repuesto → pendiente_pricing
+                                                           │
+                                                           ▼
+                                          /admin/cotizaciones-pendientes
+                                          (admin fija solo tiempo_entrega)
+                                                           │
+                                                           ▼
+                                                  verificacion_pendiente
+                                                  → cliente aprueba paso
 ```
 
 **Componentes UI:**
 - `src/components/ui/ProductosNecesariosForm.tsx` — lista de SKUs (link a Serviplus visible para Mabe/GE).
 - `src/components/ui/ProductosRecomendadosForm.tsx` — lista informativa sin precio.
-- `src/app/admin/cotizaciones-pendientes/page.tsx` — admin fija precios + tiempo, dispara notificación.
-- `src/app/cotizacion/[token]/page.tsx` — muestra productos con subtotales + recomendados sin precio + tiempo de entrega.
+- `src/app/tecnico/[token]/diagnostico/[id]/page.tsx` — particular: campo "Tu costo total" → muestra desglose IVA + margen + total cliente al técnico (no al cliente).
+- `src/app/admin/cotizaciones-pendientes/page.tsx` — admin fija tiempo_entrega para garantía + esperar_repuesto. Particular ya no pasa por aquí.
+- `src/app/cotizacion/[token]/page.tsx` — cliente ve solo "Total: $X (incluye IVA)" sin desglose.
 
-**Estructura JSONB `cotizacion`** (con back-compat):
+**Estructura JSONB `cotizacion`** (v2 2026-05-10, con back-compat):
 ```ts
 {
   diagnostico_tecnico: string,
-  productos_necesarios: [{ sku, descripcion, cantidad, precio_unitario, subtotal }],
+  productos_necesarios: [{ sku, descripcion, cantidad, precio_unitario?, subtotal? }],
   productos_recomendados: [{ nombre, descripcion }],
-  pendiente_precio: boolean,        // true hasta que admin completa
+  pendiente_precio: boolean,        // false en particular (auto), true en garantía + esperar_repuesto hasta que admin fija tiempo
   pricing_set_at?: string,
-  tiempo_entrega?: string,
-  mano_obra: number,                 // 0 hasta que admin completa
-  repuestos: number,                 // suma de subtotales (computada)
-  total: number,                     // mano_obra + repuestos
+  tiempo_entrega?: string,           // solo garantía
+  // Particular v2: el técnico ingresa costoTecnico, sistema calcula:
+  costo_tecnico?: number,            // lo que recibe el técnico íntegro
+  subtotal_con_iva?: number,         // costo_tecnico × 1.19
+  margen_baird?: number,             // 10% sobre subtotal_con_iva
+  total: number,                     // total que paga el cliente (IVA incluido)
+  // Compat con flujo viejo (mano_obra + repuestos):
+  mano_obra: number,                 // 0 en particular v2
+  repuestos: number,                 // 0 en particular v2
   // Legacy: repuestos_detalle (texto libre, queda para back-compat)
   evidencias_diagnostico, cotizado_at, aprobado_at, rechazado_at, comentario_rechazo, token
 }
@@ -291,7 +307,7 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 - `/api/confirmar-horario` no se modifica. El reagendamiento usa su propio endpoint que setea `horario_confirmado` directo.
 - La cancelación tardía no se distingue como estado separado; queda como `cancelada` con flag en audit.
 
-## Solicitud State Machine (v4 2026-05-07 — admin pricing gate)
+## Solicitud State Machine (v5 2026-05-10 — particular sin admin gate)
 
 ```
 WARRANTY:
@@ -314,19 +330,23 @@ WARRANTY:
                      │                          ↘ cancelada_cliente (terminal)
                      │                          ↘ reagendamiento_pendiente ↻ asignada
                      │                          ↘ cancelada (cliente desde /servicio, terminal)
+                     │                          ↘ no_show_cliente (terminal — pendiente migración)
                      └─→ sin_agendar (timeout 24h+12h, terminal)
 
-NON-WARRANTY:
+NON-WARRANTY (v2 2026-05-10):
   pendiente_horario ─┬─→ notificada → diagnostico_pendiente → diagnóstico técnico
+                     │                       │           (incluye costoTecnico)
                      │                       │
-                     │                       ▼
-                     │                pendiente_pricing → admin fija precios + tiempo
-                     │                       │
-                     │                       ▼
-                     │                cotizacion_enviada
-                     │                       ├─ aprobada → en_proceso (o esperando_repuesto)
-                     │                       └─ rechazada (terminal)
-                     │                       ↘ reagendamiento_pendiente ↻ diagnostico_pendiente
+                     │      ┌── no_reparable ──→ finalizado_sin_reparacion (terminal)
+                     │      │
+                     │      ├── negativa_cliente ──→ cancelada_cliente (terminal)
+                     │      │
+                     │      └── reparar/esperar_repuesto ──→ cotizacion_enviada (auto)
+                     │                                              │
+                     │                                              ├─ aprobada → en_proceso (o esperando_repuesto)
+                     │                                              └─ rechazada → cotizacion_rechazada (terminal)
+                     │                                              ↘ reagendamiento_pendiente ↻ diagnostico_pendiente
+                     │                                              ↘ no_show_cliente (terminal — pendiente migración)
                      └─→ sin_agendar
 ```
 

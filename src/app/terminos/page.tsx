@@ -13,7 +13,7 @@ export default function TerminosPage() {
       <div className="mx-auto max-w-3xl">
         <h1 className="mb-2 text-3xl font-bold text-gray-900">Términos y Condiciones del Servicio</h1>
         <p className="mb-8 text-sm text-gray-500">
-          Versión {TYC_VERSION} · Última actualización: 27 de abril de 2026
+          Versión {TYC_VERSION} · Última actualización: 10 de mayo de 2026
         </p>
 
         <section className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -132,8 +132,39 @@ export default function TerminosPage() {
           </ul>
         </section>
 
+        <section className="mb-8 rounded-lg border-2 border-blue-200 bg-blue-50 p-5">
+          <h2 className="mb-3 text-xl font-semibold text-gray-900">8. Visita programada y compromiso de presencia</h2>
+          <p className="text-gray-800 leading-relaxed mb-3">
+            <strong>8.1.</strong> Al confirmar un horario, el cliente se compromete a estar presente o tener un mayor de
+            edad autorizado en la dirección registrada durante toda la franja horaria seleccionada.
+          </p>
+          <p className="text-gray-800 leading-relaxed mb-3">
+            <strong>8.2.</strong> El cliente puede cancelar o reagendar la visita sin costo hasta <strong>4 horas antes</strong>
+            del inicio de la franja, a través del portal de gestión del servicio o respondiendo al WhatsApp de
+            confirmación.
+          </p>
+          <p className="text-gray-800 leading-relaxed mb-3">
+            <strong>8.3.</strong> Si el técnico llega a la dirección dentro de la franja confirmada y no encuentra al
+            cliente, y este no canceló con al menos 4 horas de anticipación, el servicio quedará cerrado y deberá
+            solicitarse nuevamente. Ni el cliente, ni Baird Service, ni la marca cubren el costo del desplazamiento del
+            técnico en este caso.
+          </p>
+          <p className="text-gray-800 leading-relaxed mb-3">
+            <strong>8.4.</strong> La acumulación de <strong>2 inasistencias</strong> a visitas confirmadas faculta a
+            Baird Service para exigir confirmación adicional por llamada en futuras solicitudes. La acumulación de
+            <strong> 3 o más inasistencias</strong> faculta a Baird Service para suspender el acceso del cliente a la
+            plataforma.
+          </p>
+          <p className="text-gray-800 leading-relaxed">
+            <strong>8.5. Excepciones</strong> aceptadas sin consecuencia (caso fortuito o fuerza mayor comprobables):
+            emergencia médica del cliente o familiar, evento de fuerza mayor declarado por autoridad, o error del
+            técnico o de Baird Service (dirección errónea, llegada fuera de franja). Reclamos por excepción se evalúan
+            caso a caso por Baird Service en máximo 48 horas.
+          </p>
+        </section>
+
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">8. Obligaciones del técnico</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">9. Obligaciones del técnico</h2>
           <ul className="list-disc pl-6 text-gray-700 space-y-1">
             <li>Cumplir con su declaración bajo juramento de capacitación, conocimiento de riesgos y posesión de elementos de protección personal (EPP) antes de iniciar cada diagnóstico.</li>
             <li>Identificarse con su documento al cliente al llegar al sitio.</li>
@@ -145,7 +176,7 @@ export default function TerminosPage() {
         </section>
 
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">9. Tratamiento de datos personales</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">10. Tratamiento de datos personales</h2>
           <p className="text-gray-700 leading-relaxed">
             Baird Service trata los datos personales conforme a la Ley 1581 de 2012, el Decreto 1377 de 2013 y normas
             concordantes. Los detalles del tratamiento se encuentran en nuestra
@@ -155,7 +186,7 @@ export default function TerminosPage() {
         </section>
 
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">10. Geolocalización del técnico</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">11. Geolocalización del técnico</h2>
           <p className="text-gray-700 leading-relaxed">
             Como medida de seguridad y de cumplimiento contractual, Baird Service registra la ubicación GPS del
             dispositivo del técnico durante las fases de llegada, diagnóstico, completación del servicio y hasta
@@ -167,7 +198,7 @@ export default function TerminosPage() {
         </section>
 
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">11. Limitación de responsabilidad</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">12. Limitación de responsabilidad</h2>
           <p className="text-gray-700 leading-relaxed">
             Baird Service, en su rol de marketplace, responde por la calidad del trabajo dentro del alcance del
             servicio aprobado en la plataforma y dentro de los términos de garantía indicados. Baird Service
@@ -179,7 +210,7 @@ export default function TerminosPage() {
         </section>
 
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">12. PQRS — Servicio al consumidor</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">13. PQRS — Servicio al consumidor</h2>
           <p className="text-gray-700 leading-relaxed">
             Conforme al artículo 23 del Estatuto del Consumidor, el cliente puede presentar peticiones, quejas,
             reclamos y sugerencias a través del correo <strong>servicioalcliente@bairdservice.com</strong>. Baird
@@ -188,7 +219,7 @@ export default function TerminosPage() {
         </section>
 
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">13. Modificaciones</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">14. Modificaciones</h2>
           <p className="text-gray-700 leading-relaxed">
             Baird Service podrá modificar estos Términos en cualquier momento. Las modificaciones se publicarán en
             esta página con la nueva versión y fecha. El uso continuado del servicio tras la publicación constituye
@@ -197,7 +228,7 @@ export default function TerminosPage() {
         </section>
 
         <section className="mb-8">
-          <h2 className="mb-3 text-xl font-semibold text-gray-800">14. Ley aplicable y jurisdicción</h2>
+          <h2 className="mb-3 text-xl font-semibold text-gray-800">15. Ley aplicable y jurisdicción</h2>
           <p className="text-gray-700 leading-relaxed">
             Estos Términos se rigen por las leyes de la República de Colombia. Cualquier controversia será sometida
             a los jueces competentes de la ciudad de Bogotá D.C., previo agotamiento de la etapa conciliatoria

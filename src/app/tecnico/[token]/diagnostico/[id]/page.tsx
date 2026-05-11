@@ -10,6 +10,7 @@ import {
   calcularTotalGarantia,
   type ComplejidadServicio,
 } from '@/lib/constants/tarifas-garantia'
+import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 import { formatCOP } from '@/lib/utils/format'
 import { CodigoFallaSelector } from '@/components/ui/CodigoFallaSelector'
 import type { CodigoFalla } from '@/lib/constants/codigos-falla'
@@ -60,10 +61,24 @@ export default function DiagnosticoPage() {
   // Fault code (warranty only)
   const [codigoFalla, setCodigoFalla] = useState<CodigoFalla | null>(null)
 
-  // Productos necesarios (SKU + desc + cantidad — sin precio) y recomendados (sin precio)
-  // El equipo Baird (admin) fija precio y tiempo de entrega antes de notificar al cliente.
+  // Productos necesarios (SKU + desc + cantidad) y recomendados.
+  // En GARANTÍA + esperar_repuesto el admin fija tiempo_entrega.
+  // En PARTICULAR: el técnico ingresa costoTecnico abajo y el sistema calcula
+  // el total al cliente (× 1.19 IVA × 1.10 margen Baird). Ver docs/TARIFAS.md.
   const [productosNecesarios, setProductosNecesarios] = useState<ProductoNecesario[]>([])
   const [productosRecomendados, setProductosRecomendados] = useState<ProductoRecomendado[]>([])
+
+  // Particular only: costo total que el técnico cobrará (mano de obra + repuestos).
+  // El cliente NO ve este valor — solo ve el Total al cliente con IVA.
+  const [costoTecnico, setCostoTecnico] = useState<string>('')
+  const costoTecnicoNum = useMemo(() => {
+    const n = parseInt(costoTecnico.replace(/[^0-9]/g, ''), 10)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }, [costoTecnico])
+  const tarifaParticular = useMemo(() => {
+    if (costoTecnicoNum <= 0) return null
+    return calcularTarifaParticular({ costoTecnico: costoTecnicoNum })
+  }, [costoTecnicoNum])
 
   // Oath del técnico — debe firmarse antes de iniciar el diagnóstico
   const [oathFirma, setOathFirma] = useState<string | null>(null)
@@ -210,6 +225,16 @@ export default function DiagnosticoPage() {
       setError('Debes describir el motivo del cierre del servicio')
       return
     }
+    // Particular: si el siguiente paso es reparar o esperar_repuesto, el técnico
+    // debe ingresar su costo total para que el sistema calcule la cotización.
+    if (
+      !servicio.es_garantia &&
+      (siguientePaso.paso === 'reparar' || siguientePaso.paso === 'esperar_repuesto') &&
+      costoTecnicoNum <= 0
+    ) {
+      setError('Ingresa tu costo total (mano de obra + repuestos) para generar la cotización al cliente')
+      return
+    }
 
     setEnviando(true)
     setError(null)
@@ -304,13 +329,19 @@ export default function DiagnosticoPage() {
           ...siguientePasoData,
         }
       } else {
-        // NON-WARRANTY (PARTICULAR): solo diagnóstico + productos. Admin fija precios.
+        // NON-WARRANTY (PARTICULAR): el técnico ingresa su costo total y el
+        // sistema calcula automáticamente el total al cliente con IVA + margen
+        // Baird. Ya NO pasa por admin pricing gate (cambio 2026-05-10, ver
+        // docs/TARIFAS.md § "Particular").
         bodyPayload = {
           solicitudId: servicio.id,
           portalToken: token,
           diagnostico: diagnosticoTexto.trim(),
           complejidad,
           evidenciaUrls,
+          // Si el siguiente paso es no_reparable o negativa_cliente, costoTecnico
+          // puede ser 0; la API lo maneja correctamente (no genera cotización).
+          costoTecnico: costoTecnicoNum,
           ...oathData,
           ...siguientePasoData,
         }
@@ -350,8 +381,16 @@ export default function DiagnosticoPage() {
     ((siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !!siguientePaso.detalle?.trim())
   )
 
+  // Particular: el costo del técnico solo es obligatorio si va a haber cotización
+  // (reparar o esperar_repuesto). Para no_reparable o negativa_cliente no hace falta.
+  const requiereCostoParticular = !!servicio && !servicio.es_garantia && !!siguientePaso && (
+    siguientePaso.paso === 'reparar' || siguientePaso.paso === 'esperar_repuesto'
+  )
+  const costoParticularListo = !requiereCostoParticular || costoTecnicoNum > 0
+
   const canSubmit = complejidad && diagnosticoTexto.length >= 10 && evidencias.length > 0
     && oathFirma && siguientePasoListo && productosCompletos && recomendadosCompletos
+    && costoParticularListo
 
   if (cargando) {
     return (
@@ -543,8 +582,7 @@ export default function DiagnosticoPage() {
               <h3 className="text-sm font-bold text-slate-900">Servicio particular</h3>
             </div>
             <p className="text-xs text-gray-600">
-              Este es un servicio particular (sin garantia). Completa el diagnostico y genera una cotizacion de reparacion.
-              El cliente debera aprobar la cotizacion antes de que puedas proceder con la reparacion.
+              Este es un servicio particular (sin garantía). Indica tu costo total — el sistema agrega IVA y comisión Baird automáticamente y envía la cotización al cliente para aprobación.
             </p>
           </div>
         )}
@@ -637,6 +675,53 @@ export default function DiagnosticoPage() {
           productos={productosRecomendados}
           onChange={setProductosRecomendados}
         />
+
+        {/* Particular only: costo total del técnico (mano de obra + repuestos).
+            El cliente paga = costo × 1.19 IVA × 1.10 margen Baird. Solo se muestra
+            cuando el siguiente paso es reparar o esperar_repuesto (los otros
+            cierran el servicio sin cotización). */}
+        {!servicio!.es_garantia && requiereCostoParticular && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Tu costo total *</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Mano de obra + repuestos. El cliente NO ve este valor — solo ve el total final con IVA.
+            </p>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">$</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={costoTecnico}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9]/g, '')
+                  setCostoTecnico(v ? parseInt(v, 10).toLocaleString('es-CO') : '')
+                }}
+                placeholder="0"
+                className="w-full border border-gray-200 rounded-xl py-3 pl-8 pr-4 text-base focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            {tarifaParticular && (
+              <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs">
+                <div className="flex justify-between text-gray-600 mb-1">
+                  <span>Tu costo</span>
+                  <span className="font-medium text-slate-800">${formatCOP(tarifaParticular.costoTecnico)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 mb-1">
+                  <span>+ IVA 19%</span>
+                  <span className="text-slate-700">${formatCOP(tarifaParticular.subtotalConIva - tarifaParticular.costoTecnico)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 mb-2">
+                  <span>+ Comisión Baird 10%</span>
+                  <span className="text-slate-700">${formatCOP(tarifaParticular.margenBaird)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-purple-900 border-t border-purple-200 pt-2">
+                  <span>Total al cliente (incluye IVA)</span>
+                  <span>${formatCOP(tarifaParticular.totalCliente)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Evidence upload */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
@@ -762,7 +847,9 @@ export default function DiagnosticoPage() {
                             ? 'Cada recomendación debe tener nombre'
                             : (siguientePaso.paso === 'no_reparable' || siguientePaso.paso === 'negativa_cliente') && !siguientePaso.detalle?.trim()
                               ? 'Describe el motivo del cierre del servicio'
-                              : 'Faltan datos por completar'
+                              : requiereCostoParticular && !costoParticularListo
+                                ? 'Ingresa tu costo total para generar la cotización'
+                                : 'Faltan datos por completar'
           return (
             <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 -mt-4 mb-8">
               ⚠️ {motivo}

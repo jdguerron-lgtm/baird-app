@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarVerificacionPasoCliente } from '@/lib/services/whatsapp.service'
+import { enviarVerificacionPasoCliente, enviarCotizacionCliente } from '@/lib/services/whatsapp.service'
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico } from '@/types/solicitud'
+import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 
 /**
  * POST /api/diagnostico
@@ -107,9 +108,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Este servicio ya fue diagnosticado o no está en estado válido' }, { status: 400 })
     }
 
-    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
-    const clienteNombre = sol.cliente_nombre.split(' ')[0]
-    const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
+    // Estos vars quedan disponibles para flujos que envían texto libre desde
+    // este endpoint si se reactiva en el futuro. Hoy ambos flujos delegan el
+    // envío a las funciones del service (enviarCotizacionCliente / enviarVerificacionPasoCliente)
+    // que leen la solicitud nuevamente.
+    void `${sol.tipo_equipo} ${sol.marca_equipo}`
+    void sol.cliente_nombre
+    void tecnico.nombre_completo
 
     // 1. Persistir oath en evidencias_servicio (crear o actualizar)
     const { data: evExistente } = await supabase
@@ -234,22 +239,48 @@ export async function POST(req: NextRequest) {
       })
     } else {
       // ── NON-WARRANTY (PARTICULAR) FLOW ──
-      // El técnico ya no fija precios. Guardamos cotización en estado
-      // pendiente_pricing con productos_necesarios/recomendados; admin de
-      // Baird fija mano_obra, precio_unitario por producto y tiempo_entrega
-      // antes de enviar la cotización al cliente.
-      const { evidenciaUrls } = body
+      // Cambio 2026-05-10 (ver docs/TARIFAS.md § "Particular"):
+      // El técnico ingresa su `costoTecnico` (mano de obra + repuestos).
+      // El sistema calcula automáticamente el total al cliente con IVA + margen
+      // Baird (× 1.19 × 1.10) y dispara la cotización al cliente directamente.
+      // Ya NO pasa por admin pricing gate.
+      //
+      // Excepción: si el siguiente paso es no_reparable o negativa_cliente,
+      // no hay cotización (servicio cierra terminal).
+      const { evidenciaUrls, costoTecnico } = body
+      const costoTecnicoNum = Number.isFinite(costoTecnico) && costoTecnico > 0 ? Math.round(costoTecnico) : 0
 
       const cotizacionToken = crypto.randomUUID()
+      const cierraSinCotizacion = siguientePaso === 'no_reparable' || siguientePaso === 'negativa_cliente'
 
-      const cotizacionData = {
+      // Validar costoTecnico solo cuando la rama lo requiere (genera cotización)
+      if (!cierraSinCotizacion && costoTecnicoNum <= 0) {
+        return NextResponse.json(
+          { error: 'Falta costoTecnico para generar la cotización al cliente' },
+          { status: 400 },
+        )
+      }
+
+      // Calcular tarifa con la fórmula reseller (× 1.19 IVA × 1.10 margen Baird)
+      const tarifa = costoTecnicoNum > 0 ? calcularTarifaParticular({ costoTecnico: costoTecnicoNum }) : null
+
+      // Construir cotizacion JSONB. Mantenemos la forma legacy (mano_obra, repuestos,
+      // total) para compat con la página /cotizacion/{token}, pero sin desglose:
+      // mano_obra = 0, repuestos = 0, total = totalCliente. El front del cliente
+      // muestra solo "Total: $X (incluye IVA)".
+      const cotizacionData: Record<string, unknown> = {
         diagnostico_tecnico: diagnostico.trim(),
         productos_necesarios: necesarios,
         productos_recomendados: recomendados,
-        pendiente_precio: true,
+        pendiente_precio: false,
+        // Detalle interno (no visible al cliente)
+        costo_tecnico: costoTecnicoNum,
+        subtotal_con_iva: tarifa?.subtotalConIva ?? 0,
+        margen_baird: tarifa?.margenBaird ?? 0,
+        // Compat con la página de cotización (cliente ve solo total)
         mano_obra: 0,
         repuestos: 0,
-        total: 0,
+        total: tarifa?.totalCliente ?? 0,
         evidencias_diagnostico: evidenciaUrls || [],
         cotizado_at: new Date().toISOString(),
         token: cotizacionToken,
@@ -261,14 +292,22 @@ export async function POST(req: NextRequest) {
         productos_recomendados: recomendados,
         evidencias_diagnostico: evidenciaUrls,
         diagnosticado_at: new Date().toISOString(),
+        costo_tecnico: costoTecnicoNum,
       }
+
+      // Si cierra sin cotización: estado terminal según el paso elegido.
+      // Si genera cotización: estado=cotizacion_enviada (saltamos admin gate).
+      const nuevoEstado = cierraSinCotizacion
+        ? (siguientePaso === 'no_reparable' ? 'finalizado_sin_reparacion' : 'cancelada_cliente')
+        : 'cotizacion_enviada'
 
       const { error: updateErr } = await supabase
         .from('solicitudes_servicio')
         .update({
           triaje_resultado: diagnosticoData,
-          cotizacion: cotizacionData,
-          estado: 'pendiente_pricing',
+          cotizacion: cierraSinCotizacion ? null : cotizacionData,
+          estado: nuevoEstado,
+          pago_tecnico: costoTecnicoNum, // lo que el técnico recibe íntegro
           siguiente_paso: siguientePaso,
           siguiente_paso_detalle: siguientePasoDetalle,
           siguiente_paso_at: new Date().toISOString(),
@@ -282,8 +321,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message + hint }, { status: 500 })
       }
 
-      // Insertar repuestos pendientes (sin costo — admin lo fija al cotizar)
-      if (necesarios.length > 0) {
+      // Insertar repuestos pendientes solo si esperar_repuesto (en particular el
+      // costo ya está incluido en costoTecnico — los registros aquí son para
+      // tracking de inventario/admin, no de pricing).
+      if (siguientePaso === 'esperar_repuesto' && necesarios.length > 0) {
         const { error: repErr } = await supabase.from('repuestos_pendientes').insert(
           necesarios.map(p => ({
             solicitud_id: sol.id,
@@ -296,12 +337,19 @@ export async function POST(req: NextRequest) {
         if (repErr) console.error('[diagnostico] Error insertando repuestos (particular):', repErr)
       }
 
-      // NO se envía cotización al cliente todavía. Espera admin pricing.
+      // Si genera cotización, dispara el WhatsApp al cliente inmediatamente.
+      if (!cierraSinCotizacion) {
+        const waResult = await enviarCotizacionCliente(sol.id)
+        if (!waResult.ok) console.error('Error enviando cotización al cliente:', waResult.error)
+      }
+
       return NextResponse.json({
         success: true,
         flow: 'particular',
-        cotizacionToken,
-        pendiente_pricing: true,
+        estado: nuevoEstado,
+        cotizacionToken: cierraSinCotizacion ? null : cotizacionToken,
+        totalCliente: tarifa?.totalCliente ?? 0,
+        pendiente_pricing: false,
       })
     }
   } catch (error) {

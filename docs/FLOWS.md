@@ -4,11 +4,14 @@
 > punto de decisión del cliente, y verificación de continuidad de la
 > comunicación.
 >
-> **Última actualización: 2026-05-08** (post admin pricing gate v1).
+> **Última actualización: 2026-05-10** (particular elimina admin pricing gate;
+> técnico ingresa costo directo y sistema calcula con IVA + margen Baird).
 > Reemplaza a `docs/FLUJOS-USUARIO.md` (obsoleto, state machine v1).
 
 > 🧭 **Ver también**:
 > - `docs/INDEX.md` — hub de navegación. Si llegaste acá sin contexto, empezá por ahí.
+> - `docs/TARIFAS.md` — modelo MABE garantía (Tipo D + bonos + weekend) y particular (× 1.19 × 1.10).
+> - `docs/PROTOCOLO-VISITA.md` — verificación T-24h / T-2h / llegada / no-show.
 > - `docs/WHATSAPP_TEMPLATES.md` — catálogo de las plantillas Meta + proceso de cambio.
 > - `supabase/migrations/README.md` — estados, columnas, hotfixes pendientes.
 > - `CLAUDE.md` — convenciones, gotchas, env vars.
@@ -31,7 +34,7 @@
 ## Principios del diseño
 
 1. **Customer-first scheduling.** Toda solicitud (garantía o particular) arranca con el cliente proponiendo y confirmando el horario antes de notificar técnicos. No hay diferencia entre los dos flujos en este paso.
-2. **Admin pricing gate** (v1 2026-05-07). El técnico no fija precios ni tiempos de entrega. El equipo Baird los completa antes de que el cliente reciba la cotización o la verificación de paso.
+2. **Admin pricing gate solo para garantía + esperar_repuesto** (v2 2026-05-10). En garantía con `esperar_repuesto`, el admin debe fijar `tiempo_entrega` antes de notificar al cliente (precio MABE ya está fijo por tarifario). En particular el técnico ingresa su costo y el sistema calcula con IVA + margen Baird automáticamente — sin gate admin. Ver [docs/TARIFAS.md](./TARIFAS.md).
 3. **Cliente siempre tiene la última palabra.** En ambos flujos hay un paso de aprobación explícito tras el diagnóstico (verificar paso para garantía, aprobar cotización para particular).
 4. **Self-service durante todo el ciclo.** El cliente puede cancelar o reagendar desde `/servicio/{cliente_token}` mientras el estado lo permita.
 5. **Audit append-only.** Cancelaciones, reagendamientos y cambios admin escriben en `solicitud_eventos` sin borrado.
@@ -279,7 +282,9 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 
 ## Flujo PARTICULAR (es_garantia=false)
 
-El cliente paga a Baird por el servicio. La cotización es admin-pricing-gated (v1 2026-05-07).
+El cliente paga a Baird por el servicio. **Desde 2026-05-10 el técnico ingresa su costo directamente** y el sistema calcula el total al cliente con IVA 19% + margen Baird 10% (`Total_Cliente = costoTecnico × 1.19 × 1.10`). Ya **no** pasa por admin pricing gate.
+
+Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-multi-marca) para la fórmula completa.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -317,45 +322,37 @@ El cliente paga a Baird por el servicio. La cotización es admin-pricing-gated (
                                   │
                                   ▼  (técnico llega)
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ 5. DIAGNÓSTICO + COTIZACIÓN-DRAFT                                        │
+│ 5. DIAGNÓSTICO + COTIZACIÓN AUTOMÁTICA                                   │
 │ Tech firma oath, sube evidencias, escribe diagnóstico, lista productos   │
-│ necesarios (SKU+desc+cantidad) y recomendados (sin precio). Elige        │
-│ siguiente paso (4 opciones).                                             │
+│ necesarios (SKU+desc+cantidad) y recomendados. Ingresa SU COSTO TOTAL    │
+│ (mano de obra + repuestos). Elige siguiente paso (4 opciones).           │
 │                                                                           │
-│ ⚠️ NUEVO 2026-05-07: el tech NO ingresa precios ni tiempos.              │
+│ Sistema calcula:                                                          │
+│   Total_Cliente = costoTecnico × 1.19 × 1.10                             │
+│   (IVA 19% Colombia + margen Baird 10%)                                   │
 │                                                                           │
-│ POST /api/diagnostico                                                    │
+│ POST /api/diagnostico  (con costoTecnico en el body)                     │
 │                                                                           │
-│ DB:  estado=pendiente_pricing                                            │
-│      cotizacion={ diagnostico, productos_necesarios[], productos_        │
-│                   recomendados[], pendiente_precio: true,                │
-│                   mano_obra: 0, repuestos: 0, total: 0,                  │
+│ DB:  estado=cotizacion_enviada (saltamos admin gate)                     │
+│      cotizacion={ diagnostico, productos_necesarios[],                   │
+│                   productos_recomendados[],                              │
+│                   pendiente_precio: false,                               │
+│                   costo_tecnico, subtotal_con_iva, margen_baird,         │
+│                   total: <Total_Cliente>,                                │
 │                   token: uuid }                                          │
-│                                                                           │
-│ NO se envía cotización al cliente todavía.                               │
-└──────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│ 6. ADMIN FIJA PRECIOS Y TIEMPO                                           │
-│ Página /admin/cotizaciones-pendientes (admin auth)                       │
-│ Modal muestra diagnóstico + productos. Admin ingresa:                    │
-│   - mano_obra (COP)                                                      │
-│   - precio_unitario por cada producto necesario                          │
-│   - tiempo_entrega (texto libre, ej. "3-5 días hábiles")                 │
-│                                                                           │
-│ POST /api/cotizacion-precios                                             │
-│                                                                           │
-│ DB:  estado=cotizacion_enviada                                           │
-│      cotizacion={ ..., pendiente_precio: false, pricing_set_at,          │
-│                   mano_obra, repuestos, total, tiempo_entrega }          │
-│      pago_tecnico=total                                                  │
-│      repuestos_pendientes.costo + tiempo_estimado se sincronizan         │
+│      pago_tecnico=costoTecnico                                           │
 │                                                                           │
 │ 📩 → CLIENTE: cotizacion_cliente_v1                                      │
-│   Body: cliente, técnico, equipo, diagnóstico, mano_obra, repuestos,     │
-│         total                                                            │
+│   Body: cliente, técnico, equipo, diagnóstico, mano_obra (=0),           │
+│         repuestos (=0), total (=Total_Cliente)                           │
 │   Botón: "Aprobar cotización" → /cotizacion/{cotizacion.token}           │
+│                                                                           │
+│ ⚠️ Cliente VE solo "Total: $X (incluye IVA)". No se le muestra           │
+│    desglose costo técnico ni margen Baird (ver docs/TARIFAS.md).         │
+│                                                                           │
+│ Excepción terminal: si siguiente_paso ∈ { no_reparable, negativa_cliente │
+│ }, no hay cotización; estado pasa directo a finalizado_sin_reparacion    │
+│ o cancelada_cliente.                                                     │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼  (cliente abre webview)
@@ -506,7 +503,7 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 | API | `POST /api/aprobar-cotizacion` |
 | Acción | Cliente aprueba o rechaza con comentario opcional |
 | ✅ Verificado | Botones en cotizacion/[token]/page.tsx líneas 303-316 |
-| ✅ Trigger post-pricing | Solo se envía DESPUÉS de que admin completa precios vía /api/cotizacion-precios |
+| ✅ Trigger post-diagnóstico | Se envía inmediatamente al guardar el diagnóstico (técnico ingresó costo). Sin admin gate desde 2026-05-10. |
 
 ### 4. Confirmación final del servicio (ambos flujos)
 | Aspecto | Detalle |
