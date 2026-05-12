@@ -5,8 +5,13 @@
  * Doc canónico: docs/TARIFAS.md § "Garantía MABE".
  *
  * Modelo: la marca paga a Baird por código de complejidad (Tipo D).
- * Baird captura 22% de la tarifa base; el técnico recibe 78% de la base
- * + 100% del bono + 100% del recargo de fin de semana.
+ * Baird captura 22% de la tarifa base + 10% sobre cada bono y recargo.
+ * El técnico recibe 78% de la base + 90% del bono + 90% del recargo
+ * de fin de semana.
+ *
+ * Cambio 2026-05-12: el bono y el recargo de fin de semana dejan de ir
+ * íntegros al técnico. Baird captura 10% sobre ambos para cubrir costos
+ * de soporte, dispute resolution y capital de trabajo (MABE paga NET-30/60).
  */
 
 export type ComplejidadServicio = 'baja' | 'media' | 'alta'
@@ -92,8 +97,16 @@ export const RECARGO_FIN_DE_SEMANA: Record<ComplejidadServicio, number> = {
   alta: 7000,
 }
 
-/** Margen Baird = 22% sobre tarifa base MABE. Bonos y recargos van íntegros al técnico. */
+/** Margen Baird = 22% sobre tarifa base MABE. */
 export const MARGEN_BAIRD_GARANTIA = 0.22
+
+/**
+ * Margen Baird sobre cada bono (tabla A/B) y sobre el recargo de fin de semana.
+ * Cambio 2026-05-12: antes los bonos iban íntegros al técnico. Ahora Baird
+ * captura 10% para cubrir costos de soporte, dispute resolution y capital
+ * de trabajo (MABE paga NET-30/60).
+ */
+export const MARGEN_BAIRD_BONO = 0.10
 
 /** SLA de Tiempo de Atención (TA) en horas. Desde horario_confirmado_at hasta diagnosticado_at. */
 export const TA_HORAS_LIMITE = 24
@@ -138,7 +151,13 @@ export interface TarifaMABEResultado {
   recargoWeekend: number
   totalMABE: number
   margenBaird: number
+  margenBaseMabe: number      // 22% × tarifaBase
+  margenBonoBaird: number     // 10% × bono
+  margenRecargoBaird: number  // 10% × recargoWeekend
   pagoTecnico: number
+  pagoBase: number            // 78% × tarifaBase (lo que el técnico recibe sobre la base)
+  pagoBono: number            // 90% × bono
+  pagoRecargo: number         // 90% × recargoWeekend
   meta: {
     complejidad: ComplejidadServicio
     codigoTaller: typeof TIPO_TALLER_MABE_BAIRD
@@ -157,8 +176,11 @@ export interface TarifaMABEResultado {
  *   - bono: $0 si no cumple TA o si días > 3
  *   - recargoWeekend: $0 si no es sábado/domingo
  *   - totalMABE: lo que MABE paga (base + bono + weekend)
- *   - margenBaird: 22% de la tarifa base
- *   - pagoTecnico: 78% de la base + 100% bono + 100% weekend
+ *   - margenBaird: 22% base + 10% bono + 10% recargo weekend
+ *   - pagoTecnico: 78% base + 90% bono + 90% recargo weekend
+ *
+ * Cambio 2026-05-12: el bono y el recargo de fin de semana dejan de ir
+ * íntegros al técnico. Baird captura 10% sobre ambos.
  */
 export function calcularTarifaMABE(params: {
   complejidad: ComplejidadServicio
@@ -172,15 +194,31 @@ export function calcularTarifaMABE(params: {
   const bono = calcularBonoMABE({ complejidad, diasSolucion, cumpleEncuesta, cumpleTA })
   const recargoWeekend = esFinDeSemana ? RECARGO_FIN_DE_SEMANA[complejidad] : 0
   const totalMABE = tarifaBase + bono + recargoWeekend
-  const margenBaird = Math.round(tarifaBase * MARGEN_BAIRD_GARANTIA)
-  const pagoTecnico = totalMABE - margenBaird
+
+  // Reparto Baird ↔ Técnico (2026-05-12)
+  const margenBaseMabe = Math.round(tarifaBase * MARGEN_BAIRD_GARANTIA)
+  const margenBonoBaird = Math.round(bono * MARGEN_BAIRD_BONO)
+  const margenRecargoBaird = Math.round(recargoWeekend * MARGEN_BAIRD_BONO)
+  const margenBaird = margenBaseMabe + margenBonoBaird + margenRecargoBaird
+
+  const pagoBase = tarifaBase - margenBaseMabe
+  const pagoBono = bono - margenBonoBaird
+  const pagoRecargo = recargoWeekend - margenRecargoBaird
+  const pagoTecnico = pagoBase + pagoBono + pagoRecargo
+
   return {
     tarifaBase,
     bono,
     recargoWeekend,
     totalMABE,
     margenBaird,
+    margenBaseMabe,
+    margenBonoBaird,
+    margenRecargoBaird,
     pagoTecnico,
+    pagoBase,
+    pagoBono,
+    pagoRecargo,
     meta: {
       complejidad,
       codigoTaller: TIPO_TALLER_MABE_BAIRD,
