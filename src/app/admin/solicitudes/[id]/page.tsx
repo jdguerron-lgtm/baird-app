@@ -536,15 +536,27 @@ export default function SolicitudDetalle() {
           </dl>
         </div>
 
-        {/* Diagnosis & Fault Code */}
-        {solicitud.es_garantia && (() => {
+        {/* Diagnosis & Fault Code — visible para warranty Y particular cuando hay diagnóstico */}
+        {(() => {
           const triaje = (solicitud as unknown as Record<string, unknown>).triaje_resultado as Record<string, unknown> | null
+          const cotizacion = (solicitud as unknown as Record<string, unknown>).cotizacion as Record<string, unknown> | null
           if (!triaje?.diagnostico_tecnico) return null
+
+          // Productos vienen de triaje_resultado (siempre poblado) con fallback a cotizacion.
+          type ProdNec = { sku: string; descripcion: string; cantidad: number; precio_unitario?: number; subtotal?: number }
+          type ProdRec = { nombre: string; descripcion: string }
+          const productosNec = (triaje.productos_necesarios as ProdNec[] | undefined)
+            ?? (cotizacion?.productos_necesarios as ProdNec[] | undefined)
+            ?? []
+          const productosRec = (triaje.productos_recomendados as ProdRec[] | undefined)
+            ?? (cotizacion?.productos_recomendados as ProdRec[] | undefined)
+            ?? []
+
           return (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Diagnostico del tecnico</h2>
 
-              {/* Fault code badge */}
+              {/* Fault code badge (warranty only) */}
               {!!triaje.codigo_falla && (
                 <div className="flex items-center gap-4 mb-4 bg-purple-50 rounded-xl p-4 border border-purple-100">
                   <div className="w-14 h-14 rounded-xl bg-purple-600 text-white flex flex-col items-center justify-center shrink-0">
@@ -571,26 +583,97 @@ export default function SolicitudDetalle() {
                 </div>
               )}
 
-              <dl className="space-y-3">
+              <dl className="space-y-3 mb-4">
                 <div>
                   <dt className="text-xs text-gray-500">Diagnostico</dt>
-                  <dd className="text-sm text-slate-900 bg-gray-50 rounded-lg p-3">{String(triaje.diagnostico_tecnico)}</dd>
+                  <dd className="text-sm text-slate-900 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">{String(triaje.diagnostico_tecnico)}</dd>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <dt className="text-xs text-gray-500">Complejidad</dt>
-                    <dd className="text-sm font-medium text-slate-900">{String(triaje.complejidad)} (Cod. {String(triaje.codigo_complejidad)})</dd>
-                  </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {!!triaje.complejidad && (
+                    <div>
+                      <dt className="text-xs text-gray-500">Complejidad</dt>
+                      <dd className="text-sm font-medium text-slate-900">
+                        {String(triaje.complejidad)}
+                        {triaje.codigo_complejidad ? ` (Cod. ${String(triaje.codigo_complejidad)})` : ''}
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt className="text-xs text-gray-500">Diagnosticado</dt>
                     <dd className="text-sm text-slate-900">{triaje.diagnosticado_at ? new Date(String(triaje.diagnosticado_at)).toLocaleString('es-CO') : '—'}</dd>
                   </div>
-                  <div>
-                    <dt className="text-xs text-gray-500">Repuestos</dt>
-                    <dd className="text-sm text-slate-900">{triaje.requiere_repuestos ? `Si — ${String(triaje.repuestos_detalle ?? '')}` : 'No'}</dd>
-                  </div>
+                  {!!triaje.siguiente_paso && (
+                    <div>
+                      <dt className="text-xs text-gray-500">Siguiente paso</dt>
+                      <dd className="text-sm font-medium text-slate-900">{String(triaje.siguiente_paso)}</dd>
+                    </div>
+                  )}
                 </div>
+                {/* Legacy field — solo si no hay productos_necesarios (cotizaciones viejas) */}
+                {!productosNec.length && !!triaje.repuestos_detalle && (
+                  <div>
+                    <dt className="text-xs text-gray-500">Repuestos (legacy)</dt>
+                    <dd className="text-sm text-slate-900 bg-gray-50 rounded-lg p-2">{String(triaje.repuestos_detalle)}</dd>
+                  </div>
+                )}
               </dl>
+
+              {/* Productos necesarios — visibles siempre */}
+              <div className="mb-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  🔧 Productos necesarios {productosNec.length > 0 && `(${productosNec.length})`}
+                </h3>
+                {productosNec.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">El técnico no listó productos necesarios.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productosNec.map((p, i) => {
+                      const tienePrecio = typeof p.precio_unitario === 'number' && p.precio_unitario > 0
+                      return (
+                        <div key={`${p.sku}-${i}`} className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2 flex-wrap">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-mono text-sm font-bold text-fuchsia-900">{p.sku}</span>
+                                <span className="text-xs text-fuchsia-700 bg-white px-2 py-0.5 rounded-full">cantidad: {p.cantidad}</span>
+                              </div>
+                              <p className="text-sm text-slate-800">{p.descripcion}</p>
+                            </div>
+                            {tienePrecio && (
+                              <div className="text-right shrink-0">
+                                <p className="text-xs text-gray-500">Precio unitario</p>
+                                <p className="text-sm font-semibold text-slate-900">${formatCOP(p.precio_unitario ?? 0)}</p>
+                                {typeof p.subtotal === 'number' && p.subtotal > 0 && (
+                                  <p className="text-xs text-gray-600">Subtotal: ${formatCOP(p.subtotal)}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Productos recomendados — visibles siempre */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  ✨ Productos recomendados {productosRec.length > 0 && `(${productosRec.length})`}
+                </h3>
+                {productosRec.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">Sin recomendaciones.</p>
+                ) : (
+                  <ul className="text-sm text-slate-700 space-y-1 list-disc list-inside bg-blue-50 rounded-xl p-3 border border-blue-100">
+                    {productosRec.map((p, i) => (
+                      <li key={i}>
+                        <span className="font-semibold text-slate-900">{p.nombre}</span>
+                        {p.descripcion && <span className="text-gray-600"> — {p.descripcion}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           )
         })()}
