@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
 
     try {
-      await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v3', 'es', [
+      const result = await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v3', 'es', [
         {
           type: 'body',
           parameters: [
@@ -67,6 +67,16 @@ export async function POST(req: NextRequest) {
           parameters: [{ type: 'text', text: evidencia.confirmacion_token }],
         },
       ])
+
+      if (result.filtered) {
+        console.warn('[completar-servicio] WhatsApp filtrado por BAIRD_TEST_PHONE_WHITELIST')
+        return NextResponse.json({
+          success: true,
+          whatsapp_sent: false,
+          whatsapp_filtered: true,
+          whatsapp_error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode). Revisar env vars de Vercel.',
+        })
+      }
 
       return NextResponse.json({ success: true, whatsapp_sent: true })
     } catch (waErr) {

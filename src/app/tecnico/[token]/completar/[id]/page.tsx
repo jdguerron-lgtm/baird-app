@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
+import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
+import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
+import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
 interface Servicio {
   id: string
@@ -18,6 +21,10 @@ interface Servicio {
   zona_servicio: string
   ciudad_pueblo: string
   pago_tecnico: number
+  es_garantia: boolean
+  created_at: string
+  horario_confirmado: string | null
+  triaje_resultado: { complejidad?: ComplejidadServicio | null } | null
 }
 
 interface TecnicoInfo {
@@ -33,6 +40,9 @@ export default function CompletarServicioPage() {
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [exito, setExito] = useState(false)
+  const [waSent, setWaSent] = useState<boolean | null>(null)
+  const [waFiltered, setWaFiltered] = useState<boolean>(false)
+  const [waError, setWaError] = useState<string | null>(null)
 
   // Photos
   const [fotos, setFotos] = useState<File[]>([])
@@ -59,6 +69,24 @@ export default function CompletarServicioPage() {
   // GPS
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null)
 
+  // Pago al técnico (garantía): proyección con la complejidad ya elegida en
+  // el diagnóstico. Se asume TA + encuesta optimista para mostrar el techo;
+  // el pago final se recalcula al cerrar y al recibir encuesta. Ver
+  // src/lib/utils/pago-tecnico.ts y docs/TARIFAS.md § "Garantía MABE".
+  const pagoBreakdown = useMemo(() => {
+    if (!servicio?.es_garantia) return null
+    const complejidad = (servicio.triaje_resultado?.complejidad ?? null) as ComplejidadServicio | null
+    const diasSolucion = Math.floor(
+      (Date.now() - new Date(servicio.created_at).getTime()) / (1000 * 60 * 60 * 24)
+    )
+    return estimarPagoTecnicoGarantia({
+      complejidad,
+      diasSolucion,
+      horarioConfirmado: servicio.horario_confirmado,
+      asumirOptimista: true,
+    })
+  }, [servicio])
+
   useEffect(() => {
     const cargar = async () => {
       // Validate portal token
@@ -78,7 +106,7 @@ export default function CompletarServicioPage() {
       // Load service
       const { data: sol } = await supabase
         .from('solicitudes_servicio')
-        .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico')
+        .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, es_garantia, created_at, horario_confirmado, triaje_resultado')
         .eq('id', id)
         .eq('tecnico_asignado_id', tec.id)
         .single()
@@ -313,12 +341,22 @@ export default function CompletarServicioPage() {
             portalToken: token,
           }),
         })
+        const waBody = await waRes.json().catch(() => ({}))
         if (!waRes.ok) {
-          const waBody = await waRes.json().catch(() => ({}))
           console.error('Error enviando WhatsApp de confirmación:', waRes.status, waBody)
+          setWaSent(false)
+          setWaError(typeof waBody?.error === 'string' ? waBody.error : `HTTP ${waRes.status}`)
+        } else {
+          setWaSent(!!waBody.whatsapp_sent)
+          setWaFiltered(!!waBody.whatsapp_filtered)
+          if (!waBody.whatsapp_sent && typeof waBody.whatsapp_error === 'string') {
+            setWaError(waBody.whatsapp_error)
+          }
         }
       } catch (waErr) {
         console.error('Error de red al enviar WhatsApp de confirmación:', waErr)
+        setWaSent(false)
+        setWaError(waErr instanceof Error ? waErr.message : 'Error de red al enviar WhatsApp')
       }
 
       setExito(true)
@@ -340,12 +378,39 @@ export default function CompletarServicioPage() {
   if (exito) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="text-center max-w-sm">
+        <div className="text-center max-w-md w-full">
           <div className="text-5xl mb-4">✅</div>
           <h1 className="text-xl font-bold text-slate-900 mb-2">Servicio registrado</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            La evidencia fue enviada. El cliente recibirá una notificación para confirmar que quedó satisfecho.
+          <p className="text-sm text-gray-500 mb-4">
+            La evidencia quedó guardada en el sistema.
           </p>
+
+          {/* WhatsApp status — fuente de verdad. */}
+          {waSent === true && (
+            <div className="mb-6 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
+              📤 <strong>WhatsApp enviado al cliente.</strong> Recibirá la solicitud de confirmación y podrá calificar el servicio.
+            </div>
+          )}
+          {waSent === false && (
+            <div className="mb-6 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 text-left">
+              ⚠️ <strong>El WhatsApp al cliente NO se envió.</strong> El servicio quedó completado pero el cliente no recibirá la notificación automática.
+              {waFiltered && (
+                <span className="block mt-1">
+                  Motivo: filtrado por <code>BAIRD_TEST_PHONE_WHITELIST</code> (modo test). Avisa al equipo Baird para que revise env vars y reenvíe desde el admin.
+                </span>
+              )}
+              {!waFiltered && waError && (
+                <span className="block mt-1 font-mono">Detalle: {waError}</span>
+              )}
+              {!waFiltered && !waError && (
+                <span className="block mt-1">El equipo Baird puede reenviar el mensaje desde el panel admin.</span>
+              )}
+            </div>
+          )}
+          {waSent === null && (
+            <p className="text-xs text-gray-400 mb-6">El cliente recibirá la solicitud de confirmación por WhatsApp.</p>
+          )}
+
           <Link
             href={`/tecnico/${token}`}
             className="inline-block bg-slate-900 text-white text-sm font-semibold px-6 py-3 rounded-xl hover:bg-slate-800 transition-colors"
@@ -396,9 +461,16 @@ export default function CompletarServicioPage() {
               <p className="text-xs text-gray-500 mt-1">{servicio?.novedades_equipo.substring(0, 100)}</p>
               <p className="text-xs text-gray-400 mt-1">{servicio?.direccion}, {servicio?.zona_servicio}</p>
             </div>
-            <p className="text-sm font-bold text-green-700">${formatCOP(servicio?.pago_tecnico ?? 0)}</p>
+            {!servicio?.es_garantia && (
+              <p className="text-sm font-bold text-green-700">${formatCOP(servicio?.pago_tecnico ?? 0)}</p>
+            )}
           </div>
         </div>
+
+        {/* Pago al técnico (garantía): proyección detallada del pago */}
+        {pagoBreakdown && (
+          <PagoTecnicoBreakdown breakdown={pagoBreakdown} />
+        )}
 
         {/* Error */}
         {error && (
@@ -538,10 +610,38 @@ export default function CompletarServicioPage() {
           )}
         </div>
 
+        {/* Validation summary — lista TODO lo que falta de una vez */}
+        {(() => {
+          const itemsChecklist = [
+            checklist.diagnostico_realizado,
+            checklist.prueba_encendido,
+            checklist.limpieza_area,
+            checklist.explicacion_cliente,
+          ].filter(Boolean).length
+          const faltantes: string[] = []
+          if (fotos.length === 0) faltantes.push('Sube al menos una foto del servicio completado')
+          if (itemsChecklist < 3) faltantes.push(`Marca al menos 3 items del checklist (tienes ${itemsChecklist}/4 obligatorios)`)
+          const faltaFirma = !hasFirma
+          if (faltantes.length === 0 && !faltaFirma) return null
+          return (
+            <div className="rounded-xl border bg-amber-50 border-amber-200 p-4">
+              <p className="text-sm font-bold text-amber-900 mb-2">⚠️ Antes de enviar al cliente:</p>
+              <ul className="text-xs text-amber-900 list-disc list-inside space-y-1">
+                {faltantes.map((f, i) => <li key={i}>{f}</li>)}
+                {faltaFirma && (
+                  <li>
+                    Recomendado: pedir firma del cliente confirmando el servicio (opcional pero deja constancia).
+                  </li>
+                )}
+              </ul>
+            </div>
+          )
+        })()}
+
         {/* Submit */}
         <button
           onClick={handleSubmit}
-          disabled={enviando}
+          disabled={enviando || fotos.length === 0}
           className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
         >
           {enviando ? (
