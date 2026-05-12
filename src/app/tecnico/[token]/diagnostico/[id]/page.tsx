@@ -19,6 +19,7 @@ import OathModal from '@/components/ui/OathModal'
 import SiguientePasoSelector, { type SiguientePasoData } from '@/components/ui/SiguientePasoSelector'
 import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
+import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 
@@ -648,6 +649,17 @@ export default function DiagnosticoPage() {
           productos={productosRecomendados}
           onChange={setProductosRecomendados}
         />
+
+        {/* Link al store oficial — útil para conseguir SKUs de repuestos */}
+        {(productosNecesarios.length > 0 || productosRecomendados.length > 0) && (
+          <div className="mb-4">
+            <TiendaRepuestosLink
+              variant="banner"
+              tone="emerald"
+              texto="Consigue los repuestos listados en tienda.bairdservice.com — productos originales con factura DIAN."
+            />
+          </div>
+        )}
 
         {/* Particular only: costo total del técnico (mano de obra + repuestos).
             El cliente paga = costo × 1.19 IVA × 1.10 margen Baird. Solo se muestra

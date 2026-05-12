@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
 import type { CotizacionReparacion, ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
+import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 
 interface SolicitudPricing {
   id: string
@@ -195,9 +196,14 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
 
           {/* Productos necesarios — pricing */}
           <section>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              Productos necesarios — fija precio unitario
-            </h3>
+            <div className="flex items-start justify-between mb-2 gap-2 flex-wrap">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Productos necesarios — fija precio unitario
+              </h3>
+              {productos.length > 0 && (
+                <TiendaRepuestosLink variant="compact" texto="Verificar precios en tienda" />
+              )}
+            </div>
             {productos.length === 0 ? (
               <p className="text-sm text-gray-400 italic">Sin repuestos requeridos.</p>
             ) : (

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
+import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 
 interface ProductoNecesario {
   sku: string
@@ -304,7 +305,7 @@ export default function CotizacionPage() {
             <div className="mb-4">
               <h3 className="text-sm font-bold text-gray-700 mb-1">✨ Recomendados (opcional)</h3>
               <p className="text-xs text-gray-500 mb-2">
-                Productos opcionales que el técnico recomienda. No incluyen costo en esta cotización.
+                Productos opcionales que el técnico recomienda. No incluyen costo en esta cotización — puedes comprarlos por tu cuenta cuando quieras.
               </p>
               <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside bg-blue-50 rounded-xl p-3">
                 {cotizacion.productos_recomendados.map((p, i) => (
@@ -314,6 +315,12 @@ export default function CotizacionPage() {
                   </li>
                 ))}
               </ul>
+              <div className="mt-2">
+                <TiendaRepuestosLink
+                  variant="inline"
+                  texto="Encuéntralos en tienda.bairdservice.com (productos originales)"
+                />
+              </div>
             </div>
           )}
 

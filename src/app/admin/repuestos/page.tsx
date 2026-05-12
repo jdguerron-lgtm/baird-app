@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
+import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 
 interface RepuestoConSolicitud {
   id: string
@@ -74,6 +75,14 @@ export default function AdminRepuestosPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-900">📦 Repuestos pendientes</h1>
           <Link href="/admin" className="text-sm text-blue-600 hover:underline">← Admin</Link>
+        </div>
+
+        <div className="mb-4">
+          <TiendaRepuestosLink
+            variant="banner"
+            tone="emerald"
+            texto="Cómprale los repuestos pendientes a la tienda oficial — tienda.bairdservice.com — productos originales con factura electrónica DIAN."
+          />
         </div>
 
         <div className="flex gap-2 mb-6">
