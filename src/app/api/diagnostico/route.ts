@@ -225,9 +225,15 @@ export async function POST(req: NextRequest) {
       }
 
       // Solo enviar verificación si NO necesita pricing admin
+      let waOk = true
+      let waError: string | null = null
       if (!necesitaPricingAdmin) {
         const waResult = await enviarVerificacionPasoCliente(sol.id)
-        if (!waResult.ok) console.error('Error enviando verificación:', waResult.error)
+        waOk = waResult.ok
+        if (!waResult.ok) {
+          waError = waResult.error ?? 'Error desconocido'
+          console.error('[diagnostico] enviarVerificacionPasoCliente falló:', waError)
+        }
       }
 
       return NextResponse.json({
@@ -236,6 +242,8 @@ export async function POST(req: NextRequest) {
         estado: nuevoEstado,
         verificacion_paso_token: verificacionToken,
         pendiente_pricing: necesitaPricingAdmin,
+        whatsapp_sent: !necesitaPricingAdmin && waOk,
+        whatsapp_error: waError,
       })
     } else {
       // ── NON-WARRANTY (PARTICULAR) FLOW ──
@@ -338,9 +346,15 @@ export async function POST(req: NextRequest) {
       }
 
       // Si genera cotización, dispara el WhatsApp al cliente inmediatamente.
+      let waOk = true
+      let waError: string | null = null
       if (!cierraSinCotizacion) {
         const waResult = await enviarCotizacionCliente(sol.id)
-        if (!waResult.ok) console.error('Error enviando cotización al cliente:', waResult.error)
+        waOk = waResult.ok
+        if (!waResult.ok) {
+          waError = waResult.error ?? 'Error desconocido'
+          console.error('[diagnostico] enviarCotizacionCliente falló:', waError)
+        }
       }
 
       return NextResponse.json({
@@ -350,6 +364,8 @@ export async function POST(req: NextRequest) {
         cotizacionToken: cierraSinCotizacion ? null : cotizacionToken,
         totalCliente: tarifa?.totalCliente ?? 0,
         pendiente_pricing: false,
+        whatsapp_sent: !cierraSinCotizacion && waOk,
+        whatsapp_error: waError,
       })
     }
   } catch (error) {

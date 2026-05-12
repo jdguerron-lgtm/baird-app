@@ -39,7 +39,10 @@ function isPhoneAllowed(rawPhone: string): boolean {
 }
 
 function logFiltrado(primitive: string, raw: string): void {
-  console.log(`[WhatsApp][test-mode] Skipping ${primitive} to ${phoneToDigits(raw)} (not in BAIRD_TEST_PHONE_WHITELIST)`)
+  // WARN (no log) — esto es un signal real cuando se deja la env prendida
+  // en prod por error. Buscar este string en Vercel logs si "no llega ningún
+  // WhatsApp": probable que BAIRD_TEST_PHONE_WHITELIST quedó set.
+  console.warn(`⚠️ [WhatsApp][TEST-MODE] FILTRADO ${primitive} → ${phoneToDigits(raw)} (no está en BAIRD_TEST_PHONE_WHITELIST)`)
 }
 
 // ─────────────────────────────────────────
@@ -128,7 +131,26 @@ async function enviarImagen(para: string, urlImagen: string, caption: string): P
   console.log(`[WhatsApp][image] sent to ${toDigits} url=${urlImagen}, message_id=${body.messages?.[0]?.id ?? 'unknown'}`)
 }
 
-export async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<void> {
+/**
+ * Resultado de un envío de plantilla.
+ *
+ * - `sent: true` → Meta aceptó el envío (200 OK + sin error en body).
+ * - `sent: false, filtered: true` → el destino no está en
+ *   BAIRD_TEST_PHONE_WHITELIST y se omitió silenciosamente (modo test/dev).
+ * - Cualquier otro error (HTTP 4xx/5xx o body.error) sigue siendo throw —
+ *   los callers que envuelven en try/catch ven el error.
+ *
+ * Esto reemplaza el `Promise<void>` previo que enmascaraba el caso
+ * "filtrado", haciendo que callers (enviarCotizacionCliente, etc.)
+ * pensaran que se envió cuando no fue así.
+ */
+export interface EnvioResult {
+  sent: boolean
+  filtered?: boolean
+  messageId?: string
+}
+
+export async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<EnvioResult> {
   const phoneId = process.env.WHATSAPP_PHONE_ID
   const token = process.env.WHATSAPP_API_TOKEN
 
@@ -136,7 +158,7 @@ export async function enviarPlantilla(para: string, templateName: string, langua
 
   if (!isPhoneAllowed(para)) {
     logFiltrado(`enviarPlantilla(${templateName})`, para)
-    return
+    return { sent: false, filtered: true }
   }
 
   const toNumber = phoneToDigits(para)
@@ -184,7 +206,9 @@ export async function enviarPlantilla(para: string, templateName: string, langua
     console.warn(`[WhatsApp] Message status: ${messageStatus} for ${toNumber}`)
   }
 
-  console.log(`[WhatsApp] Template "${templateName}" sent to ${toNumber}, message_id: ${body.messages?.[0]?.id ?? 'unknown'}`)
+  const messageId = body.messages?.[0]?.id ?? 'unknown'
+  console.log(`[WhatsApp] Template "${templateName}" sent to ${toNumber}, message_id: ${messageId}`)
+  return { sent: true, messageId }
 }
 
 async function enviarMensajeInteractivo(options: {
@@ -854,7 +878,7 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'verificar_siguiente_paso_v1', 'es', [
+    const result = await enviarPlantilla(sol.cliente_telefono, 'verificar_siguiente_paso_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -872,6 +896,9 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
         parameters: [{ type: 'text', text: sol.verificacion_paso_token }],
       },
     ])
+    if (result.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -1027,7 +1054,7 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
     .single()
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v1', 'es', [
+    const result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1048,7 +1075,11 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
       },
     ])
 
-    // Update state
+    if (result.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
+
+    // Update state — solo si efectivamente se envió
     await supabase
       .from('solicitudes_servicio')
       .update({ estado: 'cotizacion_enviada' })

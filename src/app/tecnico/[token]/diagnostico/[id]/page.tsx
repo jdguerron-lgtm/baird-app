@@ -50,6 +50,8 @@ export default function DiagnosticoPage() {
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [exito, setExito] = useState(false)
+  const [waSent, setWaSent] = useState<boolean | null>(null)
+  const [waError, setWaError] = useState<string | null>(null)
   const [progreso, setProgreso] = useState('')
 
   // Form state
@@ -362,6 +364,13 @@ export default function DiagnosticoPage() {
         return
       }
 
+      // Surface si el WhatsApp al cliente se envió o quedó pendiente
+      if (typeof data.whatsapp_sent === 'boolean') {
+        setWaSent(data.whatsapp_sent)
+        if (!data.whatsapp_sent && data.whatsapp_error) {
+          setWaError(String(data.whatsapp_error))
+        }
+      }
       setExito(true)
     } catch {
       setError('Error de conexion')
@@ -426,11 +435,21 @@ export default function DiagnosticoPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-md w-full text-center">
             <div className="text-5xl mb-4">✅</div>
             <h1 className="text-2xl font-bold text-green-700 mb-2">Diagnostico registrado</h1>
-            <p className="text-gray-500 text-sm mb-6">
+            <p className="text-gray-500 text-sm mb-4">
               {servicio?.es_garantia
                 ? 'Tu diagnóstico fue registrado. El equipo Baird coordina con el cliente la aprobación del siguiente paso (incluyendo tiempo de entrega si requiere repuesto).'
-                : 'Tu diagnóstico y la lista de repuestos quedaron registrados. El equipo Baird fijará precio y tiempo de entrega y enviará la cotización al cliente. Te notificaremos cuando el cliente responda.'}
+                : 'Tu diagnóstico y la cotización quedaron registrados.'}
             </p>
+            {waSent === true && (
+              <div className="mb-4 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
+                📤 <strong>WhatsApp enviado al cliente</strong> — recibirá la {servicio?.es_garantia ? 'verificación del siguiente paso' : 'cotización'} para aprobar.
+              </div>
+            )}
+            {waSent === false && (
+              <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 text-left">
+                ⚠️ <strong>WhatsApp NO se envió al cliente.</strong> El diagnóstico quedó guardado, pero el equipo de Baird tendrá que reenviar el mensaje manualmente desde el panel admin.{waError ? ` Detalle: ${waError}` : ''}
+              </div>
+            )}
             <button
               onClick={() => router.push(`/tecnico/${token}`)}
               className="w-full bg-slate-900 text-white font-semibold py-3 px-6 rounded-xl hover:bg-slate-800 transition-colors"

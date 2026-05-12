@@ -86,6 +86,8 @@ export default function SolicitudDetalle() {
   const [reenviando, setReenviando] = useState(false)
   const [exportando, setExportando] = useState(false)
   const [errorExport, setErrorExport] = useState<string | null>(null)
+  const [reenviandoUltimo, setReenviandoUltimo] = useState(false)
+  const [ultimoResult, setUltimoResult] = useState<Record<string, unknown> | null>(null)
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -890,6 +892,78 @@ export default function SolicitudDetalle() {
       </div>
         )
       })()}
+
+      {/* Reenviar último mensaje del flujo — herramienta de recuperación */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Reenviar último mensaje del flujo
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Si algo no llegó al cliente o al técnico (test mode, ventana 24h cerrada,
+          error transitorio de Meta), este botón re-envía la plantilla que
+          corresponde al estado actual.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={async () => {
+              setReenviandoUltimo(true)
+              setUltimoResult(null)
+              try {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (!session) {
+                  setUltimoResult({ error: 'Sesión expirada. Inicia sesión de nuevo.' })
+                  setReenviandoUltimo(false)
+                  return
+                }
+                const res = await fetch('/api/admin/reenviar-ultimo-mensaje', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({ solicitudId: id }),
+                })
+                const data = await res.json()
+                setUltimoResult(data)
+              } catch (e) {
+                setUltimoResult({ error: e instanceof Error ? e.message : String(e) })
+              }
+              setReenviandoUltimo(false)
+            }}
+            disabled={reenviandoUltimo}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {reenviandoUltimo ? 'Reenviando...' : '↻ Reenviar último mensaje'}
+          </button>
+          <span className="text-xs text-gray-500">Estado actual: <span className="font-mono">{solicitud.estado}</span></span>
+        </div>
+
+        {ultimoResult && (
+          <div className={`mt-3 rounded-lg p-3 text-sm ${
+            ultimoResult.ok
+              ? 'bg-green-50 border border-green-200 text-green-900'
+              : 'bg-amber-50 border border-amber-200 text-amber-900'
+          }`}>
+            <p className="font-semibold mb-1">
+              {ultimoResult.ok ? '✅ Enviado' : '⚠️ No enviado'} — {String(ultimoResult.accion ?? '')}
+            </p>
+            {ultimoResult.destinatario ? (
+              <p className="text-xs">Destinatario: <strong>{String(ultimoResult.destinatario)}</strong></p>
+            ) : null}
+            {ultimoResult.mensaje ? (
+              <p className="text-xs mt-1">{String(ultimoResult.mensaje)}</p>
+            ) : null}
+            {ultimoResult.error ? (
+              <p className="text-xs mt-1 font-mono">{String(ultimoResult.error)}</p>
+            ) : null}
+            {ultimoResult.filtered ? (
+              <p className="text-xs mt-1 bg-red-100 text-red-900 px-2 py-1 rounded font-semibold">
+                ⚠️ Filtrado por BAIRD_TEST_PHONE_WHITELIST — revisar env vars de Vercel
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
 
       {/* Matching diagnostics */}
       <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
