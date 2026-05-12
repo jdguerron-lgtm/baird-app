@@ -6,11 +6,12 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import {
   TARIFAS_MANO_OBRA,
-  BONO_INCENTIVO,
   calcularTotalGarantia,
   type ComplejidadServicio,
 } from '@/lib/constants/tarifas-garantia'
 import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
+import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
+import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import { formatCOP } from '@/lib/utils/format'
 import { CodigoFallaSelector } from '@/components/ui/CodigoFallaSelector'
 import type { CodigoFalla } from '@/lib/constants/codigos-falla'
@@ -34,6 +35,7 @@ interface Servicio {
   estado: string
   es_garantia: boolean
   created_at: string
+  horario_confirmado: string | null
 }
 
 const MAX_EVIDENCIAS = 4
@@ -42,7 +44,12 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB para fotos y videos
 export default function DiagnosticoPage() {
   const { token, id } = useParams<{ token: string; id: string }>()
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  // 2 refs separados: el principal (fotoInputRef) abre la cámara en modo
+  // foto en Android (con accept="image/*"). Si se usa accept="image/*,video/*"
+  // Android puede defaultear a modo video, confundiendo al técnico nuevo.
+  // El video queda como link secundario opcional.
+  const fotoInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
 
   const [tecnico, setTecnico] = useState<{ id: string; nombre_completo: string } | null>(null)
   const [servicio, setServicio] = useState<Servicio | null>(null)
@@ -116,6 +123,20 @@ export default function DiagnosticoPage() {
     return Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24))
   }, [servicio])
 
+  // Pago al técnico (garantía): se muestra como rango antes de elegir
+  // complejidad, y como proyección detallada después. Nunca expone lo que
+  // paga MABE ni el margen Baird — solo el neto al técnico. Ver
+  // docs/TARIFAS.md § "Garantía MABE" y src/lib/utils/pago-tecnico.ts.
+  const pagoBreakdown = useMemo(() => {
+    if (!servicio?.es_garantia) return null
+    return estimarPagoTecnicoGarantia({
+      complejidad: complejidad ?? null,
+      diasSolucion: diasTranscurridos,
+      horarioConfirmado: servicio.horario_confirmado,
+      asumirOptimista: true,
+    })
+  }, [servicio, complejidad, diasTranscurridos])
+
   useEffect(() => {
     const cargar = async () => {
       const { data: tec } = await supabase
@@ -133,7 +154,7 @@ export default function DiagnosticoPage() {
 
       const { data: sol } = await supabase
         .from('solicitudes_servicio')
-        .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at')
+        .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado')
         .eq('id', id)
         .eq('tecnico_asignado_id', tec.id)
         .single()
@@ -519,77 +540,10 @@ export default function DiagnosticoPage() {
           </div>
         </div>
 
-        {/* WARRANTY: TSS Bonus incentive banner */}
-        {servicio!.es_garantia && (
-          <div className={`rounded-2xl shadow-sm border-2 p-5 mb-4 ${
-            diasTranscurridos <= 2 ? 'bg-green-50 border-green-300' :
-            diasTranscurridos <= 5 ? 'bg-amber-50 border-amber-300' :
-            diasTranscurridos <= 8 ? 'bg-orange-50 border-orange-300' :
-            'bg-red-50 border-red-300'
-          }`}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xl">💰</span>
-              <h3 className="text-sm font-bold text-slate-900">Bonificacion por pronta solucion</h3>
-            </div>
-            <p className="text-xs text-gray-600 mb-3">
-              Resuelve rapido y gana un bono adicional. El bono depende de los dias transcurridos desde la solicitud y la complejidad del servicio.
-            </p>
-            <div className="bg-white/80 rounded-xl p-3">
-              <div className="grid grid-cols-4 gap-1 text-[10px] font-semibold text-gray-500 uppercase mb-2">
-                <span>Dias</span>
-                <span className="text-center">Baja</span>
-                <span className="text-center">Media</span>
-                <span className="text-center">Alta</span>
-              </div>
-              {[
-                { rango: '0-2', min: 0, max: 2 },
-                { rango: '3-5', min: 3, max: 5 },
-                { rango: '6-8', min: 6, max: 8 },
-              ].map(({ rango, min, max }) => {
-                const isActive = diasTranscurridos >= min && diasTranscurridos <= max
-                return (
-                  <div key={rango} className={`grid grid-cols-4 gap-1 py-1.5 text-xs rounded-lg px-1 ${
-                    isActive ? 'bg-purple-100 font-bold' : ''
-                  }`}>
-                    <span className={isActive ? 'text-purple-800' : 'text-gray-600'}>{rango} dias</span>
-                    <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
-                      ${formatCOP(BONO_INCENTIVO.baja.find(b => b.min === min)?.bono ?? 0)}
-                    </span>
-                    <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
-                      ${formatCOP(BONO_INCENTIVO.media.find(b => b.min === min)?.bono ?? 0)}
-                    </span>
-                    <span className={`text-center ${isActive ? 'text-purple-800' : 'text-gray-700'}`}>
-                      ${formatCOP(BONO_INCENTIVO.alta.find(b => b.min === min)?.bono ?? 0)}
-                    </span>
-                  </div>
-                )
-              })}
-              {diasTranscurridos > 8 && (
-                <div className="grid grid-cols-4 gap-1 py-1.5 text-xs rounded-lg px-1 bg-red-100 font-bold">
-                  <span className="text-red-700">&gt;8 dias</span>
-                  <span className="text-center text-red-600">$0</span>
-                  <span className="text-center text-red-600">$0</span>
-                  <span className="text-center text-red-600">$0</span>
-                </div>
-              )}
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                diasTranscurridos <= 2 ? 'bg-green-200 text-green-800' :
-                diasTranscurridos <= 5 ? 'bg-amber-200 text-amber-800' :
-                diasTranscurridos <= 8 ? 'bg-orange-200 text-orange-800' :
-                'bg-red-200 text-red-800'
-              }`}>
-                {diasTranscurridos} dia{diasTranscurridos !== 1 ? 's' : ''} transcurrido{diasTranscurridos !== 1 ? 's' : ''}
-              </span>
-              {diasTranscurridos <= 8 ? (
-                <span className="text-xs text-gray-500">
-                  {diasTranscurridos <= 2 ? 'Bono maximo disponible!' : diasTranscurridos <= 5 ? 'Aun tienes bono disponible' : 'Ultimo rango de bonificacion'}
-                </span>
-              ) : (
-                <span className="text-xs text-red-600">Sin bonificacion disponible</span>
-              )}
-            </div>
+        {/* WARRANTY: Pago al técnico (rango antes de diagnóstico, proyección después). */}
+        {servicio!.es_garantia && pagoBreakdown && (
+          <div className="mb-4">
+            <PagoTecnicoBreakdown breakdown={pagoBreakdown} />
           </div>
         )}
 
@@ -746,7 +700,7 @@ export default function DiagnosticoPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-1">Evidencia del fallo *</h2>
           <p className="text-xs text-gray-400 mb-4">
-            Toma fotos o graba un video corto del problema identificado para justificar el diagnostico
+            Toma fotos del problema identificado para justificar el diagnóstico. Si necesitas grabar video, abajo hay opción.
           </p>
 
           {/* File grid */}
@@ -776,28 +730,52 @@ export default function DiagnosticoPage() {
 
             {evidencias.length < MAX_EVIDENCIAS && (
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => fotoInputRef.current?.click()}
                 className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:border-purple-400 hover:bg-purple-50/50 transition-colors"
               >
                 <span className="text-2xl mb-1">📷</span>
-                <span className="text-xs text-gray-500 font-medium">Foto o video</span>
+                <span className="text-xs text-gray-500 font-medium">Tomar foto</span>
                 <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
               </button>
             )}
           </div>
 
+          {/* Input principal — solo fotos. accept="image/*" + capture="environment"
+              hace que Android abra la cámara trasera en modo foto directamente.
+              Sin esto, accept="image/*,video/*" causa que algunos Android abran
+              en modo video por default, lo que confunde a técnicos nuevos. */}
           <input
-            ref={fileInputRef}
+            ref={fotoInputRef}
             type="file"
-            accept="image/*,video/*"
+            accept="image/*"
             capture="environment"
             multiple
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
 
+          {/* Input opcional para video — explícito, secundario. */}
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => handleFileSelect(e.target.files)}
+          />
+
+          {evidencias.length < MAX_EVIDENCIAS && (
+            <button
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+              className="text-xs text-gray-500 underline hover:text-purple-700 mb-2"
+            >
+              🎬 ¿Necesitas grabar un video corto en su lugar?
+            </button>
+          )}
+
           <p className="text-[10px] text-gray-400">
-            {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos o videos del fallo encontrado
+            {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos del fallo (o video corto opcional)
           </p>
         </div>
 
