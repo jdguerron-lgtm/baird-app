@@ -29,7 +29,7 @@ CREATE OR REPLACE FUNCTION normalizar_telefono_co(valor text)
 RETURNS text
 LANGUAGE plpgsql
 IMMUTABLE
-AS $$
+AS $func$
 DECLARE
   digitos text;
 BEGIN
@@ -63,7 +63,7 @@ BEGIN
   -- con isValidPhone.
   RETURN digitos;
 END;
-$$;
+$func$;
 
 COMMENT ON FUNCTION normalizar_telefono_co(text) IS
   'Normaliza teléfonos a dígitos puros con prefijo 57 garantizado para móviles colombianos. Strip de +, espacios, guiones, pipe. Otros países pasan tal cual.';
@@ -74,12 +74,12 @@ COMMENT ON FUNCTION normalizar_telefono_co(text) IS
 CREATE OR REPLACE FUNCTION trigger_normalizar_whatsapp_tecnico()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $func$
 BEGIN
   NEW.whatsapp := normalizar_telefono_co(NEW.whatsapp);
   RETURN NEW;
 END;
-$$;
+$func$;
 
 DROP TRIGGER IF EXISTS normalizar_whatsapp_tecnico ON tecnicos;
 CREATE TRIGGER normalizar_whatsapp_tecnico
@@ -91,12 +91,12 @@ CREATE TRIGGER normalizar_whatsapp_tecnico
 CREATE OR REPLACE FUNCTION trigger_normalizar_telefono_cliente()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $func$
 BEGIN
   NEW.cliente_telefono := normalizar_telefono_co(NEW.cliente_telefono);
   RETURN NEW;
 END;
-$$;
+$func$;
 
 DROP TRIGGER IF EXISTS normalizar_telefono_cliente ON solicitudes_servicio;
 CREATE TRIGGER normalizar_telefono_cliente
