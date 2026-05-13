@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { verificarAdmin } from '@/lib/auth/admin'
 import {
   enviarCotizacionCliente,
   enviarVerificacionPasoCliente,
@@ -28,6 +29,9 @@ export const maxDuration = 30
  */
 export async function POST(req: NextRequest) {
   try {
+    const isAdmin = await verificarAdmin(req)
+    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'Body inválido' }, { status: 400 })

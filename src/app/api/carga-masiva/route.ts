@@ -2,22 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import crypto from 'crypto'
 import { supabase } from '@/lib/supabase'
+import { verificarAdmin } from '@/lib/auth/admin'
 import { parseExcelData, type MappedSolicitud } from '@/lib/utils/excel-mapping'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 
-async function verificarAuth(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.split(' ')[1]
-  const { data: { user }, error } = await supabase.auth.getUser(token)
-  if (error || !user) return null
-  return user
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const user = await verificarAuth(req)
-    if (!user) {
+    const isAdmin = await verificarAdmin(req)
+    if (!isAdmin) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
@@ -182,8 +174,8 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await verificarAuth(req)
-    if (!user) {
+    const isAdmin = await verificarAdmin(req)
+    if (!isAdmin) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 

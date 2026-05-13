@@ -5,7 +5,7 @@
 > que corresponde y abre el doc específico**. Esto evita drift y
 > duplicación.
 >
-> **Última revisión: 2026-05-10.**
+> **Última revisión: 2026-05-12.**
 
 ---
 
@@ -18,6 +18,7 @@
 | **Calcular cuánto paga el cliente / recibe el técnico / margen Baird** | `docs/TARIFAS.md` | "Garantía MABE" o "Particular" |
 | **Implementar verificación T-24h / no-show** | `docs/PROTOCOLO-VISITA.md` | Todo |
 | **Cambiar un mensaje de WhatsApp** (texto, params, plantilla) | `docs/WHATSAPP_TEMPLATES.md` | "Proceso obligatorio para crear o modificar una plantilla" + catálogo |
+| **Agregar un endpoint admin o cambiar auth** | `docs/SEGURIDAD.md` | "Endpoints API" + checklist final |
 | **Agregar un estado nuevo** a la state machine | `CLAUDE.md` § "Solicitud State Machine" + `supabase/migrations/README.md` ("Cómo aplicar las pendientes") |
 | **Aplicar migración Supabase** | `supabase/migrations/README.md` | "Cómo aplicar las pendientes" |
 | **Ver qué columnas existen** en una tabla | `CLAUDE.md` § "Database Tables" + última migración relevante |
@@ -41,6 +42,7 @@
 | **`docs/PROTOCOLO-VISITA.md`** | Verificación T-24h / T-2h / llegada / no-show. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
 | **`docs/FLOWS.md`** | Diagramas paso-a-paso de cada flujo end-to-end con cada plantilla WhatsApp en su contexto, puntos de decisión del cliente, gaps conocidos, plan de testing manual. | Cuando vas a tocar el state machine, agregar una página customer-facing, o entender dónde se manda qué WhatsApp. | Tras cambiar el state machine, agregar/cambiar una plantilla en el flujo, o mover un disparo de WhatsApp. |
 | **`docs/WHATSAPP_TEMPLATES.md`** | Catálogo de las 16 plantillas Meta, parámetros, disparo, copy completo. **Define el proceso obligatorio de cambio de plantilla.** Backlog de plantillas nuevas con JSON listo. | Antes de tocar cualquier mensaje WhatsApp. | Tras cambiar params de una plantilla, agregar una nueva, o subirla a Meta. |
+| **`docs/SEGURIDAD.md`** | Mapa de autenticación y autorización: frontend admin, endpoints API (admin/cliente/cron), tokens UUID, RLS, storage, histórico de incidentes, backlog de hardening. | Antes de tocar cualquier endpoint admin, agregar uno nuevo, o auditar seguridad. | Tras agregar/quitar endpoint admin, cambiar el patrón de auth, habilitar RLS, o resolver un incidente. |
 | **`supabase/migrations/README.md`** | Lista ordenada de migraciones, status (aplicada/pendiente), hotfixes, verificación SQL post-apply, backlog de migraciones futuras. | Antes de aplicar una migración o cuando hay drift schema↔código. | Tras crear nueva migración o aplicar una. |
 | **`docs/INDEX.md`** (este archivo) | Hub de navegación. Mapea tareas comunes a docs específicos. | Primero al iniciar una iteración. | Cuando creas un nuevo doc o cambias el rol de uno existente. |
 
@@ -102,11 +104,13 @@
 4. `CLAUDE.md` § "Architecture" + "API Routes" + "Customer-Facing Pages"
 5. `docs/FLOWS.md` — agregar diagrama del flujo
 
-### Cambias un endpoint admin
+### Cambias o agregas un endpoint admin
 1. Editar API route + UI
-2. Verificar el guard de auth (Supabase session check)
-3. `CLAUDE.md` § "API Routes" si el endpoint cambia de propósito
-4. `docs/FLOWS.md` § "Admin Pages" si cambia el rol del admin
+2. **Auth obligatorio**: `verificarAdmin` desde `@/lib/auth/admin` como primera línea del handler. Ver checklist completo en `docs/SEGURIDAD.md` § "Cómo agregar un endpoint admin nuevo"
+3. UI envía `Authorization: Bearer ${session.access_token}`
+4. `CLAUDE.md` § "API Routes" si el endpoint cambia de propósito
+5. `docs/FLOWS.md` § "Admin Pages" si cambia el rol del admin
+6. `docs/SEGURIDAD.md` § "Endpoints API → Admin" — agregar a la tabla
 
 ### Agregas una env var
 1. `CLAUDE.md` § "Environment Variables"
@@ -182,7 +186,7 @@ Verificación SQL post-migración: ver `supabase/migrations/README.md` § "Verif
 
 ---
 
-## 🚦 Estado de salud actual (2026-05-08)
+## 🚦 Estado de salud actual (2026-05-12)
 
 - **Build**: ✅ pasa
 - **Typecheck**: ✅ pasa

@@ -721,7 +721,27 @@ Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`
 Otros constraints relevantes: `siguiente_paso`, `verificacion_paso_decision`, `cancelado_por`, `repuestos_pendientes.estado`, `gps_pings.fase`, `solicitud_eventos.tipo`. Todos en sus respectivas migraciones.
 
 ### Auth admin
-El admin panel (`/admin/*`) usa Supabase Auth (`supabase.auth.getSession()` en `src/app/admin/layout.tsx`). Login via `/admin/login` con email/password contra Supabase. Sin sesión válida, redirect a login. **Las API routes admin no validan sesión** — hoy se asume que el sidebar admin es la única forma de llegar a ellas, lo cual es frágil. Endurecer con JWT check pendiente.
+
+> 🔒 **Doc canónico**: `docs/SEGURIDAD.md` — mapa de auth por endpoint, modelo de tokens, backlog (RLS, rate limit, MFA).
+
+**Frontend** — `src/app/admin/layout.tsx` llama `supabase.auth.getSession()`; sin sesión redirect a `/admin/login`. Login usa `supabase.auth.signInWithPassword`. Las cuentas admin se crean manualmente desde el dashboard de Supabase (no hay self-signup).
+
+**API routes admin** — todas validan `Authorization: Bearer ${session.access_token}` con el helper compartido `verificarAdmin()` de `src/lib/auth/admin.ts`. Llamadas UI obtienen el token con `supabase.auth.getSession()` y lo envían en el header.
+
+Endpoints con `verificarAdmin`: `/api/admin/export`, `/api/admin/reenviar-ultimo-mensaje`, `/api/carga-masiva` (POST + DELETE), `/api/whatsapp/notify`, `/api/cotizacion-precios`, `/api/repuesto-recibido`.
+
+**Patrón nuevo** (cualquier endpoint admin futuro):
+```ts
+import { verificarAdmin } from '@/lib/auth/admin'
+
+export async function POST(req: NextRequest) {
+  const isAdmin = await verificarAdmin(req)
+  if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  // ...
+}
+```
+
+**Gotcha histórico** (2026-05-12): `/api/cotizacion-precios` y `/api/repuesto-recibido` se crearon sin auth check (asumiendo "solo el admin tiene la URL"). Cualquiera con la URL podía fijar precios y disparar cotizaciones, o transicionar estados marcando repuestos. Fix en este commit. **Cuando agregues un endpoint nuevo bajo `/api/admin/` o que muta estado admin, agrega `verificarAdmin` ANTES de cualquier parse de body.**
 
 ### Auditoría / observabilidad
 Todo cambio relevante (cancelación, reagendamiento, cambio manual de admin) escribe a `solicitud_eventos` (append-only). Pattern:

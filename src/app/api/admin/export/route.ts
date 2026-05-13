@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
+import { verificarAdmin } from '@/lib/auth/admin'
 
 export const maxDuration = 60
-
-async function verificarAdmin(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.replace('Bearer ', '')
-  if (!token) return false
-  const { data: { user } } = await supabase.auth.getUser(token)
-  return !!user
-}
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
 

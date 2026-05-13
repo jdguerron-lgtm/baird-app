@@ -55,9 +55,18 @@ export default function AdminRepuestosPage() {
   const marcarRecibido = async (id: string) => {
     if (!confirm('¿Marcar este repuesto como recibido? Esto notificará al cliente y reactivará el servicio.')) return
     setActualizando(id)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      alert('Sesión expirada — vuelve a iniciar sesión')
+      setActualizando(null)
+      return
+    }
     const res = await fetch('/api/repuesto-recibido', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify({ repuestoId: id }),
     })
     const data = await res.json()

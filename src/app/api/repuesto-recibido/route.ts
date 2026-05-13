@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { verificarAdmin } from '@/lib/auth/admin'
 import {
   enviarRepuestoRecibidoCliente,
   enviarMensajeTexto,
@@ -18,6 +19,9 @@ import {
  */
 export async function POST(req: NextRequest) {
   try {
+    const isAdmin = await verificarAdmin(req)
+    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+
     const { repuestoId } = await req.json()
 
     if (!repuestoId) {

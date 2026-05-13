@@ -162,8 +162,9 @@ El proyecto está en **fase de producción activa** con **flujo customer-first s
 ### 4. Token permanente (System User) ✅ COMPLETADO
 - [x] System User `baird-api` con token permanente activo
 
-### 5. RLS en Supabase ✅ COMPLETADO
-- [x] Row Level Security habilitado en las 5 tablas
+### 5. RLS en Supabase — PARCIAL ⚠️
+- [x] RLS habilitado en `repuestos_pendientes`, `gps_pings`, `solicitud_eventos`
+- [ ] **Pendiente**: habilitar RLS en `solicitudes_servicio`, `tecnicos`, `especialidades_tecnico`, `evidencias_servicio`, `notificaciones_whatsapp`. Hoy la auth admin es de fachada porque el `anon_key` (extraíble del bundle) tiene acceso total. Ver `docs/SEGURIDAD.md` § 4.
 
 ---
 
@@ -173,6 +174,12 @@ El proyecto está en **fase de producción activa** con **flujo customer-first s
 - [ ] **Auto-cierre 24h** — Si el cliente no confirma en 24h, marcar automáticamente como completada (cron job o edge function)
 - [ ] **Seguimiento para el cliente** — página pública `/solicitud/{id}` con estado en tiempo real
 - [ ] **Notificación de disputa** — cuando el cliente reporta problema, avisar al admin por WhatsApp/email
+- [ ] **Hardening de seguridad** (ver `docs/SEGURIDAD.md` § 7 "Backlog priorizado"):
+  - RLS en 5 tablas críticas
+  - `tecnicos-documentos` → signed URLs (PII de cédulas hoy público)
+  - Rate limiting en `/api/solicitar` y `/api/admin/login`
+  - MFA (TOTP) en login admin
+  - Audit log de acciones admin
 
 ### Media prioridad
 - [ ] **Mappers de Excel adicionales** — para otros formatos de proveedores (no solo Mabe/GE BITÁCORA)

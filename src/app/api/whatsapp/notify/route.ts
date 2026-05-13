@@ -1,19 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { verificarAdmin } from '@/lib/auth/admin'
 import {
   notificarTecnicos,
   enviarSeleccionHorarioCliente,
 } from '@/lib/services/whatsapp.service'
-
-async function verificarAdmin(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.replace('Bearer ', '')
-
-  if (!token) return false
-
-  const { data: { user } } = await supabase.auth.getUser(token)
-  return !!user
-}
 
 /**
  * POST /api/whatsapp/notify

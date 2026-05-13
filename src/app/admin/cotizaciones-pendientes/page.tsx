@@ -162,9 +162,17 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
     }
     setEnviando(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setError('Sesión expirada — vuelve a iniciar sesión')
+        return
+      }
       const res = await fetch('/api/cotizacion-precios', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           solicitudId: solicitud.id,
           manoObra: Number(manoObra) || 0,

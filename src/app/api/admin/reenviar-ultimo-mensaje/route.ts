@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { verificarAdmin } from '@/lib/auth/admin'
 import {
   enviarSeleccionHorarioCliente,
   enviarVerificacionPasoCliente,
@@ -14,14 +15,6 @@ import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits } from '@/lib/utils/phone'
 
 export const maxDuration = 30
-
-async function verificarAdmin(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.replace('Bearer ', '')
-  if (!token) return false
-  const { data: { user } } = await supabase.auth.getUser(token)
-  return !!user
-}
 
 /**
  * POST /api/admin/reenviar-ultimo-mensaje
