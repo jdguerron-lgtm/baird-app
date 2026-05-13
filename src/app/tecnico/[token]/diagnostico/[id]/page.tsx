@@ -366,6 +366,16 @@ export default function DiagnosticoPage() {
           // Si el siguiente paso es no_reparable o negativa_cliente, costoTecnico
           // puede ser 0; la API lo maneja correctamente (no genera cotización).
           costoTecnico: costoTecnicoNum,
+          // codigoFalla disponible en ambos flujos (habilitado 2026-05-13).
+          // En particular sirve para análisis posterior — no afecta cálculo.
+          codigoFalla: codigoFalla ? {
+            codigo: codigoFalla.codigo,
+            descripcion: codigoFalla.descripcion,
+            familia: codigoFalla.familia,
+            sistema: codigoFalla.sistema,
+            componente: codigoFalla.componente,
+            complejidad: codigoFalla.complejidad,
+          } : null,
           ...oathData,
           ...siguientePasoData,
         }
@@ -593,15 +603,18 @@ export default function DiagnosticoPage() {
             )}
           </div>
 
-          {/* Fault code selector (warranty only) */}
-          {servicio!.es_garantia && (
-            <CodigoFallaSelector
-              tipoEquipo={servicio!.tipo_equipo}
-              diagnosticoTexto={diagnosticoTexto}
-              value={codigoFalla}
-              onChange={setCodigoFalla}
-            />
-          )}
+          {/* Fault code selector (warranty + particular).
+              Hasta 2026-05-13 solo aparecía en garantía. Se habilitó también en
+              particular para que las familias REFRIGERACION / LAVADO / CENTROS DE
+              LAVADO / etc. queden disponibles al técnico independientemente del
+              flujo. La API persiste `codigo_falla` en triaje_resultado y
+              cotizacion (para particular) para consulta posterior. */}
+          <CodigoFallaSelector
+            tipoEquipo={servicio!.tipo_equipo}
+            diagnosticoTexto={diagnosticoTexto}
+            value={codigoFalla}
+            onChange={setCodigoFalla}
+          />
 
           {/* Complexity selection — NO prices shown */}
           <div className="mb-5">

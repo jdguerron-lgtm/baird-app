@@ -265,7 +265,7 @@ export async function POST(req: NextRequest) {
       //
       // Ver docs/TARIFAS.md § "Particular" para detalle de la fórmula
       // (costoTecnico × 1.19 IVA × 1.10 margen Baird).
-      const { evidenciaUrls, costoTecnico } = body
+      const { evidenciaUrls, costoTecnico, codigoFalla } = body
       const costoTecnicoNum = Number.isFinite(costoTecnico) && costoTecnico > 0 ? Math.round(costoTecnico) : 0
 
       const cotizacionToken = crypto.randomUUID()
@@ -314,6 +314,23 @@ export async function POST(req: NextRequest) {
         evidencias_diagnostico: evidenciaUrls,
         diagnosticado_at: new Date().toISOString(),
         costo_tecnico: costoTecnicoNum,
+      }
+
+      // codigoFalla habilitado en particular desde 2026-05-13. Persiste igual
+      // que en garantía pero NO se usa en cálculos — solo análisis posterior
+      // (estadísticas por familia, sistema, componente más frecuente).
+      if (codigoFalla) {
+        diagnosticoData.codigo_falla = codigoFalla.codigo
+        diagnosticoData.descripcion_falla = codigoFalla.descripcion
+        diagnosticoData.familia_falla = codigoFalla.familia
+        diagnosticoData.sistema_falla = codigoFalla.sistema
+        diagnosticoData.componente_falla = codigoFalla.componente
+        diagnosticoData.complejidad_falla = codigoFalla.complejidad
+        // También en cotización para que sea visible desde /cotizacion/{token}
+        // y desde el admin sin tener que abrir el triaje_resultado.
+        cotizacionData.codigo_falla = codigoFalla.codigo
+        cotizacionData.descripcion_falla = codigoFalla.descripcion
+        cotizacionData.familia_falla = codigoFalla.familia
       }
 
       // Si cierra sin cotización: estado terminal según el paso elegido.

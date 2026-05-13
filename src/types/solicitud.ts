@@ -178,6 +178,11 @@ export interface CotizacionReparacion {
   total: number          // mano_obra + repuestos
   // Legacy / compat:
   repuestos_detalle?: string
+  // Código de falla (opcional, habilitado en particular desde 2026-05-13).
+  // Sirve para análisis posterior; no afecta precios.
+  codigo_falla?: number
+  descripcion_falla?: string
+  familia_falla?: string
   // Evidencias y metadata:
   evidencias_diagnostico?: string[]
   cotizado_at: string
