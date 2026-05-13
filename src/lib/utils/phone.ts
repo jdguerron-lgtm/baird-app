@@ -24,30 +24,63 @@ export function parsePhone(value: string): { countryCode: string; number: string
 }
 
 /**
- * Converts stored "countryCode|number" format to pure digits for WhatsApp API.
- * Strips non-digit characters from both parts for safety.
- * Always ensures Colombian country code 57 prefix.
- * Example: "57|3001234567" -> "573001234567"
- *          "3001234567"    -> "573001234567"
- *          "+573001234567" -> "573001234567"
+ * Converts any stored phone format to pure digits for WhatsApp API.
+ *
+ * Acepta TODOS los formatos en los que los datos pueden estar guardados o
+ * tipeados:
+ *   "57|3001234567"     pipe (formato actual del PhoneInput)
+ *   "573001234567"      dígitos puros con código (formato deseable)
+ *   "3001234567"        móvil colombiano sin código (se prefija 57)
+ *   "+573001234567"     con + (de copy-paste, registro manual)
+ *   "+57 300 123 4567"  con espacios (formato visual)
+ *   "+57|3001234567"    pipe con + (legacy bug)
+ *   "300-123-4567"      con guiones
+ *
+ * Strip de todos los caracteres no-dígito y luego asegura el prefijo 57
+ * para móviles colombianos.
+ *
+ * IMPORTANTE: la BD también tiene un trigger `normalizar_telefono_co()`
+ * (mig 20260513) que aplica la misma lógica en tecnicos.whatsapp y
+ * solicitudes_servicio.cliente_telefono. Si cambias este algoritmo,
+ * mantén la migración SQL en sync.
  */
 export function phoneToDigits(value: string): string {
-  if (value.includes('|')) {
-    const [code, num] = value.split('|', 2)
-    const digits = `${code.replace(/\D/g, '')}${num.replace(/\D/g, '')}`
-    // Ensure 57 prefix
-    if (!digits.startsWith('57')) return `57${digits}`
-    return digits
-  }
-  // Strip all non-digits (handles +57..., spaces, dashes, etc.)
+  if (!value) return ''
+
+  // Strip TODO lo que no es dígito de toda la cadena de una vez.
+  // Esto cubre: +, espacios, guiones, paréntesis, pipe `|`, etc.
   const digits = value.replace(/\D/g, '')
-  // Already has country code
-  if (digits.startsWith('57') && digits.length >= 12) return digits
-  // Colombian mobile (10 digits starting with 3)
+  if (digits.length === 0) return ''
+
+  // Ya viene con código país 57 + 10 dígitos móvil (formato deseado)
+  if (digits.length === 12 && digits.startsWith('57')) return digits
+
+  // 10 dígitos arrancando con 3 = móvil colombiano sin código país
   if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`
-  // Short number without country code — default to 57
-  if (digits.length >= 7 && !digits.startsWith('57')) return `57${digits}`
+
+  // Mayor a 12 con 57 al inicio: probable duplicación (57|57...). Recortar.
+  if (digits.length > 12 && digits.startsWith('5757')) return digits.slice(2, 14)
+
+  // Mayor a 12 con 57: dejar tal cual (puede ser fijo o número extranjero)
+  if (digits.startsWith('57')) return digits
+
+  // Cualquier otro caso (números extranjeros sin 57, fijos, etc.):
+  // retornamos los dígitos sin prefijo. NO forzamos 57 ciegamente porque
+  // rompería técnicos/clientes con código de otro país (US +1, MX +52).
+  // Si necesitamos rechazar, isValidPhone() lo detecta upstream.
   return digits
+}
+
+/**
+ * Verifica que un teléfono normalizado parezca un móvil colombiano válido.
+ * Formato esperado: `573XXXXXXXXX` (12 dígitos, código 57 + móvil 3XX).
+ *
+ * Útil para detectar datos inconsistentes en BD (`+57 ...`, fijos, etc.)
+ * antes de intentar enviar por WhatsApp. NO se usa en la validación del
+ * formulario — el form usa `isValidPhone` (más permisivo).
+ */
+export function isMobileColombiano(digits: string): boolean {
+  return /^573\d{9}$/.test(digits)
 }
 
 /**

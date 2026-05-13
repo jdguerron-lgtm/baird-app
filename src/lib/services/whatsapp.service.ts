@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
-import { phoneToDigits } from '@/lib/utils/phone'
+import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch } from '@/lib/utils/format'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
@@ -178,6 +178,16 @@ export async function enviarPlantilla(para: string, templateName: string, langua
   }
 
   const toNumber = phoneToDigits(para)
+
+  // Signal de drift de datos: si el destino no tiene forma de móvil
+  // colombiano (573XXXXXXXXX), probablemente el `whatsapp` en BD quedó con
+  // formato roto (+57, espacios, dashes) o es número fijo/extranjero. La
+  // migración 20260513 normaliza datos existentes y agrega un trigger, pero
+  // este warn ayuda a detectar drift que se cuele en el futuro.
+  if (!isMobileColombiano(toNumber)) {
+    console.warn(`[WhatsApp] ⚠️ Destino con formato inusual: "${para}" → "${toNumber}". Si era un técnico que no recibe el WhatsApp, revisar tecnicos.whatsapp en BD.`)
+  }
+
   const template: Record<string, unknown> = {
     name: templateName,
     language: { code: languageCode },

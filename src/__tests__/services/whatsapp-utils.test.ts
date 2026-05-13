@@ -24,17 +24,19 @@ describe('formatearTelefono', () => {
     expect(formatearTelefono('+57 300 123 4567')).toBe('573001234567')
   })
 
-  it('prepends 57 to ambiguous 10-digit numbers without country code', () => {
-    // Behaviour change (commit 60a109e): treat any short raw number as
-    // Colombian by default. Callers must pass `code|number` if non-CO.
-    expect(formatearTelefono('1234567890')).toBe('571234567890')
+  it('only prepends 57 to 10-digit numbers starting with 3 (mobile CO)', () => {
+    // Behaviour 2026-05-13 (mig 20260513): solo móviles colombianos (10
+    // dígitos arrancando en 3) reciben prefijo 57. Otros 10 dígitos quedan
+    // tal cual para no romper números extranjeros / fijos.
+    expect(formatearTelefono('1234567890')).toBe('1234567890')
+    expect(formatearTelefono('3001234567')).toBe('573001234567')
   })
 
-  // Known limitation (phone.ts:36-40): even pipe-format with non-CO code
-  // gets force-prefixed with 57. Documented here so future fixes can flip
-  // this expectation. See improvement-plan.md.
-  it('force-prefixes 57 even on pipe format with non-CO code (current behaviour)', () => {
-    expect(formatearTelefono('1|2025550100')).toBe('5712025550100')
+  it('respects pipe-format country code (no force 57)', () => {
+    // Fix 2026-05-13: el bug "force 57 prefix on non-CO pipe" se corrigió.
+    // Antes: '1|2025550100' → '5712025550100'. Ahora respeta el código del
+    // pipe (strip de `|` y queda '12025550100').
+    expect(formatearTelefono('1|2025550100')).toBe('12025550100')
   })
 
   it('handles empty string', () => {

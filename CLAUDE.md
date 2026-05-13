@@ -453,7 +453,7 @@ State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
 ## Code Conventions
 
 - **Language:** Spanish for domain terms (`solicitud`, `tecnico`, `ciudad_pueblo`), English for technical terms
-- **Phone format:** Stored as `"countryCode|number"` (e.g., `"57|3001234567"`). Use `formatearTelefono()` to convert to digits.
+- **Phone format:** Hay drift histórico. `tecnicos.whatsapp` se guarda como dígitos puros (`573134951164`) vía `phoneToDigits` en `/registro`. `solicitudes_servicio.cliente_telefono` se guardaba en formato pipe (`57|3134951164`) sin normalizar — fixado el 2026-05-13. Desde la migración `20260513_normalizar_telefonos.sql`, **ambas columnas pasan por un trigger BD `normalizar_telefono_co()`** que limpia `+`, espacios, guiones, pipe y asegura prefijo `57` para móviles colombianos. **Para enviar a Meta, usar siempre `phoneToDigits()`** (o `formatearTelefono`, alias del mismo). Si tocas el algoritmo de normalización, sincroniza el código TS (`src/lib/utils/phone.ts`) con la función SQL (`supabase/migrations/20260513_normalizar_telefonos.sql`). Detección de drift: `isMobileColombiano(digits)` retorna `true` solo si matchea `573XXXXXXXXX` — `enviarPlantilla` ya emite warn si el destino no es móvil válido.
 - **Components:** PascalCase filenames. `'use client'` directive where needed.
 - **Hooks:** camelCase with `use` prefix
 - **Services:** camelCase + `.service.ts` suffix

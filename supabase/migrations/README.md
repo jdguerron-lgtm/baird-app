@@ -24,6 +24,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260508_fix_tecnicos_columns.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega `acepta_garantias` + `especialidad_principal` en tecnicos (rompía registro de técnicos). Incluye backfill desde especialidades_tecnico |
 | **`20260508_fix_completado_at_default.sql`** | **PENDIENTE — HOTFIX URGENTE** | Drop DEFAULT NOW() de evidencias_servicio.completado_at + backfill rows mal seteadas (rompía botón "Completar servicio" tras diagnóstico) |
 | **`20260510_no_show_protocolo.sql`** | **PENDIENTE** | Estado terminal `no_show_cliente`, columna `evidencia_no_show` JSONB, columnas auditoría de tarifa MABE (cumple_ta, cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado), tabla nueva `cliente_historial`, tipos extra en `solicitud_eventos`. Ver `docs/PROTOCOLO-VISITA.md` y `docs/TARIFAS.md` |
+| **`20260513_normalizar_telefonos.sql`** | **PENDIENTE** | Función `normalizar_telefono_co()` + triggers BEFORE INSERT/UPDATE en `tecnicos.whatsapp` y `solicitudes_servicio.cliente_telefono`. Backfill: normaliza datos existentes a dígitos puros con prefijo 57 (strip `+`, espacios, guiones, pipe). Resuelve "técnico no recibe WhatsApp porque `whatsapp` quedó con +57" |
 
 ## Cómo aplicar las pendientes
 
@@ -34,7 +35,8 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 5. Pega el contenido de `20260508_fix_tecnicos_columns.sql` y ejecuta. **(HOTFIX urgente — sin esto, el registro de técnicos falla.)**
 6. Pega el contenido de `20260508_fix_completado_at_default.sql` y ejecuta. **(HOTFIX urgente — sin esto, el técnico no puede completar servicios tras hacer diagnóstico.)**
 7. Pega el contenido de `20260510_no_show_protocolo.sql` y ejecuta. (No es hotfix urgente; sin esto, el protocolo de visita queda en modo manual y la auditoría detallada de tarifas no se persiste.)
-8. Corre la verificación de abajo.
+8. Pega el contenido de `20260513_normalizar_telefonos.sql` y ejecuta. (No es hotfix urgente, pero recomendado: limpia inconsistencias de `+57`, espacios y formato pipe que pueden hacer que WhatsApp no llegue.)
+9. Corre la verificación de abajo.
 
 > **Importante**: el orden importa. `20260507` espera la columna y constraint reagendados por `20260506`. `20260510` extiende el CHECK constraint de `solicitud_eventos` y `solicitudes_servicio.estado` reemplazándolos completos — debe ir después de `20260507`.
 

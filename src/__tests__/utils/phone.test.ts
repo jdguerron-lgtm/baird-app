@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parsePhone, phoneToDigits, isValidPhone } from '@/lib/utils/phone'
+import { parsePhone, phoneToDigits, isValidPhone, isMobileColombiano } from '@/lib/utils/phone'
 
 describe('parsePhone', () => {
   it('parses pipe-delimited format', () => {
@@ -44,6 +44,64 @@ describe('phoneToDigits', () => {
 
   it('strips non-digit characters from pipe format', () => {
     expect(phoneToDigits('57|300-123-4567')).toBe('573001234567')
+  })
+
+  it('strips leading + sign', () => {
+    expect(phoneToDigits('+573001234567')).toBe('573001234567')
+  })
+
+  it('strips spaces inside the number', () => {
+    expect(phoneToDigits('+57 300 123 4567')).toBe('573001234567')
+  })
+
+  it('strips dashes', () => {
+    expect(phoneToDigits('+57-300-123-4567')).toBe('573001234567')
+  })
+
+  it('handles pipe with + prefix in country code (legacy bug)', () => {
+    expect(phoneToDigits('+57|3001234567')).toBe('573001234567')
+  })
+
+  it('handles duplicated 57 prefix (5757...)', () => {
+    expect(phoneToDigits('5757|3001234567')).toBe('573001234567')
+  })
+
+  it('returns empty string for empty input', () => {
+    expect(phoneToDigits('')).toBe('')
+  })
+
+  it('returns empty string for non-digit garbage', () => {
+    expect(phoneToDigits('abc')).toBe('')
+  })
+
+  it('does not force 57 prefix on foreign numbers', () => {
+    expect(phoneToDigits('+1 202 555 1234')).toBe('12025551234')
+  })
+
+  it('handles parenthesized format', () => {
+    expect(phoneToDigits('(300) 123-4567')).toBe('573001234567')
+  })
+})
+
+describe('isMobileColombiano', () => {
+  it('accepts valid 573XXXXXXXXX', () => {
+    expect(isMobileColombiano('573001234567')).toBe(true)
+  })
+
+  it('rejects without 57 prefix', () => {
+    expect(isMobileColombiano('3001234567')).toBe(false)
+  })
+
+  it('rejects with extra prefix', () => {
+    expect(isMobileColombiano('5713001234567')).toBe(false)
+  })
+
+  it('rejects 57 + fijo (no 3 at position 3)', () => {
+    expect(isMobileColombiano('571234567890')).toBe(false)
+  })
+
+  it('rejects empty', () => {
+    expect(isMobileColombiano('')).toBe(false)
   })
 })
 
