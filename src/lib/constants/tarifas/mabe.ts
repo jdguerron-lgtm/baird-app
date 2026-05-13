@@ -111,6 +111,27 @@ export const MARGEN_BAIRD_BONO = 0.10
 /** SLA de Tiempo de Atención (TA) en horas. Desde horario_confirmado_at hasta diagnosticado_at. */
 export const TA_HORAS_LIMITE = 24
 
+/**
+ * Pago MÍNIMO garantizado al técnico para una garantía MABE Tipo D, antes de
+ * conocer la complejidad real (que se determina al hacer el diagnóstico).
+ *
+ * Corresponde al peor escenario para el técnico:
+ *   - Complejidad Baja (servicio básico)
+ *   - Sin bono por tiempo de solución (no cumple TA o pasa > 3 días)
+ *   - Sin recargo de fin de semana
+ *   - Sin encuesta contestada
+ *
+ * Cálculo: TARIFAS_MABE_TIPO_D.baja × (1 − MARGEN_BAIRD_GARANTIA)
+ *        = 42_000 × 0.78 = 32_760
+ *
+ * Es lo que mostramos en /aceptar/{token} y en la notificación WhatsApp al
+ * técnico antes de la aceptación. El monto real puede ser MAYOR (Media/Alta
+ * + bonos + recargo weekend), nunca menor.
+ */
+export const PAGO_MINIMO_TECNICO_GARANTIA = Math.round(
+  TARIFAS_MABE_TIPO_D.baja * (1 - MARGEN_BAIRD_GARANTIA),
+)
+
 // ──────────────────────────────────────────────────────────────────
 // Funciones de cálculo
 // ──────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 > Documento canónico de tarifas, bonos, márgenes, y reparto de pagos
 > entre Baird Service, las marcas (MABE) y los técnicos.
 >
-> **Última actualización: 2026-05-10.**
+> **Última actualización: 2026-05-12.**
 >
 > 🧭 **Ver también**:
 > - [docs/INDEX.md](./INDEX.md) — hub de navegación.
@@ -32,7 +32,7 @@
 1. **Dos tarifarios independientes.** Garantía MABE tiene su propia tabla fija (la marca paga). Particular se calcula a partir del costo que el técnico ingresa (el cliente paga).
 2. **Cliente nunca paga directo al técnico.** Todos los pagos pasan por Baird Service. La cláusula está en T&C sección 3.
 3. **Baird siempre toma su margen sobre lo que cobra**, no sobre lo que el cliente paga. En garantía es 22% de la tarifa base MABE; en particular es 10% sobre (costo técnico + IVA).
-4. **El bono y el recargo de fin de semana van íntegros al técnico** — son incentivos diseñados por MABE para premiar al técnico, no captura de Baird.
+4. **Baird captura 10% sobre cada bono y recargo de fin de semana** (cambio 2026-05-12). El técnico recibe el 90% restante. Antes el bono iba íntegro al técnico; ahora la captura del 10% cubre soporte, dispute resolution y el capital de trabajo (MABE paga NET-30/60). El bono sigue siendo un incentivo diseñado por MABE para premiar al técnico — el 90% que recibe sigue siendo superior al bruto que tendría sin protocolo de TA + encuesta.
 5. **No-show: nadie paga.** Si el cliente no está al momento de la visita, ni MABE ni Baird ni el cliente cubren el costo. El técnico pierde transporte y tiempo. Existe un protocolo de evidencia obligatorio para proteger al técnico de acusaciones falsas y reportar a MABE.
 6. **Tarifas con IVA discriminado.** Para particular el cliente ve solo "Total (incluye IVA)" sin desglose. Internamente se separa base + IVA + margen Baird para facturación electrónica DIAN.
 
@@ -93,34 +93,59 @@ Se aplica si el `horario_confirmado` por el cliente cae **sábado o domingo**. E
 | Media | $6,000 |
 | Alta | $7,000 |
 
-### Reparto Baird ↔ Técnico
+### Reparto Baird ↔ Técnico (2026-05-12)
 
 ```
 Baird captura     = 22% × tarifa_base
-Técnico recibe    = 78% × tarifa_base + 100% bono + 100% recargo_weekend
+                  + 10% × bono
+                  + 10% × recargo_weekend
+Técnico recibe    = 78% × tarifa_base
+                  + 90% × bono
+                  + 90% × recargo_weekend
 Total MABE paga   = tarifa_base + bono + recargo_weekend
 ```
 
-El **22% que captura Baird sirve para cubrir**: WhatsApp + infra (Vercel/Supabase), customer support, dispute resolution, capital de trabajo (MABE paga NET-30/60), gestión de relación con MABE, y bonificaciones discrecionales que Baird pueda dar a técnicos por desempeño excepcional.
+El **margen que captura Baird sirve para cubrir**: WhatsApp + infra (Vercel/Supabase), customer support, dispute resolution, capital de trabajo (MABE paga NET-30/60), gestión de relación con MABE, y bonificaciones discrecionales que Baird pueda dar a técnicos por desempeño excepcional. La extensión del 10% al bono y al recargo (2026-05-12) protege el margen cuando la mezcla de servicios se inclina hacia complejidades bajas (donde el bono representa un porcentaje alto del total).
 
 ### Casos extremos
 
 **Peor caso (Baja, sin bono, sin weekend, sin encuesta):**
 - MABE paga: $42,000
-- Baird (22%): $9,240
+- Baird (22% × 42,000): $9,240
 - Técnico: $32,760
 
 **Mejor caso (Alta, 0–1 día, encuesta OK, weekend):**
 - MABE paga: $115,000 + $17,000 + $7,000 = $139,000
-- Baird (22% × 115,000): $25,300
-- Técnico: $115,000 × 78% + $17,000 + $7,000 = $113,700
+- Baird: 22% × 115,000 + 10% × 17,000 + 10% × 7,000 = $25,300 + $1,700 + $700 = $27,000
+- Técnico: 78% × 115,000 + 90% × 17,000 + 90% × 7,000 = $89,700 + $15,300 + $6,300 = $111,300
+
+> Cambio 2026-05-12: el mejor caso para el técnico bajó de $113,700 a $111,300 (–$2,400) por la captura del 10% sobre bono y recargo de fin de semana.
 
 ### Implementación
 
 - Constantes y cálculo: `src/lib/constants/tarifas/mabe.ts`
 - Función principal: `calcularTarifaMABE({ complejidad, diasSolucion, cumpleEncuesta, cumpleTA, esFinDeSemana })`
-- Devuelve: `{ tarifaBase, bono, recargoWeekend, totalMABE, margenBaird, pagoTecnico }`
+- Devuelve: `{ tarifaBase, bono, recargoWeekend, totalMABE, margenBaird, margenBaseMabe, margenBonoBaird, margenRecargoBaird, pagoTecnico, pagoBase, pagoBono, pagoRecargo, meta }`
+- Constantes de reparto: `MARGEN_BAIRD_GARANTIA = 0.22` (sobre la base) y `MARGEN_BAIRD_BONO = 0.10` (sobre bono y recargo de fin de semana).
 - Persistido en `solicitudes_servicio.triaje_resultado` (JSONB) cuando se completa el diagnóstico, y recalculado al cerrar el servicio (porque la encuesta puede llegar después).
+
+### Pago mínimo mostrado al técnico antes de aceptar
+
+Cuando el técnico recibe la notificación de garantía MABE (plantilla `nueva_solicitud_v3`) y abre `/aceptar/{token}`, **no podemos mostrar el pago real** porque la complejidad y los bonos se conocen sólo tras el diagnóstico.
+
+Por eso mostramos el **pago mínimo garantizado**: el peor escenario para el técnico, calculado en `PAGO_MINIMO_TECNICO_GARANTIA`:
+
+```
+TARIFAS_MABE_TIPO_D.baja × (1 − MARGEN_BAIRD_GARANTIA)
+       = 42_000 × 0.78
+       = $32.760 COP
+```
+
+Corresponde a: Complejidad Baja + Sin bono TA + Sin encuesta + Sin recargo weekend. El monto real es **siempre ≥** este valor (puede subir a Media/Alta + bonos + recargo).
+
+La UI lo deja explícito con "desde $32.760" + nota aclaratoria. El WhatsApp incluye `"Garantía MABE — desde $32.760 COP"` como `{{6}}` de la plantilla.
+
+**Carga masiva**: al importar BITÁCORA, las solicitudes de garantía se insertan con `pago_tecnico = 0` (antes se ponía $80.000 por error). El campo se llena con el valor real al hacer el diagnóstico.
 
 ---
 

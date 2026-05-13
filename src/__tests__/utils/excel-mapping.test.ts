@@ -151,8 +151,9 @@ describe('parseExcelData', () => {
     expect(result.totalRawRows).toBe(2)
   })
 
-  it('uses custom defaults for pago and horarios', () => {
-    const rows = buildMockSheet([buildDataRow()])
+  it('uses custom defaults for pago (non-warranty) and horarios', () => {
+    // Solicitud NO-garantía (particular): respeta defaultPago.
+    const rows = buildMockSheet([buildDataRow({ servicio: 'PARTICULAR' })])
     const result = parseExcelData(rows, {
       defaultPago: 150000,
       defaultHorario1: 'Lunes 9am',
@@ -163,6 +164,18 @@ describe('parseExcelData', () => {
     expect(mapped.pago_tecnico).toBe(150000)
     expect(mapped.horario_visita_1).toBe('Lunes 9am')
     expect(mapped.horario_visita_2).toBe('Martes 2pm')
+  })
+
+  it('forces pago_tecnico=0 when es_garantia=true (regardless of defaultPago)', () => {
+    // Garantía MABE: el pago real depende de complejidad + bonos, conocidos
+    // tras el diagnóstico. Carga masiva debe insertar 0 — la pantalla de
+    // /aceptar usa PAGO_MINIMO_TECNICO_GARANTIA como display fallback.
+    const rows = buildMockSheet([buildDataRow({ servicio: 'GARANTÍA DE FÁBRICA' })])
+    const result = parseExcelData(rows, { defaultPago: 150000 })
+    const mapped = result.parsed[0].mapped!
+
+    expect(mapped.es_garantia).toBe(true)
+    expect(mapped.pago_tecnico).toBe(0)
   })
 
   it('detects warranty from GARANTÍA DE FÁBRICA', () => {

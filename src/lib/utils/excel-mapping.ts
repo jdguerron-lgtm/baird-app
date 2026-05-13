@@ -243,7 +243,12 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
     novedades_equipo: novedadesConModelo.slice(0, 1000),
     es_garantia: esGarantia, // Detectado del campo tipo_servicio del Excel
     numero_serie_factura: raw.orden,
-    pago_tecnico: defaultPago,
+    // Garantía: pago_tecnico = 0. El monto real se conoce solo tras el
+    // diagnóstico (complejidad MABE Tipo D) + bonos al completar. Antes acá
+    // se ponía defaultPago (80000) incluso para garantía — eso producía que
+    // /aceptar/{token} mostrara "$80.000" al técnico, lo cual era incorrecto
+    // y generaba expectativas equivocadas. (Bug fixed 2026-05-13.)
+    pago_tecnico: esGarantia ? 0 : defaultPago,
     horario_visita_1: defaultHorario1,
     horario_visita_2: defaultHorario2,
   }

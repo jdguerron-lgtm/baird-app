@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
+import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
+import { formatCOP } from '@/lib/utils/format'
 
 interface SolicitudInfo {
   tipo_equipo: string
@@ -48,7 +50,14 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
     }
   }
 
-  const pagoFormateado = new Intl.NumberFormat('es-CO').format(solicitud.pago_tecnico)
+  // En garantía MABE no hay pago fijo hasta el diagnóstico: la complejidad
+  // y los bonos se conocen después. Mostramos el PAGO MÍNIMO garantizado
+  // (Baja sin bonos sin recargo = $32.760) y aclaramos que puede ser mayor.
+  // En particular el cliente ya pagó la tarifa de diagnóstico — ese valor es
+  // exacto y lo mostramos tal cual.
+  const pagoFormateado = esGarantia
+    ? formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)
+    : formatCOP(solicitud.pago_tecnico)
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -120,9 +129,19 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
 
             {/* Payment highlight */}
             <div className="bg-green-50 border-2 border-green-200 rounded-xl p-5 text-center">
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Tu pago por este servicio</p>
-              <p className="text-4xl font-bold text-green-700">${pagoFormateado}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+                {esGarantia ? 'Tu pago mínimo garantizado' : 'Tu pago por este servicio'}
+              </p>
+              <p className="text-4xl font-bold text-green-700">
+                {esGarantia && <span className="text-xl mr-1">desde</span>}
+                ${pagoFormateado}
+              </p>
               <p className="text-xs text-green-600 mt-1 font-medium">COP · Pago a través de Baird Service</p>
+              {esGarantia && (
+                <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
+                  Tarifa garantía MABE Tipo D — el monto sube según la complejidad real (Media o Alta) y los bonos por tiempo de solución, encuesta del cliente y recargo fin de semana. <span className="font-semibold">Nunca es menor que este valor.</span>
+                </p>
+              )}
             </div>
 
           </div>

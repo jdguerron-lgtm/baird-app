@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
+import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
@@ -435,7 +436,11 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
               { type: 'text', text: problema },
               { type: 'text', text: ubicacion },
               { type: 'text', text: horario },
-              { type: 'text', text: 'GARANTIA - Sin cobro' },
+              // Pago MÍNIMO garantizado (complejidad Baja, sin bonos, sin
+              // recargo weekend). El técnico cobra IGUAL o MÁS según la
+              // complejidad real que evalúe en el diagnóstico + bonos por TA
+              // y encuesta. Cálculo en PAGO_MINIMO_TECNICO_GARANTIA.
+              { type: 'text', text: `Garantía MABE — desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP` },
             ],
           },
           { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
@@ -637,7 +642,12 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   if (tecnico) {
     const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
     const direccion = `${sol.direccion}, ${sol.zona_servicio}`
-    const pago = sol.es_garantia ? 'GARANTIA - Sin cobro' : `$${formatCOP(sol.pago_tecnico)} COP`
+    // Pago mostrado al técnico tras ganar: garantía → mínimo MABE Tipo D
+    // (puede ser más alto según complejidad real + bonos); particular → tarifa
+    // de diagnóstico que el cliente pagó por adelantado.
+    const pago = sol.es_garantia
+      ? `Garantía MABE — desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
+      : `$${formatCOP(sol.pago_tecnico)} COP`
     const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
     // Send assignment template to technician (with client contact + portal link)
