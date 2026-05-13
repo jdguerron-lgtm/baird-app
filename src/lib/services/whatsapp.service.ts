@@ -698,11 +698,24 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 export async function enviarSeleccionHorarioCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_visita_1, horario_visita_2, horario_token')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_visita_1, horario_visita_2, horario_token, horario_confirmado_at, estado')
     .eq('id', solicitudId)
     .single()
 
   if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  // Guard contra doble envío: si el cliente ya confirmó horario, no
+  // re-disparamos la plantilla. Esto previene duplicados cuando varios
+  // triggers concurrentes (admin "reenviar", carga-masiva, cron) intentan
+  // re-enviar sin saber que el cliente ya respondió.
+  if (sol.horario_confirmado_at) {
+    return { ok: false, error: 'El cliente ya confirmó horario; no se reenvía la plantilla de selección.' }
+  }
+  // Guard secundario: si el estado no es pendiente_horario ni sin_agendar,
+  // el flujo ya avanzó — tampoco tiene sentido.
+  if (sol.estado !== 'pendiente_horario' && sol.estado !== 'sin_agendar') {
+    return { ok: false, error: `Solicitud en estado "${sol.estado}" — la plantilla de selección de horario no aplica.` }
+  }
 
   // Self-heal: si la solicitud es vieja (creada antes de la migración
   // 20260427_customer_first_scheduling.sql o vía la versión vieja de

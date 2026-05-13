@@ -18,18 +18,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Faltan parámetros (token, aprobado)' }, { status: 400 })
     }
 
-    // Find solicitud by cotizacion token
-    const { data: sol, error } = await supabase
-      .from('solicitudes_servicio')
-      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, cotizacion, tecnico_asignado_id')
-      .eq('estado', 'cotizacion_enviada')
-      .single()
-
-    // Since we can't query JSONB directly via .eq on nested fields easily,
-    // search all cotizacion_enviada and filter by token
+    // Buscar solicitud por cotizacion.token (JSONB).
+    // NOTA: este es un antipatrón documentado en docs/FLOWS.md § "Gaps" —
+    // carga toda la tabla en estado=cotizacion_enviada y filtra en JS.
+    // Migrar a columna generada cotizacion_token cuando se priorice.
     const { data: solicitudes } = await supabase
       .from('solicitudes_servicio')
-      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, cotizacion, tecnico_asignado_id')
+      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, cotizacion, tecnico_asignado_id, siguiente_paso')
       .eq('estado', 'cotizacion_enviada')
 
     const solMatch = solicitudes?.find(s => {
@@ -49,37 +44,47 @@ export async function POST(req: NextRequest) {
 
     if (aprobado) {
       // ── APPROVED ──
+      // Estado final según el siguiente_paso elegido por el técnico:
+      //   esperar_repuesto → esperando_repuesto (admin gestiona llegada del repuesto)
+      //   reparar (o default) → en_proceso (técnico procede con la reparación)
+      // Antes: siempre en_proceso, lo que saltaba el ciclo de admin/repuestos.
+      const estadoFinal = solMatch.siguiente_paso === 'esperar_repuesto'
+        ? 'esperando_repuesto'
+        : 'en_proceso'
+
       const updatedCotizacion = {
         ...cot,
         aprobado_at: new Date().toISOString(),
       }
 
+      // Atomic UPDATE: cambio de estado + cotización + pago en una sola
+      // operación. Antes había 2 UPDATEs secuenciales con ventana de race
+      // (gap #10 documentado en docs/FLOWS.md).
       const { error: updateErr } = await supabase
         .from('solicitudes_servicio')
         .update({
           cotizacion: updatedCotizacion,
-          pago_tecnico: cot.total,  // Update payment to approved quote total
-          estado: 'cotizacion_aprobada',
+          pago_tecnico: cot.total,
+          estado: estadoFinal,
         })
         .eq('id', solMatch.id)
+        .eq('estado', 'cotizacion_enviada')  // guard contra race
 
       if (updateErr) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 })
       }
 
-      // Notify technician that quote was approved
+      // Notificar al técnico que la cotización fue aprobada
       const waResult = await notificarCotizacionAprobada(solMatch.id)
       if (!waResult.ok) {
         console.error('Error notificando aprobación al técnico:', waResult.error)
       }
 
-      // Then move to en_proceso so technician can proceed with repair
-      await supabase
-        .from('solicitudes_servicio')
-        .update({ estado: 'en_proceso' })
-        .eq('id', solMatch.id)
-
-      return NextResponse.json({ success: true, estado: 'cotizacion_aprobada' })
+      return NextResponse.json({
+        success: true,
+        estado: estadoFinal,
+        siguiente_paso: solMatch.siguiente_paso,
+      })
 
     } else {
       // ── REJECTED ──

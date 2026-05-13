@@ -8,7 +8,7 @@ import {
   TARIFAS_MANO_OBRA,
   calcularTotalGarantia,
   type ComplejidadServicio,
-} from '@/lib/constants/tarifas-garantia'
+} from '@/lib/constants/tarifas/mabe'
 import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
@@ -667,9 +667,9 @@ export default function DiagnosticoPage() {
             cierran el servicio sin cotización). */}
         {!servicio!.es_garantia && requiereCostoParticular && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-            <h2 className="text-lg font-bold text-slate-900 mb-1">Tu costo total *</h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Tu costo total <span className="text-red-500">*</span></h2>
             <p className="text-xs text-gray-400 mb-4">
-              Mano de obra + repuestos. El cliente NO ve este valor — solo ve el total final con IVA.
+              <strong>Valor en COP requerido.</strong> Mano de obra + repuestos. El cliente NO ve este valor — solo ve el total final con IVA.
             </p>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">$</span>
@@ -682,9 +682,13 @@ export default function DiagnosticoPage() {
                   setCostoTecnico(v ? parseInt(v, 10).toLocaleString('es-CO') : '')
                 }}
                 placeholder="0"
-                className="w-full border border-gray-200 rounded-xl py-3 pl-8 pr-4 text-base focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full border border-gray-200 rounded-xl py-3 pl-8 pr-14 text-base focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-semibold">COP</span>
             </div>
+            {costoTecnicoNum <= 0 && (
+              <p className="text-xs text-amber-700 mt-1">⚠️ Ingresa un valor mayor a 0 en COP.</p>
+            )}
             {tarifaParticular && (
               <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs">
                 <div className="flex justify-between text-gray-600 mb-1">

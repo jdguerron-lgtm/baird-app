@@ -335,25 +335,38 @@ export default function CotizacionPage() {
           )}
         </div>
 
-        {/* Pricing breakdown */}
+        {/* Pricing breakdown — esconde el desglose cuando mano_obra y
+            repuestos son 0 (flujo particular nuevo: el técnico ingresa un
+            costo único y el sistema calcula total incluyendo IVA + margen).
+            En ese caso solo se muestra el total para no mostrar "$0 + $0 + Total". */}
         <div className="bg-white rounded-2xl shadow-lg p-6">
-          <h3 className="text-sm font-bold text-gray-700 mb-3">💰 Desglose de costos</h3>
+          <h3 className="text-sm font-bold text-gray-700 mb-3">💰 Total a pagar</h3>
 
           <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Mano de obra</span>
-              <span className="font-medium">${formatCOP(cotizacion.mano_obra)} COP</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Repuestos</span>
-              <span className="font-medium">${formatCOP(cotizacion.repuestos)} COP</span>
-            </div>
-            <div className="border-t pt-2 mt-2">
-              <div className="flex justify-between text-base">
-                <span className="font-bold text-gray-900">Total</span>
-                <span className="font-bold text-blue-600">${formatCOP(cotizacion.total)} COP</span>
+            {(cotizacion.mano_obra > 0 || cotizacion.repuestos > 0) && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Mano de obra</span>
+                  <span className="font-medium">${formatCOP(cotizacion.mano_obra)} COP</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Repuestos</span>
+                  <span className="font-medium">${formatCOP(cotizacion.repuestos)} COP</span>
+                </div>
+                <div className="border-t pt-2 mt-2">
+                  <div className="flex justify-between text-base">
+                    <span className="font-bold text-gray-900">Total</span>
+                    <span className="font-bold text-blue-600">${formatCOP(cotizacion.total)} COP</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {cotizacion.mano_obra === 0 && cotizacion.repuestos === 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Total del servicio<br /><span className="text-[10px] text-gray-400">Incluye mano de obra, repuestos e IVA</span></span>
+                <span className="font-bold text-blue-600 text-xl">${formatCOP(cotizacion.total)} <span className="text-xs font-medium">COP</span></span>
               </div>
-            </div>
+            )}
             {cotizacion.tiempo_entrega && (
               <div className="bg-blue-50 rounded-xl p-3 mt-3 text-sm text-blue-900">
                 ⏱ Tiempo de entrega estimado: <strong>{cotizacion.tiempo_entrega}</strong>
