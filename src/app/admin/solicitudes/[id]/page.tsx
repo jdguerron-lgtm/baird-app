@@ -63,6 +63,8 @@ interface Evidencia {
   confirmado: boolean | null
   confirmado_at: string | null
   cliente_comentario: string | null
+  oath_firma: string | null
+  oath_firmado_at: string | null
 }
 
 interface MatchDiagnostic {
@@ -346,7 +348,7 @@ export default function SolicitudDetalle() {
       // 4. Fetch evidence if exists
       const { data: evData } = await supabase
         .from('evidencias_servicio')
-        .select('id, fotos, checklist, firma_url, gps_lat, gps_lng, completado_at, confirmado, confirmado_at, cliente_comentario')
+        .select('id, fotos, checklist, firma_url, gps_lat, gps_lng, completado_at, confirmado, confirmado_at, cliente_comentario, oath_firma, oath_firmado_at')
         .eq('solicitud_id', id)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -740,6 +742,90 @@ export default function SolicitudDetalle() {
           )}
         </div>
       </div>
+
+      {/* Full photo gallery — todas las fotos del flujo en un solo lugar.
+          Junta evidencias_diagnostico (de triaje_resultado / cotizacion) +
+          fotos de completación + firma del técnico (oath) + firma del cliente.
+          Cada foto se renderiza con etiqueta de fase para que el admin sepa
+          de dónde viene (diagnóstico vs completación). */}
+      {(() => {
+        const triaje = (solicitud as unknown as Record<string, unknown>).triaje_resultado as Record<string, unknown> | null
+        const cotizacion = (solicitud as unknown as Record<string, unknown>).cotizacion as Record<string, unknown> | null
+        const diagFotosTriaje = (triaje?.evidencias_diagnostico as string[] | undefined) ?? []
+        const diagFotosCot = (cotizacion?.evidencias_diagnostico as string[] | undefined) ?? []
+        // Dedup en caso de que el mismo url esté en ambos (suele pasar en particular).
+        const diagFotos = Array.from(new Set([...diagFotosTriaje, ...diagFotosCot]))
+        const compFotos = evidencia?.fotos ?? []
+        const total = diagFotos.length + compFotos.length + (evidencia?.oath_firma ? 1 : 0) + (evidencia?.firma_url ? 1 : 0)
+        if (total === 0) return null
+
+        return (
+          <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+              Galería completa del servicio ({total})
+            </h2>
+
+            {diagFotos.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1.5">
+                  <span>🔍 Diagnóstico</span>
+                  <span className="text-gray-400 font-normal">({diagFotos.length})</span>
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                  {diagFotos.map((url, i) => (
+                    <a key={`diag-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-purple-400 transition-all">
+                      <Image src={url} alt={`Diagnóstico ${i + 1}`} fill className="object-cover" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {compFotos.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-1.5">
+                  <span>✅ Completación</span>
+                  <span className="text-gray-400 font-normal">({compFotos.length})</span>
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                  {compFotos.map((url, i) => (
+                    <a key={`comp-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-green-400 transition-all">
+                      <Image src={url} alt={`Completación ${i + 1}`} fill className="object-cover" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(evidencia?.oath_firma || evidencia?.firma_url) && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 mb-2">Firmas</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {evidencia?.oath_firma && (
+                    <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                      <p className="text-[10px] text-purple-700 font-semibold uppercase tracking-wide mb-1">Oath técnico</p>
+                      <div className="relative h-20 bg-white rounded">
+                        <Image src={evidencia.oath_firma} alt="Oath técnico" fill className="object-contain" />
+                      </div>
+                      {evidencia.oath_firmado_at && (
+                        <p className="text-[10px] text-gray-400 mt-1">{new Date(evidencia.oath_firmado_at).toLocaleString('es-CO')}</p>
+                      )}
+                    </div>
+                  )}
+                  {evidencia?.firma_url && (
+                    <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                      <p className="text-[10px] text-green-700 font-semibold uppercase tracking-wide mb-1">Firma cliente</p>
+                      <div className="relative h-20 bg-white rounded">
+                        <Image src={evidencia.firma_url} alt="Firma cliente" fill className="object-contain" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Service evidence */}
       {evidencia && (

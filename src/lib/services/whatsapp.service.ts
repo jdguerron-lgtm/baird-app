@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
-import { formatCOP, normalizeForMatch } from '@/lib/utils/format'
+import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
@@ -351,8 +351,14 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     }
   }
 
-  // 3. Filtrar por verificados, luego por ciudad compatible (accent/case-insensitive)
-  const ciudadNorm = normalizeForMatch(sol.ciudad_pueblo ?? '')
+  // 3. Filtrar por verificados, luego por ciudad compatible.
+  //
+  // Históricamente usábamos normalizeForMatch (lowercase + strip acentos), pero
+  // hay casos donde el campo trae basura concatenada — p.ej. BITÁCORA importó
+  // "BOGOTA /CR 123 13B 47" como ciudad_pueblo. cityTokenForMatch toma solo el
+  // primer token antes de `/`, `,`, `;`, `-` y matchea correctamente con
+  // "Bogotá" o "Bogota" del lado técnico.
+  const ciudadNorm = cityTokenForMatch(sol.ciudad_pueblo ?? '')
 
   const { data: tecnicosConEsp } = await supabase
     .from('tecnicos')
@@ -375,7 +381,8 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
   const tecnicos = tecnicosVerificados.filter(t => {
     if (!ciudadNorm) return true
-    const tecCiudad = normalizeForMatch(t.ciudad_pueblo ?? '')
+    const tecCiudad = cityTokenForMatch(t.ciudad_pueblo ?? '')
+    if (!tecCiudad) return false
     return tecCiudad.includes(ciudadNorm) || ciudadNorm.includes(tecCiudad)
   })
 
