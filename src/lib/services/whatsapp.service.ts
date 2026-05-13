@@ -45,6 +45,22 @@ function logFiltrado(primitive: string, raw: string): void {
   console.warn(`⚠️ [WhatsApp][TEST-MODE] FILTRADO ${primitive} → ${phoneToDigits(raw)} (no está en BAIRD_TEST_PHONE_WHITELIST)`)
 }
 
+/**
+ * Helper para callers fire-and-forget: chequea filtered + errores y los
+ * loguea de forma uniforme. Usar en lugar de `.catch(console.error)`
+ * cuando no necesitas el return value pero quieres signal en logs.
+ */
+async function logEnvio(promise: Promise<EnvioResult>, contexto: string): Promise<void> {
+  try {
+    const r = await promise
+    if (r.filtered) {
+      console.warn(`⚠️ [${contexto}] Filtrado por BAIRD_TEST_PHONE_WHITELIST — el mensaje NO se envió.`)
+    }
+  } catch (err) {
+    console.error(`[${contexto}] Error:`, err instanceof Error ? err.message : String(err))
+  }
+}
+
 // ─────────────────────────────────────────
 // Funciones de envío (primitivas)
 // ─────────────────────────────────────────
@@ -426,14 +442,34 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     })
   )
 
-  // Marcar errores en BD para los que fallaron en send
+  // Marcar errores en BD para los que fallaron en send.
+  //
+  // CRÍTICO: enviarPlantilla() ahora retorna { sent, filtered? } en vez de
+  // void (commit d38ddc2). Una promesa fulfilled NO implica que el
+  // WhatsApp se haya enviado — puede haber sido filtrado por
+  // BAIRD_TEST_PHONE_WHITELIST. Esto producía el bug "el técnico aparece
+  // en la lista pero no le llegó nada" porque contábamos como notificados
+  // a los filtrados.
   let notificados = 0
   await Promise.allSettled(
     enviables.map(async ({ tecnico, token }, i) => {
       const r = sendResults[i]
-      if (r.status === 'fulfilled') {
+      if (r.status === 'fulfilled' && r.value?.sent) {
         notificados++
-      } else {
+        return
+      }
+      if (r.status === 'fulfilled' && r.value?.filtered) {
+        const phone = phoneToDigits(tecnico.whatsapp)
+        const msg = `${tecnico.nombre_completo} (${phone}): filtrado por BAIRD_TEST_PHONE_WHITELIST`
+        console.warn(`[notificarTecnicos] ${msg}`)
+        sendErrors.push(msg)
+        await supabase
+          .from('notificaciones_whatsapp')
+          .update({ estado: 'error' })
+          .eq('token', token)
+        return
+      }
+      if (r.status === 'rejected') {
         const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason)
         console.error(`Error enviando WhatsApp a técnico ${tecnico.id} (${tecnico.whatsapp}):`, errMsg)
         sendErrors.push(`${tecnico.nombre_completo} (${phoneToDigits(tecnico.whatsapp)}): ${errMsg}`)
@@ -540,12 +576,15 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
     if (tecnico?.whatsapp) {
       const techName = (await supabase.from('tecnicos').select('nombre_completo').eq('id', notif.tecnico_id).single()).data?.nombre_completo?.split(' ')[0] ?? 'Técnico'
-      await enviarPlantilla(tecnico.whatsapp, 'servicio_no_disponible_v3', 'es', [
-        {
-          type: 'body',
-          parameters: [{ type: 'text', text: techName }],
-        },
-      ]).catch(console.error)
+      await logEnvio(
+        enviarPlantilla(tecnico.whatsapp, 'servicio_no_disponible_v3', 'es', [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: techName }],
+          },
+        ]),
+        'procesarAceptacion → servicio_no_disponible_v3',
+      )
     }
 
     return { ganado: false, mensaje: 'Este servicio ya fue tomado por otro técnico' }
@@ -585,25 +624,28 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
     // Send assignment template to technician (with client contact + portal link)
-    await enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v3', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: nombreTecnico },
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: equipo },
-          { type: 'text', text: direccion },
-          { type: 'text', text: pago },
-          { type: 'text', text: `+${clienteDigits}` },
-        ],
-      },
-      {
-        type: 'button',
-        sub_type: 'url',
-        index: '0',
-        parameters: [{ type: 'text', text: tecnico.portal_token }],
-      },
-    ]).catch(console.error)
+    await logEnvio(
+      enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v3', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombreTecnico },
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: equipo },
+            { type: 'text', text: direccion },
+            { type: 'text', text: pago },
+            { type: 'text', text: `+${clienteDigits}` },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: tecnico.portal_token }],
+        },
+      ]),
+      'procesarAceptacion → servicio_asignado_tecnico_v3',
+    )
   }
 
   // 5. Notificar al cliente con los datos del técnico
@@ -612,37 +654,43 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   if (sol.es_garantia) {
     // ── WARRANTY FLOW: template v5 with schedule + no-pay warning + T&C link ──
-    await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v5', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-          { type: 'text', text: horarioServicio },
-          { type: 'text', text: `+${tecnicoDigits}` },
-        ],
-      },
-    ]).catch(console.error)
+    await logEnvio(
+      enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v5', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: horarioServicio },
+            { type: 'text', text: `+${tecnicoDigits}` },
+          ],
+        },
+      ]),
+      'procesarAceptacion → tecnico_asignado_cliente_v5',
+    )
   } else {
     // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
     const tarifaDiagnostico = formatCOP(sol.pago_tecnico)
     const anticipo = formatCOP(Math.round(sol.pago_tecnico * 0.5))
 
-    await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-          { type: 'text', text: horarioServicio },
-          { type: 'text', text: `+${tecnicoDigits}` },
-          { type: 'text', text: tarifaDiagnostico },
-          { type: 'text', text: anticipo },
-        ],
-      },
-    ]).catch(console.error)
+    await logEnvio(
+      enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: horarioServicio },
+            { type: 'text', text: `+${tecnicoDigits}` },
+            { type: 'text', text: tarifaDiagnostico },
+            { type: 'text', text: anticipo },
+          ],
+        },
+      ]),
+      'procesarAceptacion → tecnico_asignado_particular_v1',
+    )
   }
 
   // 6. Enviar foto de perfil y documento del técnico al cliente.
@@ -751,7 +799,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
   const cliente = sol.cliente_nombre.split(' ')[0]
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'cliente_seleccion_horario_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'cliente_seleccion_horario_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -768,6 +816,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
         parameters: [{ type: 'text', text: horarioToken }],
       },
     ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -793,7 +842,7 @@ export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ 
   const cliente = sol.cliente_nombre.split(' ')[0]
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'recordatorio_horario_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'recordatorio_horario_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -808,6 +857,7 @@ export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ 
         parameters: [{ type: 'text', text: sol.horario_token }],
       },
     ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
 
     await supabase
       .from('solicitudes_servicio')
@@ -938,7 +988,7 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
   const tecnico = tec?.nombre_completo ?? 'Técnico asignado'
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -948,6 +998,7 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
         ],
       },
     ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -979,7 +1030,7 @@ export async function enviarEsperandoRepuestoCliente(
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'esperando_repuesto_cliente_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'esperando_repuesto_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -992,6 +1043,7 @@ export async function enviarEsperandoRepuestoCliente(
         ],
       },
     ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -1021,7 +1073,7 @@ export async function enviarFinalizadoSinReparacion(
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    await enviarPlantilla(sol.cliente_telefono, 'finalizado_sin_reparacion_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'finalizado_sin_reparacion_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1032,6 +1084,7 @@ export async function enviarFinalizadoSinReparacion(
         ],
       },
     ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -1129,7 +1182,7 @@ export async function notificarCotizacionAprobada(solicitudId: string): Promise<
   const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
   try {
-    await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v1', 'es', [
+    const r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1146,6 +1199,7 @@ export async function notificarCotizacionAprobada(solicitudId: string): Promise<
         parameters: [{ type: 'text', text: tecnico.portal_token ?? '' }],
       },
     ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -1176,7 +1230,7 @@ export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok:
 
   // 2. Mensaje de bienvenida al técnico (usando plantilla aprobada)
   try {
-    await enviarPlantilla(tecnico.whatsapp, 'registro_bienvenida_v3', 'es', [
+    const r = await enviarPlantilla(tecnico.whatsapp, 'registro_bienvenida_v3', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1186,6 +1240,9 @@ export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok:
         ],
       },
     ])
+    if (r.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
   } catch (err) {
     console.error('[notificarRegistroTecnico] Error enviando bienvenida:', err)
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
