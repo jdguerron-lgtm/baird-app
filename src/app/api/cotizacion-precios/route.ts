@@ -5,6 +5,7 @@ import {
   enviarVerificacionPasoCliente,
 } from '@/lib/services/whatsapp.service'
 import type { CotizacionReparacion, ProductoNecesario } from '@/types/solicitud'
+import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 
 export const maxDuration = 30
 
@@ -86,7 +87,15 @@ export async function POST(req: NextRequest) {
         return { ...p, precio_unitario: precio, subtotal }
       })
       const repuestosTotal = necesariosConPrecio.reduce((acc, p) => acc + (p.subtotal ?? 0), 0)
-      const total = manoObra + repuestosTotal
+
+      // FÓRMULA NUEVA 2026-05-12: el total al cliente incluye IVA + margen Baird.
+      //   costoTecnico = manoObra (admin) + sum(subtotales repuestos)
+      //   totalCliente = costoTecnico × 1.19 (IVA) × 1.10 (margen Baird)
+      // Antes este endpoint hacía `total = manoObra + repuestosTotal` (sin IVA
+      // ni margen) — lo que descuadraba con el flujo particular sin gate
+      // (rama reparar) donde sí se aplica la fórmula completa.
+      const costoTecnico = manoObra + repuestosTotal
+      const tarifa = calcularTarifaParticular({ costoTecnico })
 
       const cotizacionData: CotizacionReparacion = {
         ...(cotPrev as CotizacionReparacion),
@@ -95,20 +104,29 @@ export async function POST(req: NextRequest) {
         diagnostico_tecnico: cotPrev.diagnostico_tecnico ?? '',
         token: cotPrev.token ?? crypto.randomUUID(),
         cotizado_at: cotPrev.cotizado_at ?? new Date().toISOString(),
-        mano_obra: manoObra,
-        repuestos: repuestosTotal,
-        total,
+        // Compat con la página /cotizacion/{token}: total = totalCliente.
+        // mano_obra/repuestos quedan en 0 para que se renderice solo el total
+        // (igual que el flujo sin admin gate, ver fix de 2026-05-12).
+        mano_obra: 0,
+        repuestos: 0,
+        total: tarifa.totalCliente,
+        // Datos auditables internos (no se muestran al cliente)
+        costo_tecnico: costoTecnico,
+        mano_obra_admin: manoObra,
+        repuestos_total_admin: repuestosTotal,
+        subtotal_con_iva: tarifa.subtotalConIva,
+        margen_baird: tarifa.margenBaird,
         tiempo_entrega: tiempoEntrega,
         pendiente_precio: false,
         pricing_set_at: new Date().toISOString(),
-      }
+      } as CotizacionReparacion
 
       const { error: updErr } = await supabase
         .from('solicitudes_servicio')
         .update({
           cotizacion: cotizacionData,
           estado: 'cotizacion_enviada',
-          pago_tecnico: total,
+          pago_tecnico: costoTecnico, // lo que recibe el técnico (sin IVA ni margen)
         })
         .eq('id', sol.id)
         .eq('estado', 'pendiente_pricing')
@@ -130,8 +148,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         flow: 'particular',
-        total,
+        costo_tecnico: costoTecnico,
         repuestos_total: repuestosTotal,
+        total_cliente: tarifa.totalCliente,
         whatsapp_enviado: waResult.ok,
       })
     }

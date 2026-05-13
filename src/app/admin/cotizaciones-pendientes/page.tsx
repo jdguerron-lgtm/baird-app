@@ -123,8 +123,14 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
   const productos = solicitud.cotizacion?.productos_necesarios ?? solicitud.triaje_resultado?.productos_necesarios ?? []
   const recomendados = solicitud.cotizacion?.productos_recomendados ?? solicitud.triaje_resultado?.productos_recomendados ?? []
   const diagnostico = solicitud.cotizacion?.diagnostico_tecnico ?? solicitud.triaje_resultado?.diagnostico_tecnico ?? '—'
+  // Costo declarado por el técnico (mano de obra desde su perspectiva).
+  // En particular+esperar_repuesto, este viene del input "Tu costo total"
+  // del diagnóstico — admin lo usa como pre-fill para el campo "Mano de obra".
+  const costoTecnicoOriginal = (solicitud.cotizacion as { costo_tecnico?: number } | null)?.costo_tecnico
+    ?? (solicitud.triaje_resultado as { costo_tecnico?: number } | null)?.costo_tecnico
+    ?? 0
 
-  const [manoObra, setManoObra] = useState('')
+  const [manoObra, setManoObra] = useState(costoTecnicoOriginal > 0 ? String(costoTecnicoOriginal) : '')
   const [tiempoEntrega, setTiempoEntrega] = useState('')
   const [precios, setPrecios] = useState<Record<string, string>>(
     Object.fromEntries(productos.map(p => [p.sku, '']))
@@ -136,7 +142,13 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
     const precio = Number(precios[p.sku]) || 0
     return acc + precio * Math.max(1, p.cantidad || 1)
   }, 0)
-  const total = (Number(manoObra) || 0) + repuestosTotal
+  // En particular el total al cliente lleva IVA + margen Baird
+  // (× 1.19 × 1.10). Calculamos en vivo para mostrar al admin lo que el
+  // cliente va a ver.
+  const costoTecnicoTotal = (Number(manoObra) || 0) + repuestosTotal
+  const totalClienteEstimado = solicitud.es_garantia
+    ? costoTecnicoTotal
+    : Math.round(costoTecnicoTotal * 1.19 * 1.10)
 
   const submit = async () => {
     setError('')
@@ -294,20 +306,32 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
             />
           </section>
 
-          {/* Total */}
+          {/* Total — particular incluye IVA + margen Baird */}
           {!solicitud.es_garantia && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <div className="flex justify-between text-sm text-gray-600 mb-1">
-                <span>Mano de obra</span>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-1">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Mano de obra (técnico)</span>
                 <span>${formatCOP(Number(manoObra) || 0)}</span>
               </div>
-              <div className="flex justify-between text-sm text-gray-600 mb-1">
+              <div className="flex justify-between text-sm text-gray-600">
                 <span>Repuestos</span>
                 <span>${formatCOP(repuestosTotal)}</span>
               </div>
+              <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-blue-200">
+                <span>Subtotal técnico</span>
+                <span>${formatCOP(costoTecnicoTotal)}</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>+ IVA 19%</span>
+                <span>${formatCOP(Math.round(costoTecnicoTotal * 0.19))}</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>+ Comisión Baird 10%</span>
+                <span>${formatCOP(Math.round(costoTecnicoTotal * 1.19 * 0.10))}</span>
+              </div>
               <div className="flex justify-between text-base font-bold text-blue-900 pt-2 border-t border-blue-300">
-                <span>Total cotización</span>
-                <span>${formatCOP(total)} COP</span>
+                <span>Total al cliente</span>
+                <span>${formatCOP(totalClienteEstimado)} COP</span>
               </div>
             </div>
           )}

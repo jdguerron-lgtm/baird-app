@@ -460,16 +460,23 @@ export default function DiagnosticoPage() {
             <p className="text-gray-500 text-sm mb-4">
               {servicio?.es_garantia
                 ? 'Tu diagnóstico fue registrado. El equipo Baird coordina con el cliente la aprobación del siguiente paso (incluyendo tiempo de entrega si requiere repuesto).'
-                : 'Tu diagnóstico y la cotización quedaron registrados.'}
+                : siguientePaso?.paso === 'esperar_repuesto'
+                  ? 'Tu diagnóstico fue registrado. El equipo Baird revisará y fijará el precio final de los repuestos antes de enviar la cotización al cliente.'
+                  : 'Tu diagnóstico y la cotización quedaron registrados.'}
             </p>
             {waSent === true && (
               <div className="mb-4 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
                 📤 <strong>WhatsApp enviado al cliente</strong> — recibirá la {servicio?.es_garantia ? 'verificación del siguiente paso' : 'cotización'} para aprobar.
               </div>
             )}
-            {waSent === false && (
+            {waSent === false && siguientePaso?.paso !== 'esperar_repuesto' && (
               <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 text-left">
                 ⚠️ <strong>WhatsApp NO se envió al cliente.</strong> El diagnóstico quedó guardado, pero el equipo de Baird tendrá que reenviar el mensaje manualmente desde el panel admin.{waError ? ` Detalle: ${waError}` : ''}
+              </div>
+            )}
+            {!servicio?.es_garantia && siguientePaso?.paso === 'esperar_repuesto' && (
+              <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 text-left">
+                ⏳ <strong>En revisión por el equipo Baird.</strong> El cliente recibirá la cotización por WhatsApp una vez que admin fije el precio de los repuestos.
               </div>
             )}
             <button
@@ -556,7 +563,10 @@ export default function DiagnosticoPage() {
               <h3 className="text-sm font-bold text-slate-900">Servicio particular</h3>
             </div>
             <p className="text-xs text-gray-600">
-              Este es un servicio particular (sin garantía). Indica tu costo total — el sistema agrega IVA y comisión Baird automáticamente y envía la cotización al cliente para aprobación.
+              Este es un servicio particular (sin garantía). Indica tu costo total — el sistema agrega IVA y comisión Baird automáticamente.
+            </p>
+            <p className="text-xs text-blue-900 mt-2 bg-blue-100 rounded-lg p-2">
+              ℹ️ <strong>Si necesitas repuesto:</strong> tu cotización pasará primero por revisión del equipo Baird para fijar el costo final de los repuestos. El cliente recibirá la cotización una vez que admin la complete.
             </p>
           </div>
         )}

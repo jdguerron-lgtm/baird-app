@@ -247,19 +247,30 @@ export async function POST(req: NextRequest) {
       })
     } else {
       // ── NON-WARRANTY (PARTICULAR) FLOW ──
-      // Cambio 2026-05-10 (ver docs/TARIFAS.md § "Particular"):
-      // El técnico ingresa su `costoTecnico` (mano de obra + repuestos).
-      // El sistema calcula automáticamente el total al cliente con IVA + margen
-      // Baird (× 1.19 × 1.10) y dispara la cotización al cliente directamente.
-      // Ya NO pasa por admin pricing gate.
+      // Branching por siguiente_paso (2026-05-12):
       //
-      // Excepción: si el siguiente paso es no_reparable o negativa_cliente,
-      // no hay cotización (servicio cierra terminal).
+      //   reparar          → cotizacion_enviada (envío directo al cliente).
+      //                      El técnico ya tiene visibilidad total del costo;
+      //                      solo es mano de obra + repuestos disponibles.
+      //
+      //   esperar_repuesto → pendiente_pricing (admin gate). El técnico
+      //                      ingresa SU costo (mano de obra), pero el precio
+      //                      final de los repuestos requeridos lo fija el
+      //                      equipo Baird desde /admin/cotizaciones-pendientes.
+      //                      Solo cuando admin completa, la cotización se
+      //                      envía al cliente.
+      //
+      //   no_reparable     → finalizado_sin_reparacion (terminal).
+      //   negativa_cliente → cancelada_cliente (terminal).
+      //
+      // Ver docs/TARIFAS.md § "Particular" para detalle de la fórmula
+      // (costoTecnico × 1.19 IVA × 1.10 margen Baird).
       const { evidenciaUrls, costoTecnico } = body
       const costoTecnicoNum = Number.isFinite(costoTecnico) && costoTecnico > 0 ? Math.round(costoTecnico) : 0
 
       const cotizacionToken = crypto.randomUUID()
       const cierraSinCotizacion = siguientePaso === 'no_reparable' || siguientePaso === 'negativa_cliente'
+      const necesitaPricingAdmin = siguientePaso === 'esperar_repuesto'
 
       // Validar costoTecnico solo cuando la rama lo requiere (genera cotización)
       if (!cierraSinCotizacion && costoTecnicoNum <= 0) {
@@ -269,18 +280,20 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // Calcular tarifa con la fórmula reseller (× 1.19 IVA × 1.10 margen Baird)
-      const tarifa = costoTecnicoNum > 0 ? calcularTarifaParticular({ costoTecnico: costoTecnicoNum }) : null
+      // En reparar: ya podemos calcular el total al cliente. En esperar_repuesto:
+      // el cálculo final se hace tras admin pricing (precio_unitario por SKU
+      // + tiempo_entrega), ahí se invoca calcularTarifaParticular con la suma.
+      const tarifa = !necesitaPricingAdmin && costoTecnicoNum > 0
+        ? calcularTarifaParticular({ costoTecnico: costoTecnicoNum })
+        : null
 
       // Construir cotizacion JSONB. Mantenemos la forma legacy (mano_obra, repuestos,
-      // total) para compat con la página /cotizacion/{token}, pero sin desglose:
-      // mano_obra = 0, repuestos = 0, total = totalCliente. El front del cliente
-      // muestra solo "Total: $X (incluye IVA)".
+      // total) para compat con la página /cotizacion/{token}.
       const cotizacionData: Record<string, unknown> = {
         diagnostico_tecnico: diagnostico.trim(),
         productos_necesarios: necesarios,
         productos_recomendados: recomendados,
-        pendiente_precio: false,
+        pendiente_precio: necesitaPricingAdmin,
         // Detalle interno (no visible al cliente)
         costo_tecnico: costoTecnicoNum,
         subtotal_con_iva: tarifa?.subtotalConIva ?? 0,
@@ -304,10 +317,13 @@ export async function POST(req: NextRequest) {
       }
 
       // Si cierra sin cotización: estado terminal según el paso elegido.
-      // Si genera cotización: estado=cotizacion_enviada (saltamos admin gate).
+      // Si requiere admin pricing (esperar_repuesto): pendiente_pricing.
+      // Else (reparar): cotizacion_enviada — envío directo al cliente.
       const nuevoEstado = cierraSinCotizacion
         ? (siguientePaso === 'no_reparable' ? 'finalizado_sin_reparacion' : 'cancelada_cliente')
-        : 'cotizacion_enviada'
+        : necesitaPricingAdmin
+          ? 'pendiente_pricing'
+          : 'cotizacion_enviada'
 
       const { error: updateErr } = await supabase
         .from('solicitudes_servicio')
@@ -345,10 +361,13 @@ export async function POST(req: NextRequest) {
         if (repErr) console.error('[diagnostico] Error insertando repuestos (particular):', repErr)
       }
 
-      // Si genera cotización, dispara el WhatsApp al cliente inmediatamente.
+      // Solo enviar la cotización al cliente si genera cotización completa
+      // (rama "reparar"). En "esperar_repuesto" esperamos que admin complete
+      // los precios de los repuestos antes — la plantilla la disparará
+      // /api/cotizacion-precios cuando admin termine.
       let waOk = true
       let waError: string | null = null
-      if (!cierraSinCotizacion) {
+      if (!cierraSinCotizacion && !necesitaPricingAdmin) {
         const waResult = await enviarCotizacionCliente(sol.id)
         waOk = waResult.ok
         if (!waResult.ok) {
@@ -363,8 +382,10 @@ export async function POST(req: NextRequest) {
         estado: nuevoEstado,
         cotizacionToken: cierraSinCotizacion ? null : cotizacionToken,
         totalCliente: tarifa?.totalCliente ?? 0,
-        pendiente_pricing: false,
-        whatsapp_sent: !cierraSinCotizacion && waOk,
+        pendiente_pricing: necesitaPricingAdmin,
+        // whatsapp_sent: solo true si efectivamente se envió (no en
+        // pendiente_pricing, donde esperamos admin).
+        whatsapp_sent: !cierraSinCotizacion && !necesitaPricingAdmin && waOk,
         whatsapp_error: waError,
       })
     }
