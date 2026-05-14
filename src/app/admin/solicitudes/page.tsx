@@ -17,6 +17,7 @@ interface Solicitud {
   tipo_solicitud: string
   estado: string
   pago_tecnico: number
+  es_garantia: boolean
   created_at: string
   tecnico_asignado_id: string | null
   tecnico_nombre?: string
@@ -49,7 +50,7 @@ export default function SolicitudesAdmin() {
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, created_at, tecnico_asignado_id')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, es_garantia, created_at, tecnico_asignado_id')
           .order('created_at', { ascending: false })
 
         if (filtro !== 'todos') {
@@ -367,7 +368,14 @@ export default function SolicitudesAdmin() {
                       <p className="text-xs text-gray-400">{s.zona_servicio ?? '—'}</p>
                     </td>
                     <td className="px-5 py-3">
-                      <p className="text-sm font-medium text-gray-700">${formatCOP(s.pago_tecnico)}</p>
+                      {s.es_garantia && (!s.pago_tecnico || s.pago_tecnico === 0) ? (
+                        <p className="text-xs text-blue-600 font-medium">MABE · tras diagnóstico</p>
+                      ) : (
+                        <p className="text-sm font-medium text-gray-700">
+                          ${formatCOP(s.pago_tecnico)}
+                          {s.es_garantia && <span className="text-[10px] text-gray-400 ml-1">MABE</span>}
+                        </p>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${ESTADO_ESTILOS[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>

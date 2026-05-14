@@ -70,6 +70,7 @@ Endpoints protegidos con `verificarAdmin`:
 |---|---|---|
 | `/api/admin/export` | POST | Descarga Excel multi-hoja de solicitudes |
 | `/api/admin/reenviar-ultimo-mensaje` | POST | Re-disparar la plantilla correspondiente al estado actual |
+| `/api/admin/editar-solicitud` | POST | Editar manualmente horario_confirmado, dirección, ciudad, zona. Cambios auditados en `solicitud_eventos` con diff |
 | `/api/carga-masiva` | POST + DELETE | Bulk upload BITÁCORA Excel y borrado masivo |
 | `/api/whatsapp/notify` | POST | Re-notificar técnicos o re-enviar plantilla horario |
 | `/api/cotizacion-precios` | POST | Admin fija precios + tiempo entrega (gate de pricing) |

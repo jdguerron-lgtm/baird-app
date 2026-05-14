@@ -27,11 +27,14 @@ interface Solicitud {
   pago_tecnico: number
   horario_visita_1: string
   horario_visita_2: string
+  horario_confirmado: string | null
   estado: string
   tecnico_asignado_id: string | null
   created_at: string
   cliente_token: string | null
   horario_confirmado_at: string | null
+  reagendamientos_count: number | null
+  ultimo_reagendado_at: string | null
 }
 
 interface Tecnico {
@@ -86,6 +89,14 @@ export default function SolicitudDetalle() {
   const [cargando, setCargando] = useState(true)
   const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
   const [reenviando, setReenviando] = useState(false)
+  const [editando, setEditando] = useState(false)
+  const [edicionHorario, setEdicionHorario] = useState('')
+  const [edicionDireccion, setEdicionDireccion] = useState('')
+  const [edicionCiudad, setEdicionCiudad] = useState('')
+  const [edicionZona, setEdicionZona] = useState('')
+  const [edicionMotivo, setEdicionMotivo] = useState('')
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const [errorEdicion, setErrorEdicion] = useState<string | null>(null)
   const [exportando, setExportando] = useState(false)
   const [errorExport, setErrorExport] = useState<string | null>(null)
   const [reenviandoUltimo, setReenviandoUltimo] = useState(false)
@@ -136,6 +147,76 @@ export default function SolicitudDetalle() {
       setErrorExport(e instanceof Error ? e.message : 'Error desconocido')
     }
     setExportando(false)
+  }
+
+  const abrirEdicion = () => {
+    if (!solicitud) return
+    setEdicionHorario(solicitud.horario_confirmado ?? '')
+    setEdicionDireccion(solicitud.direccion ?? '')
+    setEdicionCiudad(solicitud.ciudad_pueblo ?? '')
+    setEdicionZona(solicitud.zona_servicio ?? '')
+    setEdicionMotivo('')
+    setErrorEdicion(null)
+    setEditando(true)
+  }
+
+  const guardarEdicion = async () => {
+    if (!solicitud) return
+    setGuardandoEdicion(true)
+    setErrorEdicion(null)
+
+    const cambios: Record<string, string> = {}
+    if (edicionHorario.trim() && edicionHorario.trim() !== (solicitud.horario_confirmado ?? '')) {
+      cambios.horario_confirmado = edicionHorario.trim()
+    }
+    if (edicionDireccion.trim() && edicionDireccion.trim() !== solicitud.direccion) {
+      cambios.direccion = edicionDireccion.trim()
+    }
+    if (edicionCiudad.trim() && edicionCiudad.trim() !== solicitud.ciudad_pueblo) {
+      cambios.ciudad_pueblo = edicionCiudad.trim()
+    }
+    if (edicionZona.trim() && edicionZona.trim() !== solicitud.zona_servicio) {
+      cambios.zona_servicio = edicionZona.trim()
+    }
+
+    if (Object.keys(cambios).length === 0) {
+      setErrorEdicion('No hay cambios que guardar')
+      setGuardandoEdicion(false)
+      return
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorEdicion('Sesión expirada — vuelve a iniciar sesión')
+        setGuardandoEdicion(false)
+        return
+      }
+      const res = await fetch('/api/admin/editar-solicitud', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          id: solicitud.id,
+          cambios,
+          motivo: edicionMotivo.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorEdicion(data.error || 'No se pudo guardar')
+        setGuardandoEdicion(false)
+        return
+      }
+      // Actualizar la solicitud en memoria con los cambios aplicados
+      setSolicitud(prev => prev ? { ...prev, ...cambios } : prev)
+      setEditando(false)
+    } catch (e) {
+      setErrorEdicion(e instanceof Error ? e.message : 'Error de conexión')
+    }
+    setGuardandoEdicion(false)
   }
 
   async function runDiagnostics(sol: Solicitud) {
@@ -372,17 +453,25 @@ export default function SolicitudDetalle() {
   // su horario en el webview — sin necesidad de F5.
   //
   // Nota: solo refrescamos los campos que afectan el botón (estado +
-  // horario_confirmado_at + tecnico_asignado_id), no toda la página.
+  // horario_confirmado_at + tecnico_asignado_id + reagendamientos_count), no
+  // toda la página. Pollea mientras el servicio esté ACTIVO (no terminal):
+  // así si el cliente reagenda desde /servicio/{cliente_token} el admin lo ve
+  // sin recargar manualmente. Antes solo polleaba en pendiente_horario/
+  // sin_agendar y por eso al reagendar en estado notificada/asignada/etc el
+  // admin se quedaba con el horario viejo en pantalla.
   useEffect(() => {
     if (!solicitud) return
-    const estado = solicitud.estado
-    const enEspera = estado === 'pendiente_horario' || estado === 'sin_agendar'
-    if (!enEspera) return
+    const estadosTerminales = new Set([
+      'completada', 'en_disputa', 'cancelada', 'cancelada_cliente',
+      'finalizado_sin_reparacion', 'cotizacion_rechazada', 'sin_agendar',
+      'no_show_cliente',
+    ])
+    if (estadosTerminales.has(solicitud.estado)) return
 
     const intervalo = setInterval(async () => {
       const { data: fresca } = await supabase
         .from('solicitudes_servicio')
-        .select('estado, horario_confirmado, horario_confirmado_at, tecnico_asignado_id')
+        .select('estado, horario_confirmado, horario_confirmado_at, tecnico_asignado_id, reagendamientos_count, ultimo_reagendado_at')
         .eq('id', id)
         .single()
 
@@ -390,8 +479,10 @@ export default function SolicitudDetalle() {
 
       const cambio =
         fresca.estado !== solicitud.estado ||
+        fresca.horario_confirmado !== solicitud.horario_confirmado ||
         fresca.horario_confirmado_at !== solicitud.horario_confirmado_at ||
-        fresca.tecnico_asignado_id !== solicitud.tecnico_asignado_id
+        fresca.tecnico_asignado_id !== solicitud.tecnico_asignado_id ||
+        (fresca.reagendamientos_count ?? 0) !== (solicitud.reagendamientos_count ?? 0)
 
       if (cambio) {
         setSolicitud(prev => (prev ? { ...prev, ...fresca } : prev))
@@ -458,7 +549,17 @@ export default function SolicitudDetalle() {
 
         {/* Client info */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Datos del cliente</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Datos del cliente</h2>
+            <button
+              type="button"
+              onClick={abrirEdicion}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50"
+              title="Editar horario, dirección, ciudad o zona. Queda registrado en el audit."
+            >
+              ✏️ Editar
+            </button>
+          </div>
           <dl className="space-y-3">
             <div>
               <dt className="text-xs text-gray-500">Nombre</dt>
@@ -518,20 +619,47 @@ export default function SolicitudDetalle() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <dt className="text-xs text-gray-500">Valor del servicio</dt>
-                <dd className="text-sm font-bold text-green-700">${formatCOP(solicitud.pago_tecnico)} COP</dd>
+                <dd className="text-sm font-bold text-green-700">
+                  {solicitud.es_garantia
+                    ? solicitud.pago_tecnico && solicitud.pago_tecnico > 0
+                      ? `$${formatCOP(solicitud.pago_tecnico)} COP (MABE Tipo D)`
+                      : 'Tarifa MABE — se calcula tras diagnóstico'
+                    : `$${formatCOP(solicitud.pago_tecnico)} COP`}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-gray-500">Garantia</dt>
                 <dd className="text-sm text-slate-900">{solicitud.es_garantia ? `Si — ${solicitud.numero_serie_factura}` : 'No'}</dd>
               </div>
             </div>
+            {solicitud.horario_confirmado && (
+              <div className="border-l-4 border-emerald-500 bg-emerald-50 rounded-r-lg p-3">
+                <dt className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+                  {solicitud.reagendamientos_count && solicitud.reagendamientos_count > 0
+                    ? `Horario actualizado (reagendado ${solicitud.reagendamientos_count}×)`
+                    : 'Horario confirmado'}
+                </dt>
+                <dd className="text-sm font-bold text-emerald-900 mt-0.5">{solicitud.horario_confirmado}</dd>
+                {solicitud.horario_confirmado_at && (
+                  <p className="text-[11px] text-emerald-700/70 mt-1">
+                    {solicitud.ultimo_reagendado_at
+                      ? `Último cambio: ${new Date(solicitud.ultimo_reagendado_at).toLocaleString('es-CO')}`
+                      : `Confirmado: ${new Date(solicitud.horario_confirmado_at).toLocaleString('es-CO')}`}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <dt className="text-xs text-gray-500">Horario 1</dt>
+                <dt className="text-xs text-gray-500">
+                  {solicitud.horario_confirmado ? 'Opción 1 (original)' : 'Horario 1'}
+                </dt>
                 <dd className="text-sm text-slate-900">{solicitud.horario_visita_1 || '—'}</dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">Horario 2</dt>
+                <dt className="text-xs text-gray-500">
+                  {solicitud.horario_confirmado ? 'Opción 2 (original)' : 'Horario 2'}
+                </dt>
                 <dd className="text-sm text-slate-900">{solicitud.horario_visita_2 || '—'}</dd>
               </div>
             </div>
@@ -1222,6 +1350,113 @@ export default function SolicitudDetalle() {
           </div>
         )}
       </div>
+
+      {/* Edit modal — admin corrige horario / dirección / ciudad / zona.
+          Toda edición queda en solicitud_eventos via /api/admin/editar-solicitud. */}
+      {editando && solicitud && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget && !guardandoEdicion) setEditando(false) }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">✏️ Editar solicitud</h3>
+              <button
+                type="button"
+                onClick={() => !guardandoEdicion && setEditando(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 disabled:opacity-50"
+                disabled={guardandoEdicion}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-xs text-gray-500">
+                Los cambios quedan registrados en el audit log. Si modificas el horario, el cliente y técnico <strong>NO</strong> reciben WhatsApp automáticamente — usa el botón &ldquo;Reenviar último mensaje&rdquo; para avisarles.
+              </p>
+
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Horario confirmado</span>
+                <input
+                  type="text"
+                  value={edicionHorario}
+                  onChange={(e) => setEdicionHorario(e.target.value)}
+                  placeholder="Ej: Lunes 12 de mayo · 3pm-6pm"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+              </label>
+
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Dirección</span>
+                <input
+                  type="text"
+                  value={edicionDireccion}
+                  onChange={(e) => setEdicionDireccion(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="block text-xs font-semibold text-gray-700 mb-1">Ciudad</span>
+                  <input
+                    type="text"
+                    value={edicionCiudad}
+                    onChange={(e) => setEdicionCiudad(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-xs font-semibold text-gray-700 mb-1">Zona</span>
+                  <input
+                    type="text"
+                    value={edicionZona}
+                    onChange={(e) => setEdicionZona(e.target.value)}
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Motivo (opcional)</span>
+                <textarea
+                  value={edicionMotivo}
+                  onChange={(e) => setEdicionMotivo(e.target.value)}
+                  rows={2}
+                  placeholder="Ej: Cliente solicitó cambio por teléfono"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </label>
+
+              {errorEdicion && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+                  {errorEdicion}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-100 flex gap-2">
+              <button
+                type="button"
+                onClick={() => !guardandoEdicion && setEditando(false)}
+                disabled={guardandoEdicion}
+                className="flex-1 rounded-lg bg-gray-100 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={guardarEdicion}
+                disabled={guardandoEdicion}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
