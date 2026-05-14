@@ -139,7 +139,7 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
               <p className="text-xs text-green-600 mt-1 font-medium">COP · Pago a través de Baird Service</p>
               {esGarantia && (
                 <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">
-                  Tarifa garantía MABE Tipo D — el monto sube según la complejidad real (Media o Alta) y los bonos por tiempo de solución, encuesta del cliente y recargo fin de semana. <span className="font-semibold">Nunca es menor que este valor.</span>
+                  El monto sube si la reparación requiere complejidad mayor + bonos por entrega a tiempo y satisfacción del cliente. <span className="font-semibold">Nunca es menor que este valor.</span>
                 </p>
               )}
             </div>

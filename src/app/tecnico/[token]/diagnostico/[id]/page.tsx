@@ -637,7 +637,9 @@ export default function DiagnosticoPage() {
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                       complejidad === key ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'
                     }`}>
-                      {tarifa.codigo}
+                      {/* Inicial de la complejidad (B/M/A) en lugar del código
+                          interno MABE — el técnico no necesita ver el código. */}
+                      {tarifa.label[0]}
                     </div>
                     <div>
                       <span className={`text-sm font-bold ${complejidad === key ? 'text-purple-800' : 'text-slate-900'}`}>

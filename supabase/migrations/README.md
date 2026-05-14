@@ -25,6 +25,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260508_fix_completado_at_default.sql`** | **PENDIENTE — HOTFIX URGENTE** | Drop DEFAULT NOW() de evidencias_servicio.completado_at + backfill rows mal seteadas (rompía botón "Completar servicio" tras diagnóstico) |
 | **`20260510_no_show_protocolo.sql`** | **PENDIENTE** | Estado terminal `no_show_cliente`, columna `evidencia_no_show` JSONB, columnas auditoría de tarifa MABE (cumple_ta, cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado), tabla nueva `cliente_historial`, tipos extra en `solicitud_eventos`. Ver `docs/PROTOCOLO-VISITA.md` y `docs/TARIFAS.md` |
 | **`20260513_normalizar_telefonos.sql`** | **PENDIENTE** | Función `normalizar_telefono_co()` + triggers BEFORE INSERT/UPDATE en `tecnicos.whatsapp` y `solicitudes_servicio.cliente_telefono`. Backfill: normaliza datos existentes a dígitos puros con prefijo 57 (strip `+`, espacios, guiones, pipe). Resuelve "técnico no recibe WhatsApp porque `whatsapp` quedó con +57" |
+| **`20260513_tracking_ta.sql`** | **PENDIENTE** | Columnas `diagnosticado_at timestamptz` + `cumple_ta boolean` en `solicitudes_servicio`, con índices. Backfill desde `triaje_resultado` JSONB. Habilita tracking del SLA 24h y filtros admin por TA |
 
 ## Cómo aplicar las pendientes
 

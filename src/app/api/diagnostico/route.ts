@@ -97,11 +97,25 @@ export async function POST(req: NextRequest) {
     // Verify assignment
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
-      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia')
+      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, horario_confirmado_at')
       .eq('id', solicitudId)
       .eq('tecnico_asignado_id', tecnico.id)
       .single()
     if (!sol) return NextResponse.json({ error: 'Servicio no encontrado' }, { status: 404 })
+
+    // Tracking TA: snapshot del momento del diagnóstico + cumplimiento del SLA
+    // 24h desde horario_confirmado_at. Persistimos en columnas dedicadas (no
+    // solo en triaje_resultado JSONB) para poder indexar y filtrar admin.
+    // Si horario_confirmado_at es null (caso raro: solicitud sin paso por
+    // /api/confirmar-horario), cumple_ta queda null — no asumimos true ni
+    // false porque no hay base para calcular.
+    const diagnosticadoAt = new Date()
+    let cumpleTA: boolean | null = null
+    if (sol.horario_confirmado_at) {
+      const confirmedMs = new Date(sol.horario_confirmado_at).getTime()
+      const horasTranscurridas = (diagnosticadoAt.getTime() - confirmedMs) / 3600000
+      cumpleTA = horasTranscurridas <= 24
+    }
 
     const validStates = ['asignada', 'diagnostico_pendiente']
     if (!validStates.includes(sol.estado ?? '')) {
@@ -198,8 +212,11 @@ export async function POST(req: NextRequest) {
           estado: nuevoEstado,
           siguiente_paso: siguientePaso,
           siguiente_paso_detalle: siguientePasoDetalle,
-          siguiente_paso_at: new Date().toISOString(),
+          siguiente_paso_at: diagnosticadoAt.toISOString(),
           verificacion_paso_token: verificacionToken,
+          // Tracking TA — columnas dedicadas, mig 20260513_tracking_ta
+          diagnosticado_at: diagnosticadoAt.toISOString(),
+          cumple_ta: cumpleTA,
         })
         .eq('id', sol.id)
       if (updateErr) {
@@ -351,7 +368,12 @@ export async function POST(req: NextRequest) {
           pago_tecnico: costoTecnicoNum, // lo que el técnico recibe íntegro
           siguiente_paso: siguientePaso,
           siguiente_paso_detalle: siguientePasoDetalle,
-          siguiente_paso_at: new Date().toISOString(),
+          siguiente_paso_at: diagnosticadoAt.toISOString(),
+          // Tracking TA — para particular cumple_ta también se persiste para
+          // tener métrica de tiempo de respuesta del técnico (independiente
+          // de bonos, que solo aplican a garantía).
+          diagnosticado_at: diagnosticadoAt.toISOString(),
+          cumple_ta: cumpleTA,
         })
         .eq('id', sol.id)
       if (updateErr) {

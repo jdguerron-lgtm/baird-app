@@ -436,11 +436,13 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
               { type: 'text', text: problema },
               { type: 'text', text: ubicacion },
               { type: 'text', text: horario },
-              // Pago MÍNIMO garantizado (complejidad Baja, sin bonos, sin
-              // recargo weekend). El técnico cobra IGUAL o MÁS según la
-              // complejidad real que evalúe en el diagnóstico + bonos por TA
-              // y encuesta. Cálculo en PAGO_MINIMO_TECNICO_GARANTIA.
-              { type: 'text', text: `Garantía MABE — desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP` },
+              // Pago MÍNIMO garantizado al técnico. No se revela que es MABE
+              // ni el desglose de tarifa/bono/margen — esa información es
+              // privada de Baird. El técnico solo ve lo que va a recibir.
+              // El monto real puede subir según complejidad real evaluada
+              // en el diagnóstico + bonos por entrega a tiempo y satisfacción
+              // del cliente. Cálculo en PAGO_MINIMO_TECNICO_GARANTIA.
+              { type: 'text', text: `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP` },
             ],
           },
           { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
@@ -642,11 +644,17 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   if (tecnico) {
     const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
     const direccion = `${sol.direccion}, ${sol.zona_servicio}`
-    // Pago mostrado al técnico tras ganar: garantía → mínimo MABE Tipo D
-    // (puede ser más alto según complejidad real + bonos); particular → tarifa
-    // de diagnóstico que el cliente pagó por adelantado.
+    // Pago mostrado al técnico tras ganar el servicio.
+    //
+    // Garantía: mostramos el pago MÍNIMO neto al técnico sin revelar que es
+    // MABE ni el desglose tarifa/bono/margen — esa info es privada de Baird.
+    // El monto real puede subir según complejidad real + bonos por entrega
+    // a tiempo y satisfacción del cliente.
+    //
+    // Particular: el cliente ya pagó la tarifa de diagnóstico por adelantado;
+    // se la mostramos al técnico para que sepa cuánto recibió Baird.
     const pago = sol.es_garantia
-      ? `Garantía MABE — desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
+      ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
       : `$${formatCOP(sol.pago_tecnico)} COP`
     const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
