@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
+import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { escapeLikePattern } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
 
@@ -622,8 +623,13 @@ export default function SolicitudDetalle() {
                 <dd className="text-sm font-bold text-green-700">
                   {solicitud.es_garantia
                     ? solicitud.pago_tecnico && solicitud.pago_tecnico > 0
-                      ? `$${formatCOP(solicitud.pago_tecnico)} COP (MABE Tipo D)`
-                      : 'Tarifa MABE — se calcula tras diagnóstico'
+                      ? `$${formatCOP(solicitud.pago_tecnico)} COP`
+                      : (
+                        <>
+                          <span className="text-xs font-medium text-gray-500 mr-1">desde</span>
+                          ${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP
+                        </>
+                      )
                     : `$${formatCOP(solicitud.pago_tecnico)} COP`}
                 </dd>
               </div>

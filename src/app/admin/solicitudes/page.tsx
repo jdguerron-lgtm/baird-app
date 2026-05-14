@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { ESTADO_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
+import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 
 interface Solicitud {
   id: string
@@ -369,11 +370,13 @@ export default function SolicitudesAdmin() {
                     </td>
                     <td className="px-5 py-3">
                       {s.es_garantia && (!s.pago_tecnico || s.pago_tecnico === 0) ? (
-                        <p className="text-xs text-blue-600 font-medium">MABE · tras diagnóstico</p>
+                        <p className="text-sm font-medium text-gray-700">
+                          <span className="text-xs text-gray-400 mr-1">desde</span>
+                          ${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)}
+                        </p>
                       ) : (
                         <p className="text-sm font-medium text-gray-700">
                           ${formatCOP(s.pago_tecnico)}
-                          {s.es_garantia && <span className="text-[10px] text-gray-400 ml-1">MABE</span>}
                         </p>
                       )}
                     </td>
