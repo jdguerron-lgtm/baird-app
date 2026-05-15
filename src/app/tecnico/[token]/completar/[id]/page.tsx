@@ -45,9 +45,14 @@ export default function CompletarServicioPage() {
   const [waError, setWaError] = useState<string | null>(null)
 
   // Photos
+  // - fileInputRef: usa capture="environment" para abrir la cámara directamente.
+  // - galeriaInputRef: sin capture → iOS/Android muestran la biblioteca con fotos
+  //   existentes. Es indispensable porque en iOS capture="environment" oculta la
+  //   opción "Photo Library" del native picker.
   const [fotos, setFotos] = useState<File[]>([])
   const [fotoPreviews, setFotoPreviews] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const galeriaInputRef = useRef<HTMLInputElement>(null)
 
   // Checklist
   const [checklist, setChecklist] = useState<ChecklistServicio>({
@@ -482,7 +487,7 @@ export default function CompletarServicioPage() {
         {/* 1. Photos */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="text-sm font-bold text-slate-900 mb-1">Fotos del servicio</h3>
-          <p className="text-xs text-gray-400 mb-3">Equipo funcionando, placa de serie, repuesto, antes/después (máx 6)</p>
+          <p className="text-xs text-gray-400 mb-3">Toma fotos con la cámara o súbelas desde la galería. Equipo funcionando, placa de serie, repuesto, antes/después (máx 6).</p>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
             {fotoPreviews.map((src, i) => (
@@ -504,16 +509,39 @@ export default function CompletarServicioPage() {
                 <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span className="text-[10px]">Agregar</span>
+                <span className="text-[10px]">Cámara</span>
               </button>
             )}
           </div>
+
+          {fotos.length < 6 && (
+            <button
+              type="button"
+              onClick={() => galeriaInputRef.current?.click()}
+              className="text-xs text-gray-600 underline hover:text-slate-900 mb-2"
+            >
+              🖼️ Elegir fotos de galería
+            </button>
+          )}
+
+          {/* Input cámara — capture="environment" abre la cámara directamente. */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
             multiple
             capture="environment"
+            className="hidden"
+            onChange={(e) => handlePhotos(e.target.files)}
+          />
+
+          {/* Input galería — sin capture para que iOS/Android muestren la
+              biblioteca de fotos existentes. */}
+          <input
+            ref={galeriaInputRef}
+            type="file"
+            accept="image/*"
+            multiple
             className="hidden"
             onChange={(e) => handlePhotos(e.target.files)}
           />

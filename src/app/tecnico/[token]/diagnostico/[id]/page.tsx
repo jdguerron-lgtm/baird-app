@@ -45,12 +45,17 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB para fotos y videos
 export default function DiagnosticoPage() {
   const { token, id } = useParams<{ token: string; id: string }>()
   const router = useRouter()
-  // 2 refs separados: el principal (fotoInputRef) abre la cámara en modo
-  // foto en Android (con accept="image/*"). Si se usa accept="image/*,video/*"
-  // Android puede defaultear a modo video, confundiendo al técnico nuevo.
-  // El video queda como link secundario opcional.
+  // 3 refs separados:
+  // - fotoInputRef: abre la cámara en modo foto (accept=image/* + capture=environment).
+  //   No usamos accept="image/*,video/*" en el camera shortcut porque Android puede
+  //   defaultear a modo video y confundir al técnico nuevo.
+  // - videoInputRef: abre la cámara en modo video (capture=environment).
+  // - galeriaInputRef: NO usa capture, así iOS/Android muestran el picker de la
+  //   biblioteca con fotos y videos existentes. Esto soluciona el problema en iOS
+  //   donde capture="environment" oculta la opción "Photo Library".
   const fotoInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
+  const galeriaInputRef = useRef<HTMLInputElement>(null)
 
   const [tecnico, setTecnico] = useState<{ id: string; nombre_completo: string } | null>(null)
   const [servicio, setServicio] = useState<Servicio | null>(null)
@@ -741,7 +746,7 @@ export default function DiagnosticoPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-1">Evidencia del fallo *</h2>
           <p className="text-xs text-gray-400 mb-4">
-            Toma fotos del problema identificado para justificar el diagnóstico. Si necesitas grabar video, abajo hay opción.
+            Toma fotos del problema con la cámara o súbelas desde la galería. También puedes adjuntar un video.
           </p>
 
           {/* File grid */}
@@ -795,7 +800,7 @@ export default function DiagnosticoPage() {
             onChange={(e) => handleFileSelect(e.target.files)}
           />
 
-          {/* Input opcional para video — explícito, secundario. */}
+          {/* Input opcional para video desde cámara — explícito, secundario. */}
           <input
             ref={videoInputRef}
             type="file"
@@ -805,14 +810,34 @@ export default function DiagnosticoPage() {
             onChange={(e) => handleFileSelect(e.target.files)}
           />
 
+          {/* Input para galería — sin capture para que iOS/Android muestren la
+              biblioteca de fotos y videos existentes. Acepta múltiples. */}
+          <input
+            ref={galeriaInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => handleFileSelect(e.target.files)}
+          />
+
           {evidencias.length < MAX_EVIDENCIAS && (
-            <button
-              type="button"
-              onClick={() => videoInputRef.current?.click()}
-              className="text-xs text-gray-500 underline hover:text-purple-700 mb-2"
-            >
-              🎬 ¿Necesitas grabar un video corto en su lugar?
-            </button>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+              <button
+                type="button"
+                onClick={() => galeriaInputRef.current?.click()}
+                className="text-xs text-gray-600 underline hover:text-purple-700"
+              >
+                🖼️ Elegir foto o video de galería
+              </button>
+              <button
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                className="text-xs text-gray-600 underline hover:text-purple-700"
+              >
+                🎬 Grabar video con cámara
+              </button>
+            </div>
           )}
 
           <p className="text-[10px] text-gray-400">
