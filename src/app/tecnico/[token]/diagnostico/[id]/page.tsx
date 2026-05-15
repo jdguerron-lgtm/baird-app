@@ -145,12 +145,24 @@ export default function DiagnosticoPage() {
 
   useEffect(() => {
     const cargar = async () => {
-      const { data: tec } = await supabase
-        .from('tecnicos')
-        .select('id, nombre_completo')
-        .eq('portal_token', token)
-        .single()
+      // Las dos queries son independientes — paralelizamos para ahorrar
+      // un round-trip. La validación de pertenencia (tecnico_asignado_id ===
+      // tec.id) se hace client-side abajo. Con anon key + sin RLS la
+      // diferencia de seguridad es nula y la ganancia ~200-500ms en 4G.
+      const [tecResult, solResult] = await Promise.all([
+        supabase
+          .from('tecnicos')
+          .select('id, nombre_completo')
+          .eq('portal_token', token)
+          .single(),
+        supabase
+          .from('solicitudes_servicio')
+          .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado, tecnico_asignado_id')
+          .eq('id', id)
+          .single(),
+      ])
 
+      const tec = tecResult.data
       if (!tec) {
         setError('Enlace invalido')
         setCargando(false)
@@ -158,14 +170,8 @@ export default function DiagnosticoPage() {
       }
       setTecnico(tec)
 
-      const { data: sol } = await supabase
-        .from('solicitudes_servicio')
-        .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado')
-        .eq('id', id)
-        .eq('tecnico_asignado_id', tec.id)
-        .single()
-
-      if (!sol) {
+      const sol = solResult.data
+      if (!sol || sol.tecnico_asignado_id !== tec.id) {
         setError('Servicio no encontrado')
         setCargando(false)
         return
