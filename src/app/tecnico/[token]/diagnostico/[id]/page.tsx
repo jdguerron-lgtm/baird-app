@@ -21,6 +21,7 @@ import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
+import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 
 interface Servicio {
@@ -190,32 +191,37 @@ export default function DiagnosticoPage() {
     cargar()
   }, [token, id])
 
-  // Handle file selection (photos/videos)
+  // Handle file selection (photos/videos).
+  // Las fotos se comprimen luego (en enviarDiagnostico), acá solo validamos tamaño
+  // y tipo. El límite de 10 MB se aplica tras la compresión para imágenes (una
+  // foto HEIC iPhone 6 MB termina en ~700 KB), pero antes para videos (no se
+  // comprimen client-side). Por eso el mensaje accionable solo se muestra cuando
+  // el archivo grande es un video.
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return
     const newFiles: File[] = []
     const newPreviews: string[] = []
+    let advice: string | null = null
 
     for (let i = 0; i < files.length && evidencias.length + newFiles.length < MAX_EVIDENCIAS; i++) {
       const file = files[i]
-      if (file.size > MAX_FILE_SIZE) {
-        setError(`${file.name} excede el limite de 10MB`)
-        continue
-      }
-      if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      const isVideo = file.type.startsWith('video/')
+      const isImage = file.type.startsWith('image/')
+      if (!isImage && !isVideo) continue
+
+      // Solo rechazamos por tamaño *antes* si es video — las imágenes las comprime
+      // compressImageIfNeeded antes del upload.
+      if (isVideo && file.size > MAX_FILE_SIZE) {
+        advice = videoSizeAdvice()
         continue
       }
       newFiles.push(file)
-      if (file.type.startsWith('image/')) {
-        newPreviews.push(URL.createObjectURL(file))
-      } else {
-        newPreviews.push('video') // placeholder for video
-      }
+      newPreviews.push(isImage ? URL.createObjectURL(file) : 'video')
     }
 
     setEvidencias(prev => [...prev, ...newFiles])
     setPreviews(prev => [...prev, ...newPreviews])
-    setError(null)
+    setError(advice) // null si todos los archivos pasaron; mensaje guía si rechazamos un video grande
   }
 
   const removeEvidencia = (idx: number) => {
@@ -278,36 +284,53 @@ export default function DiagnosticoPage() {
     enviarPing(servicio.id, 'diagnostico').catch(() => {})
 
     try {
-      // 1. Upload evidence files to Supabase Storage
-      setProgreso('Subiendo evidencias...')
-      const evidenciaUrls: string[] = []
+      // 1. Comprimir imágenes y subir a Supabase Storage en paralelo.
+      //
+      // Cambios respecto al loop secuencial anterior:
+      //
+      // - Compresión client-side antes del upload: una foto iPhone HEIC 5 MB
+      //   termina en ~700 KB JPEG. Reduce 5-10× el tiempo de upload Y arregla
+      //   el problema de que Chrome/Firefox del admin no decodifican HEIC.
+      // - `Promise.all` en vez de `for await`: subir 4 fotos en serie a 4G era
+      //   30-60 s; en paralelo el bottleneck es la conexión, no la latencia.
+      // - Extensión inferida desde `file.type` (vía inferExtension) en vez de
+      //   `file.name.split('.').pop()` — iOS a veces no pone extensión en el
+      //   nombre del archivo de `capture="environment"`.
+      // - Timestamp + idx + random suffix evita colisiones si el técnico hace
+      //   submit dos veces seguidas tras un error de red.
+      setProgreso('Procesando evidencias...')
+      const stamp = Date.now()
+      const rand = Math.random().toString(36).slice(2, 8)
 
-      for (let i = 0; i < evidencias.length; i++) {
-        const file = evidencias[i]
-        const ext = file.name.split('.').pop() || (file.type.startsWith('video/') ? 'mp4' : 'jpg')
-        const path = `${servicio.id}/diagnostico_${Date.now()}_${i}.${ext}`
+      const uploadPromises = evidencias.map(async (rawFile, i) => {
+        const file = await compressImageIfNeeded(rawFile, { maxDimension: 2560, quality: 0.9 })
+        const ext = inferExtension(file)
+        const path = `${servicio.id}/diagnostico_${stamp}_${rand}_${i}.${ext}`
 
         const { error: uploadErr } = await supabase.storage
           .from('evidencias-servicio')
-          .upload(path, file, { cacheControl: '3600', upsert: false })
+          .upload(path, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || undefined,
+          })
 
         if (uploadErr) {
-          console.error('Upload error:', uploadErr)
-          continue
+          console.error(`[diagnostico] upload archivo ${i} falló:`, uploadErr)
+          return null
         }
+        const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
+        return urlData?.publicUrl ?? null
+      })
 
-        const { data: urlData } = supabase.storage
-          .from('evidencias-servicio')
-          .getPublicUrl(path)
-
-        if (urlData?.publicUrl) {
-          evidenciaUrls.push(urlData.publicUrl)
-        }
-      }
+      setProgreso('Subiendo evidencias...')
+      const results = await Promise.all(uploadPromises)
+      const evidenciaUrls = results.filter((u): u is string => !!u)
 
       if (evidenciaUrls.length === 0) {
         setError('Error al subir las evidencias. Intenta de nuevo.')
         setEnviando(false)
+        setProgreso('')
         return
       }
 

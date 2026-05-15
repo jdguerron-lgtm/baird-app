@@ -9,7 +9,13 @@ import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
+import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
+
+/** Límite de tamaño del archivo recibido (post-compresión para imágenes, original para videos). */
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+/** Máximo de archivos adjuntables (igual al tope previo de "fotos", ahora también videos). */
+const MAX_ARCHIVOS = 6
 
 interface Servicio {
   id: string
@@ -44,14 +50,23 @@ export default function CompletarServicioPage() {
   const [waFiltered, setWaFiltered] = useState<boolean>(false)
   const [waError, setWaError] = useState<string | null>(null)
 
-  // Photos
-  // - fileInputRef: usa capture="environment" para abrir la cámara directamente.
+  // Archivos del servicio completado (fotos + opcional video corto).
+  // 3 inputs separados para cubrir todas las combinaciones SO/navegador:
+  // - cameraFotoInputRef: cámara modo foto (accept=image/* + capture=environment).
+  // - cameraVideoInputRef: cámara modo video (accept=video/* + capture=environment).
+  //   Algunos Android sin este atributo abren un picker genérico; con `capture`
+  //   van directo a grabar.
   // - galeriaInputRef: sin capture → iOS/Android muestran la biblioteca con fotos
-  //   existentes. Es indispensable porque en iOS capture="environment" oculta la
-  //   opción "Photo Library" del native picker.
+  //   y videos existentes. Es indispensable porque en iOS Safari `capture="environment"`
+  //   oculta la opción "Photo Library" del native picker.
+  //
+  // El state se sigue llamando `fotos` por compat con la lógica existente (el
+  // payload a evidencias_servicio guarda el array en la columna `fotos: string[]`),
+  // pero ahora puede contener videos (placeholder 🎬 en el preview).
   const [fotos, setFotos] = useState<File[]>([])
   const [fotoPreviews, setFotoPreviews] = useState<string[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraFotoInputRef = useRef<HTMLInputElement>(null)
+  const cameraVideoInputRef = useRef<HTMLInputElement>(null)
   const galeriaInputRef = useRef<HTMLInputElement>(null)
 
   // Checklist
@@ -139,21 +154,48 @@ export default function CompletarServicioPage() {
     cargar()
   }, [token, id])
 
-  // Photo handling
+  // Photo / video handling.
+  // Acepta image/* y video/* desde los 3 inputs (cámara foto, cámara video, galería).
+  // - Las imágenes se comprimen al hacer submit (no acá) — preserva la foto original
+  //   en memoria para que el técnico pueda quitarla sin haber gastado decode.
+  // - Los videos no se pueden comprimir client-side sin ffmpeg.wasm (~25 MB).
+  //   Si el video supera MAX_FILE_SIZE lo rechazamos acá con un mensaje accionable.
   const handlePhotos = (files: FileList | null) => {
     if (!files) return
-    const newFiles = Array.from(files).slice(0, 6 - fotos.length) // max 6 photos
-    const allFiles = [...fotos, ...newFiles]
+    const slots = MAX_ARCHIVOS - fotos.length
+    if (slots <= 0) return
+
+    const aceptados: File[] = []
+    let advice: string | null = null
+    for (const file of Array.from(files).slice(0, slots)) {
+      const isImage = file.type.startsWith('image/')
+      const isVideo = file.type.startsWith('video/')
+      if (!isImage && !isVideo) continue
+      if (isVideo && file.size > MAX_FILE_SIZE) {
+        advice = videoSizeAdvice()
+        continue
+      }
+      aceptados.push(file)
+    }
+
+    if (aceptados.length === 0) {
+      if (advice) setError(advice)
+      return
+    }
+
+    const allFiles = [...fotos, ...aceptados]
     setFotos(allFiles)
 
-    // Generate previews
-    const previews = allFiles.map(f => URL.createObjectURL(f))
-    fotoPreviews.forEach(p => URL.revokeObjectURL(p))
+    // Previews: imagen usa object URL; video usa placeholder 'video' (se renderiza con icono 🎬).
+    const previews = allFiles.map(f => (f.type.startsWith('video/') ? 'video' : URL.createObjectURL(f)))
+    fotoPreviews.forEach(p => { if (p !== 'video') URL.revokeObjectURL(p) })
     setFotoPreviews(previews)
+    setError(advice) // null si todos pasaron; guía si rechazamos un video grande
   }
 
   const removePhoto = (idx: number) => {
-    URL.revokeObjectURL(fotoPreviews[idx])
+    const url = fotoPreviews[idx]
+    if (url && url !== 'video') URL.revokeObjectURL(url)
     setFotos(fotos.filter((_, i) => i !== idx))
     setFotoPreviews(fotoPreviews.filter((_, i) => i !== idx))
   }
@@ -210,7 +252,7 @@ export default function CompletarServicioPage() {
 
     // Validate
     if (fotos.length === 0) {
-      setError('Sube al menos una foto del servicio completado')
+      setError('Sube al menos una foto o video del servicio completado')
       return
     }
     const checklistItems = [
@@ -228,42 +270,50 @@ export default function CompletarServicioPage() {
     setError(null)
 
     try {
-      // 1. Upload photos to Supabase Storage (max 5MB each)
-      const fotoUrls: string[] = []
-      const uploadErrors: string[] = []
-      for (let i = 0; i < fotos.length; i++) {
-        const file = fotos[i]
+      // 1. Comprimir imágenes y subir todos los archivos en paralelo.
+      //
+      // Cambios respecto al loop secuencial anterior:
+      //
+      // - Imágenes comprimidas client-side (2560 px máx, JPEG 0.9). Una foto
+      //   iPhone HEIC de 5 MB termina en ~700 KB JPEG, y de paso queda en formato
+      //   que Chrome/Firefox del admin sí decodifican (HEIC no es universal).
+      // - `Promise.all` en vez de `for await`: subir 6 archivos en serie a 4G
+      //   eran 45-90 s; en paralelo el cuello es el ancho de banda, no la latencia.
+      // - Extensión inferida desde `file.type` (vía inferExtension) en vez de
+      //   `file.name.split('.').pop()` — más confiable cuando viene de `capture`.
+      // - Timestamp + random suffix evita colisiones si el técnico hace submit
+      //   dos veces seguidas tras un error de red.
+      // - Para videos no hay compresión client-side (requeriría ffmpeg.wasm).
+      const stamp = Date.now()
+      const rand = Math.random().toString(36).slice(2, 8)
 
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-          uploadErrors.push(`Foto ${i + 1}: excede 5MB`)
-          continue
-        }
+      const uploadResults = await Promise.all(
+        fotos.map(async (rawFile, i) => {
+          const file = await compressImageIfNeeded(rawFile, { maxDimension: 2560, quality: 0.9 })
+          // Defensa post-compresión: si tras comprimir aún excede el límite (caso raro,
+          // ej. un video grande adjuntado), no lo subimos.
+          if (file.size > MAX_FILE_SIZE) {
+            return { ok: false as const, idx: i, error: `Archivo ${i + 1}: excede 10 MB tras compresión` }
+          }
+          const ext = inferExtension(file)
+          const path = `${servicio.id}/${stamp}_${rand}_${i}.${ext}`
+          const { error: uploadErr } = await supabase.storage
+            .from('evidencias-servicio')
+            .upload(path, file, { contentType: file.type || undefined, cacheControl: '3600', upsert: false })
+          if (uploadErr) return { ok: false as const, idx: i, error: `Archivo ${i + 1}: ${uploadErr.message}` }
+          const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
+          return { ok: true as const, idx: i, url: urlData.publicUrl }
+        })
+      )
 
-        const ext = file.name.split('.').pop() || 'jpg'
-        const path = `${servicio.id}/${Date.now()}_${i}.${ext}`
+      const fotoUrls = uploadResults.flatMap(r => (r.ok ? [r.url] : []))
+      const uploadErrors = uploadResults.flatMap(r => (r.ok ? [] : [r.error]))
 
-        const { error: uploadErr } = await supabase.storage
-          .from('evidencias-servicio')
-          .upload(path, file, { contentType: file.type })
-
-        if (uploadErr) {
-          uploadErrors.push(`Foto ${i + 1}: ${uploadErr.message}`)
-          continue
-        }
-
-        const { data: urlData } = supabase.storage
-          .from('evidencias-servicio')
-          .getPublicUrl(path)
-
-        fotoUrls.push(urlData.publicUrl)
-      }
-
-      // Verify at least 1 photo uploaded successfully
+      // Verify at least 1 file uploaded successfully
       if (fotoUrls.length === 0) {
         const errMsg = uploadErrors.length > 0
-          ? `Error subiendo fotos: ${uploadErrors.join(', ')}`
-          : 'No se pudo subir ninguna foto. Verifica tu conexión.'
+          ? `Error subiendo archivos: ${uploadErrors.join(', ')}`
+          : 'No se pudo subir ningún archivo. Verifica tu conexión.'
         throw new Error(errMsg)
       }
 
@@ -487,15 +537,28 @@ export default function CompletarServicioPage() {
           </div>
         )}
 
-        {/* 1. Photos */}
+        {/* 1. Evidencia del servicio (fotos + video opcional) */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-sm font-bold text-slate-900 mb-1">Fotos del servicio</h3>
-          <p className="text-xs text-gray-400 mb-3">Toma fotos con la cámara o súbelas desde la galería. Equipo funcionando, placa de serie, repuesto, antes/después (máx 6).</p>
+          <h3 className="text-sm font-bold text-slate-900 mb-1">Evidencia del servicio</h3>
+          <p className="text-xs text-gray-400 mb-3">
+            Equipo funcionando, placa de serie, repuesto, antes/después (máx 6).
+            Puedes tomar fotos, grabar un video corto o subir desde la galería.
+          </p>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
             {fotoPreviews.map((src, i) => (
-              <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-                <Image src={src} alt={`Foto ${i + 1}`} fill className="object-cover" />
+              <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                {src === 'video' ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white">
+                    <span className="text-2xl mb-0.5">🎬</span>
+                    <span className="text-[10px] font-medium">Video</span>
+                    <span className="text-[9px] text-gray-300 mt-0.5">
+                      {(fotos[i]?.size / (1024 * 1024)).toFixed(1)} MB
+                    </span>
+                  </div>
+                ) : (
+                  <Image src={src} alt={`Evidencia ${i + 1}`} fill className="object-cover" unoptimized />
+                )}
                 <button
                   onClick={() => removePhoto(i)}
                   className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full text-xs flex items-center justify-center"
@@ -504,32 +567,48 @@ export default function CompletarServicioPage() {
                 </button>
               </div>
             ))}
-            {fotos.length < 6 && (
+            {fotos.length < MAX_ARCHIVOS && (
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={() => cameraFotoInputRef.current?.click()}
                 className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors"
               >
-                <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                <span className="text-xl mb-0.5">📷</span>
                 <span className="text-[10px]">Cámara</span>
               </button>
             )}
           </div>
 
-          {fotos.length < 6 && (
-            <button
-              type="button"
-              onClick={() => galeriaInputRef.current?.click()}
-              className="text-xs text-gray-600 underline hover:text-slate-900 mb-2"
-            >
-              🖼️ Elegir fotos de galería
-            </button>
+          {/* Botones secundarios: galería (foto/video) y cámara modo video.
+              Mantenerlos separados garantiza que el técnico pueda elegir lo que
+              necesite en cualquier SO/navegador — algunos Android sin `capture`
+              en el input de video abren un picker genérico en vez de la cámara. */}
+          {fotos.length < MAX_ARCHIVOS && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+              <button
+                type="button"
+                onClick={() => galeriaInputRef.current?.click()}
+                className="text-xs text-gray-600 underline hover:text-slate-900"
+              >
+                🖼️ Elegir foto o video de galería
+              </button>
+              <button
+                type="button"
+                onClick={() => cameraVideoInputRef.current?.click()}
+                className="text-xs text-gray-600 underline hover:text-slate-900"
+              >
+                🎬 Grabar video con cámara
+              </button>
+            </div>
           )}
 
-          {/* Input cámara — capture="environment" abre la cámara directamente. */}
+          <p className="text-[10px] text-gray-400">
+            {fotos.length}/{MAX_ARCHIVOS} archivos · Fotos se comprimen al subir; video máx 10 MB.
+          </p>
+
+          {/* Input cámara foto — capture="environment" abre la cámara trasera en modo foto. */}
           <input
-            ref={fileInputRef}
+            ref={cameraFotoInputRef}
             type="file"
             accept="image/*"
             multiple
@@ -538,12 +617,22 @@ export default function CompletarServicioPage() {
             onChange={(e) => handlePhotos(e.target.files)}
           />
 
-          {/* Input galería — sin capture para que iOS/Android muestren la
-              biblioteca de fotos existentes. */}
+          {/* Input cámara video — capture="environment" abre la cámara trasera en modo video. */}
+          <input
+            ref={cameraVideoInputRef}
+            type="file"
+            accept="video/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => handlePhotos(e.target.files)}
+          />
+
+          {/* Input galería — SIN capture para que iOS/Android muestren la
+              biblioteca de fotos y videos existentes. */}
           <input
             ref={galeriaInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             className="hidden"
             onChange={(e) => handlePhotos(e.target.files)}
@@ -650,7 +739,7 @@ export default function CompletarServicioPage() {
             checklist.explicacion_cliente,
           ].filter(Boolean).length
           const faltantes: string[] = []
-          if (fotos.length === 0) faltantes.push('Sube al menos una foto del servicio completado')
+          if (fotos.length === 0) faltantes.push('Sube al menos una foto o video del servicio completado')
           if (itemsChecklist < 3) faltantes.push(`Marca al menos 3 items del checklist (tienes ${itemsChecklist}/4 obligatorios)`)
           const faltaFirma = !hasFirma
           if (faltantes.length === 0 && !faltaFirma) return null
