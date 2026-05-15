@@ -182,8 +182,15 @@ function mapRow(raw: ExcelRow, defaultPago: number, defaultHorario1: string, def
   const { ciudad, direccion, zona } = parseAddress(raw.direccion_completa)
   const phone = parsePhone(raw.telefono)
   const tipoEquipo = mapFamilia(raw.familia)
-  const marca = extractBrand(raw.modelo)
   const esGarantia = raw.tipo_servicio.toUpperCase().includes('GARANTÍA') || raw.tipo_servicio.toUpperCase().includes('GARANTIA')
+
+  // Brand resolution:
+  // - Warranty (BITÁCORA Excel): SIEMPRE "MABE". El feed actual es 100% Mabe y
+  //   extractBrand() ha estado cayendo al fallback (código de modelo terminaba
+  //   en marca_equipo, ej. "LMA6120WDGAB0"). Hard-code es seguro mientras el
+  //   feed se mantenga así — revisar si entra otra marca en garantía.
+  // - No-garantía (no debería pasar por bulk hoy): mantener extractBrand().
+  const marca = esGarantia ? 'MABE' : extractBrand(raw.modelo)
 
   // Extract model code (e.g., "PM6042GV0" from "PM6042GV0 / CUBIERTA EMPOTRE 60 CM MABE NEG")
   const modeloParts = raw.modelo.split(' / ')

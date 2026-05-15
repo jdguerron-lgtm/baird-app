@@ -289,41 +289,70 @@ describe('parseExcelData — phone parsing', () => {
 })
 
 describe('parseExcelData — brand extraction', () => {
-  it('extracts MABE from model description', () => {
+  // Garantía: marca_equipo es SIEMPRE 'MABE' (el feed BITÁCORA actual es 100%
+  // Mabe — antes extractBrand caía al fallback y se cargaba el código del
+  // modelo en marca_equipo). Si entra otra marca en garantía, revisar.
+  it('warranty rows always get MABE regardless of model description', () => {
     const rows = buildMockSheet([buildDataRow({
+      servicio: 'GARANTÍA DE FÁBRICA',
       modelo: 'PM6042GV0 / CUBIERTA EMPOTRE 60 CM MABE NEG',
     })])
     const { parsed } = parseExcelData(rows)
     expect(parsed[0].mapped!.marca_equipo).toBe('MABE')
   })
 
-  it('extracts GE from model description', () => {
+  it('warranty rows get MABE even if model has no recognizable brand', () => {
     const rows = buildMockSheet([buildDataRow({
+      servicio: 'GARANTÍA DE FÁBRICA',
+      modelo: 'LMA6120WDGAB0',  // código puro, sin descripción
+    })])
+    const { parsed } = parseExcelData(rows)
+    expect(parsed[0].mapped!.marca_equipo).toBe('MABE')
+  })
+
+  it('warranty rows get MABE even when model description says SAMSUNG', () => {
+    // Defensa: el feed es 100% Mabe hoy. Si llegan datos sucios o mal
+    // etiquetados desde Mabe, el override evita un fallback inesperado.
+    const rows = buildMockSheet([buildDataRow({
+      servicio: 'GARANTÍA DE FÁBRICA',
+      modelo: 'WF20T6000AW / LAVADORA SAMSUNG 20KG',
+    })])
+    const { parsed } = parseExcelData(rows)
+    expect(parsed[0].mapped!.marca_equipo).toBe('MABE')
+  })
+
+  // No-garantía: mantiene extractBrand() para detectar la marca real.
+  it('non-warranty: extracts GE from model description', () => {
+    const rows = buildMockSheet([buildDataRow({
+      servicio: 'PARTICULAR',
       modelo: 'GLV1460FSS / LAVAVAJILLAS GE INX',
     })])
     const { parsed } = parseExcelData(rows)
     expect(parsed[0].mapped!.marca_equipo).toBe('GE')
   })
 
-  it('extracts SAMSUNG when present', () => {
+  it('non-warranty: extracts SAMSUNG when present', () => {
     const rows = buildMockSheet([buildDataRow({
+      servicio: 'PARTICULAR',
       modelo: 'WF20T6000AW / LAVADORA SAMSUNG 20KG',
     })])
     const { parsed } = parseExcelData(rows)
     expect(parsed[0].mapped!.marca_equipo).toBe('SAMSUNG')
   })
 
-  it('detects GE even in model descriptions without MABE', () => {
+  it('non-warranty: detects GE even in model descriptions without MABE', () => {
     // "GENERICO" contains "GE" substring, so extractBrand matches GE
     const rows = buildMockSheet([buildDataRow({
+      servicio: 'PARTICULAR',
       modelo: 'ABC123 / REFRIGERADOR GENERICO',
     })])
     const { parsed } = parseExcelData(rows)
     expect(parsed[0].mapped!.marca_equipo).toBe('GE')
   })
 
-  it('falls back to description when truly no known brand', () => {
+  it('non-warranty: falls back to description when truly no known brand', () => {
     const rows = buildMockSheet([buildDataRow({
+      servicio: 'PARTICULAR',
       modelo: 'XYZ999 / LAVADORA PREMIUM',
     })])
     const { parsed } = parseExcelData(rows)
