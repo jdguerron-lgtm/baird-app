@@ -70,6 +70,9 @@ export default function DiagnosticoPage() {
   const [waSent, setWaSent] = useState<boolean | null>(null)
   const [waError, setWaError] = useState<string | null>(null)
   const [progreso, setProgreso] = useState('')
+  // Conteo de subidas para feedback granular ("X de Y fotos subieron").
+  // Solo se setea si en realidad hubo upload mixto (algunas OK, algunas fallaron).
+  const [subidaParcial, setSubidaParcial] = useState<{ ok: number; total: number } | null>(null)
 
   // Form state
   const [diagnosticoTexto, setDiagnosticoTexto] = useState('')
@@ -107,6 +110,24 @@ export default function DiagnosticoPage() {
 
   // GPS hook
   const { enviarPing } = useGps()
+
+  // Cleanup de previews al desmontar: si el técnico abandona la página sin
+  // borrar las fotos seleccionadas, los blobs quedaban en memoria. En Android
+  // gama baja con 4 fotos de 8MB se acumulaban ~32MB y la pestaña podía
+  // crashear. previewsRef se actualiza en cada render (refs no disparan
+  // re-render), así el cleanup ve el último valor sin disparar revocations
+  // intermedias mientras el técnico todavía las está viendo.
+  const previewsRef = useRef<string[]>([])
+  previewsRef.current = previews
+  useEffect(() => {
+    return () => {
+      previewsRef.current.forEach(url => {
+        if (url && url !== 'video' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url)
+        }
+      })
+    }
+  }, [])
 
   // Extract model from novedades. Normalizamos a mayúsculas + trim porque
   // Serviplus es case-sensitive en el parámetro ?p= y los códigos de modelo
@@ -282,6 +303,7 @@ export default function DiagnosticoPage() {
       // 1. Upload evidence files to Supabase Storage
       setProgreso('Subiendo evidencias...')
       const evidenciaUrls: string[] = []
+      const totalIntentos = evidencias.length
 
       for (let i = 0; i < evidencias.length; i++) {
         const original = evidencias[i]
@@ -293,24 +315,35 @@ export default function DiagnosticoPage() {
         // que subidas en 3G/HSPA terminen en vez de timeoutear.
         const file = await compressImage(original).catch(() => original)
         const ext = file.name.split('.').pop() || (file.type.startsWith('video/') ? 'mp4' : 'jpg')
-        const path = `${servicio.id}/diagnostico_${Date.now()}_${i}.${ext}`
         // inferContentType: si después de compresión / o en videos el
         // file.type sigue vacío, evita que Supabase guarde el blob como
         // application/octet-stream (que rompe <img> en admin y cliente).
         const contentType = file.type || inferContentType(file)
 
-        const { error: uploadErr } = await supabase.storage
-          .from('evidencias-servicio')
-          .upload(path, file, { cacheControl: '3600', upsert: false, contentType })
-
-        if (uploadErr) {
-          console.error('Upload error:', uploadErr)
+        // Retry con backoff (500ms, 1500ms) para sobrevivir a 3G/HSPA flaky.
+        // Cada intento usa un path único para no chocar con upsert:false si
+        // el upload anterior llegó a crear el blob server-side pero el cliente
+        // perdió la respuesta. Total worst-case: 3 intentos en ~2s.
+        let lastErr: unknown = null
+        let pathUsado = ''
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const basePath = `${servicio.id}/diagnostico_${Date.now()}_${i}`
+          pathUsado = attempt === 0 ? `${basePath}.${ext}` : `${basePath}_r${attempt}.${ext}`
+          const { error: uploadErr } = await supabase.storage
+            .from('evidencias-servicio')
+            .upload(pathUsado, file, { cacheControl: '3600', upsert: false, contentType })
+          if (!uploadErr) { lastErr = null; break }
+          lastErr = uploadErr
+          if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+        }
+        if (lastErr) {
+          console.error('Upload error (después de 3 intentos):', lastErr)
           continue
         }
 
         const { data: urlData } = supabase.storage
           .from('evidencias-servicio')
-          .getPublicUrl(path)
+          .getPublicUrl(pathUsado)
 
         if (urlData?.publicUrl) {
           evidenciaUrls.push(urlData.publicUrl)
@@ -321,6 +354,12 @@ export default function DiagnosticoPage() {
         setError('Error al subir las evidencias. Intenta de nuevo.')
         setEnviando(false)
         return
+      }
+
+      // Feedback granular: si alguna foto falló, lo mostramos en la pantalla
+      // de éxito para que el técnico/admin sepan. Antes pasaba silenciosamente.
+      if (evidenciaUrls.length < totalIntentos) {
+        setSubidaParcial({ ok: evidenciaUrls.length, total: totalIntentos })
       }
 
       // 2. Build request body based on flow type
@@ -497,6 +536,11 @@ export default function DiagnosticoPage() {
                   ? 'Tu diagnóstico fue registrado. El equipo Baird revisará y fijará el precio final de los repuestos antes de enviar la cotización al cliente.'
                   : 'Tu diagnóstico y la cotización quedaron registrados.'}
             </p>
+            {subidaParcial && (
+              <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 text-left">
+                ⚠️ <strong>Subieron {subidaParcial.ok} de {subidaParcial.total} fotos</strong> — el diagnóstico quedó guardado con las que sí subieron. Si necesitas las que faltan, contacta al equipo Baird.
+              </div>
+            )}
             {waSent === true && (
               <div className="mb-4 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
                 📤 <strong>WhatsApp enviado al cliente</strong> — recibirá la {servicio?.es_garantia ? 'verificación del siguiente paso' : 'cotización'} para aprobar.
@@ -835,14 +879,14 @@ export default function DiagnosticoPage() {
             <button
               type="button"
               onClick={() => videoInputRef.current?.click()}
-              className="text-xs text-gray-500 underline hover:text-purple-700 mb-2"
+              className="text-xs text-gray-500 underline hover:text-purple-700 mb-2 block"
             >
               🎬 ¿Necesitas grabar un video corto en su lugar?
             </button>
           )}
 
           <p className="text-[10px] text-gray-400">
-            {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos del fallo (o video corto opcional)
+            {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos máx 25MB cada una · Video ~10 segundos
           </p>
         </div>
 

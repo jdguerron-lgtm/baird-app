@@ -51,6 +51,22 @@ export default function CompletarServicioPage() {
   const [fotos, setFotos] = useState<File[]>([])
   const [fotoPreviews, setFotoPreviews] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Conteo de subidas para feedback granular ("X de Y fotos") en exito.
+  const [subidaParcial, setSubidaParcial] = useState<{ ok: number; total: number } | null>(null)
+
+  // Cleanup de previews al desmontar: evita fuga de blobs en Android gama baja.
+  // El ref se sincroniza en cada render; la cleanup function corre solo en
+  // unmount, leyendo el último valor del ref sin disparar revocations
+  // intermedias mientras el técnico aún ve las fotos.
+  const fotoPreviewsRef = useRef<string[]>([])
+  fotoPreviewsRef.current = fotoPreviews
+  useEffect(() => {
+    return () => {
+      fotoPreviewsRef.current.forEach(url => {
+        if (url && url.startsWith('blob:')) URL.revokeObjectURL(url)
+      })
+    }
+  }, [])
 
   // Checklist
   const [checklist, setChecklist] = useState<ChecklistServicio>({
@@ -226,6 +242,7 @@ export default function CompletarServicioPage() {
       // 1. Upload photos to Supabase Storage (max 25MB raw → comprimidas)
       const fotoUrls: string[] = []
       const uploadErrors: string[] = []
+      const totalFotos = fotos.length
       for (let i = 0; i < fotos.length; i++) {
         const original = fotos[i]
 
@@ -242,25 +259,40 @@ export default function CompletarServicioPage() {
         const file = await compressImage(original).catch(() => original)
 
         const ext = file.name.split('.').pop() || 'jpg'
-        const path = `${servicio.id}/${Date.now()}_${i}.${ext}`
         // inferContentType evita guardar como application/octet-stream cuando
         // file.type viene vacío (Samsung Internet / Mi Browser / Huawei).
         const contentType = file.type || inferContentType(file)
 
-        const { error: uploadErr } = await supabase.storage
-          .from('evidencias-servicio')
-          .upload(path, file, { contentType })
-
-        if (uploadErr) {
-          uploadErrors.push(`Foto ${i + 1}: ${uploadErr.message}`)
+        // Retry con backoff (500ms, 1500ms) para sobrevivir a 3G/HSPA flaky.
+        // Cada intento usa path único para no chocar con upsert:false implícito.
+        let lastErr: { message: string } | null = null
+        let pathUsado = ''
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const basePath = `${servicio.id}/${Date.now()}_${i}`
+          pathUsado = attempt === 0 ? `${basePath}.${ext}` : `${basePath}_r${attempt}.${ext}`
+          const { error: uploadErr } = await supabase.storage
+            .from('evidencias-servicio')
+            .upload(pathUsado, file, { contentType })
+          if (!uploadErr) { lastErr = null; break }
+          lastErr = uploadErr
+          if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+        }
+        if (lastErr) {
+          uploadErrors.push(`Foto ${i + 1}: ${lastErr.message}`)
           continue
         }
 
         const { data: urlData } = supabase.storage
           .from('evidencias-servicio')
-          .getPublicUrl(path)
+          .getPublicUrl(pathUsado)
 
         fotoUrls.push(urlData.publicUrl)
+      }
+
+      // Feedback granular: si algunas fotos fallaron pero al menos una subió,
+      // lo exponemos en la pantalla de éxito. Antes pasaba silenciosamente.
+      if (fotoUrls.length > 0 && fotoUrls.length < totalFotos) {
+        setSubidaParcial({ ok: fotoUrls.length, total: totalFotos })
       }
 
       // Verify at least 1 photo uploaded successfully
@@ -397,6 +429,11 @@ export default function CompletarServicioPage() {
             La evidencia quedó guardada en el sistema.
           </p>
 
+          {subidaParcial && (
+            <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 text-left">
+              ⚠️ <strong>Subieron {subidaParcial.ok} de {subidaParcial.total} fotos.</strong> El servicio quedó completado con las que sí subieron. Si necesitas las que faltan, contacta al equipo Baird.
+            </div>
+          )}
           {/* WhatsApp status — fuente de verdad. */}
           {waSent === true && (
             <div className="mb-6 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
