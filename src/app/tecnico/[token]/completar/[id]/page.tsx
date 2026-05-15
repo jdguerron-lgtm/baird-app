@@ -10,6 +10,9 @@ import type { ChecklistServicio } from '@/types/solicitud'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
+import { inferContentType } from '@/lib/utils/file-validation'
+import { compressImage } from '@/lib/utils/image-compress'
+import InAppBrowserBanner from '@/components/ui/InAppBrowserBanner'
 
 interface Servicio {
   id: string
@@ -220,24 +223,33 @@ export default function CompletarServicioPage() {
     setError(null)
 
     try {
-      // 1. Upload photos to Supabase Storage (max 5MB each)
+      // 1. Upload photos to Supabase Storage (max 25MB raw → comprimidas)
       const fotoUrls: string[] = []
       const uploadErrors: string[] = []
       for (let i = 0; i < fotos.length; i++) {
-        const file = fotos[i]
+        const original = fotos[i]
 
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-          uploadErrors.push(`Foto ${i + 1}: excede 5MB`)
+        // Validate raw file size BEFORE compression (max 25MB).
+        // 25MB cubre prácticamente cualquier cámara móvil sin tocar; la
+        // compresión client-side baja luego a <2MB para la subida real.
+        if (original.size > 25 * 1024 * 1024) {
+          uploadErrors.push(`Foto ${i + 1}: excede 25MB`)
           continue
         }
 
+        // compressImage NUNCA tira en una forma que rompa la subida — si algo
+        // sale mal devuelve el archivo original. Solo afecta a imágenes >1.5MB.
+        const file = await compressImage(original).catch(() => original)
+
         const ext = file.name.split('.').pop() || 'jpg'
         const path = `${servicio.id}/${Date.now()}_${i}.${ext}`
+        // inferContentType evita guardar como application/octet-stream cuando
+        // file.type viene vacío (Samsung Internet / Mi Browser / Huawei).
+        const contentType = file.type || inferContentType(file)
 
         const { error: uploadErr } = await supabase.storage
           .from('evidencias-servicio')
-          .upload(path, file, { contentType: file.type })
+          .upload(path, file, { contentType })
 
         if (uploadErr) {
           uploadErrors.push(`Foto ${i + 1}: ${uploadErr.message}`)
@@ -435,6 +447,8 @@ export default function CompletarServicioPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Banner solo se renderiza si UA matchea WhatsApp/Instagram/FB/Line/WeChat. */}
+      <InAppBrowserBanner />
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex items-center gap-3">

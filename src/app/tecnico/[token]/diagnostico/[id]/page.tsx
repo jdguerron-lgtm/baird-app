@@ -22,6 +22,9 @@ import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
+import { classifyMedia, inferContentType } from '@/lib/utils/file-validation'
+import { compressImage } from '@/lib/utils/image-compress'
+import InAppBrowserBanner from '@/components/ui/InAppBrowserBanner'
 
 interface Servicio {
   id: string
@@ -40,7 +43,13 @@ interface Servicio {
 }
 
 const MAX_EVIDENCIAS = 4
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB para fotos y videos
+// 25MB: cubre cámaras modernas Android/iPhone sin compresión previa.
+// Las imágenes >1.5MB se comprimen en cliente antes de subir
+// (ver lib/utils/image-compress.ts), así que el archivo final que viaja a
+// Supabase Storage suele ser <2MB. El límite alto aquí es solo para la
+// validación de SELECCIÓN — evita rechazar fotos legítimas de 12MP/64MP
+// que antes se descartaban con "excede 10MB".
+const MAX_FILE_SIZE = 25 * 1024 * 1024
 
 export default function DiagnosticoPage() {
   const { token, id } = useParams<{ token: string; id: string }>()
@@ -188,14 +197,17 @@ export default function DiagnosticoPage() {
     for (let i = 0; i < files.length && evidencias.length + newFiles.length < MAX_EVIDENCIAS; i++) {
       const file = files[i]
       if (file.size > MAX_FILE_SIZE) {
-        setError(`${file.name} excede el limite de 10MB`)
+        setError(`${file.name || 'archivo'} excede el limite de 25MB`)
         continue
       }
-      if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-        continue
-      }
+      // classifyMedia: si file.type viene vacío (Samsung Internet, Mi Browser,
+      // Huawei Browser, ciertos WebView Android), cae a detección por extensión
+      // en vez de descartar silenciosamente. Estrictamente más permisivo que
+      // el check anterior (file.type.startsWith).
+      const kind = classifyMedia(file)
+      if (!kind) continue
       newFiles.push(file)
-      if (file.type.startsWith('image/')) {
+      if (kind === 'image') {
         newPreviews.push(URL.createObjectURL(file))
       } else {
         newPreviews.push('video') // placeholder for video
@@ -272,13 +284,24 @@ export default function DiagnosticoPage() {
       const evidenciaUrls: string[] = []
 
       for (let i = 0; i < evidencias.length; i++) {
-        const file = evidencias[i]
+        const original = evidencias[i]
+        // compressImage: solo afecta a imágenes >1.5MB. NUNCA falla en una forma
+        // que rompa la subida — si algo sale mal devuelve el archivo original.
+        // En iPhone Safari maneja HEIC nativo y lo exporta como JPEG, lo que
+        // de paso arregla el preview roto en admin/desktop. En Android Chrome
+        // reduce 8-12MB JPEG a ~1MB sin pérdida visual notable, lo que hace
+        // que subidas en 3G/HSPA terminen en vez de timeoutear.
+        const file = await compressImage(original).catch(() => original)
         const ext = file.name.split('.').pop() || (file.type.startsWith('video/') ? 'mp4' : 'jpg')
         const path = `${servicio.id}/diagnostico_${Date.now()}_${i}.${ext}`
+        // inferContentType: si después de compresión / o en videos el
+        // file.type sigue vacío, evita que Supabase guarde el blob como
+        // application/octet-stream (que rompe <img> en admin y cliente).
+        const contentType = file.type || inferContentType(file)
 
         const { error: uploadErr } = await supabase.storage
           .from('evidencias-servicio')
-          .upload(path, file, { cacheControl: '3600', upsert: false })
+          .upload(path, file, { cacheControl: '3600', upsert: false, contentType })
 
         if (uploadErr) {
           console.error('Upload error:', uploadErr)
@@ -503,6 +526,9 @@ export default function DiagnosticoPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Banner solo se renderiza si UA matchea WhatsApp/Instagram/FB/Line/WeChat.
+          Sticky con z-[60] para quedar encima del OathModal si aplica. */}
+      <InAppBrowserBanner />
       {/* Oath modal — bloquea hasta que el técnico firme */}
       {!oathFirma && servicio && tecnico && (
         <OathModal
@@ -776,7 +802,7 @@ export default function DiagnosticoPage() {
               >
                 <span className="text-2xl mb-1">📷</span>
                 <span className="text-xs text-gray-500 font-medium">Tomar foto</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Max 25MB</span>
               </button>
             )}
           </div>
