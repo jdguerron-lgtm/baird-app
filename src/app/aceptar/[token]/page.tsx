@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { querySupabase } from '@/lib/utils/retry'
 import AceptarBoton from './AceptarBoton'
 
 interface Props {
@@ -10,52 +11,69 @@ interface Props {
  * Página de aceptación de servicio para técnicos.
  * El técnico recibe el link /aceptar/{token} por WhatsApp y al abrirlo
  * ve los detalles completos del servicio y el botón para aceptar.
+ *
+ * Resiliente a conexiones lentas:
+ * 1. Las 3 queries (notif → solicitud → técnico) corren en 2 fases:
+ *    primero notif, luego solicitud + técnico EN PARALELO. Ahorra 1
+ *    round-trip vs el patrón secuencial anterior.
+ * 2. querySupabase reintenta automáticamente con backoff (800ms, 2400ms)
+ *    en fetch errors transitorios típicos de 4G/3G flaky.
  */
 export default async function AceptarServicioPage({ params }: Props) {
   const { token } = await params
 
-  // Verificar que el token existe y obtener la solicitud relacionada
-  const { data: notif } = await supabase
-    .from('notificaciones_whatsapp')
-    .select('solicitud_id, tecnico_id, estado')
-    .eq('token', token)
-    .single()
+  // Fase 1: necesitamos notif primero porque las otras 2 queries dependen
+  // de sus IDs. Retry cubre transitorios de red.
+  const { data: notif } = await querySupabase(() =>
+    supabase
+      .from('notificaciones_whatsapp')
+      .select('solicitud_id, tecnico_id, estado')
+      .eq('token', token)
+      .single()
+  )
 
   if (!notif) {
     notFound()
   }
 
-  // Obtener datos de la solicitud
-  const { data: sol } = await supabase
-    .from('solicitudes_servicio')
-    .select(`
-      tipo_equipo,
-      marca_equipo,
-      novedades_equipo,
-      direccion,
-      zona_servicio,
-      ciudad_pueblo,
-      pago_tecnico,
-      horario_visita_1,
-      horario_visita_2,
-      horario_confirmado,
-      estado,
-      tecnico_asignado_id,
-      es_garantia
-    `)
-    .eq('id', notif.solicitud_id)
-    .single()
+  // Fase 2: solicitud + técnico en paralelo (independientes entre sí).
+  const [solResult, tecnicoResult] = await Promise.all([
+    querySupabase(() =>
+      supabase
+        .from('solicitudes_servicio')
+        .select(`
+          tipo_equipo,
+          marca_equipo,
+          novedades_equipo,
+          direccion,
+          zona_servicio,
+          ciudad_pueblo,
+          pago_tecnico,
+          horario_visita_1,
+          horario_visita_2,
+          horario_confirmado,
+          estado,
+          tecnico_asignado_id,
+          es_garantia
+        `)
+        .eq('id', notif.solicitud_id)
+        .single()
+    ),
+    querySupabase(() =>
+      supabase
+        .from('tecnicos')
+        .select('nombre_completo')
+        .eq('id', notif.tecnico_id)
+        .single()
+    ),
+  ])
 
+  const sol = solResult.data
   if (!sol) {
     notFound()
   }
 
-  // Obtener nombre del técnico
-  const { data: tecnico } = await supabase
-    .from('tecnicos')
-    .select('nombre_completo')
-    .eq('id', notif.tecnico_id)
-    .single()
+  const tecnico = tecnicoResult.data
 
   const yaAsignada = sol.estado === 'asignada' || !!sol.tecnico_asignado_id
 

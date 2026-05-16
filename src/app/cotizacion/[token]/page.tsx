@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { querySupabase } from '@/lib/utils/retry'
 import { formatCOP } from '@/lib/utils/format'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
@@ -58,11 +59,15 @@ export default function CotizacionPage() {
 
   useEffect(() => {
     const cargar = async () => {
-      // Find solicitud by cotizacion token (search all cotizacion_enviada)
-      const { data: solicitudes } = await supabase
-        .from('solicitudes_servicio')
-        .select('id, tipo_equipo, marca_equipo, cliente_nombre, novedades_equipo, estado, cotizacion, tecnico_asignado_id, cliente_token')
-        .in('estado', ['cotizacion_enviada', 'cotizacion_aprobada', 'cotizacion_rechazada', 'en_proceso'])
+      // Antipatrón conocido (ver CLAUDE.md § Filtros JSONB): cargamos todas
+      // las solicitudes en estados de cotización y filtramos por token en JS.
+      // Volumen bajo hoy. Retry con backoff cubre fetch errors en 4G/3G.
+      const { data: solicitudes } = await querySupabase(() =>
+        supabase
+          .from('solicitudes_servicio')
+          .select('id, tipo_equipo, marca_equipo, cliente_nombre, novedades_equipo, estado, cotizacion, tecnico_asignado_id, cliente_token')
+          .in('estado', ['cotizacion_enviada', 'cotizacion_aprobada', 'cotizacion_rechazada', 'en_proceso'])
+      )
 
       const sol = solicitudes?.find(s => {
         const cot = s.cotizacion as { token?: string } | null
@@ -87,12 +92,14 @@ export default function CotizacionPage() {
         return
       }
 
-      // Load technician
-      const { data: tec } = await supabase
-        .from('tecnicos')
-        .select('nombre_completo')
-        .eq('id', sol.tecnico_asignado_id)
-        .single()
+      // Load technician (retry para tolerar transitorios)
+      const { data: tec } = await querySupabase(() =>
+        supabase
+          .from('tecnicos')
+          .select('nombre_completo')
+          .eq('id', sol.tecnico_asignado_id)
+          .single()
+      )
 
       if (!tec) {
         setError('Datos del técnico no encontrados')
@@ -219,7 +226,14 @@ export default function CotizacionPage() {
             <span className="text-3xl">⚠️</span>
           </div>
           <h2 className="text-lg font-bold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600 text-sm">{error}</p>
+          <p className="text-gray-600 text-sm mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-800"
+          >
+            Reintentar
+          </button>
+          <p className="text-[10px] text-gray-400 mt-3">Verificá tu conexión y volvé a cargar.</p>
         </div>
       </div>
     )

@@ -22,6 +22,7 @@ import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
 import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
+import { querySupabase } from '@/lib/utils/retry'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 
 interface Servicio {
@@ -150,17 +151,23 @@ export default function DiagnosticoPage() {
       // un round-trip. La validación de pertenencia (tecnico_asignado_id ===
       // tec.id) se hace client-side abajo. Con anon key + sin RLS la
       // diferencia de seguridad es nula y la ganancia ~200-500ms en 4G.
+      // querySupabase reintenta con backoff en fetch errors transitorios
+      // (4G/3G inestable es común para el técnico abriendo el link en la calle).
       const [tecResult, solResult] = await Promise.all([
-        supabase
-          .from('tecnicos')
-          .select('id, nombre_completo')
-          .eq('portal_token', token)
-          .single(),
-        supabase
-          .from('solicitudes_servicio')
-          .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado, tecnico_asignado_id')
-          .eq('id', id)
-          .single(),
+        querySupabase(() =>
+          supabase
+            .from('tecnicos')
+            .select('id, nombre_completo')
+            .eq('portal_token', token)
+            .single()
+        ),
+        querySupabase(() =>
+          supabase
+            .from('solicitudes_servicio')
+            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado, tecnico_asignado_id')
+            .eq('id', id)
+            .single()
+        ),
       ])
 
       const tec = tecResult.data
@@ -478,10 +485,17 @@ export default function DiagnosticoPage() {
   if (error && !servicio) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="text-center">
+        <div className="text-center max-w-sm">
           <div className="text-4xl mb-4">⚠️</div>
           <h1 className="text-xl font-bold text-slate-900 mb-2">Error</h1>
-          <p className="text-sm text-gray-500">{error}</p>
+          <p className="text-sm text-gray-500 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-800"
+          >
+            Reintentar
+          </button>
+          <p className="text-[10px] text-gray-400 mt-3">Verificá tu conexión y volvé a cargar.</p>
         </div>
       </div>
     )

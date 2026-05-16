@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { querySupabase } from '@/lib/utils/retry'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 
@@ -41,12 +42,15 @@ export default function PortalTecnicoPage() {
 
   useEffect(() => {
     const cargar = async () => {
-      // 1. Buscar técnico por portal_token
-      const { data: tec, error: tecErr } = await supabase
-        .from('tecnicos')
-        .select('id, nombre_completo, foto_perfil_url')
-        .eq('portal_token', token)
-        .single()
+      // 1. Buscar técnico por portal_token (con retry — el técnico abre el
+      // link de WhatsApp típicamente en 4G/3G de calle y los fetch fallan).
+      const { data: tec, error: tecErr } = await querySupabase(() =>
+        supabase
+          .from('tecnicos')
+          .select('id, nombre_completo, foto_perfil_url')
+          .eq('portal_token', token)
+          .single()
+      )
 
       if (tecErr || !tec) {
         setError('Enlace inválido o expirado')
@@ -57,11 +61,13 @@ export default function PortalTecnicoPage() {
       setTecnico(tec)
 
       // 2. Cargar servicios asignados a este técnico
-      const { data: sols } = await supabase
-        .from('solicitudes_servicio')
-        .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at')
-        .eq('tecnico_asignado_id', tec.id)
-        .order('created_at', { ascending: false })
+      const { data: sols } = await querySupabase(() =>
+        supabase
+          .from('solicitudes_servicio')
+          .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at')
+          .eq('tecnico_asignado_id', tec.id)
+          .order('created_at', { ascending: false })
+      )
 
       if (sols) {
         // Marcamos un servicio como "ya completado por el técnico" SOLO cuando
@@ -71,10 +77,12 @@ export default function PortalTecnicoPage() {
         // chequeo el botón "Completar servicio" desaparecía después del
         // diagnóstico y el técnico no podía cerrar el flujo.
         const solIds = sols.map(s => s.id)
-        const { data: evidencias } = await supabase
-          .from('evidencias_servicio')
-          .select('solicitud_id, completado_at')
-          .in('solicitud_id', solIds.length > 0 ? solIds : ['none'])
+        const { data: evidencias } = await querySupabase(() =>
+          supabase
+            .from('evidencias_servicio')
+            .select('solicitud_id, completado_at')
+            .in('solicitud_id', solIds.length > 0 ? solIds : ['none'])
+        )
 
         const completadoSet = new Set(
           (evidencias ?? []).filter(e => e.completado_at).map(e => e.solicitud_id)
@@ -105,10 +113,17 @@ export default function PortalTecnicoPage() {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="text-center">
+        <div className="text-center max-w-sm">
           <div className="text-4xl mb-4">🔒</div>
           <h1 className="text-xl font-bold text-slate-900 mb-2">Acceso no válido</h1>
-          <p className="text-sm text-gray-500">{error}</p>
+          <p className="text-sm text-gray-500 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-800"
+          >
+            Reintentar
+          </button>
+          <p className="text-[10px] text-gray-400 mt-3">Verificá tu conexión y volvé a cargar.</p>
         </div>
       </div>
     )

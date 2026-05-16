@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { querySupabase } from '@/lib/utils/retry'
 import HorarioSelector from './HorarioSelector'
 
 interface Props {
@@ -14,25 +15,28 @@ interface Props {
 export default async function ConfirmarHorarioPage({ params }: Props) {
   const { token } = await params
 
-  const { data: sol } = await supabase
-    .from('solicitudes_servicio')
-    .select(`
-      id,
-      cliente_nombre,
-      tipo_equipo,
-      marca_equipo,
-      ciudad_pueblo,
-      zona_servicio,
-      horario_visita_1,
-      horario_visita_2,
-      horario_confirmado,
-      horario_confirmado_at,
-      estado,
-      es_garantia,
-      cliente_token
-    `)
-    .eq('horario_token', token)
-    .single()
+  // Retry con backoff para tolerar conexiones flaky del cliente en 4G/3G
+  const { data: sol } = await querySupabase(() =>
+    supabase
+      .from('solicitudes_servicio')
+      .select(`
+        id,
+        cliente_nombre,
+        tipo_equipo,
+        marca_equipo,
+        ciudad_pueblo,
+        zona_servicio,
+        horario_visita_1,
+        horario_visita_2,
+        horario_confirmado,
+        horario_confirmado_at,
+        estado,
+        es_garantia,
+        cliente_token
+      `)
+      .eq('horario_token', token)
+      .single()
+  )
 
   if (!sol) {
     notFound()

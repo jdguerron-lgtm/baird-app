@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { querySupabase } from '@/lib/utils/retry'
 import { formatCOP } from '@/lib/utils/format'
 
 interface DatosConfirmacion {
@@ -34,12 +35,15 @@ export default function ConfirmarServicioPage() {
 
   useEffect(() => {
     const cargar = async () => {
-      // Find evidence by confirmation token
-      const { data: evidencia } = await supabase
-        .from('evidencias_servicio')
-        .select('solicitud_id, tecnico_id, fotos, completado_at, confirmado')
-        .eq('confirmacion_token', token)
-        .single()
+      // querySupabase reintenta con backoff (800/2400ms) en fetch errors —
+      // típico en 4G/3G flaky al abrir el link de WhatsApp en la calle.
+      const { data: evidencia } = await querySupabase(() =>
+        supabase
+          .from('evidencias_servicio')
+          .select('solicitud_id, tecnico_id, fotos, completado_at, confirmado')
+          .eq('confirmacion_token', token)
+          .single()
+      )
 
       if (!evidencia) {
         setError('Enlace invalido o expirado')
@@ -53,20 +57,26 @@ export default function ConfirmarServicioPage() {
         return
       }
 
-      // Load solicitud and tecnico
-      const [{ data: sol }, { data: tec }] = await Promise.all([
-        supabase
-          .from('solicitudes_servicio')
-          .select('id, tipo_equipo, marca_equipo, pago_tecnico, novedades_equipo, es_garantia')
-          .eq('id', evidencia.solicitud_id)
-          .single(),
-        supabase
-          .from('tecnicos')
-          .select('nombre_completo')
-          .eq('id', evidencia.tecnico_id)
-          .single(),
+      // Solicitud + técnico en paralelo (independientes), cada uno con retry.
+      const [solRes, tecRes] = await Promise.all([
+        querySupabase(() =>
+          supabase
+            .from('solicitudes_servicio')
+            .select('id, tipo_equipo, marca_equipo, pago_tecnico, novedades_equipo, es_garantia')
+            .eq('id', evidencia.solicitud_id)
+            .single()
+        ),
+        querySupabase(() =>
+          supabase
+            .from('tecnicos')
+            .select('nombre_completo')
+            .eq('id', evidencia.tecnico_id)
+            .single()
+        ),
       ])
 
+      const sol = solRes.data
+      const tec = tecRes.data
       if (!sol || !tec) {
         setError('Datos del servicio no encontrados')
         setCargando(false)
@@ -169,9 +179,16 @@ export default function ConfirmarServicioPage() {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="text-center">
+        <div className="text-center max-w-sm">
           <div className="text-4xl mb-4">🔗</div>
-          <p className="text-sm text-gray-500">{error}</p>
+          <p className="text-sm text-gray-500 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-800"
+          >
+            Reintentar
+          </button>
+          <p className="text-[10px] text-gray-400 mt-3">Verificá tu conexión y volvé a cargar.</p>
         </div>
       </div>
     )
