@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
+import { trackError } from '@/lib/utils/track-error'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 
@@ -53,6 +54,11 @@ export default function PortalTecnicoPage() {
       )
 
       if (tecErr || !tec) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: tecErr?.message ?? 'tecnico not found by portal_token',
+          actor: 'tecnico',
+        })
         setError('Enlace inválido o expirado')
         setCargando(false)
         return

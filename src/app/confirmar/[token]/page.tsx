@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
+import { trackError } from '@/lib/utils/track-error'
 import { formatCOP } from '@/lib/utils/format'
 
 interface DatosConfirmacion {
@@ -46,6 +47,11 @@ export default function ConfirmarServicioPage() {
       )
 
       if (!evidencia) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: 'evidencia not found by confirmacion_token',
+          actor: 'cliente',
+        })
         setError('Enlace invalido o expirado')
         setCargando(false)
         return
@@ -78,6 +84,11 @@ export default function ConfirmarServicioPage() {
       const sol = solRes.data
       const tec = tecRes.data
       if (!sol || !tec) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: !sol ? 'sol not found' : 'tec not found',
+          actor: 'cliente',
+        })
         setError('Datos del servicio no encontrados')
         setCargando(false)
         return

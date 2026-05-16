@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
+import { trackError } from '@/lib/utils/track-error'
 import { formatCOP } from '@/lib/utils/format'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
@@ -75,6 +76,11 @@ export default function CotizacionPage() {
       })
 
       if (!sol) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: 'cotizacion not found by token (JSONB scan)',
+          actor: 'cliente',
+        })
         setError('Enlace inválido o expirado')
         setCargando(false)
         return

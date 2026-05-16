@@ -23,6 +23,7 @@ import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
 import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
+import { trackError } from '@/lib/utils/track-error'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 
 interface Servicio {
@@ -172,6 +173,11 @@ export default function DiagnosticoPage() {
 
       const tec = tecResult.data
       if (!tec) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: tecResult.error?.message ?? 'tecnico not found by portal_token',
+          actor: 'tecnico',
+        })
         setError('Enlace invalido')
         setCargando(false)
         return
@@ -180,6 +186,11 @@ export default function DiagnosticoPage() {
 
       const sol = solResult.data
       if (!sol || sol.tecnico_asignado_id !== tec.id) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: solResult.error?.message ?? (sol ? 'sol not assigned to tec' : 'sol not found'),
+          actor: 'tecnico',
+        })
         setError('Servicio no encontrado')
         setCargando(false)
         return

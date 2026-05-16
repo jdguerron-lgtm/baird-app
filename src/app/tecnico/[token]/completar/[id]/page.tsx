@@ -11,6 +11,7 @@ import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
+import { trackError } from '@/lib/utils/track-error'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
 /** Límite de tamaño del archivo recibido (post-compresión para imágenes, original para videos). */
@@ -134,6 +135,11 @@ export default function CompletarServicioPage() {
 
       const tec = tecResult.data
       if (!tec) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: tecResult.error?.message ?? 'tecnico not found by portal_token',
+          actor: 'tecnico',
+        })
         setError('Enlace inválido')
         setCargando(false)
         return
@@ -142,6 +148,11 @@ export default function CompletarServicioPage() {
 
       const sol = solResult.data
       if (!sol || sol.tecnico_asignado_id !== tec.id) {
+        trackError({
+          error_type: 'page_load_error',
+          error_message: solResult.error?.message ?? (sol ? 'sol not assigned to tec' : 'sol not found'),
+          actor: 'tecnico',
+        })
         setError('Servicio no encontrado o no asignado a ti')
         setCargando(false)
         return
