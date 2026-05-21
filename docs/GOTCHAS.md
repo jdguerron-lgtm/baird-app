@@ -1,0 +1,25 @@
+# Gotchas — Baird Service
+
+Trampas conocidas. Léelo antes de tocar código sensible.
+
+## Gotchas
+
+- **Supabase client:** Always import from `src/lib/supabase.ts`. Never create new clients with `createClient()`.
+- **WhatsApp permanent token:** Using System User `baird-api` token. Never expires. If rotated, update `WHATSAPP_API_TOKEN` in Vercel + redeploy.
+- **Serverless constraints:** In-memory state (Maps, setInterval) does NOT persist across Vercel invocations. Use external stores for rate limiting.
+- **Phone pipe format:** The `|` separator is used everywhere. `parsePhone()`, `phoneToDigits()`, and `formatearTelefono()` all handle this — consolidate to a single utility.
+- **Atomic acceptance:** `procesarAceptacion()` uses `UPDATE ... WHERE tecnico_asignado_id IS NULL` to prevent race conditions. Don't change this pattern.
+- **ILIKE injection:** Always use `escapeLikePattern()` before interpolating user input into `.ilike()` queries.
+- **Security headers:** Define in ONE place only (middleware.ts or next.config.ts), not both.
+- **Portal token:** Each technician gets a `portal_token` UUID on first acceptance. Used for passwordless access to `/tecnico/{token}`. Never expose technician IDs in URLs.
+- **Evidence storage:** Photos and signatures stored in Supabase Storage bucket `evidencias-servicio` (public). Path pattern: `{solicitud_id}/{timestamp}_{index}.{ext}`.
+- **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.
+- **Cotizacion token:** For non-warranty, the quote approval token is stored inside the `cotizacion` JSONB column. The `/cotizacion/{token}` page scans all `cotizacion_enviada` records to find the match — there's no direct column index on this token. **Antipatrón conocido**: ver "Filtros JSONB" en sección Supabase Architecture; refactorizar a columna generada `cotizacion_token` con índice cuando crezca el volumen.
+- **Estado pre-deploy:** antes de deployar verifica que las migraciones pendientes en `supabase/migrations/` ya estén aplicadas en producción. Si una migración falta, código nuevo que escribe a un estado inexistente o columna nueva fallará en runtime con un `CHECK violation` o `column does not exist`. **Cuidado especial con columnas JSONB**: si agregas un campo a un tipo TS (ej. `cotizacion`, `triaje_resultado`) que se persiste en una columna que aún no existe en la base, Supabase responde con `"Could not find the 'X' column of 'Y' in the schema cache"` y rompe el endpoint. Si creas una columna nueva, agrega `NOTIFY pgrst, 'reload schema';` al final de la migración para que PostgREST la reconozca sin esperar al refresh automático.
+- **Storage público y PII:** los buckets `tecnicos-documentos`, `tecnicos-fotos`, `evidencias-servicio` están todos públicos via `getPublicUrl()`. La cédula del técnico es accesible a quien tenga la URL — pendiente migrar a `createSignedUrl()` (TTL 1h) en `src/lib/uploadHelpers.ts`. **No publicar URLs de documentos en lugares públicos**.
+- **RLS gap:** `solicitudes_servicio`, `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `especialidades_tecnico` aún no tienen RLS habilitado. Toda la seguridad depende de tokens UUID en URLs y validación en API routes. Nunca expongas IDs sin token.
+- **WhatsApp 24h window:** Free-form text messages require the customer to have messaged the business within the last 24 hours. Template messages can be sent anytime. Always use templates for proactive outreach.
+- **Meta template names:** Must match exactly what's approved in Meta Business Manager. If deleted, there's a 4-week cooldown before reusing the same name — version the name instead (v1 → v2).
+- **Cliente self-service token:** `solicitudes_servicio.cliente_token` es UUID durable, distinto de los demás tokens por acción (`horario_token`, `verificacion_paso_token`, `cotizacion.token`). Usado por `/servicio/{token}` y por las APIs `/api/solicitud/cancelar` + `/api/solicitud/reagendar`. Se genera al crear la solicitud (default DB + override server-side en `/api/solicitar`).
+- **Link explícito al cliente para cancelar/reagendar** (2026-05-08): el componente `src/components/ui/GestionarServicioLink.tsx` se renderiza en TODOS los webviews del cliente (`/horario`, `/verificar-paso`, `/cotizacion`) con un copy que aplica a garantía y particular. Aplica a ambos flujos por igual. Se renderiza solo si la página tiene `cliente_token` en su data — ya cargado por todos los webviews relevantes. Mientras Meta no apruebe `gestionar_servicio_v1`, el link no llega por WhatsApp directo, pero sí está visible cada vez que el cliente abre un webview.
+- **WhatsApp 24h y fotos del técnico:** las plantillas se pueden enviar en cualquier momento, pero los mensajes de tipo `image` (free-form) requieren que el cliente haya enviado un mensaje en las últimas 24h. Como el flujo customer-first no garantiza que el cliente escriba, las fotos del técnico se exponen también en `/servicio/{cliente_token}` para que la verificación de identidad no dependa del envío de imagen.

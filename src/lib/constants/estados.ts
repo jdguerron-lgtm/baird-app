@@ -14,6 +14,7 @@ export const ESTADO_ESTILOS: Record<string, string> = {
   reagendamiento_pendiente: 'bg-yellow-100 text-yellow-800',
   finalizado_sin_reparacion: 'bg-stone-200 text-stone-700',
   cancelada_cliente: 'bg-red-100 text-red-700',
+  no_show_cliente: 'bg-stone-200 text-stone-700',
   en_proceso: 'bg-purple-100 text-purple-800',
   en_verificacion: 'bg-amber-100 text-amber-800',
   completada: 'bg-emerald-100 text-emerald-800',
@@ -37,12 +38,43 @@ export const ESTADO_LABELS: Record<string, string> = {
   reagendamiento_pendiente: 'Reagendamiento pendiente',
   finalizado_sin_reparacion: 'Finalizado sin reparación',
   cancelada_cliente: 'Cancelada por cliente',
+  no_show_cliente: 'No-show del cliente',
   en_proceso: 'En proceso',
   en_verificacion: 'En verificación',
   completada: 'Completada',
   cancelada: 'Cancelada',
   en_disputa: 'En disputa',
 }
+
+// Lista canónica de estados válidos de `solicitudes_servicio`.
+// DEBE coincidir con el CHECK constraint `solicitudes_servicio_estado_check`
+// (ver supabase/migrations/20260510_no_show_protocolo.sql). Si añades un estado,
+// actualizá la migración, este array y `EstadoSolicitud` en src/types/solicitud.ts.
+// Usado por el dropdown de cambio manual de estado en el admin y por
+// /api/admin/cambiar-estado para validar el destino.
+export const ESTADOS_VALIDOS = [
+  'pendiente',
+  'pendiente_horario',
+  'sin_agendar',
+  'notificada',
+  'asignada',
+  'diagnostico_pendiente',
+  'verificacion_pendiente',
+  'pendiente_pricing',
+  'cotizacion_enviada',
+  'cotizacion_aprobada',
+  'cotizacion_rechazada',
+  'esperando_repuesto',
+  'reagendamiento_pendiente',
+  'finalizado_sin_reparacion',
+  'cancelada_cliente',
+  'no_show_cliente',
+  'en_proceso',
+  'en_verificacion',
+  'completada',
+  'cancelada',
+  'en_disputa',
+] as const
 
 // Estados terminales — no permiten más transiciones
 export const ESTADOS_TERMINALES = new Set([

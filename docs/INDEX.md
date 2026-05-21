@@ -14,20 +14,23 @@
 | Tu objetivo | Doc a leer | Sección |
 |---|---|---|
 | **Entender los flujos completos** (warranty, particular, side flows) | `docs/FLOWS.md` | Todo |
+| **Ver la state machine, pricing gate, self-service** | `docs/MAQUINA-DE-ESTADOS.md` | Todo |
+| **Ubicar un archivo, ruta, página o función de servicio** | `docs/ARQUITECTURA.md` | Todo |
 | **Cambiar una tarifa, bono, margen, fórmula de pago** | `docs/TARIFAS.md` | "Cómo cambiar una tarifa" |
 | **Calcular cuánto paga el cliente / recibe el técnico / margen Baird** | `docs/TARIFAS.md` | "Garantía MABE" o "Particular" |
 | **Implementar verificación T-24h / no-show** | `docs/PROTOCOLO-VISITA.md` | Todo |
 | **Cambiar un mensaje de WhatsApp** (texto, params, plantilla) | `docs/WHATSAPP_TEMPLATES.md` | "Proceso obligatorio para crear o modificar una plantilla" + catálogo |
 | **Agregar un endpoint admin o cambiar auth** | `docs/SEGURIDAD.md` | "Endpoints API" + checklist final |
-| **Agregar un estado nuevo** a la state machine | `CLAUDE.md` § "Solicitud State Machine" + `supabase/migrations/README.md` ("Cómo aplicar las pendientes") |
+| **Agregar un estado nuevo** a la state machine | `docs/MAQUINA-DE-ESTADOS.md` § "Solicitud State Machine" + `supabase/migrations/README.md` ("Cómo aplicar las pendientes") |
 | **Aplicar migración Supabase** | `supabase/migrations/README.md` | "Cómo aplicar las pendientes" |
-| **Ver qué columnas existen** en una tabla | `CLAUDE.md` § "Database Tables" + última migración relevante |
-| **Entender RLS y storage** | `CLAUDE.md` § "Supabase Architecture" |
+| **Ver qué columnas existen** en una tabla | `docs/SUPABASE.md` § "Database Tables" + última migración relevante |
+| **Entender RLS y storage** | `docs/SUPABASE.md` § "Supabase Architecture" |
 | **Saber qué env vars necesita** | `CLAUDE.md` § "Environment Variables" |
 | **Probar el flujo end-to-end** | `docs/FLOWS.md` § "Para validar end-to-end (testing manual)" |
 | **Auditar deuda técnica / gaps** | `docs/FLOWS.md` § "Gaps conocidos" + `supabase/migrations/README.md` § "Hallazgos del audit" |
-| **Convenciones de código** (nombres, idiomas, patrones) | `CLAUDE.md` § "Code Conventions" + "Gotchas" |
-| **Quiénes son los usuarios** y cómo se conecta el negocio | `CLAUDE.md` § "How the Two Flows Work" |
+| **Convenciones de código** (nombres, idiomas, patrones) | `CLAUDE.md` § "Code Conventions" + `docs/GOTCHAS.md` |
+| **Trampas conocidas antes de tocar código sensible** | `docs/GOTCHAS.md` | Todo |
+| **Quiénes son los usuarios** y cómo se conecta el negocio | `docs/MAQUINA-DE-ESTADOS.md` § "How the Two Flows Work" |
 
 ---
 
@@ -37,7 +40,11 @@
 
 | Doc | Para qué sirve | Cuándo lo lees | Cuándo lo actualizas |
 |---|---|---|---|
-| **`CLAUDE.md`** (raíz) | Contexto general del proyecto. Auto-cargado por Claude Code en cada sesión. Resumen de arquitectura, conventions, env vars, gotchas. | Siempre primero. | Cuando agregas un nuevo flujo, env var, gotcha, sección de admin, o convención. |
+| **`CLAUDE.md`** (raíz) | Índice esbelto del proyecto. Auto-cargado por Claude Code en cada sesión. Solo lo esencial inline (commands, stack, conventions, env vars) + navegación a los docs específicos. | Siempre primero. | Cuando agregas una env var, una convención de código, o un doc nuevo a la lista de navegación. |
+| **`docs/ARQUITECTURA.md`** | Mapa de archivos: árbol de directorios completo, funciones de `whatsapp.service.ts`, API routes, páginas customer/technician/admin, exportación de resumen Excel. | Cuando necesitás ubicar un archivo, ruta, página o función de servicio. | Tras agregar/mover una página, API route, función de servicio, o cambiar el árbol de directorios. |
+| **`docs/MAQUINA-DE-ESTADOS.md`** | Cómo se parte el sistema en dos flujos (`es_garantia`), diagramas warranty/particular, payment model, admin pricing gate, customer self-service, state machine completa. Complementa `FLOWS.md` (narrativo). | Antes de tocar la state machine, el pricing gate o el self-service. | Tras agregar un estado, cambiar una transición, modificar el pricing gate o el self-service. |
+| **`docs/SUPABASE.md`** | Capa de datos: tablas, columnas JSONB (`triaje_resultado`, `cotizacion`), cliente único, migraciones, RLS por tabla, storage buckets, patrones de query, tablas append-only, CHECK constraints, auth admin, auditoría. | Antes de tocar el schema, escribir una query, o entender RLS/storage. | Tras agregar tabla/columna, cambiar RLS, agregar bucket, o un patrón de query nuevo. |
+| **`docs/GOTCHAS.md`** | Trampas conocidas: Supabase client, atomic acceptance, phone format, WhatsApp 24h window, storage PII, RLS gap, pre-deploy, etc. | Antes de tocar código sensible. | Cuando detectás un patrón a evitar o una trampa nueva. |
 | **`docs/TARIFAS.md`** | Doc canónico de tarifas. MABE garantía (Tipo D + bonos + weekend + margen 22%) y particular multi-marca (× 1.19 IVA × 1.10 margen Baird). Apéndices: marco tributario 2026, pasarelas, decisión reseller vs marketplace. | Antes de tocar cualquier cálculo de pago, agregar bono/recargo, o cambiar margen. | Tras cambiar una tarifa, modificar el modelo de margen, agregar marca nueva al flujo garantía, o cambiar IVA por reforma DIAN. |
 | **`docs/PROTOCOLO-VISITA.md`** | Verificación T-24h / T-2h / llegada / no-show. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
 | **`docs/FLOWS.md`** | Diagramas paso-a-paso de cada flujo end-to-end con cada plantilla WhatsApp en su contexto, puntos de decisión del cliente, gaps conocidos, plan de testing manual. | Cuando vas a tocar el state machine, agregar una página customer-facing, o entender dónde se manda qué WhatsApp. | Tras cambiar el state machine, agregar/cambiar una plantilla en el flujo, o mover un disparo de WhatsApp. |
@@ -86,7 +93,7 @@
 2. `src/lib/constants/estados.ts` — label + color
 3. Nueva migración SQL en `supabase/migrations/` reemplazando el CHECK constraint completo
 4. `supabase/migrations/README.md` — agregar a la tabla y a la verificación SQL
-5. `CLAUDE.md` § "Solicitud State Machine" — actualizar diagrama
+5. `docs/MAQUINA-DE-ESTADOS.md` § "Solicitud State Machine" — actualizar diagrama
 6. `docs/FLOWS.md` — actualizar flujos afectados
 7. Aplicar migración en Supabase **antes** del deploy
 
@@ -94,21 +101,21 @@
 1. Crear migración en `supabase/migrations/` (timestamped, idempotente con `IF NOT EXISTS`)
 2. Si es columna que también existe en código pero no en DB: agregar `NOTIFY pgrst, 'reload schema';` al final de la migración
 3. `supabase/migrations/README.md` — agregar a la lista
-4. `CLAUDE.md` § "Database Tables" — actualizar
-5. Si afecta RLS o storage: `CLAUDE.md` § "Supabase Architecture"
+4. `docs/SUPABASE.md` § "Database Tables" — actualizar
+5. Si afecta RLS o storage: `docs/SUPABASE.md` § "Supabase Architecture"
 
 ### Agregas un nuevo flujo customer-facing (página + API)
 1. Crear página + componente cliente
 2. Crear API route con guards (auth, atomic update si aplica)
 3. Si requiere nueva plantilla WhatsApp → seguir el pipeline de plantillas
-4. `CLAUDE.md` § "Architecture" + "API Routes" + "Customer-Facing Pages"
+4. `docs/ARQUITECTURA.md` § "Architecture" + "API Routes" + "Customer-Facing Pages"
 5. `docs/FLOWS.md` — agregar diagrama del flujo
 
 ### Cambias o agregas un endpoint admin
 1. Editar API route + UI
 2. **Auth obligatorio**: `verificarAdmin` desde `@/lib/auth/admin` como primera línea del handler. Ver checklist completo en `docs/SEGURIDAD.md` § "Cómo agregar un endpoint admin nuevo"
 3. UI envía `Authorization: Bearer ${session.access_token}`
-4. `CLAUDE.md` § "API Routes" si el endpoint cambia de propósito
+4. `docs/ARQUITECTURA.md` § "API Routes" si el endpoint cambia de propósito
 5. `docs/FLOWS.md` § "Admin Pages" si cambia el rol del admin
 6. `docs/SEGURIDAD.md` § "Endpoints API → Admin" — agregar a la tabla
 
@@ -121,7 +128,7 @@
 1. Reproducir + fix en código
 2. Si requiere migración: crear y agregar a `supabase/migrations/README.md` como HOTFIX URGENTE
 3. Documentar la causa raíz en el commit message (no en docs — es ruido a 3 meses)
-4. Si es un patrón a evitar: agregar a `CLAUDE.md` § "Gotchas"
+4. Si es un patrón a evitar: agregar a `docs/GOTCHAS.md`
 
 ---
 
@@ -129,13 +136,13 @@
 
 | Tema | Doc principal | Nota |
 |---|---|---|
-| Tokens UUID y por qué | `CLAUDE.md` § "Gotchas" + `docs/FLOWS.md` | `cliente_token`, `horario_token`, `verificacion_paso_token`, `portal_token`, `confirmacion_token` |
-| Atomic update pattern (anti-race) | `CLAUDE.md` § "Supabase Architecture" → "Patrones de query" | El modelo es `procesarAceptacion` en `whatsapp.service.ts` |
+| Tokens UUID y por qué | `docs/GOTCHAS.md` + `docs/FLOWS.md` | `cliente_token`, `horario_token`, `verificacion_paso_token`, `portal_token`, `confirmacion_token` |
+| Atomic update pattern (anti-race) | `docs/SUPABASE.md` § "Supabase Architecture" → "Patrones de query" | El modelo es `procesarAceptacion` en `whatsapp.service.ts` |
 | Antipatrón JSONB filter-in-JS | Idem ↑ | Hay que migrar `cotizacion.token` a columna generada |
-| Storage buckets y PII | `CLAUDE.md` § "Supabase Architecture" → "Storage buckets" | `tecnicos-documentos` es público hoy → backlog signed URLs |
+| Storage buckets y PII | `docs/SUPABASE.md` § "Supabase Architecture" → "Storage buckets" | `tecnicos-documentos` es público hoy → backlog signed URLs |
 | Phone format `57\|3134951164` | `CLAUDE.md` § "Code Conventions" | `parsePhone`, `phoneToDigits`, `formatearTelefono` |
 | Test mode whitelist | `CLAUDE.md` § "Environment Variables" + memoria | `BAIRD_TEST_PHONE_WHITELIST` |
-| WhatsApp 24h window | `CLAUDE.md` § "Gotchas" + `docs/WHATSAPP_TEMPLATES.md` § "Texto libre" | Las plantillas siempre llegan; texto libre depende de 24h |
+| WhatsApp 24h window | `docs/GOTCHAS.md` + `docs/WHATSAPP_TEMPLATES.md` § "Texto libre" | Las plantillas siempre llegan; texto libre depende de 24h |
 
 ---
 

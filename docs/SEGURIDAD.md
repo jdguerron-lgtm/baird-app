@@ -92,7 +92,7 @@ No usan Supabase Auth — usan tokens opacos UUID v4. Cada token tiene un propó
 | `/api/completar-servicio` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/whatsapp/accept` | token de notificación | `notificaciones_whatsapp.token` |
 
-⚠️ **Antipatrón conocido**: el token de cotización está dentro de un JSONB → se filtra cargando todas las solicitudes en estado `cotizacion_enviada` y buscando en JS. Backlog: migrar a columna generada con índice único. Detalles en `CLAUDE.md` § "Supabase Architecture" → "Filtros JSONB".
+⚠️ **Antipatrón conocido**: el token de cotización está dentro de un JSONB → se filtra cargando todas las solicitudes en estado `cotizacion_enviada` y buscando en JS. Backlog: migrar a columna generada con índice único. Detalles en `docs/SUPABASE.md` § "Supabase Architecture" → "Filtros JSONB".
 
 ### Cron (env var `CRON_SECRET`)
 

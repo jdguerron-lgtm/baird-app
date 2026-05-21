@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
+import { TIPOS_EQUIPO } from '@/types/solicitud'
 
 export const maxDuration = 30
 
@@ -8,8 +9,8 @@ export const maxDuration = 30
  * POST /api/admin/editar-solicitud
  *
  * Permite al admin corregir manualmente campos básicos de una solicitud
- * (horario, dirección, ciudad, zona) cuando hay un error de captura o el
- * cliente solicita el cambio fuera del flujo self-service.
+ * (horario, dirección, ciudad, zona, tipo de equipo) cuando hay un error de
+ * captura o el cliente solicita el cambio fuera del flujo self-service.
  *
  * Body: {
  *   id: string,
@@ -18,6 +19,7 @@ export const maxDuration = 30
  *     direccion?: string,
  *     ciudad_pueblo?: string,
  *     zona_servicio?: string,
+ *     tipo_equipo?: string,   // debe estar en TIPOS_EQUIPO
  *   },
  *   motivo?: string,   // razón opcional de la edición (queda en audit)
  * }
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
     // Sanitizar campos permitidos. Solo aceptamos los que un admin razonable
     // debería corregir. Otros campos críticos (estado, es_garantia, tokens,
     // tecnico_asignado_id, etc.) NO se exponen — requieren su propio flujo.
-    const camposPermitidos = ['horario_confirmado', 'direccion', 'ciudad_pueblo', 'zona_servicio'] as const
+    const camposPermitidos = ['horario_confirmado', 'direccion', 'ciudad_pueblo', 'zona_servicio', 'tipo_equipo'] as const
     const cambiosLimpios: Record<string, string> = {}
     for (const campo of camposPermitidos) {
       const valor = cambiosRaw[campo]
@@ -58,6 +60,11 @@ export async function POST(req: NextRequest) {
         if (trimmed.length === 0) continue
         if (trimmed.length > 500) {
           return NextResponse.json({ error: `${campo} demasiado largo (max 500)` }, { status: 400 })
+        }
+        // tipo_equipo es un enum cerrado — afecta el matching de técnicos y
+        // las familias de falla del diagnóstico, así que validamos el valor.
+        if (campo === 'tipo_equipo' && !(TIPOS_EQUIPO as readonly string[]).includes(trimmed)) {
+          return NextResponse.json({ error: `tipo_equipo inválido: ${trimmed}` }, { status: 400 })
         }
         cambiosLimpios[campo] = trimmed
       }
@@ -70,7 +77,7 @@ export async function POST(req: NextRequest) {
     // 1. Leer estado actual para diff de audit
     const { data: actual, error: readErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, horario_confirmado, direccion, ciudad_pueblo, zona_servicio')
+      .select('id, estado, horario_confirmado, direccion, ciudad_pueblo, zona_servicio, tipo_equipo')
       .eq('id', id)
       .single()
     if (readErr || !actual) {

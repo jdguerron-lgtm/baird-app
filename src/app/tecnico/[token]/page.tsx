@@ -9,6 +9,8 @@ import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
+import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
+import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
 interface Tecnico {
   id: string
@@ -30,6 +32,9 @@ interface Servicio {
   horario_visita_1: string
   horario_visita_2: string
   created_at: string
+  es_garantia: boolean
+  horario_confirmado: string | null
+  triaje_resultado: { complejidad?: ComplejidadServicio | null } | null
   tiene_evidencia?: boolean
 }
 
@@ -70,7 +75,7 @@ export default function PortalTecnicoPage() {
       const { data: sols } = await querySupabase(() =>
         supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at')
+          .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado')
           .eq('tecnico_asignado_id', tec.id)
           .order('created_at', { ascending: false })
       )
@@ -98,6 +103,9 @@ export default function PortalTecnicoPage() {
           ...s,
           estado: s.estado ?? 'pendiente',
           pago_tecnico: s.pago_tecnico ?? 0,
+          es_garantia: s.es_garantia ?? false,
+          horario_confirmado: s.horario_confirmado ?? null,
+          triaje_resultado: (s.triaje_resultado ?? null) as Servicio['triaje_resultado'],
           tiene_evidencia: completadoSet.has(s.id),
         })))
       }
@@ -296,7 +304,7 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-          <p className="text-sm font-bold text-green-700">${formatCOP(s.pago_tecnico)} COP</p>
+          <PagoLabel servicio={s} />
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-gray-300">
               {new Date(s.created_at).toLocaleDateString('es-CO')}
@@ -323,6 +331,57 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * PagoLabel — etiqueta de pago en la card de servicio.
+ *
+ * Garantía:
+ *   - Antes del diagnóstico: muestra "Pago desde $X" usando el peor caso.
+ *   - Después del diagnóstico (triaje_resultado.complejidad presente): muestra
+ *     el total neto proyectado.
+ * Particular:
+ *   - Muestra `pago_tecnico` (el técnico ya conoce el monto desde la cotización).
+ */
+function PagoLabel({ servicio }: { servicio: Servicio }) {
+  if (!servicio.es_garantia) {
+    return (
+      <p className="text-sm font-bold text-green-700">${formatCOP(servicio.pago_tecnico)} COP</p>
+    )
+  }
+
+  const complejidad = servicio.triaje_resultado?.complejidad ?? null
+  const diasSolucion = Math.floor(
+    (Date.now() - new Date(servicio.created_at).getTime()) / (1000 * 60 * 60 * 24)
+  )
+  const breakdown = estimarPagoTecnicoGarantia({
+    complejidad,
+    diasSolucion,
+    horarioConfirmado: servicio.horario_confirmado,
+    asumirOptimista: true,
+  })
+
+  if (breakdown.mode === 'rango') {
+    return (
+      <div>
+        <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
+          Pago estimado
+        </p>
+        <p className="text-sm font-bold text-green-700">
+          desde ${formatCOP(breakdown.rangoMin ?? 0)}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
+        Pago proyectado
+      </p>
+      <p className="text-sm font-bold text-green-700">${formatCOP(breakdown.pagoTotal)}</p>
     </div>
   )
 }

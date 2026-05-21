@@ -6,11 +6,11 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
-import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS } from '@/lib/constants/estados'
+import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS, ESTADOS_VALIDOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { escapeLikePattern } from '@/lib/utils/format'
-import type { ChecklistServicio } from '@/types/solicitud'
+import { TIPOS_EQUIPO, type ChecklistServicio } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -95,6 +95,7 @@ export default function SolicitudDetalle() {
   const [edicionDireccion, setEdicionDireccion] = useState('')
   const [edicionCiudad, setEdicionCiudad] = useState('')
   const [edicionZona, setEdicionZona] = useState('')
+  const [edicionTipoEquipo, setEdicionTipoEquipo] = useState('')
   const [edicionMotivo, setEdicionMotivo] = useState('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
   const [errorEdicion, setErrorEdicion] = useState<string | null>(null)
@@ -102,6 +103,10 @@ export default function SolicitudDetalle() {
   const [errorExport, setErrorExport] = useState<string | null>(null)
   const [reenviandoUltimo, setReenviandoUltimo] = useState(false)
   const [ultimoResult, setUltimoResult] = useState<Record<string, unknown> | null>(null)
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState('')
+  const [motivoEstado, setMotivoEstado] = useState('')
+  const [cambiandoEstado, setCambiandoEstado] = useState(false)
+  const [resultadoEstado, setResultadoEstado] = useState<{ ok: boolean; mensaje: string } | null>(null)
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -156,6 +161,7 @@ export default function SolicitudDetalle() {
     setEdicionDireccion(solicitud.direccion ?? '')
     setEdicionCiudad(solicitud.ciudad_pueblo ?? '')
     setEdicionZona(solicitud.zona_servicio ?? '')
+    setEdicionTipoEquipo(solicitud.tipo_equipo ?? '')
     setEdicionMotivo('')
     setErrorEdicion(null)
     setEditando(true)
@@ -178,6 +184,9 @@ export default function SolicitudDetalle() {
     }
     if (edicionZona.trim() && edicionZona.trim() !== solicitud.zona_servicio) {
       cambios.zona_servicio = edicionZona.trim()
+    }
+    if (edicionTipoEquipo.trim() && edicionTipoEquipo.trim() !== solicitud.tipo_equipo) {
+      cambios.tipo_equipo = edicionTipoEquipo.trim()
     }
 
     if (Object.keys(cambios).length === 0) {
@@ -218,6 +227,56 @@ export default function SolicitudDetalle() {
       setErrorEdicion(e instanceof Error ? e.message : 'Error de conexión')
     }
     setGuardandoEdicion(false)
+  }
+
+  const handleCambiarEstado = async () => {
+    if (!solicitud) return
+    const destino = estadoSeleccionado || solicitud.estado
+    if (destino === solicitud.estado) {
+      setResultadoEstado({ ok: false, mensaje: 'Seleccioná un estado distinto al actual.' })
+      return
+    }
+    const confirmado = window.confirm(
+      `¿Forzar el cambio de estado?\n\n` +
+      `${ESTADO_LABELS[solicitud.estado] ?? solicitud.estado}  →  ${ESTADO_LABELS[destino] ?? destino}\n\n` +
+      `Esto NO envía WhatsApp y queda registrado en el audit log.`,
+    )
+    if (!confirmado) return
+
+    setCambiandoEstado(true)
+    setResultadoEstado(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoEstado({ ok: false, mensaje: 'Sesión expirada — vuelve a iniciar sesión.' })
+        setCambiandoEstado(false)
+        return
+      }
+      const res = await fetch('/api/admin/cambiar-estado', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          id: solicitud.id,
+          nuevoEstado: destino,
+          motivo: motivoEstado.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setResultadoEstado({ ok: false, mensaje: data.error || 'No se pudo cambiar el estado.' })
+        setCambiandoEstado(false)
+        return
+      }
+      setSolicitud(prev => (prev ? { ...prev, estado: destino } : prev))
+      setMotivoEstado('')
+      setResultadoEstado({ ok: true, mensaje: `Estado cambiado a "${ESTADO_LABELS[destino] ?? destino}".` })
+    } catch (e) {
+      setResultadoEstado({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
+    }
+    setCambiandoEstado(false)
   }
 
   async function runDiagnostics(sol: Solicitud) {
@@ -597,7 +656,17 @@ export default function SolicitudDetalle() {
 
         {/* Equipment info */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Equipo y servicio</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo y servicio</h2>
+            <button
+              type="button"
+              onClick={abrirEdicion}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50"
+              title="Editar tipo de equipo, horario, dirección, ciudad o zona. Queda registrado en el audit."
+            >
+              ✏️ Editar
+            </button>
+          </div>
           <dl className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1268,6 +1337,67 @@ export default function SolicitudDetalle() {
         )}
       </div>
 
+      {/* Cambiar estado manualmente — herramienta de recuperación.
+          Para destrabar una solicitud cuando el flujo automático no avanzó
+          (p. ej. el técnico o el cliente perdió señal y la transición nunca
+          se disparó). Toda transición queda en solicitud_eventos via
+          /api/admin/cambiar-estado. NO envía WhatsApp. */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Cambiar estado manualmente
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Fuerza el estado de la solicitud cuando el flujo quedó atascado (por
+          ejemplo, el técnico o el cliente perdió conexión y la transición
+          automática nunca se disparó). <strong>No envía WhatsApp</strong> — si
+          querés avisar al cliente o al técnico, usá &ldquo;Reenviar último
+          mensaje&rdquo;. Todo cambio queda registrado en el audit log.
+        </p>
+        <div className="flex items-end gap-3 flex-wrap">
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Nuevo estado</span>
+            <select
+              value={estadoSeleccionado || solicitud.estado}
+              onChange={(e) => setEstadoSeleccionado(e.target.value)}
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            >
+              {ESTADOS_VALIDOS.map((e) => (
+                <option key={e} value={e}>
+                  {(ESTADO_LABELS[e] ?? e)}{e === solicitud.estado ? ' (actual)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block flex-1 min-w-[200px]">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Motivo (opcional)</span>
+            <input
+              type="text"
+              value={motivoEstado}
+              onChange={(e) => setMotivoEstado(e.target.value)}
+              placeholder="Ej: Técnico completó pero perdió señal"
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            />
+          </label>
+          <button
+            onClick={handleCambiarEstado}
+            disabled={cambiandoEstado}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {cambiandoEstado ? 'Cambiando...' : 'Cambiar estado'}
+          </button>
+        </div>
+
+        {resultadoEstado && (
+          <div className={`mt-3 rounded-lg p-3 text-sm ${
+            resultadoEstado.ok
+              ? 'bg-green-50 border border-green-200 text-green-900'
+              : 'bg-amber-50 border border-amber-200 text-amber-900'
+          }`}>
+            {resultadoEstado.ok ? '✅ ' : '⚠️ '}{resultadoEstado.mensaje}
+          </div>
+        )}
+      </div>
+
       {/* Matching diagnostics */}
       <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
@@ -1423,6 +1553,28 @@ export default function SolicitudDetalle() {
                   />
                 </label>
               </div>
+
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Tipo de equipo</span>
+                <select
+                  value={edicionTipoEquipo}
+                  onChange={(e) => setEdicionTipoEquipo(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                >
+                  {/* Si el valor actual no está en el catálogo (dato legacy), lo
+                      mostramos igual para no perderlo silenciosamente. */}
+                  {edicionTipoEquipo && !(TIPOS_EQUIPO as readonly string[]).includes(edicionTipoEquipo) && (
+                    <option value={edicionTipoEquipo}>{edicionTipoEquipo} (actual)</option>
+                  )}
+                  {TIPOS_EQUIPO.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <span className="block text-[11px] text-gray-400 mt-1">
+                  Cambiarlo afecta el matching de técnicos y las familias de falla
+                  que ve el técnico en el diagnóstico.
+                </span>
+              </label>
 
               <label className="block">
                 <span className="block text-xs font-semibold text-gray-700 mb-1">Motivo (opcional)</span>

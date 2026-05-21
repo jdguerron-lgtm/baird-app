@@ -7,7 +7,7 @@
 > - `docs/INDEX.md` — hub de navegación.
 > - `docs/FLOWS.md` — cuándo se dispara cada plantilla en el flujo end-to-end.
 > - `scripts/upload-templates.mjs` — fuente canónica del JSON de cada plantilla.
-> - `CLAUDE.md` § "Gotchas" → "WhatsApp 24h window" — diferencia template vs free-form.
+> - `docs/GOTCHAS.md` → "WhatsApp 24h window" — diferencia template vs free-form.
 
 ---
 
