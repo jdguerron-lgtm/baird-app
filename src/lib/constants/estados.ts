@@ -77,10 +77,14 @@ export const ESTADOS_VALIDOS = [
 ] as const
 
 // Estados terminales — no permiten más transiciones
+// Debe coincidir con docs/MAQUINA-DE-ESTADOS.md § "Estados terminales" y con
+// el set local en src/app/admin/solicitudes/[id]/page.tsx (que se usa para
+// detener el polling de actualización).
 export const ESTADOS_TERMINALES = new Set([
   'sin_agendar',
   'finalizado_sin_reparacion',
   'cancelada_cliente',
+  'no_show_cliente',
   'cancelada',
   'completada',
   'cotizacion_rechazada',

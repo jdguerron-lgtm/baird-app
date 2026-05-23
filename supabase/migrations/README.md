@@ -9,6 +9,13 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 
 ## Orden de aplicación (alfanumérico)
 
+> ✅ **Verificado 2026-05-21 contra producción:** todas las migraciones de
+> schema hasta `20260516` están **aplicadas**. Los estados "PENDIENTE" de la
+> tabla de abajo y la sección "Cómo aplicar las pendientes" quedaron
+> desactualizados — **NO re-corras esas migraciones** (algunas tienen backfills).
+> Lo único realmente pendiente es `20260521_storage_policies_public_role.sql`,
+> y esa va por el **Dashboard de Storage**, no por SQL.
+
 | Archivo | Estado | Qué hace |
 |---|---|---|
 | `add_solicitud_fields.sql` | base | Tabla principal `solicitudes_servicio` |
@@ -27,6 +34,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260513_normalizar_telefonos.sql`** | **PENDIENTE** | Función `normalizar_telefono_co()` + triggers BEFORE INSERT/UPDATE en `tecnicos.whatsapp` y `solicitudes_servicio.cliente_telefono`. Backfill: normaliza datos existentes a dígitos puros con prefijo 57 (strip `+`, espacios, guiones, pipe). Resuelve "técnico no recibe WhatsApp porque `whatsapp` quedó con +57" |
 | **`20260513_tracking_ta.sql`** | **PENDIENTE** | Columnas `diagnosticado_at timestamptz` + `cumple_ta boolean` en `solicitudes_servicio`, con índices. Backfill desde `triaje_resultado` JSONB. Habilita tracking del SLA 24h y filtros admin por TA |
 | `20260516_perf_fk_index_rls.sql` | aplicada (2026-05-16) | Mejoras de performance del advisor de Supabase: (a) índice FK `idx_solicitudes_tecnico_asignado` para `solicitudes_servicio.tecnico_asignado_id`, (b) wrap `auth.role()` en `(SELECT auth.role())` para las policies `service_role_all_*` (RLS initplan, 1 evaluación por query en vez de por fila), (c) re-scope `service_role_all_{gps,repuestos,eventos}` de role `{public}` → `{service_role}` para eliminar superposición con policies `anon_*` (multiple permissive), (d) drop policy duplicada `"Allow public update evidencias"` en `evidencias_servicio`. Aplicada vía MCP — ya no aparece en pendientes |
+| **`20260521_storage_policies_public_role.sql`** | **PENDIENTE — aplicar vía Dashboard** | Fix RLS Storage: amplía las policies de los buckets `evidencias-servicio`, `tecnicos-fotos` y `tecnicos-documentos` de role `{anon}` → `public`. Resuelve `new row violates row-level security policy` al subir evidencia desde el portal del técnico cuando el navegador tiene una sesión de admin activa (rol `authenticated` no matcheaba las policies `{anon}`). **NO se puede correr en el SQL Editor** — `postgres` no es dueño de `storage.objects`. Aplicar vía Dashboard → Storage → Policies (ver cabecera del archivo) |
 
 ## Cómo aplicar las pendientes
 

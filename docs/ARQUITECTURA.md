@@ -114,6 +114,8 @@ legal/                          # Legal documents (Baird Service SAS)
 | `/api/cron/gps-followup` | GET | Cron 10min: post-visit GPS flagging | N/A |
 | `/api/carga-masiva` | POST | Bulk Excel upload for warranty | Warranty only |
 | `/api/admin/export` | POST | Admin: descarga `.xlsx` con resumen completo de solicitudes (cliente, técnico, evidencias, fotos, eventos, GPS, cotización). Body: `{ ids?: string[] }` — sin IDs exporta todas. | Both |
+| `/api/admin/editar-solicitud` | POST | Admin: corrige manualmente `tipo_equipo`, horario, dirección, ciudad, zona. Auditado en `solicitud_eventos` con diff. | Both |
+| `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp. | Both |
 | `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
 | `/api/triaje` | POST | AI diagnosis (disabled) | N/A |
 | `/api/health` | GET | Health check | N/A |

@@ -70,7 +70,8 @@ Endpoints protegidos con `verificarAdmin`:
 |---|---|---|
 | `/api/admin/export` | POST | Descarga Excel multi-hoja de solicitudes |
 | `/api/admin/reenviar-ultimo-mensaje` | POST | Re-disparar la plantilla correspondiente al estado actual |
-| `/api/admin/editar-solicitud` | POST | Editar manualmente horario_confirmado, dirección, ciudad, zona. Cambios auditados en `solicitud_eventos` con diff |
+| `/api/admin/editar-solicitud` | POST | Editar manualmente tipo_equipo, horario_confirmado, dirección, ciudad, zona. Cambios auditados en `solicitud_eventos` con diff |
+| `/api/admin/cambiar-estado` | POST | Forzar el `estado` de una solicitud (recuperación de flujos atascados). Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). No envía WhatsApp |
 | `/api/carga-masiva` | POST + DELETE | Bulk upload BITÁCORA Excel y borrado masivo |
 | `/api/whatsapp/notify` | POST | Re-notificar técnicos o re-enviar plantilla horario |
 | `/api/cotizacion-precios` | POST | Admin fija precios + tiempo entrega (gate de pricing) |
@@ -146,18 +147,21 @@ Configurados en `vercel.json`.
 
 ## 4. RLS en Supabase — estado actual
 
+Estado verificado contra producción **2026-05-23** (`pg_tables.rowsecurity`):
+
 | Tabla | RLS | Anon | Nota |
 |---|---|---|---|
-| `solicitudes_servicio` | ❌ | full | Toda la seguridad recae en tokens UUID en URLs |
-| `tecnicos` | ❌ | full | Idem — `portal_token` es el secret |
-| `especialidades_tecnico` | ❌ | full | OK — datos no sensibles |
-| `evidencias_servicio` | ❌ | full | Token `confirmacion_token` |
-| `notificaciones_whatsapp` | ❌ | full | ⚠️ con el token único un atacante podría aceptar masivamente |
-| `repuestos_pendientes` | ✅ | `SELECT true` | service_role = ALL |
+| `solicitudes_servicio` | ❌ | full | **Gap activo** — tabla principal con todo el PII del cliente. Toda la seguridad recae en tokens UUID en URLs |
+| `especialidades_tecnico` | ❌ | full | OK — datos no sensibles (lista de especialidades por técnico) |
+| `tecnicos` | ✅ | full | Habilitada — `portal_token` sigue siendo el secret efectivo de acceso al portal |
+| `evidencias_servicio` | ✅ | full | Habilitada — token `confirmacion_token` complementa |
+| `notificaciones_whatsapp` | ✅ | full | Habilitada — el token único de cada notificación es el secret |
+| `repuestos_pendientes` | ✅ | service_role-only | Solo backend |
 | `gps_pings` | ✅ | `INSERT true` | service_role = ALL; SELECT requiere service_role |
 | `solicitud_eventos` | ✅ | `SELECT true`, `INSERT true` | service_role = ALL |
+| `cliente_historial` | ✅ | service_role-only | Solo backend (no-show tracking) |
 
-**Backlog**: habilitar RLS en las 5 tablas ❌ con políticas que filtren por `cliente_token`/`portal_token` extraído del JWT o contexto de request. Ver detalle en `improvement-plan.md`.
+**Backlog activo**: solo quedan `solicitudes_servicio` y `especialidades_tecnico` sin RLS. La habilitación de `solicitudes_servicio` **no es un toggle trivial** — la app entera consulta esa tabla con el `anon_key` (singleton client). Habilitar RLS con policies restrictivas rompe el sitio; habilitarlo con `USING (true)` para anon es seguridad-teatro. Plan correcto (ver § 7): mover queries server-side a `service_role` + diseñar policies anon por token.
 
 ---
 
@@ -172,6 +176,27 @@ Configurados en `vercel.json`.
 ⚠️ **`tecnicos-documentos` PII expuesto**: cualquiera con la URL puede descargar la cédula del técnico. **Backlog**: migrar a `createSignedUrl()` (TTL 1h) en `src/lib/uploadHelpers.ts`. Mismo aplica con menor severidad a las otras dos.
 
 **No publicar URLs de documentos en lugares públicos** (issues, Slack público, screenshots, etc.).
+
+---
+
+## 5.1 Verificación de flujos críticos (smoke test)
+
+`scripts/verify-flows.mjs` corre los SELECTs anon que la app hace desde el browser sobre las 8 tablas críticas + un ciclo completo de subida / lectura / borrado en el bucket `evidencias-servicio`. Es exactamente lo que rompió la vez anterior cuando se tocó RLS sin pensar.
+
+```bash
+node --env-file=.env.local scripts/verify-flows.mjs
+```
+
+Salida esperada: `✅  Todos los checks pasaron (11/11)`. Exit 1 si algo falla.
+
+**Cuándo correrlo**:
+- **Antes** de cualquier cambio de RLS, policy o permisos en Supabase → baseline.
+- **Inmediatamente después** → confirmar que el cambio no rompió SELECTs anon ni la subida de evidencia.
+- Tras cada deploy a Vercel que toque queries → confirmar que el cliente anon sigue funcionando.
+
+Si falla después de un cambio: **revertir el cambio antes de que un usuario lo encuentre**. El script no requiere admin ni credenciales — solo el anon key del `.env.local`, igual al del browser.
+
+Limitación: no simula el caso "admin logueado en mismo navegador → rol `authenticated`" (ver gotcha en `docs/GOTCHAS.md`). Ese se prueba manualmente desde el browser después del fix de Storage policies.
 
 ---
 
@@ -190,7 +215,7 @@ Configurados en `vercel.json`.
 
 Una vez la app esté estable y validada en producción, atender en este orden:
 
-1. **RLS en las 5 tablas críticas** — máxima prioridad de seguridad. Sin RLS, el `anon_key` (extraíble del bundle JS) da acceso total a la DB. La auth admin es de fachada hasta que esto se cierre.
+1. **RLS en `solicitudes_servicio`** — máxima prioridad de seguridad. Hoy el `anon_key` (extraíble del bundle JS) da acceso completo a esa tabla (datos del cliente, dirección, teléfono, cotización). La auth admin es de fachada hasta que esto se cierre. **No es un toggle simple** — la app consulta esa tabla con anon-key tanto en cliente como en API routes (singleton); habilitar RLS sin policies rompe el sitio. Plan: (a) crear cliente `service_role` server-side, (b) migrar API routes (admin + flujos protegidos) a ese cliente, (c) diseñar policies anon estrictas por token (`cliente_token`, `horario_token`, `verificacion_paso_token`, `cotizacion.token`, `portal_token`), (d) probar end-to-end cada flujo. Estimación: 1-2 días dedicados + testing. `especialidades_tecnico` también queda sin RLS pero es datos no sensibles — baja prioridad.
 2. **`tecnicos-documentos` → signed URLs** — exposición de PII (cédulas). Implementar en `uploadHelpers.ts`. TTL 1h.
 3. **Rate limiting en `/api/solicitar` y `/api/admin/login`** — sin rate limit, spam de solicitudes falsas y brute-force de passwords son posibles. Recomendado: `@vercel/firewall` + Vercel KV.
 4. **MFA (TOTP) en login admin** — Supabase Auth lo soporta nativo. Una contraseña filtrada hoy = acceso total.

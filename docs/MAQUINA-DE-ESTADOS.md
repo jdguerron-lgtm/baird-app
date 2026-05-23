@@ -225,7 +225,7 @@ WARRANTY:
                      │                          ↘ cancelada_cliente (terminal)
                      │                          ↘ reagendamiento_pendiente ↻ asignada
                      │                          ↘ cancelada (cliente desde /servicio, terminal)
-                     │                          ↘ no_show_cliente (terminal — pendiente migración)
+                     │                          ↘ no_show_cliente (terminal)
                      └─→ sin_agendar (timeout 24h+12h, terminal)
 
 NON-WARRANTY (v2 2026-05-10):
@@ -241,15 +241,17 @@ NON-WARRANTY (v2 2026-05-10):
                      │                                              ├─ aprobada → en_proceso (o esperando_repuesto)
                      │                                              └─ rechazada → cotizacion_rechazada (terminal)
                      │                                              ↘ reagendamiento_pendiente ↻ diagnostico_pendiente
-                     │                                              ↘ no_show_cliente (terminal — pendiente migración)
+                     │                                              ↘ no_show_cliente (terminal)
                      └─→ sin_agendar
 ```
 
 **Estados terminales** (set en `ESTADOS_TERMINALES` en `src/lib/constants/estados.ts`):
-`sin_agendar`, `finalizado_sin_reparacion`, `cancelada_cliente`, `cancelada`, `completada`, `cotizacion_rechazada`.
+`sin_agendar`, `finalizado_sin_reparacion`, `cancelada_cliente`, `no_show_cliente`, `cancelada`, `completada`, `cotizacion_rechazada`.
 
 **Estado transitorio `reagendamiento_pendiente`** — usado solo si el cliente reagenda mientras el técnico ya estaba asignado; vuelve inmediatamente a `asignada`/`diagnostico_pendiente` con `horario_confirmado` actualizado.
 
 **Estados desde los que el cliente puede cancelar/reagendar** están definidos en `src/types/solicitud.ts` como `ESTADOS_CANCELABLES_POR_CLIENTE` y `ESTADOS_REAGENDABLES_POR_CLIENTE`. Tope: `MAX_REAGENDAMIENTOS_CLIENTE = 2` por solicitud.
+
+**Escape hatch del admin** — `POST /api/admin/cambiar-estado` (UI en `/admin/solicitudes/[id]` → "Cambiar estado manualmente") permite forzar cualquier estado de `ESTADOS_VALIDOS` cuando el flujo automático quedó atascado (p. ej. el técnico o el cliente perdió señal y la transición nunca se disparó). **No** valida la transición contra la state machine ni envía WhatsApp — solo mueve el estado en BD con guard de concurrencia (`.eq('estado', estadoActual)`) y audita en `solicitud_eventos` (`tipo='cambio_estado_admin'`). `ESTADOS_VALIDOS` (en `src/lib/constants/estados.ts`) debe coincidir con el CHECK constraint `solicitudes_servicio_estado_check`.
 
 State labels and CSS classes are defined in `src/lib/constants/estados.ts`.

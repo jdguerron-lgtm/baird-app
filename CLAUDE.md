@@ -122,4 +122,4 @@ All legal documents are in the `legal/` directory as .docx files, in Spanish, al
 
 ## Current Status
 
-MVP deployed on Vercel with full dual-flow lifecycle. Warranty flow fully operational. Non-warranty flow code complete — pending Meta template approval for non-warranty WhatsApp templates. WhatsApp Cloud API v22.0 operational with permanent System User token and own number (+57 313 4951164). RLS enabled on all 5 Supabase tables. See TODO.md for full roadmap.
+MVP deployed on Vercel with full dual-flow lifecycle. Warranty flow fully operational. Non-warranty flow code complete — pending Meta template approval for non-warranty WhatsApp templates. WhatsApp Cloud API v22.0 operational with permanent System User token and own number (+57 313 4951164). RLS enabled on 7 of 9 Supabase tables — still **off** on `solicitudes_servicio` (main table) and `especialidades_tecnico`; ver `docs/GOTCHAS.md`. See TODO.md for full roadmap.

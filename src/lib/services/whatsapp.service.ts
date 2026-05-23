@@ -403,7 +403,15 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
   const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
   const problema = notifNovedades.substring(0, 100)
-  const ubicacion = `${sol.zona_servicio}, ${sol.ciudad_pueblo}`
+  // Ubicación para el técnico: dirección exacta + zona + ciudad. La dirección
+  // le permite evaluar distancia/parqueo/acceso antes de aceptar. Si no está
+  // cargada (caso raro), cae a zona + ciudad. Se colapsa el whitespace porque
+  // `direccion` es texto libre del cliente y WhatsApp rechaza params con
+  // saltos de línea o tabs.
+  const ubicacion = [sol.direccion, sol.zona_servicio, sol.ciudad_pueblo]
+    .map((parte) => parte?.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(', ')
   const horario = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
 
   // Pre-generar tokens y registrar todas las notificaciones en paralelo

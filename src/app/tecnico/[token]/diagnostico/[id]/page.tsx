@@ -799,9 +799,21 @@ export default function DiagnosticoPage() {
         {/* Evidence upload */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-1">Evidencia del fallo *</h2>
-          <p className="text-xs text-gray-400 mb-4">
+          <p className="text-xs text-gray-400 mb-3">
             Toma fotos del problema con la cámara o súbelas desde la galería. También puedes adjuntar un video.
           </p>
+
+          {/* Recordatorio: foto de la placa con el modelo. La placa (etiqueta
+              del fabricante) trae el modelo exacto del equipo — sin ella el
+              admin no puede validar repuestos ni la tarifa de garantía. */}
+          <div className="flex gap-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+            <span className="text-base leading-none mt-0.5">🏷️</span>
+            <p className="text-xs text-amber-900 leading-relaxed">
+              <strong>Incluye siempre una foto de la placa del equipo</strong> —
+              la etiqueta del fabricante donde se vea claramente el modelo. Es
+              clave para validar repuestos y la garantía.
+            </p>
+          </div>
 
           {/* File grid */}
           <div className="grid grid-cols-2 gap-3 mb-3">

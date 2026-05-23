@@ -97,6 +97,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [...])`
 - **Destino**: técnico
 - **Body** (6 params): `nombre`, `equipo`, `problema`, `ubicacion`, `horario`, `pago`
+  - `ubicacion` (`{{4}}`) = **dirección + zona + ciudad** (ej. `Calle 53 #24-18, Chapinero, Bogotá`). Se arma en `notificarTecnicos` con `[direccion, zona_servicio, ciudad_pueblo]` filtrando vacíos. La dirección exacta le permite al técnico evaluar distancia/acceso antes de aceptar. El texto de la plantilla no cambió — solo el valor del param.
 - **Botón URL**: `/aceptar/{token_notif}` — display "Aceptar"
 - **Propósito**: ofrecer servicio garantía a técnicos compatibles.
 - **Pendiente**: backfill a `upload-templates.mjs`.
@@ -106,6 +107,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [...])`
 - **Destino**: técnico
 - **Body** (6 params): `nombre`, `equipo`, `problema`, `ubicacion`, `horario`, `pago_diagnostico`
+  - `ubicacion` (`{{4}}`) = **dirección + zona + ciudad** — mismo armado que `nueva_solicitud_v3` (ver arriba).
 - **Botón URL**: `/aceptar/{token_notif}` — display "Aceptar"
 - **Propósito**: ofrecer servicio particular a técnicos compatibles.
 
