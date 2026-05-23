@@ -64,6 +64,14 @@
 | `docs/flujos-servicio.html` | Mockup visual antiguo del flujo. No es referencia técnica. |
 | `legal/*.docx` | Documentos legales (T&C, política privacidad, contratos, etc.) — Colombian SAS compliance. |
 
+### Backlog de mejoras futuras (ideas en discusión, aún no implementadas)
+
+| Subcarpeta | Iniciativa |
+|---|---|
+| [`docs/mejoras-futuras/`](mejoras-futuras/README.md) | Hub: inventario de proyectos en discusión + convenciones para agregar/promover/descartar. |
+| [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Sección admin con mapa de servicios geolocalizados (color por estado/técnico, filtros, panel detalle). |
+| [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a dominio propio bajo `bairdservice.com` (research SEO + diagnóstico del cutover fallido en SiteGround). |
+
 ### Documentación deprecated (no actualizar)
 
 | Doc | Por qué está deprecado |
