@@ -89,7 +89,11 @@ legal/                          # Legal documents (Baird Service SAS)
 | `notificarCotizacionAprobada(solicitudId)` | Notify tech that quote was approved | No — non-warranty only |
 | `procesarCancelacionCliente(token, motivo)` | Cancela la solicitud desde /servicio portal — actualiza estado, invalida notifs, avisa al cliente y al técnico | Sí (audit en `solicitud_eventos`) |
 | `procesarReagendamientoCliente(token, horario, motivo?)` | Reagenda manteniendo técnico asignado si lo hay; incrementa `reagendamientos_count` (max 2) | Sí (audit en `solicitud_eventos`) |
-| `enviarMensajeTexto(telefono, texto)` | Send free-form text message | N/A |
+| `enviarVerificacionPasoCliente(solicitudId)` | Plantilla `verificar_siguiente_paso_v1` post-diagnóstico garantía. Genera `verificacion_paso_token` y disparra link `/verificar-paso/{token}`. | No — garantía únicamente |
+| `notificarRegistroTecnico(tecnicoId)` | Plantilla `registro_bienvenida_v3` tras registro del técnico, con link al portal. Disparrada por `/api/notificar-registro`. | N/A |
+| `describirSiguientePaso(siguientePaso, contexto)` | Helper puro: traduce el código de `siguiente_paso` (`reparar`, `esperar_repuesto`, `no_reparable`, `negativa_cliente`) al texto humano que ve el cliente. | N/A |
+| `enviarPlantilla(telefono, nombre, lang, components)` | Primitiva: arma el payload Meta y llama Graph API. Devuelve `{ sent, filtered? }` — `filtered=true` significa que cayó en el `BAIRD_TEST_PHONE_WHITELIST`. **Cualquier llamada que cuente "notificados" debe inspeccionar `sent`, no asumir success por promesa fulfilled.** | N/A |
+| `enviarMensajeTexto(telefono, texto)` | Send free-form text message (requiere ventana 24h del cliente). | N/A |
 | `verificarFirmaWebhook(payload, signature)` | HMAC verification for Meta webhook | N/A |
 
 **Test gate:** todas las primitivas (`enviarPlantilla`, `enviarMensajeTexto`, `enviarImagen`, `enviarMensajeInteractivo`) verifican `BAIRD_TEST_PHONE_WHITELIST`. Si la env está definida (CSV de digits con país, p.ej. `573134951164`), los envíos a números fuera de la lista se omiten silenciosamente con un log `[WhatsApp][test-mode] Skipping ...`. Vacío/no definido → comportamiento normal (envía a todos). Útil para probar nuevos flujos sin alertar a técnicos reales.
@@ -116,6 +120,11 @@ legal/                          # Legal documents (Baird Service SAS)
 | `/api/admin/export` | POST | Admin: descarga `.xlsx` con resumen completo de solicitudes (cliente, técnico, evidencias, fotos, eventos, GPS, cotización). Body: `{ ids?: string[] }` — sin IDs exporta todas. | Both |
 | `/api/admin/editar-solicitud` | POST | Admin: corrige manualmente `tipo_equipo`, horario, dirección, ciudad, zona. Auditado en `solicitud_eventos` con diff. | Both |
 | `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp. | Both |
+| `/api/admin/reenviar-ultimo-mensaje` | POST | Admin: re-dispara la plantilla WhatsApp correspondiente al estado actual de la solicitud (útil si el cliente o el técnico borró el mensaje). | Both |
+| `/api/whatsapp/accept` | GET | Aceptación 1-click del técnico desde la plantilla WhatsApp. Token único por notificación. Llama `procesarAceptacion()` — atomic update primer-técnico-gana. Redirige al portal del técnico tras aceptar. | Both |
+| `/api/whatsapp/notify` | POST | Admin re-notifica técnicos para una solicitud (volver a disparrar el broadcast a técnicos compatibles). Usa `notificarTecnicos()`. | Both |
+| `/api/notificar-registro` | POST | Post-registro del técnico: envía `registro_bienvenida_v3` con link al portal. | N/A |
+| `/api/log-error` | POST | Telemetría fire-and-forget de errores de conexión del cliente. Inserta en `connection_errors` y loguea a stderr con prefijo `[ConnectionError]`. Siempre responde 200. | N/A |
 | `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
 | `/api/triaje` | POST | AI diagnosis (disabled) | N/A |
 | `/api/health` | GET | Health check | N/A |
@@ -132,25 +141,34 @@ legal/                          # Legal documents (Baird Service SAS)
 | Service confirmation | `/confirmar/{confirmacion_token}` | Customer confirms service was completed satisfactorily |
 | **Terms & Conditions** | `/terminos` | Public T&C page (Colombian law-compliant) |
 | Privacy Policy | `/politica-privacidad` | Existing |
+| **Eliminación de datos** | `/eliminacion-datos` | Página pública con formulario / instrucciones para que el cliente solicite la eliminación de sus datos (Ley 1581 de 2012). |
 
 ## Technician-Facing Pages
 
 | Page | URL | Purpose |
 |------|-----|---------|
-| Accept service | `/aceptar/{token}` | 1-click acceptance from WhatsApp notification |
-| Portal (service list) | `/tecnico/{token}` | View assigned services and history |
-| Diagnosis form | `/tecnico/{token}/diagnostico/{id}` | Oath modal + diagnosis + 4 next-step options + GPS |
-| Completion form | `/tecnico/{token}/completar/{id}` | Upload photos, checklist, signature, GPS |
+| **Registro** | `/registro` | Onboarding del técnico: formulario con datos personales, foto, documento, especialidades, ciudad. Inserta en `tecnicos` con `estado_verificacion='pendiente'`. Al final llama `/api/notificar-registro` para mandar `registro_bienvenida_v3`. |
+| Accept service | `/aceptar/{token}` | 1-click acceptance from WhatsApp notification (la URL del botón apunta a `/api/whatsapp/accept?token=...` que redirige acá tras procesar) |
+| Portal (service list) | `/tecnico/{token}` | View assigned services and history. Auth: `portal_token` UUID en la URL. |
+| Diagnosis form | `/tecnico/{token}/diagnostico/{id}` | Oath modal + diagnosis + 4 next-step options + GPS. Fotos se comprimen client-side (`compressImageIfNeeded`) antes de subirlas en paralelo. |
+| Completion form | `/tecnico/{token}/completar/{id}` | Upload photos, checklist, signature, GPS. Misma compresión + paralelización que `diagnostico`. |
 
 ## Admin Pages
 
+Todas requieren login Supabase Auth en `/admin/login` y validación server-side con `verificarAdmin()` en cada endpoint del que dependen. Ver `docs/SEGURIDAD.md` § 2.
+
 | Page | URL | Purpose |
 |------|-----|---------|
+| Login | `/admin/login` | Login Supabase Auth (email + password). La sesión queda en `localStorage`; OJO: misma sesión se filtra a portales con token en el mismo browser — ver gotcha en `docs/GOTCHAS.md`. |
 | Dashboard | `/admin` | KPIs and recent activity |
 | Solicitudes | `/admin/solicitudes` | Service requests list/detail |
-| Técnicos | `/admin/tecnicos` | Technician management |
+| Solicitud detalle | `/admin/solicitudes/[id]` | Detalle + edit + reenviar último mensaje + **cambiar estado manualmente** (escape hatch, ver `docs/MAQUINA-DE-ESTADOS.md`). |
+| Técnicos | `/admin/tecnicos` | Listado de técnicos con estado de verificación |
+| Técnico detalle | `/admin/tecnicos/[id]` | Detalle del técnico: documento, foto, especialidades, historial de servicios, toggle de verificación. |
 | **Repuestos** | `/admin/repuestos` | Pending parts — mark as received |
+| **Cotizaciones pendientes** | `/admin/cotizaciones-pendientes` | **Admin pricing gate** — solicitudes en estado `pendiente_pricing` esperando que el admin fije precios + tiempo de entrega antes de notificar al cliente. UI dispara `/api/cotizacion-precios`. |
 | **Alertas GPS** | `/admin/gps-alertas` | Silent flagged services (post-visit GPS within 100m) |
+| **Errores de conexión** | `/admin/errores` | Observabilidad: panel de `connection_errors` (telemetría enviada por el cliente vía `/api/log-error`). Filtros por rango temporal (1h/24h/7d/30d), tipo de error y actor (técnico/cliente/admin). |
 | Carga Masiva | `/admin/carga-masiva` | BITÁCORA Excel upload |
 | Garantías | `/admin/garantias` | Warranty dashboard by brand/equipment |
 
@@ -166,3 +184,53 @@ legal/                          # Legal documents (Baird Service SAS)
   6. **Repuestos** — `repuestos_pendientes` con SKU, costo, tiempo, estado.
   7. **Cotizaciones** — productos necesarios y recomendados de cada cotización JSONB, expandidos a una fila por producto.
 - Filename: `baird-resumen-todas-{ts}.xlsx` o `baird-resumen-{N}-solicitudes-{ts}.xlsx`.
+
+## Utilidades transversales
+
+### `querySupabase()` — retry con backoff (`src/lib/utils/retry.ts`)
+
+Wrapper alrededor de cualquier query de Supabase del lado cliente. Reintenta con backoff exponencial cuando detecta fallas transitorias (red caída, timeouts, 5xx). Reporta a `/api/log-error` cada retry y falla final.
+
+```ts
+const { data, error } = await querySupabase(() =>
+  supabase.from('solicitudes_servicio').select('...').eq('id', id).single()
+)
+```
+
+**Cuándo usarlo:** queries client-side en páginas (portal técnico, customer pages) donde una red flaky puede dejar al usuario sin datos. **No** es necesario en API routes server-side (Vercel ya tiene buena conectividad a Supabase).
+
+**Por qué importa:** sin este wrapper, una sola falla de red en `/tecnico/[token]` mostraba "Enlace inválido" cuando realmente era un blip momentáneo. Es la razón por la que el portal del técnico hoy se autorecupera.
+
+### `compressImageIfNeeded()` — compresión client-side (`src/lib/utils/media.ts`)
+
+Convierte fotos del teléfono (típicamente HEIC iPhone 5 MB, JPEG Android 3 MB) a JPEG ≤ 2560px, calidad 0.9 → resultado ~700 KB. Las páginas `diagnostico` y `completar` la llaman antes de `supabase.storage.upload`, en paralelo con `Promise.all`.
+
+**Efectos:**
+- 5-10× más rápido en 4G colombiano.
+- HEIC → JPEG arregla la previa en el panel admin (Chrome/Firefox no decodifican HEIC).
+- No comprime videos (requeriría ffmpeg.wasm — backlog).
+
+`inferExtension(file)` deriva la extensión correcta de `file.type` (no del nombre, porque `capture="environment"` a veces devuelve nombres genéricos).
+
+## Observabilidad
+
+Pipeline de telemetría de errores de conexión, agregado en `d0d0b8a`:
+
+```
+querySupabase / page-load handler
+        │
+        ▼ on error
+  trackError({ error_type, error_message, actor, ... })
+        │
+        ▼ fetch POST
+   /api/log-error  ──► tabla `connection_errors` + console.error('[ConnectionError]', ...)
+        │                          │
+        │                          ▼ Vercel Runtime Logs (grepeable)
+        │
+        ▼
+  /admin/errores (UI con filtros temporales/tipo/actor)
+```
+
+**`connection_errors` columnas clave:** `url`, `error_type` (`query_retry|query_failed|page_load_error|fetch_failed|unknown`), `error_message`, `attempt_number`, `network_effective_type` (`'4g'|'3g'|'2g'|'slow-2g'`), `network_rtt`, `online`, `actor`, `ip`.
+
+**Diseño fire-and-forget:** `/api/log-error` SIEMPRE retorna 200 (incluso si el insert falla). Telemetría no debe romper la UX de un usuario que ya está sufriendo un error de red.

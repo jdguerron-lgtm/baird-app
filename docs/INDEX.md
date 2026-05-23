@@ -27,6 +27,9 @@
 | **Entender RLS y storage** | `docs/SUPABASE.md` § "Supabase Architecture" |
 | **Saber qué env vars necesita** | `CLAUDE.md` § "Environment Variables" |
 | **Probar el flujo end-to-end** | `docs/FLOWS.md` § "Para validar end-to-end (testing manual)" |
+| **Verificar que un cambio de RLS / Storage no rompió flujos** | `scripts/verify-flows.mjs` + `docs/SEGURIDAD.md` § 5.1 |
+| **Investigar un error de conexión del cliente** | `/admin/errores` panel + `docs/ARQUITECTURA.md` § "Observabilidad" |
+| **Entender el retry con backoff de queries (`querySupabase`)** | `docs/ARQUITECTURA.md` § "Utilidades transversales" |
 | **Auditar deuda técnica / gaps** | `docs/FLOWS.md` § "Gaps conocidos" + `supabase/migrations/README.md` § "Hallazgos del audit" |
 | **Convenciones de código** (nombres, idiomas, patrones) | `CLAUDE.md` § "Code Conventions" + `docs/GOTCHAS.md` |
 | **Trampas conocidas antes de tocar código sensible** | `docs/GOTCHAS.md` | Todo |

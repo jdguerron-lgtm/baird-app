@@ -6,14 +6,16 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 
 | Table | Purpose | Key Fields |
 |-------|---------|------------|
-| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count |
+| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count, **diagnosticado_at, cumple_ta** (tracking TA — 20260513), **cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado** (auditoría tarifa MABE — 20260510) |
 | `notificaciones_whatsapp` | One record per tech notification | token, estado, timestamps |
-| `tecnicos` | Technician profiles | portal_token, whatsapp, especialidades, verificado |
+| `tecnicos` | Technician profiles | portal_token, whatsapp, especialidades, verificado, **acepta_garantias, especialidad_principal** (20260508) |
 | `especialidades_tecnico` | Many-to-many: technicians ↔ skills | tecnico_id, especialidad |
-| `evidencias_servicio` | Completion evidence | fotos, checklist, firma, oath_firma, gps_(diagnostico/completado/post_visita)_lat/lng, gps_flagged |
+| `evidencias_servicio` | Completion evidence | fotos, checklist, firma, oath_firma, gps_(diagnostico/completado/post_visita)_lat/lng, gps_flagged, **evidencia_no_show** (JSONB — selfie/inmueble/timbrazos/llamadas/wa_intentos/pings/notas, 20260510) |
 | `repuestos_pendientes` | Spare parts pending arrival | solicitud_id, sku, descripcion, costo, tiempo_estimado, estado |
 | `gps_pings` | All GPS pings from technician browsers | solicitud_id, tecnico_id, lat, lng, fase, capturado_at |
 | `solicitud_eventos` (NEW 2026-05-06) | Append-only audit log para cancelaciones, reagendamientos y cambios manuales de admin | solicitud_id, tipo, estado_previo, estado_nuevo, actor, motivo, payload (JSONB), ocurrido_at |
+| `cliente_historial` (NEW 2026-05-10) | Tracking de comportamiento del cliente (no-shows, cancelaciones tardías, servicios completados). Lookup por documento (preferido) o teléfono | documento, telefono, no_shows_count, cancelaciones_tarde_count, servicios_completados_count, bloqueado, bloqueado_motivo, requiere_confirmacion_llamada, ultimo_evento_at. RLS service_role-only. |
+| `connection_errors` (NEW observability) | Telemetría de errores de red enviada por el browser vía `/api/log-error`. Backend del panel `/admin/errores` | url, error_type, error_message, attempt_number, network_effective_type, network_downlink, network_rtt, online, actor, ip, user_agent, created_at |
 
 ### Important JSONB Columns on solicitudes_servicio
 
