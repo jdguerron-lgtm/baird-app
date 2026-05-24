@@ -17,8 +17,8 @@ export const maxDuration = 30
  * tiempo de entrega para una solicitud en estado 'pendiente_pricing'.
  *
  * Tras esto se transiciona la solicitud:
- *  - Particular  → cotizacion_enviada + envío de cotizacion_cliente_v1
- *  - Garantía    → verificacion_pendiente + envío de verificar_siguiente_paso_v1
+ *  - Particular  → cotizacion_enviada + envío de cotizacion_cliente_v2
+ *  - Garantía    → verificacion_pendiente + envío de verificar_siguiente_paso_v2
  *
  * Body: {
  *   solicitudId: string,

@@ -27,16 +27,16 @@ export const maxDuration = 30
  * Body: { solicitudId: string }
  *
  * Mapeo estado → plantilla (último mensaje "natural" del flujo):
- *   pendiente_horario, sin_agendar  → cliente_seleccion_horario_v1 (cliente)
+ *   pendiente_horario, sin_agendar  → cliente_seleccion_horario_v2 (cliente)
  *   notificada                       → re-notificarTecnicos (técnicos)
- *   asignada                         → tecnico_asignado_cliente_v5 (cliente)
+ *   asignada                         → tecnico_asignado_cliente_v6 (cliente)
  *   diagnostico_pendiente            → tecnico_asignado_particular_v1 (cliente)
- *   verificacion_pendiente           → verificar_siguiente_paso_v1 (cliente)
+ *   verificacion_pendiente           → verificar_siguiente_paso_v2 (cliente)
  *   pendiente_pricing                → Solo señal admin (no envío)
- *   cotizacion_enviada               → cotizacion_cliente_v1 (cliente)
+ *   cotizacion_enviada               → cotizacion_cliente_v2 (cliente)
  *   esperando_repuesto               → esperando_repuesto_cliente_v1 (cliente)
  *   en_proceso                       → repuesto_recibido_cliente_v1 si vino de esperando
- *   en_verificacion                  → confirmar_servicio_v3 (cliente)
+ *   en_verificacion                  → confirmar_servicio_v4 (cliente)
  *   finalizado_sin_reparacion        → finalizado_sin_reparacion_v1 (cliente)
  *   terminales restantes             → 409 (sin sentido reenviar)
  */
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       case 'sin_agendar': {
         const r = await enviarSeleccionHorarioCliente(solicitudId)
         return NextResponse.json({
-          accion: 'cliente_seleccion_horario_v1',
+          accion: 'cliente_seleccion_horario_v2',
           destinatario: 'cliente',
           ok: r.ok,
           error: r.error,
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
 
         try {
           if (sol.es_garantia) {
-            const r = await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v5', 'es', [
+            const r = await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
               {
                 type: 'body',
                 parameters: [
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
               },
             ])
             return NextResponse.json({
-              accion: 'tecnico_asignado_cliente_v5',
+              accion: 'tecnico_asignado_cliente_v6',
               destinatario: 'cliente',
               ok: r.sent,
               filtered: r.filtered ?? false,
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
       case 'verificacion_pendiente': {
         const r = await enviarVerificacionPasoCliente(solicitudId)
         return NextResponse.json({
-          accion: 'verificar_siguiente_paso_v1',
+          accion: 'verificar_siguiente_paso_v2',
           destinatario: 'cliente',
           ok: r.ok,
           error: r.error,
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
       case 'cotizacion_enviada': {
         const r = await enviarCotizacionCliente(solicitudId)
         return NextResponse.json({
-          accion: 'cotizacion_cliente_v1',
+          accion: 'cotizacion_cliente_v2',
           destinatario: 'cliente',
           ok: r.ok,
           error: r.error,
@@ -251,7 +251,7 @@ export async function POST(req: NextRequest) {
         if (!ev?.confirmacion_token) {
           return NextResponse.json({
             ok: false,
-            accion: 'confirmar_servicio_v3',
+            accion: 'confirmar_servicio_v4',
             error: 'No hay confirmacion_token (¿evidencia incompleta?)',
           })
         }
@@ -261,7 +261,7 @@ export async function POST(req: NextRequest) {
           .eq('id', sol.tecnico_asignado_id)
           .single()
         try {
-          const r = await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v3', 'es', [
+          const r = await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v4', 'es', [
             {
               type: 'body',
               parameters: [
@@ -278,7 +278,7 @@ export async function POST(req: NextRequest) {
             },
           ])
           return NextResponse.json({
-            accion: 'confirmar_servicio_v3',
+            accion: 'confirmar_servicio_v4',
             destinatario: 'cliente',
             ok: r.sent,
             filtered: r.filtered ?? false,

@@ -10,7 +10,7 @@ import crypto from 'crypto'
  *
  * Crea una solicitud y arranca el flujo customer-first:
  * 1. Inserta solicitud con estado='pendiente_horario' y horario_token único
- * 2. Envía plantilla cliente_seleccion_horario_v1 con CTA a /horario/{token}
+ * 2. Envía plantilla cliente_seleccion_horario_v2 con CTA a /horario/{token}
  * 3. NO notifica técnicos todavía — eso ocurre tras /api/confirmar-horario
  */
 export async function POST(req: NextRequest) {

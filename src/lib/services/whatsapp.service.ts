@@ -435,7 +435,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     enviables.map(({ tecnico, token }) => {
       const nombre = tecnico.nombre_completo.split(' ')[0]
       if (sol.es_garantia) {
-        return enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [
+        return enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v4', 'es', [
           {
             type: 'body',
             parameters: [
@@ -457,7 +457,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
         ])
       }
       const pagoDiagnostico = `${formatCOP(sol.pago_tecnico)} COP`
-      return enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [
+      return enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v2', 'es', [
         {
           type: 'body',
           parameters: [
@@ -668,7 +668,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
     // Send assignment template to technician (with client contact + portal link)
     await logEnvio(
-      enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v3', 'es', [
+      enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v4', 'es', [
         {
           type: 'body',
           parameters: [
@@ -687,7 +687,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
           parameters: [{ type: 'text', text: tecnico.portal_token }],
         },
       ]),
-      'procesarAceptacion → servicio_asignado_tecnico_v3',
+      'procesarAceptacion → servicio_asignado_tecnico_v4',
     )
   }
 
@@ -698,7 +698,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   if (sol.es_garantia) {
     // ── WARRANTY FLOW: template v5 with schedule + no-pay warning + T&C link ──
     await logEnvio(
-      enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v5', 'es', [
+      enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
         {
           type: 'body',
           parameters: [
@@ -710,7 +710,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
           ],
         },
       ]),
-      'procesarAceptacion → tecnico_asignado_cliente_v5',
+      'procesarAceptacion → tecnico_asignado_cliente_v6',
     )
   } else {
     // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
@@ -783,7 +783,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 // ─────────────────────────────────────────
 
 /**
- * Envía la plantilla cliente_seleccion_horario_v1 al cliente con las 2 opciones
+ * Envía la plantilla cliente_seleccion_horario_v2 al cliente con las 2 opciones
  * de horario propuestas en su solicitud y un CTA a /horario/{token}.
  */
 export async function enviarSeleccionHorarioCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
@@ -842,7 +842,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
   const cliente = sol.cliente_nombre.split(' ')[0]
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'cliente_seleccion_horario_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'cliente_seleccion_horario_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -885,7 +885,7 @@ export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ 
   const cliente = sol.cliente_nombre.split(' ')[0]
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'recordatorio_horario_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'recordatorio_horario_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -944,7 +944,7 @@ export function describirSiguientePaso(
 }
 
 /**
- * Envía la plantilla verificar_siguiente_paso_v1 al cliente para que apruebe
+ * Envía la plantilla verificar_siguiente_paso_v2 al cliente para que apruebe
  * el siguiente paso propuesto por el técnico (solo flujo garantía).
  */
 export async function enviarVerificacionPasoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
@@ -984,7 +984,7 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    const result = await enviarPlantilla(sol.cliente_telefono, 'verificar_siguiente_paso_v1', 'es', [
+    const result = await enviarPlantilla(sol.cliente_telefono, 'verificar_siguiente_paso_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1163,7 +1163,7 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
     .single()
 
   try {
-    const result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v1', 'es', [
+    const result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1225,7 +1225,7 @@ export async function notificarCotizacionAprobada(solicitudId: string): Promise<
   const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
   try {
-    const r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v1', 'es', [
+    const r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v2', 'es', [
       {
         type: 'body',
         parameters: [

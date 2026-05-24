@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
  *   crons: [{ path: '/api/cron/horario-recordatorio', schedule: '0 * * * *' }]
  *
  * 1. Solicitudes pendiente_horario sin recordatorio enviado y con created_at > 24h:
- *    → enviar plantilla recordatorio_horario_v1
+ *    → enviar plantilla recordatorio_horario_v2
  * 2. Solicitudes pendiente_horario con recordatorio enviado y created_at > 36h
  *    (24h + 12h adicionales):
  *    → marcar estado='sin_agendar' (terminal)
