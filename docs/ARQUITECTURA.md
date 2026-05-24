@@ -78,8 +78,8 @@ legal/                          # Legal documents (Baird Service SAS)
 
 | Function | Purpose | Branches on es_garantia? |
 |----------|---------|--------------------------|
-| `enviarSeleccionHorarioCliente(solicitudId)` | Plantilla cliente_seleccion_horario_v1 al crear solicitud | No |
-| `enviarRecordatorioHorario(solicitudId)` | Plantilla recordatorio_horario_v1 (cron 24h) | No |
+| `enviarSeleccionHorarioCliente(solicitudId)` | Plantilla cliente_seleccion_horario_v2 al crear solicitud | No |
+| `enviarRecordatorioHorario(solicitudId)` | Plantilla recordatorio_horario_v2 (cron 24h) | No |
 | `notificarTecnicos(solicitudId)` | Send service request to matching technicians | Yes |
 | `procesarAceptacion(token)` | Atomic acceptance (first tech wins) | Yes |
 | `enviarEsperandoRepuestoCliente(...)` | Plantilla esperando_repuesto_cliente_v1 con SKU | No |
@@ -89,7 +89,7 @@ legal/                          # Legal documents (Baird Service SAS)
 | `notificarCotizacionAprobada(solicitudId)` | Notify tech that quote was approved | No — non-warranty only |
 | `procesarCancelacionCliente(token, motivo)` | Cancela la solicitud desde /servicio portal — actualiza estado, invalida notifs, avisa al cliente y al técnico | Sí (audit en `solicitud_eventos`) |
 | `procesarReagendamientoCliente(token, horario, motivo?)` | Reagenda manteniendo técnico asignado si lo hay; incrementa `reagendamientos_count` (max 2) | Sí (audit en `solicitud_eventos`) |
-| `enviarVerificacionPasoCliente(solicitudId)` | Plantilla `verificar_siguiente_paso_v1` post-diagnóstico garantía. Genera `verificacion_paso_token` y disparra link `/verificar-paso/{token}`. | No — garantía únicamente |
+| `enviarVerificacionPasoCliente(solicitudId)` | Plantilla `verificar_siguiente_paso_v2` post-diagnóstico garantía. Genera `verificacion_paso_token` y disparra link `/verificar-paso/{token}`. | No — garantía únicamente |
 | `notificarRegistroTecnico(tecnicoId)` | Plantilla `registro_bienvenida_v3` tras registro del técnico, con link al portal. Disparrada por `/api/notificar-registro`. | N/A |
 | `describirSiguientePaso(siguientePaso, contexto)` | Helper puro: traduce el código de `siguiente_paso` (`reparar`, `esperar_repuesto`, `no_reparable`, `negativa_cliente`) al texto humano que ve el cliente. | N/A |
 | `enviarPlantilla(telefono, nombre, lang, components)` | Primitiva: arma el payload Meta y llama Graph API. Devuelve `{ sent, filtered? }` — `filtered=true` significa que cayó en el `BAIRD_TEST_PHONE_WHITELIST`. **Cualquier llamada que cuente "notificados" debe inspeccionar `sent`, no asumir success por promesa fulfilled.** | N/A |

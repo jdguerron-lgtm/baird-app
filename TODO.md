@@ -1,17 +1,17 @@
 # TODO — Baird Service
-**Última actualización:** 27 de abril de 2026
+**Última actualización:** 23 de mayo de 2026
 
 ## Estado general
 
-El proyecto está en **fase de producción activa** con **flujo customer-first scheduling (v2)**: el cliente elige horario antes de que se notifique a los técnicos. Implementadas también:
+El proyecto está en **fase de producción activa** servido desde **`https://lineablanca.bairdservice.com`** (migrado el 2026-05-23 desde `baird-app.vercel.app`, que sigue vivo como alias del mismo deployment como red de seguridad). Flujo **customer-first scheduling (v2)**: el cliente elige horario antes de que se notifique a los técnicos. Implementadas también:
 - 4 opciones de siguiente paso post-diagnóstico (reparar / esperar repuesto / no reparable / negativa cliente)
 - Oath del técnico con firma digital antes de cada diagnóstico
 - Tracking GPS en 4 fases con flagging silencioso 30 min post-visita
 - Página pública de Términos y Condiciones (Ley 1480/2011, Ley 1581/2012)
-- 6 nuevas plantillas WhatsApp aprobadas en Meta
+- 16 plantillas WhatsApp aprobadas en Meta (10 con versión incrementada para URLs nuevas tras la migración de dominio)
 - UI admin para gestión de repuestos pendientes y alertas GPS
 
-**ACCIÓN PENDIENTE DEL USUARIO:** aplicar migración SQL `supabase/migrations/20260427_customer_first_scheduling.sql` en Supabase Studio antes de probar en producción.
+**Migración 2026-05-23 completada.** Ver `docs/mejoras-futuras/migracion-dominio/runbook-cutover-2026-05-23.md` para detalles + rollback.
 
 ---
 
@@ -59,7 +59,7 @@ El proyecto está en **fase de producción activa** con **flujo customer-first s
 - [x] Producto WhatsApp agregado a la app
 - [x] Phone Number ID obtenido: `1148716061648720` (número propio +57 313 4951164)
 - [x] WABA ID obtenido: `2354953275016882`
-- [x] Webhook registrado y verificado: `https://baird-app.vercel.app/api/whatsapp/webhook`
+- [x] Webhook registrado y verificado: `https://baird-app.vercel.app/api/whatsapp/webhook` (sin cambiar tras la migración del 2026-05-23 — ambos dominios sirven el mismo deployment, ver runbook-cutover-2026-05-23.md)
 - [x] Verificación de negocio completada (vía Shopify: 1rep538r 1768612310)
 - [x] Verificación de acceso (tech provider) enviada — en revisión, deadline 2026-05-31
 - [x] System User `baird-api` creado con acceso Admin
@@ -77,7 +77,7 @@ El proyecto está en **fase de producción activa** con **flujo customer-first s
 - [x] Nuevos estados: `en_verificacion`, `en_disputa` con estilos y labels
 
 ### Infraestructura y despliegue
-- [x] Proyecto desplegado en Vercel: `https://baird-app.vercel.app`
+- [x] Proyecto desplegado en Vercel: `https://lineablanca.bairdservice.com` (dominio principal desde 2026-05-23) + `https://baird-app.vercel.app` (alias del mismo deployment, red de seguridad)
 - [x] Componentes UI reutilizables: Button, InputField, SelectField, TextAreaField, Alert
 - [x] Hooks personalizados: useDebounce, useSolicitudForm, useTriaje
 - [x] Error boundary `error.tsx` y página 404 `not-found.tsx`

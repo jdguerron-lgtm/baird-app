@@ -2,7 +2,7 @@
 
 ## Requisitos previos
 
-1. Tener acceso al panel admin: `https://baird-app.vercel.app/admin/login`
+1. Tener acceso al panel admin: `https://lineablanca.bairdservice.com/admin/login`
 2. Migración SQL ejecutada en Supabase (tabla `solicitudes_servicio` activa)
 3. Si se quiere probar notificación WhatsApp: al menos 1 técnico verificado en la ciudad correspondiente
 
@@ -125,7 +125,7 @@ La fila 6 (ORD-006) tiene errores intencionales para verificar la validación:
 
 ### 3.1 Subir el archivo
 
-1. Ir a `https://baird-app.vercel.app/admin/carga-masiva`
+1. Ir a `https://lineablanca.bairdservice.com/admin/carga-masiva`
 2. Arrastrar el archivo `.xlsx` al área de carga (o click para seleccionar)
 3. Verificar que aparece el nombre del archivo y su tamaño
 
@@ -170,7 +170,7 @@ Verificar que la tabla muestra:
 
 ### 3.5 Verificar en base de datos
 
-1. Ir a `https://baird-app.vercel.app/admin/solicitudes`
+1. Ir a `https://lineablanca.bairdservice.com/admin/solicitudes`
 2. Verificar que aparecen las 5 solicitudes nuevas con estado `pendiente`
 3. Abrir una solicitud y verificar:
    - Nombre, teléfono (formato `57|300...`), dirección, ciudad, zona
@@ -181,7 +181,7 @@ Verificar que la tabla muestra:
 
 ### 3.6 Verificar en dashboard de garantías
 
-1. Ir a `https://baird-app.vercel.app/admin/garantias`
+1. Ir a `https://lineablanca.bairdservice.com/admin/garantias`
 2. Verificar que aparecen 4 servicios de garantía (ORD-003 es "SERVICIO REGULAR")
 3. Verificar resumen por marca (SAMSUNG: 1, MABE: 2, GE: 1)
 4. Verificar resumen por tipo de equipo

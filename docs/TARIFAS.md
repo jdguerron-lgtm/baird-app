@@ -131,7 +131,7 @@ El **margen que captura Baird sirve para cubrir**: WhatsApp + infra (Vercel/Supa
 
 ### Pago mínimo mostrado al técnico antes de aceptar
 
-Cuando el técnico recibe la notificación de garantía MABE (plantilla `nueva_solicitud_v3`) y abre `/aceptar/{token}`, **no podemos mostrar el pago real** porque la complejidad y los bonos se conocen sólo tras el diagnóstico.
+Cuando el técnico recibe la notificación de garantía MABE (plantilla `nueva_solicitud_v4`) y abre `/aceptar/{token}`, **no podemos mostrar el pago real** porque la complejidad y los bonos se conocen sólo tras el diagnóstico.
 
 Por eso mostramos el **pago mínimo garantizado**: el peor escenario para el técnico, calculado en `PAGO_MINIMO_TECNICO_GARANTIA`:
 

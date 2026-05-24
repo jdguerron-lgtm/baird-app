@@ -1,7 +1,17 @@
 # Migración a dominio propio
 
-**Estado:** Investigación + diagnóstico hechos. Decisión pendiente (subdominio definitivo + cuándo ejecutar el cutover DNS).
+**Estado: ✅ COMPLETADO el 2026-05-23.** Migración ejecutada a `lineablanca.bairdservice.com`. Esta carpeta queda como registro histórico del proceso.
+
+> 🆕 **Para entender el cutover ejecutado** (qué se cambió, en qué orden, con plan de rollback): ver [`runbook-cutover-2026-05-23.md`](runbook-cutover-2026-05-23.md).
+>
+> Los archivos `research-subdominios-2026-05-12.md` y `diagnostico-2026-05-12.md` quedan como contexto histórico de las decisiones que llevaron al cutover.
+
+---
+
+## Resumen del proyecto (histórico)
+
 **Fecha de la investigación:** 2026-05-12.
+**Fecha del cutover:** 2026-05-23.
 
 ## Resumen
 

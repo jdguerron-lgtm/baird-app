@@ -56,7 +56,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │      horario_token=uuid (acción específica)                              │
 │      cliente_token=uuid (durable, para /servicio portal)                 │
 │                                                                           │
-│ 📩 → CLIENTE: cliente_seleccion_horario_v1                               │
+│ 📩 → CLIENTE: cliente_seleccion_horario_v2                               │
 │   Header: "Solicitud recibida en Baird Service"                          │
 │   Body: cliente, equipo, horario_1, horario_2                            │
 │   Botón: "Confirmar horario" → /horario/{horario_token}                  │
@@ -67,7 +67,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ 1b. (TIMEOUT — opcional) Si pasan 24h sin confirmar                      │
 │ Cron /api/cron/horario-recordatorio ejecuta cada 1h                      │
 │                                                                           │
-│ 📩 → CLIENTE: recordatorio_horario_v1                                    │
+│ 📩 → CLIENTE: recordatorio_horario_v2                                    │
 │   Body: cliente, equipo                                                  │
 │   Botón: "Confirmar horario" (mismo horario_token)                       │
 │                                                                           │
@@ -97,7 +97,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ Por cada técnico (en paralelo):                                          │
 │   notificaciones_whatsapp.insert(token=uuid)                             │
 │                                                                           │
-│ 📩 → TÉCNICO N: nueva_solicitud_v3                                       │
+│ 📩 → TÉCNICO N: nueva_solicitud_v4                                       │
 │   Body: nombre, equipo, problema, ubicacion, horario, "GARANTIA - Sin    │
 │         cobro"                                                           │
 │   Botón: "Aceptar" → /aceptar/{token_notif}                              │
@@ -116,13 +116,13 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ 📩 → TÉCNICOS perdedores: servicio_no_disponible_v3                      │
 │                                                                           │
 │ Al ganador:                                                              │
-│ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v3                       │
+│ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v4                       │
 │   Body: nombre, cliente, equipo, direccion, "GARANTIA - Sin cobro",      │
 │         teléfono cliente                                                 │
 │   Botón: "Ver portal" → /tecnico/{portal_token}                          │
 │                                                                           │
 │ Al cliente:                                                              │
-│ 📩 → CLIENTE: tecnico_asignado_cliente_v5                                │
+│ 📩 → CLIENTE: tecnico_asignado_cliente_v6                                │
 │   Body: cliente, técnico, equipo, horario, teléfono técnico              │
 │                                                                           │
 │ 📷 → CLIENTE: imagen tecnico.foto_perfil_url                             │
@@ -173,7 +173,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
    │ DB: estado=verificacion_pendiente                                    │
    │     verificacion_paso_token=uuid                                     │
    │                                                                       │
-   │ 📩 → CLIENTE: verificar_siguiente_paso_v1                            │
+   │ 📩 → CLIENTE: verificar_siguiente_paso_v2                            │
    │   Body: cliente, técnico, equipo, diagnóstico, acción propuesta      │
    │   Botón: "Aprobar paso" → /verificar-paso/{verificacion_paso_token}  │
    │                                                                       │
@@ -253,7 +253,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ POST /api/completar-servicio                                             │
 │ DB:  estado=en_verificacion                                              │
 │                                                                           │
-│ 📩 → CLIENTE: confirmar_servicio_v3                                      │
+│ 📩 → CLIENTE: confirmar_servicio_v4                                      │
 │   Body: cliente, técnico, equipo                                         │
 │   Botón: "Confirmar servicio" → /confirmar/{confirmacion_token}          │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -292,7 +292,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │ Idéntico a garantía. Mismo POST /api/solicitar.                          │
 │ DB: estado=pendiente_horario, horario_token, cliente_token               │
 │                                                                           │
-│ 📩 → CLIENTE: cliente_seleccion_horario_v1 (mismo template)              │
+│ 📩 → CLIENTE: cliente_seleccion_horario_v2 (mismo template)              │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
@@ -301,7 +301,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 3. NOTIFICAR TÉCNICOS                                                    │
-│ 📩 → TÉCNICO N: solicitud_particular_tecnico_v1                          │
+│ 📩 → TÉCNICO N: solicitud_particular_tecnico_v2                          │
 │   Body: nombre, equipo, problema, ubicacion, horario, pago_diagnostico   │
 │   Botón: "Aceptar" → /aceptar/{token_notif}                              │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -313,7 +313,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │ DB: estado=diagnostico_pendiente (NO 'asignada' como en garantía)        │
 │                                                                           │
 │ Al ganador:                                                              │
-│ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v3                       │
+│ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v4                       │
 │ Al cliente:                                                              │
 │ 📩 → CLIENTE: tecnico_asignado_particular_v1                             │
 │   Body: cliente, técnico, equipo, horario, tel, tarifa, anticipo         │
@@ -342,7 +342,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │                   token: uuid }                                          │
 │      pago_tecnico=costoTecnico                                           │
 │                                                                           │
-│ 📩 → CLIENTE: cotizacion_cliente_v1                                      │
+│ 📩 → CLIENTE: cotizacion_cliente_v2                                      │
 │   Body: cliente, técnico, equipo, diagnóstico, mano_obra (=0),           │
 │         repuestos (=0), total (=Total_Cliente)                           │
 │   Botón: "Aprobar cotización" → /cotizacion/{cotizacion.token}           │
@@ -476,7 +476,7 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 ### 1. Confirmación de horario inicial
 | Aspecto | Detalle |
 |---|---|
-| Plantilla | `cliente_seleccion_horario_v1` |
+| Plantilla | `cliente_seleccion_horario_v2` |
 | URL en botón | `/horario/{horario_token}` |
 | Página | `src/app/horario/[token]/page.tsx` + `HorarioSelector.tsx` |
 | API | `POST /api/confirmar-horario` |
@@ -486,7 +486,7 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 ### 2. Verificación de paso post-diagnóstico (GARANTÍA)
 | Aspecto | Detalle |
 |---|---|
-| Plantilla | `verificar_siguiente_paso_v1` |
+| Plantilla | `verificar_siguiente_paso_v2` |
 | URL en botón | `/verificar-paso/{verificacion_paso_token}` |
 | Página | `src/app/verificar-paso/[token]/page.tsx` + `VerificarPasoView.tsx` |
 | API | `POST /api/verificar-paso` |
@@ -497,7 +497,7 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 ### 3. Aprobación de cotización (PARTICULAR)
 | Aspecto | Detalle |
 |---|---|
-| Plantilla | `cotizacion_cliente_v1` |
+| Plantilla | `cotizacion_cliente_v2` |
 | URL en botón | `/cotizacion/{cotizacion.token}` (token dentro del JSONB) |
 | Página | `src/app/cotizacion/[token]/page.tsx` |
 | API | `POST /api/aprobar-cotizacion` |
@@ -508,7 +508,7 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 ### 4. Confirmación final del servicio (ambos flujos)
 | Aspecto | Detalle |
 |---|---|
-| Plantilla | `confirmar_servicio_v3` |
+| Plantilla | `confirmar_servicio_v4` |
 | URL en botón | `/confirmar/{confirmacion_token}` |
 | Página | `src/app/confirmar/[token]/page.tsx` |
 | API | `POST /api/confirmar-servicio` |
@@ -537,13 +537,13 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 ### Pre-asignación (común a ambos flujos)
 | Template | Disparo | Destino |
 |---|---|---|
-| `cliente_seleccion_horario_v1` | POST /api/solicitar | Cliente |
-| `recordatorio_horario_v1` | Cron 24h post-creación si no confirmó | Cliente |
-| `nueva_solicitud_v3` | notificarTecnicos (warranty) | Técnicos compatibles |
-| `solicitud_particular_tecnico_v1` | notificarTecnicos (particular) | Técnicos compatibles |
+| `cliente_seleccion_horario_v2` | POST /api/solicitar | Cliente |
+| `recordatorio_horario_v2` | Cron 24h post-creación si no confirmó | Cliente |
+| `nueva_solicitud_v4` | notificarTecnicos (warranty) | Técnicos compatibles |
+| `solicitud_particular_tecnico_v2` | notificarTecnicos (particular) | Técnicos compatibles |
 | `servicio_no_disponible_v3` | procesarAceptacion — perdedores | Técnicos perdedores |
-| `servicio_asignado_tecnico_v3` | procesarAceptacion — ganador | Técnico ganador |
-| `tecnico_asignado_cliente_v5` | procesarAceptacion (warranty) | Cliente |
+| `servicio_asignado_tecnico_v4` | procesarAceptacion — ganador | Técnico ganador |
+| `tecnico_asignado_cliente_v6` | procesarAceptacion (warranty) | Cliente |
 | `tecnico_asignado_particular_v1` | procesarAceptacion (particular) | Cliente |
 | `solicitud_particular_cliente_v1` | (legacy — verificar uso) | Cliente |
 | `registro_bienvenida_v3` | notificarRegistroTecnico | Técnico recién registrado |
@@ -551,9 +551,9 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 ### Post-diagnóstico
 | Template | Disparo | Destino |
 |---|---|---|
-| `verificar_siguiente_paso_v1` | enviarVerificacionPasoCliente (warranty) | Cliente |
-| `cotizacion_cliente_v1` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
-| `cotizacion_aprobada_tecnico_v1` | notificarCotizacionAprobada | Técnico |
+| `verificar_siguiente_paso_v2` | enviarVerificacionPasoCliente (warranty) | Cliente |
+| `cotizacion_cliente_v2` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
+| `cotizacion_aprobada_tecnico_v2` | notificarCotizacionAprobada | Técnico |
 | `esperando_repuesto_cliente_v1` | enviarEsperandoRepuestoCliente (post-aprobación cliente) | Cliente |
 | `repuesto_recibido_cliente_v1` | enviarRepuestoRecibidoCliente (admin marca recibido) | Cliente |
 | `finalizado_sin_reparacion_v1` | enviarFinalizadoSinReparacion (terminal) | Cliente |
@@ -561,7 +561,7 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 ### Final
 | Template | Disparo | Destino |
 |---|---|---|
-| `confirmar_servicio_v3` | POST /api/completar-servicio | Cliente |
+| `confirmar_servicio_v4` | POST /api/completar-servicio | Cliente |
 
 ### Texto libre (no plantilla)
 - Aceptación/rechazo de paso post-verificación → texto al técnico ("Cliente APROBÓ"/"Cliente RECHAZÓ")
@@ -610,8 +610,8 @@ HorarioSelector.tsx (webview cliente)
   3. notificarTecnicos(sol.id):
        - Find técnicos verificados en zona con la especialidad
        - Insert N filas en notificaciones_whatsapp (cada una con UUID token)
-       - Send `nueva_solicitud_v3` (warranty) o
-              `solicitud_particular_tecnico_v1` (particular)
+       - Send `nueva_solicitud_v4` (warranty) o
+              `solicitud_particular_tecnico_v2` (particular)
               en paralelo (Promise.allSettled)
        - Si notificados > 0: re-confirma estado='notificada'
   4. Si notificados == 0: insert en solicitud_eventos
@@ -680,18 +680,18 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 Workflow recomendado para QA con `BAIRD_TEST_PHONE_WHITELIST=57<tu-celular>`:
 
 1. **Crear solicitud particular** desde /solicitar con tu teléfono.
-2. Recibir `cliente_seleccion_horario_v1`. Click → /horario/{token}.
+2. Recibir `cliente_seleccion_horario_v2`. Click → /horario/{token}.
 3. Elegir horario, aceptar T&C, confirmar.
-4. (Como técnico) Recibir `solicitud_particular_tecnico_v1`. Click Aceptar.
+4. (Como técnico) Recibir `solicitud_particular_tecnico_v2`. Click Aceptar.
 5. Recibir `tecnico_asignado_particular_v1` + intentar fotos (probable que fallen).
 6. Abrir `/servicio/{cliente_token}` desde admin/solicitudes/[id]. Verificar que las fotos del técnico SE MUESTRAN ahí.
 7. (Como técnico) Abrir /tecnico/{portal_token}/diagnostico/{id}. Llenar diagnóstico, agregar productos necesarios + recomendados. Submit.
 8. Verificar que aparece en `/admin/cotizaciones-pendientes`. Fijar precios y tiempo.
-9. Recibir `cotizacion_cliente_v1` con desglose. Click → /cotizacion/{token}.
-10. Aprobar la cotización. Verificar que el técnico recibe `cotizacion_aprobada_tecnico_v1`.
+9. Recibir `cotizacion_cliente_v2` con desglose. Click → /cotizacion/{token}.
+10. Aprobar la cotización. Verificar que el técnico recibe `cotizacion_aprobada_tecnico_v2`.
 11. (Como técnico) Completar servicio en /tecnico/{token}/completar/{id}.
-12. Recibir `confirmar_servicio_v3`. Click → /confirmar/{token}. Calificar 10/10.
+12. Recibir `confirmar_servicio_v4`. Click → /confirmar/{token}. Calificar 10/10.
 
-Para garantía: igual pero `/admin/carga-masiva` o /solicitar con `es_garantia=true`. En el paso 8 admin solo fija tiempo (precio = 0). En paso 9 cliente recibe `verificar_siguiente_paso_v1` (no cotización).
+Para garantía: igual pero `/admin/carga-masiva` o /solicitar con `es_garantia=true`. En el paso 8 admin solo fija tiempo (precio = 0). En paso 9 cliente recibe `verificar_siguiente_paso_v2` (no cotización).
 
 Para self-service: en cualquier paso 2-9, abrir `/servicio/{cliente_token}` y cancelar/reagendar. Verificar que las notifs activas a técnicos se invalidan y que el técnico asignado (si hay) recibe el aviso.

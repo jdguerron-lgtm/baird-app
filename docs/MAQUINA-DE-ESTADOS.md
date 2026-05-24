@@ -17,28 +17,28 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 | **Customer pays upfront** | Nothing | 50% of diagnostic fee ($40,000 COP) |
 | **Diagnosis result** | Tech proceeds to repair immediately | Quote sent to customer for approval |
 | **Extra step** | None | Customer must approve/reject quote |
-| **WhatsApp templates** | `nueva_solicitud_v3`, `tecnico_asignado_cliente_v4` | `solicitud_particular_*`, `cotizacion_cliente_v1` |
+| **WhatsApp templates** | `nueva_solicitud_v4`, `tecnico_asignado_cliente_v6` | `solicitud_particular_*`, `cotizacion_cliente_v2` |
 
 ### WARRANTY Flow (es_garantia = true) — Customer-first scheduling (v2 2026-04-27)
 
 ```
 1. REQUEST        Customer form (or bulk Excel upload)
                   → Supabase insert (estado: pendiente_horario, horario_token: uuid)
-                  → WhatsApp cliente_seleccion_horario_v1 (CTA → /horario/{token})
+                  → WhatsApp cliente_seleccion_horario_v2 (CTA → /horario/{token})
                   → NO tech notification yet
 
 2. SCHEDULE       Customer opens /horario/{token}, picks 1 of 2 horarios
    CONFIRMATION   → Reads T&C + signs acceptance checkbox
                   → POST /api/confirmar-horario { token, opcion: 1|2 }
                   → estado: notificada, tyc_aceptados_at, tyc_version, horario_confirmado
-                  → notificarTecnicos() sends nueva_solicitud_v3 to matching techs
+                  → notificarTecnicos() sends nueva_solicitud_v4 to matching techs
                   → If timeout 24h+12h: state → sin_agendar (cron horario-recordatorio)
 
 3. ACCEPTANCE     Tech clicks "Aceptar" in WhatsApp
                   → GET /aceptar/{token} → atomic UPDATE (first wins)
                   → estado: asignada
-                  → WhatsApp servicio_asignado_tecnico_v3 to tech
-                  → WhatsApp tecnico_asignado_cliente_v5 to customer (T&C link)
+                  → WhatsApp servicio_asignado_tecnico_v4 to tech
+                  → WhatsApp tecnico_asignado_cliente_v6 to customer (T&C link)
 
 4. DIAGNOSIS      Tech opens /tecnico/{token}/diagnostico/{id}
                   → Oath modal (sworn statement + digital signature) → BLOCKING
@@ -64,7 +64,7 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → Uploads photos, checklist, digital signature
                   → GPS ping (fase: 'completado')
                   → POST /api/completar-servicio → estado: en_verificacion
-                  → WhatsApp confirmar_servicio_v3 to customer
+                  → WhatsApp confirmar_servicio_v4 to customer
 
 5b. GPS FOLLOWUP  Cron /api/cron/gps-followup runs every 10 min
                   → 30+ min after completion, checks last GPS ping vs customer location
@@ -82,13 +82,13 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → Supabase insert (estado: pendiente)
                   → WhatsApp solicitud_particular_cliente_v1 to customer
                     (includes diagnostic fee: $80,000 COP + 50% advance: $40,000 COP)
-                  → notificarTecnicos() sends solicitud_particular_tecnico_v1 to matching techs
+                  → notificarTecnicos() sends solicitud_particular_tecnico_v2 to matching techs
                   → estado: notificada
 
 2. ACCEPTANCE     Technician clicks "Aceptar" button in WhatsApp
                   → GET /aceptar/{token} → atomic UPDATE (first wins)
                   → estado: diagnostico_pendiente    ← DIFFERENT from warranty
-                  → WhatsApp servicio_asignado_tecnico_v3 to tech
+                  → WhatsApp servicio_asignado_tecnico_v4 to tech
                   → WhatsApp tecnico_asignado_particular_v1 to customer
                     (includes tech info + diagnostic fee + advance payment info)
 
@@ -97,14 +97,14 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → POST /api/diagnostico (non-warranty branch)
                   → Generates cotizacion with unique approval token (UUID)
                   → estado: cotizacion_enviada
-                  → enviarCotizacionCliente() sends cotizacion_cliente_v1 to customer
+                  → enviarCotizacionCliente() sends cotizacion_cliente_v2 to customer
                     (includes cost breakdown + "Aprobar" button linking to /cotizacion/{token})
 
 4. QUOTE          Customer clicks button → /cotizacion/{token}
    APPROVAL       → Sees: diagnosis, evidence photos, cost breakdown
                   → APPROVE: POST /api/aprobar-cotizacion {aprobado: true}
                     → estado: cotizacion_aprobada → en_proceso
-                    → WhatsApp cotizacion_aprobada_tecnico_v1 to tech
+                    → WhatsApp cotizacion_aprobada_tecnico_v2 to tech
                   → REJECT: POST /api/aprobar-cotizacion {aprobado: false, comentario}
                     → estado: cotizacion_rechazada
                     → WhatsApp rejection text to tech

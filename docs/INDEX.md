@@ -5,7 +5,7 @@
 > que corresponde y abre el doc específico**. Esto evita drift y
 > duplicación.
 >
-> **Última revisión: 2026-05-12.**
+> **Última revisión: 2026-05-23** (cutover a dominio `lineablanca.bairdservice.com`).
 
 ---
 
@@ -70,7 +70,12 @@
 |---|---|
 | [`docs/mejoras-futuras/`](mejoras-futuras/README.md) | Hub: inventario de proyectos en discusión + convenciones para agregar/promover/descartar. |
 | [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Sección admin con mapa de servicios geolocalizados (color por estado/técnico, filtros, panel detalle). |
-| [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a dominio propio bajo `bairdservice.com` (research SEO + diagnóstico del cutover fallido en SiteGround). |
+
+### Proyectos completados (registro histórico, no actualizar)
+
+| Subcarpeta | Iniciativa | Completado |
+|---|---|---|
+| [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a `lineablanca.bairdservice.com`. Runbook + rollback documentado. | 2026-05-23 |
 
 ### Documentación deprecated (no actualizar)
 

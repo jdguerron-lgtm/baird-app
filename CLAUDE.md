@@ -97,7 +97,9 @@ WHATSAPP_API_TOKEN                # Meta WhatsApp Business permanent token
 WHATSAPP_PHONE_ID                 # WhatsApp phone number ID (1148716061648720)
 WHATSAPP_WEBHOOK_VERIFY_TOKEN     # Webhook handshake token
 WHATSAPP_WEBHOOK_SECRET           # App Secret for HMAC verification
-NEXT_PUBLIC_APP_URL               # Base URL (https://baird-app.vercel.app)
+NEXT_PUBLIC_APP_URL               # Base URL (https://lineablanca.bairdservice.com)
+                                  # baird-app.vercel.app sigue vivo como alias del mismo deployment
+                                  # (red de seguridad post-cutover 2026-05-23 — ver docs/mejoras-futuras/migracion-dominio/runbook-cutover-2026-05-23.md)
 BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. "573134951164").
                                   # Si está definida, las primitivas WhatsApp omiten cualquier
                                   # envío a un número fuera de la lista. Útil en dev para no

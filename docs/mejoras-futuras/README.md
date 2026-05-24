@@ -7,7 +7,12 @@ Backlog de iniciativas en discusión que **aún no están implementadas**. Cada 
 | Iniciativa | Estado | Costo dev | Costo operativo proyectado |
 |---|---|---|---|
 | [Mapa admin de servicios](mapa-admin/README.md) | Idea validada — 5 decisiones pendientes | ~4-5 días MVP | $0/mes a la escala actual (free tier Google Maps) |
-| [Migración a dominio propio](migracion-dominio/README.md) | Diagnóstico + research hechos — decisión pendiente | ~1 día config | $0 (DNS) sobre hosting actual |
+
+## Proyectos completados (registro histórico)
+
+| Iniciativa | Completado | Notas |
+|---|---|---|
+| [Migración a dominio propio](migracion-dominio/README.md) | 2026-05-23 | Cutover ejecutado a `lineablanca.bairdservice.com`. Runbook + plan de rollback en `migracion-dominio/runbook-cutover-2026-05-23.md`. `baird-app.vercel.app` queda vivo como alias del mismo deployment. |
 
 ## Convenciones
 

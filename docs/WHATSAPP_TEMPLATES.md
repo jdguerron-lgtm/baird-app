@@ -1,7 +1,9 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-05-08.
+> Última actualización: 2026-05-23 (migración a dominio `lineablanca.bairdservice.com`).
+
+> 🆕 **Migración de dominio (2026-05-23):** las 10 plantillas con URLs en su contenido (botones o body) fueron re-subidas con versión incrementada (`_v1` → `_v2`, `_v3` → `_v4`, `_v5` → `_v6`) apuntando a `lineablanca.bairdservice.com`. Las 6 plantillas sin URLs siguen en su versión original. Ver `scripts/upload-templates-v2.mjs` (subscript usado en la migración) y `docs/mejoras-futuras/migracion-dominio/runbook-cutover-2026-05-23.md`. Las versiones viejas (`_v1`, `_v3`, `_v5` de las 10 migradas) siguen aprobadas en Meta pero **ya no se invocan desde el código** — borrarlas tras 1-2 semanas sin issues (respetando el cooldown de 4 semanas para reusar el nombre).
 
 > 🧭 **Ver también**:
 > - `docs/INDEX.md` — hub de navegación.
@@ -21,13 +23,15 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 
 | Lugar | Qué contiene |
 |---|---|
-| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 7 plantillas (customer-first y post-diagnóstico). |
+| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 16 plantillas. Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
 | Meta Business Manager → WhatsApp Manager → Message Templates | **Fuente de verdad operacional** — lo que Meta tiene aprobado y permite enviar. Toda plantilla ya enviada al menos una vez está aquí. |
 | `docs/WHATSAPP_TEMPLATES.md` (este archivo) | **Documentación humana** — catálogo, parámetros, propósito. |
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
 | `CLAUDE.md` | Resumen para agentes de IA. |
 
-**Estado de cobertura del script (2026-05-08):** las 15 plantillas en uso por el código ya están todas registradas en `scripts/upload-templates.mjs`. La única plantilla huérfana es `solicitud_particular_cliente_v1`, que existe en Meta pero no se invoca desde el código — está documentada como **DEPRECATED** abajo. No la borres durante 4 semanas mínimo (cooldown Meta).
+**Estado de cobertura del script (2026-05-23):** las 16 plantillas en uso por el código ya están todas registradas en `scripts/upload-templates.mjs`, todas en sus versiones vigentes (tras la migración del 2026-05-23 — ver banda informativa al inicio de este doc). Plantillas huérfanas/legacy en Meta que NO se invocan desde el código (NO borrar hasta cooldown de 4 semanas desde su deprecation):
+- `solicitud_particular_cliente_v1` — DEPRECATED hace tiempo
+- `cliente_seleccion_horario_v1`, `recordatorio_horario_v1`, `nueva_solicitud_v3`, `solicitud_particular_tecnico_v1`, `servicio_asignado_tecnico_v3`, `tecnico_asignado_cliente_v5`, `verificar_siguiente_paso_v1`, `cotizacion_cliente_v1`, `cotizacion_aprobada_tecnico_v1`, `confirmar_servicio_v3` — reemplazadas por sus versiones `_v2/_v4/_v6` el 2026-05-23 por la migración de dominio. Cooldown hasta ~2026-06-20 para borrar y reusar nombre (o simplemente dejarlas indefinidamente).
 
 ### Paso 2 — Actualizar la plantilla en su lugar canónico
 
@@ -73,7 +77,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Pre-asignación
 
-#### `cliente_seleccion_horario_v1`
+#### `cliente_seleccion_horario_v2`
 - **En script** ✅
 - **Disparo**: `POST /api/solicitar` (ambos flujos)
 - **Llamada**: `enviarSeleccionHorarioCliente(solicitudId)`
@@ -83,7 +87,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/horario/{horario_token}` — display "Confirmar horario"
 - **Propósito**: cliente confirma fecha + franja antes de notificar técnicos.
 
-#### `recordatorio_horario_v1`
+#### `recordatorio_horario_v2`
 - **En script** ✅
 - **Disparo**: cron `/api/cron/horario-recordatorio` (24h sin confirmar)
 - **Llamada**: `enviarRecordatorioHorario(solicitudId)`
@@ -92,9 +96,9 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/horario/{horario_token}` — display "Confirmar horario"
 - **Propósito**: empujar al cliente que aún no abrió el primer enlace.
 
-#### `nueva_solicitud_v3` **En script** ✅ (backfilled 2026-05-08)
+#### `nueva_solicitud_v4` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarTecnicos(solicitudId)` cuando `es_garantia=true`
-- **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v3', 'es', [...])`
+- **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'nueva_solicitud_v4', 'es', [...])`
 - **Destino**: técnico
 - **Body** (6 params): `nombre`, `equipo`, `problema`, `ubicacion`, `horario`, `pago`
   - `ubicacion` (`{{4}}`) = **dirección + zona + ciudad** (ej. `Calle 53 #24-18, Chapinero, Bogotá`). Se arma en `notificarTecnicos` con `[direccion, zona_servicio, ciudad_pueblo]` filtrando vacíos. La dirección exacta le permite al técnico evaluar distancia/acceso antes de aceptar. El texto de la plantilla no cambió — solo el valor del param.
@@ -102,18 +106,18 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: ofrecer servicio garantía a técnicos compatibles.
 - **Pendiente**: backfill a `upload-templates.mjs`.
 
-#### `solicitud_particular_tecnico_v1` **En script** ✅ (backfilled 2026-05-08)
+#### `solicitud_particular_tecnico_v2` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarTecnicos(solicitudId)` cuando `es_garantia=false`
-- **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v1', 'es', [...])`
+- **Llamada**: `enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v2', 'es', [...])`
 - **Destino**: técnico
 - **Body** (6 params): `nombre`, `equipo`, `problema`, `ubicacion`, `horario`, `pago_diagnostico`
-  - `ubicacion` (`{{4}}`) = **dirección + zona + ciudad** — mismo armado que `nueva_solicitud_v3` (ver arriba).
+  - `ubicacion` (`{{4}}`) = **dirección + zona + ciudad** — mismo armado que `nueva_solicitud_v4` (ver arriba).
 - **Botón URL**: `/aceptar/{token_notif}` — display "Aceptar"
 - **Propósito**: ofrecer servicio particular a técnicos compatibles.
 
 #### `solicitud_particular_cliente_v1` ⚠️ DEPRECATED
 - **NO está en `upload-templates.mjs`** y **NO se invoca desde el código**.
-- Plantilla huérfana en Meta. Antes del rediseño customer-first (v2 2026-04-27) probablemente confirmaba al cliente particular tras crear la solicitud — hoy ese rol lo cumple `cliente_seleccion_horario_v1` (compartida entre garantía y particular).
+- Plantilla huérfana en Meta. Antes del rediseño customer-first (v2 2026-04-27) probablemente confirmaba al cliente particular tras crear la solicitud — hoy ese rol lo cumple `cliente_seleccion_horario_v2` (compartida entre garantía y particular).
 - **No la borres** durante 4 semanas mínimo (cooldown Meta). Si quieres limpiarla, usa `--delete` y respeta el cooldown antes de reusar el nombre.
 
 ### Asignación
@@ -124,14 +128,14 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Body** (1 param): `nombre`
 - **Propósito**: avisar que el servicio ya fue tomado.
 
-#### `servicio_asignado_tecnico_v3` **En script** ✅ (backfilled 2026-05-08)
+#### `servicio_asignado_tecnico_v4` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `procesarAceptacion()` — ganador
 - **Destino**: técnico ganador
 - **Body** (6 params): `nombre`, `cliente`, `equipo`, `direccion`, `pago`, `telefono_cliente`
 - **Botón URL**: `/tecnico/{portal_token}` — display "Ver portal"
 - **Propósito**: confirmar asignación + datos del cliente al técnico.
 
-#### `tecnico_asignado_cliente_v5`
+#### `tecnico_asignado_cliente_v6`
 - **En script** ✅
 - **Disparo**: `procesarAceptacion()` cuando `es_garantia=true`
 - **Destino**: cliente
@@ -147,7 +151,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Post-diagnóstico (cliente decide)
 
-#### `verificar_siguiente_paso_v1`
+#### `verificar_siguiente_paso_v2`
 - **En script** ✅
 - **Disparo**: `enviarVerificacionPasoCliente(solicitudId)` (warranty post-diagnóstico, o post-pricing si esperar_repuesto)
 - **Destino**: cliente
@@ -155,7 +159,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/verificar-paso/{verificacion_paso_token}` — display "Aprobar paso"
 - **Propósito**: cliente aprueba/rechaza el siguiente paso del técnico (4 opciones: reparar, esperar_repuesto, no_reparable, negativa_cliente).
 
-#### `cotizacion_cliente_v1` **En script** ✅ (backfilled 2026-05-08)
+#### `cotizacion_cliente_v2` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `enviarCotizacionCliente(solicitudId)` (particular post-pricing admin)
 - **Destino**: cliente
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `diagnostico`, `mano_obra`, `repuestos`, `total`
@@ -165,7 +169,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Post-decisión cliente
 
-#### `cotizacion_aprobada_tecnico_v1` **En script** ✅ (backfilled 2026-05-08)
+#### `cotizacion_aprobada_tecnico_v2` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `notificarCotizacionAprobada(solicitudId)`
 - **Destino**: técnico
 - **Body** (4 params): `tecnico`, `cliente`, `equipo`, `total`
@@ -198,7 +202,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Final
 
-#### `confirmar_servicio_v3` **En script** ✅ (backfilled 2026-05-08)
+#### `confirmar_servicio_v4` **En script** ✅ (backfilled 2026-05-08)
 - **Disparo**: `POST /api/completar-servicio`
 - **Destino**: cliente
 - **Body** (3 params): `cliente`, `tecnico`, `equipo`
@@ -439,17 +443,18 @@ Cubren los gaps detectados al revisar el flujo de garantía (2026-05-08). Cada u
 
 ### Media prioridad (mejoran UX, no son bloqueantes)
 
-#### G. `tecnico_asignado_cliente_v6` con HEADER IMAGE
-**Gap**: las fotos del técnico (perfil + documento) se mandan como mensajes free-form `image` separados — fallan ~siempre por ventana 24h. La plantilla actual `_v5` es solo texto.
-**Solución**: nueva versión `_v6` con `HEADER` tipo `IMAGE` para incluir la foto en el mismo mensaje template. Requiere subir el media_id al endpoint de Meta primero.
-- Body params iguales que `_v5`. Header: `{ type: 'HEADER', format: 'IMAGE' }`.
+#### G. `tecnico_asignado_cliente_v7` con HEADER IMAGE
+**Gap**: las fotos del técnico (perfil + documento) se mandan como mensajes free-form `image` separados — fallan ~siempre por ventana 24h. La plantilla actual `_v6` es solo texto.
+**Solución**: nueva versión `_v7` con `HEADER` tipo `IMAGE` para incluir la foto en el mismo mensaje template. Requiere subir el media_id al endpoint de Meta primero.
+- Body params iguales que `_v6`. Header: `{ type: 'HEADER', format: 'IMAGE' }`.
 - Cuando se envía: `components: [{ type: 'header', parameters: [{ type: 'image', image: { link: foto_perfil_url } }] }, { type: 'body', ... }]`.
 - También agregar BUTTON URL al portal cliente.
-- Cuando Meta apruebe, deprecar `_v5` y mover invocaciones a `_v6`.
+- Cuando Meta apruebe, deprecar `_v6` y mover invocaciones a `_v7`.
+- **Nota**: el slot `_v6` fue tomado por la migración de dominio del 2026-05-23 (text-only con URL nueva), por eso el siguiente salto es `_v7`.
 
-#### H. `cotizacion_cliente_v2`
-**Gap**: post-admin-pricing-gate, ahora siempre se fija `tiempo_entrega` — pero la plantilla `_v1` no lo incluye. Hoy se omite del WhatsApp; el cliente lo ve en la página `/cotizacion/{token}`.
-**Solución**: nueva versión `_v2` con un parámetro extra:
+#### H. `cotizacion_cliente_v3`
+**Gap**: post-admin-pricing-gate, ahora siempre se fija `tiempo_entrega` — pero la plantilla `_v2` (la vigente tras la migración 2026-05-23) no lo incluye. Hoy se omite del WhatsApp; el cliente lo ve en la página `/cotizacion/{token}`.
+**Solución**: nueva versión `_v3` con un parámetro extra (el slot `_v2` está tomado por la migración de dominio):
 ```
 '... 🧾 Total: {{7}} COP\n⏱ Tiempo estimado: {{8}}\n\n...'
 ```
