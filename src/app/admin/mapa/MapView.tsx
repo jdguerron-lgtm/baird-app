@@ -9,8 +9,8 @@
  * Recibe ya filtradas las solicitudes del padre. No hace data fetching.
  */
 
-import { useEffect, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { useEffect, useMemo, useRef } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, useMap, LayersControl } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -78,37 +78,63 @@ function FlyToSelected({ solicitudes, selectedId }: { solicitudes: SolicitudPin[
   return null
 }
 
-export default function MapView({ solicitudes, colorMode, onSelect, selectedId }: MapViewProps) {
-  // Centro inicial: Bogotá (la mayor parte de la operación). Cuando hay datos,
-  // setBounds para englobar todos los pines.
-  const initialCenter: [number, number] = [4.6, -74.08]
-  const initialZoom = 11
-
-  const bounds = useMemo<L.LatLngBoundsExpression | undefined>(() => {
-    if (solicitudes.length === 0) return undefined
+/**
+ * Auto-fit a los pines la primera vez que llegan datos. El prop `bounds` del
+ * MapContainer no siempre aplica bien (race condition con el mounting). Este
+ * componente lo hace manualmente con map.fitBounds() — solo una vez.
+ */
+function FitToBoundsOnce({ solicitudes }: { solicitudes: SolicitudPin[] }) {
+  const map = useMap()
+  const didFitRef = useRef(false)
+  useEffect(() => {
+    if (didFitRef.current || solicitudes.length === 0) return
     const lats = solicitudes.map((s) => s.direccion_lat)
     const lngs = solicitudes.map((s) => s.direccion_lng)
-    return [
+    const bounds: L.LatLngBoundsExpression = [
       [Math.min(...lats), Math.min(...lngs)],
       [Math.max(...lats), Math.max(...lngs)],
     ]
-  }, [solicitudes])
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 })
+    didFitRef.current = true
+  }, [solicitudes, map])
+  return null
+}
+
+export default function MapView({ solicitudes, colorMode, onSelect, selectedId }: MapViewProps) {
+  // Centro inicial: Bogotá. Auto-fit se hace via FitToBoundsOnce cuando llegan los datos.
+  const initialCenter: [number, number] = [4.6, -74.08]
+  const initialZoom = 11
 
   return (
     <MapContainer
       center={initialCenter}
       zoom={initialZoom}
-      bounds={bounds}
-      boundsOptions={{ padding: [40, 40], maxZoom: 13 }}
       style={{ height: '100%', width: '100%' }}
       scrollWheelZoom
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <LayersControl position="topright">
+        <LayersControl.BaseLayer checked name="OSM Estándar">
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+        </LayersControl.BaseLayer>
+        <LayersControl.BaseLayer name="Claro (Carto Positron)">
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          />
+        </LayersControl.BaseLayer>
+        <LayersControl.BaseLayer name="Oscuro (Carto Dark Matter)">
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          />
+        </LayersControl.BaseLayer>
+      </LayersControl>
 
-      <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
+      {/* Clustering: radio chico (30px) + desactivado desde zoom 12 (city level) */}
+      <MarkerClusterGroup chunkedLoading maxClusterRadius={30} disableClusteringAtZoom={12}>
         {solicitudes.map((s) => {
           const color =
             colorMode === 'estado'
@@ -141,6 +167,7 @@ export default function MapView({ solicitudes, colorMode, onSelect, selectedId }
         })}
       </MarkerClusterGroup>
 
+      <FitToBoundsOnce solicitudes={solicitudes} />
       <FlyToSelected solicitudes={solicitudes} selectedId={selectedId} />
     </MapContainer>
   )
