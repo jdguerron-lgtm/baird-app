@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
           .single()
 
         if (tec?.whatsapp) {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
           const nombreTec = tec.nombre_completo.split(' ')[0]
           const equipo = `${updated.tipo_equipo} ${updated.marca_equipo}`
           const portalUrl = tec.portal_token

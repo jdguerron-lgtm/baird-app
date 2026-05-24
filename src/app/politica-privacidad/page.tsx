@@ -109,7 +109,7 @@ export default function PoliticaPrivacidadPage() {
           </p>
           <ul className="mt-2 list-none text-gray-700 space-y-1">
             <li><strong>Correo:</strong> soporte@bairdservice.com</li>
-            <li><strong>Web:</strong> https://baird-app.vercel.app</li>
+            <li><strong>Web:</strong> https://lineablanca.bairdservice.com</li>
           </ul>
         </section>
 

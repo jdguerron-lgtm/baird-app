@@ -5,7 +5,7 @@ import { verificarAdmin } from '@/lib/auth/admin'
 
 export const maxDuration = 60
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://baird-app.vercel.app'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
 
 type Row = Record<string, unknown>
 

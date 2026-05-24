@@ -313,7 +313,7 @@ export interface NotifyResult {
 }
 
 export async function notificarTecnicos(solicitudId: string): Promise<NotifyResult> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://baird.app'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
 
   // 1. Obtener datos de la solicitud
   const { data: sol, error: solErr } = await supabase
@@ -1392,7 +1392,7 @@ export async function procesarCancelacionCliente(
   const clienteNombre = sol.cliente_nombre.split(' ')[0]
   await enviarMensajeTexto(
     sol.cliente_telefono,
-    `Hola ${clienteNombre}, hemos cancelado tu solicitud de ${equipo}. Si necesitas reagendarla más adelante, puedes crear una nueva solicitud en https://baird-app.vercel.app/solicitar 🔧`,
+    `Hola ${clienteNombre}, hemos cancelado tu solicitud de ${equipo}. Si necesitas reagendarla más adelante, puedes crear una nueva solicitud en ${process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'}/solicitar 🔧`,
   ).catch(err => console.error('[procesarCancelacionCliente] error notificando cliente:', err))
 
   // 4. Notificar al técnico asignado (si lo hay)

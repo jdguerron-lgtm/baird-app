@@ -1,15 +1,21 @@
 /**
- * Upload WhatsApp message templates to Meta for approval.
+ * Upload WhatsApp templates v2 — domain migration to lineablanca.bairdservice.com.
+ *
+ * Solo contiene las 10 templates que tienen URLs (botones o body text).
+ * Las otras 6 templates (sin URLs) NO necesitan re-upload — siguen funcionando.
+ *
+ * Cada template se sube con número de versión incrementado:
+ *   _v1 → _v2,  _v3 → _v4,  _v5 → _v6
  *
  * Usage:
- *   node --env-file=.env.local scripts/upload-templates.mjs              # upload all (skip existing)
- *   node --env-file=.env.local scripts/upload-templates.mjs <name>       # upload one
- *   node --env-file=.env.local scripts/upload-templates.mjs --check      # list current templates
- *   node --env-file=.env.local scripts/upload-templates.mjs --delete <name>
+ *   node --env-file=.env.local scripts/upload-templates-v2.mjs           # upload all 10
+ *   node --env-file=.env.local scripts/upload-templates-v2.mjs <name>    # upload one
+ *   node --env-file=.env.local scripts/upload-templates-v2.mjs --check   # list current templates
  *
- * Requires:
- *   WHATSAPP_API_TOKEN env var with `whatsapp_business_management` permission.
- *   WABA_ID env var (defaults to Baird Service WABA: 2354953275016882).
+ * Después de subir:
+ *   - Esperar 1-24h por aprobación Meta
+ *   - Cuando todas APPROVED, actualizar whatsapp.service.ts para llamar los nuevos nombres
+ *   - Eventualmente borrar las _v1/_v3/_v5 viejas (esperar 1 semana sin issues)
  */
 
 const WABA_ID = process.env.WABA_ID || '2354953275016882'
@@ -23,9 +29,9 @@ if (!TOKEN) {
 }
 
 const TEMPLATES = [
-  // 1. Cliente elige horario (paso 1 del nuevo flujo customer-first)
+  // 1. Cliente elige horario — _v1 → _v2
   {
-    name: 'cliente_seleccion_horario_v1',
+    name: 'cliente_seleccion_horario_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -62,9 +68,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 2. Recordatorio si cliente no confirmó horario tras 24h
+  // 2. Recordatorio horario — _v1 → _v2
   {
-    name: 'recordatorio_horario_v1',
+    name: 'recordatorio_horario_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -90,9 +96,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 3. Cliente recibe datos del técnico asignado (reemplaza v4, agrega link T&C)
+  // 3. Técnico asignado cliente — _v5 → _v6 (body contiene URL /terminos)
   {
-    name: 'tecnico_asignado_cliente_v5',
+    name: 'tecnico_asignado_cliente_v6',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -118,52 +124,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 4. Diagnóstico completado, esperando repuesto (incluye SKU)
+  // 4. Verificar siguiente paso (post-diagnóstico garantía) — _v1 → _v2
   {
-    name: 'esperando_repuesto_cliente_v1',
-    category: 'UTILITY',
-    language: 'es',
-    components: [
-      {
-        type: 'BODY',
-        text:
-          'Hola {{1}}, el técnico {{2}} terminó el diagnóstico de tu {{3}}.\n\n' +
-          '🔧 Se requiere repuesto:\n' +
-          '• SKU: {{4}}\n' +
-          '• Descripción: {{5}}\n\n' +
-          '⏱️ Tiempo estimado de llegada: {{6}}\n\n' +
-          'Te avisaremos por WhatsApp en cuanto esté disponible para reagendar.',
-        example: {
-          body_text: [
-            ['María', 'Pedro Gómez', 'Lavadora LG', 'WM-PCB-7421', 'Tarjeta electrónica de control', '5 días hábiles'],
-          ],
-        },
-      },
-      { type: 'FOOTER', text: 'Baird Service' },
-    ],
-  },
-
-  // 5. Repuesto disponible — reanudar flujo
-  {
-    name: 'repuesto_recibido_cliente_v1',
-    category: 'UTILITY',
-    language: 'es',
-    components: [
-      {
-        type: 'BODY',
-        text:
-          '¡Buenas noticias {{1}}! 📦\n\n' +
-          'El repuesto para tu {{2}} ya llegó. El técnico {{3}} se contactará ' +
-          'pronto para reagendar la visita y completar la reparación.',
-        example: { body_text: [['María', 'Lavadora LG', 'Pedro Gómez']] },
-      },
-      { type: 'FOOTER', text: 'Baird Service' },
-    ],
-  },
-
-  // 7. Verificación del siguiente paso por el cliente (post-diagnóstico, garantía)
-  {
-    name: 'verificar_siguiente_paso_v1',
+    name: 'verificar_siguiente_paso_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -200,42 +163,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 6. Equipo no reparable (terminal)
+  // 5. Nueva solicitud garantía → técnico — _v3 → _v4
   {
-    name: 'finalizado_sin_reparacion_v1',
-    category: 'UTILITY',
-    language: 'es',
-    components: [
-      {
-        type: 'BODY',
-        text:
-          'Hola {{1}}, lamentamos informarte que tu {{2}} no es reparable.\n\n' +
-          'Motivo técnico: {{3}}\n\n' +
-          'El técnico {{4}} dejó tu equipo en las mismas condiciones. ' +
-          'Quedamos atentos a cualquier inquietud.\n\n' +
-          'Gracias por confiar en nosotros.',
-        example: {
-          body_text: [
-            ['María', 'Lavadora LG', 'Daño irreparable en estructura interna del tambor', 'Pedro Gómez'],
-          ],
-        },
-      },
-      { type: 'FOOTER', text: 'Baird Service' },
-    ],
-  },
-
-  // ─────────────────────────────────────────────────────────────────────
-  // BACKFILL 2026-05-08 — plantillas que ya estaban aprobadas en Meta
-  // pero no estaban registradas como código aquí. Las definiciones reflejan
-  // el contrato que ya consume `whatsapp.service.ts` y los endpoints del
-  // proyecto. Si Meta tiene una versión ligeramente distinta de body, esta
-  // se acepta como nueva versión cuando se sube con el mismo nombre.
-  // ─────────────────────────────────────────────────────────────────────
-
-  // 7. Notificar a técnicos garantía — oferta inicial
-  // Llamado por: notificarTecnicos() cuando es_garantia=true
-  {
-    name: 'nueva_solicitud_v3',
+    name: 'nueva_solicitud_v4',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -279,28 +209,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 8. Notificar técnico que llegó tarde a aceptar
-  // Llamado por: procesarAceptacion() — perdedores
+  // 6. Servicio asignado al técnico ganador — _v3 → _v4
   {
-    name: 'servicio_no_disponible_v3',
-    category: 'UTILITY',
-    language: 'es',
-    components: [
-      {
-        type: 'BODY',
-        text:
-          'Hola {{1}}, otro técnico aceptó esta solicitud antes que tú. ' +
-          'Te avisaremos por WhatsApp cuando llegue una nueva oportunidad en tu zona. ¡Suerte la próxima!',
-        example: { body_text: [['Carlos']] },
-      },
-      { type: 'FOOTER', text: 'Baird Service' },
-    ],
-  },
-
-  // 9. Confirmar asignación al técnico ganador
-  // Llamado por: procesarAceptacion() — ganador
-  {
-    name: 'servicio_asignado_tecnico_v3',
+    name: 'servicio_asignado_tecnico_v4',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -344,10 +255,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 10. Notificar a técnicos particular — oferta inicial
-  // Llamado por: notificarTecnicos() cuando es_garantia=false
+  // 7. Solicitud particular → técnico — _v1 → _v2
   {
-    name: 'solicitud_particular_tecnico_v1',
+    name: 'solicitud_particular_tecnico_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -391,49 +301,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 11. Confirmar al cliente que tiene técnico asignado (particular)
-  // Llamado por: procesarAceptacion() cuando es_garantia=false
+  // 8. Cotización al cliente (particular) — _v1 → _v2
   {
-    name: 'tecnico_asignado_particular_v1',
-    category: 'UTILITY',
-    language: 'es',
-    components: [
-      {
-        type: 'HEADER',
-        format: 'TEXT',
-        text: 'Tu técnico Baird Service',
-      },
-      {
-        type: 'BODY',
-        text:
-          'Hola {{1}}, ya tienes técnico asignado:\n\n' +
-          '👨‍🔧 Técnico: {{2}}\n' +
-          '🔧 Equipo: {{3}}\n' +
-          '🕐 Horario: {{4}}\n' +
-          '📞 Contacto: {{5}}\n\n' +
-          '💰 Tarifa diagnóstico: {{6}} COP\n' +
-          '💵 Anticipo (50%): {{7}} COP\n\n' +
-          'Tu técnico llegará en el horario acordado. Tras el diagnóstico recibirás la cotización para aprobar antes de cualquier reparación. Nunca pagues en efectivo al técnico — todo se factura via Baird Service.',
-        example: {
-          body_text: [[
-            'Juan',
-            'Carlos Pérez',
-            'Nevera LG',
-            'martes 7 de mayo · 2pm-5pm',
-            '+573001234567',
-            '80,000',
-            '40,000',
-          ]],
-        },
-      },
-      { type: 'FOOTER', text: 'Baird Service' },
-    ],
-  },
-
-  // 12. Cotización al cliente para aprobar (particular)
-  // Llamado por: enviarCotizacionCliente() — POST admin pricing
-  {
-    name: 'cotizacion_cliente_v1',
+    name: 'cotizacion_cliente_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -477,10 +347,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 13. Notificar técnico que cliente aprobó cotización (particular)
-  // Llamado por: notificarCotizacionAprobada()
+  // 9. Cotización aprobada → técnico — _v1 → _v2
   {
-    name: 'cotizacion_aprobada_tecnico_v1',
+    name: 'cotizacion_aprobada_tecnico_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -506,10 +375,9 @@ const TEMPLATES = [
     ],
   },
 
-  // 14. Pedir confirmación al cliente tras completar el servicio
-  // Llamado por: POST /api/completar-servicio
+  // 10. Confirmar servicio post-completar — _v3 → _v4
   {
-    name: 'confirmar_servicio_v3',
+    name: 'confirmar_servicio_v4',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -536,33 +404,6 @@ const TEMPLATES = [
           },
         ],
       },
-    ],
-  },
-
-  // 15. Bienvenida al técnico recién registrado
-  // Llamado por: notificarRegistroTecnico()
-  {
-    name: 'registro_bienvenida_v3',
-    category: 'UTILITY',
-    language: 'es',
-    components: [
-      {
-        type: 'HEADER',
-        format: 'TEXT',
-        text: 'Bienvenido a Baird Service',
-      },
-      {
-        type: 'BODY',
-        text:
-          '👋 Hola {{1}}, gracias por registrarte como técnico en Baird Service.\n\n' +
-          '📍 Ciudad: {{2}}\n' +
-          '🔧 Especialidad: {{3}}\n\n' +
-          'Tu cuenta está pendiente de verificación por el equipo de Baird Service. ' +
-          'Una vez aprobada, comenzarás a recibir solicitudes de servicio en tu zona. ' +
-          'Te avisaremos por WhatsApp cuando estés activo/a.',
-        example: { body_text: [['Carlos', 'Bogotá', 'Lavadoras']] },
-      },
-      { type: 'FOOTER', text: 'Baird Service' },
     ],
   },
 ]
@@ -598,37 +439,22 @@ async function uploadOne(tpl) {
   return true
 }
 
-async function deleteOne(name) {
-  const res = await fetch(
-    `${API_BASE}/${WABA_ID}/message_templates?name=${encodeURIComponent(name)}`,
-    {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    }
-  )
-  const body = await res.json()
-  console.log(`Delete ${name}:`, JSON.stringify(body))
-}
-
 async function main() {
   const args = process.argv.slice(2)
 
   if (args[0] === '--check') {
     const existing = await listExisting()
-    console.log(`📋 ${existing.length} templates currently in Meta:\n`)
-    for (const t of existing.sort((a, b) => a.name.localeCompare(b.name))) {
+    const v2names = new Set(TEMPLATES.map(t => t.name))
+    const relevant = existing.filter(e => v2names.has(e.name))
+    console.log(`📋 Estado de las ${TEMPLATES.length} templates v_next:\n`)
+    for (const t of relevant.sort((a, b) => a.name.localeCompare(b.name))) {
       const icon = t.status === 'APPROVED' ? '✅' : t.status === 'PENDING' ? '⏳' : '❌'
       console.log(`  ${icon} ${t.name.padEnd(45)} ${t.status}`)
     }
-    return
-  }
-
-  if (args[0] === '--delete') {
-    if (!args[1]) {
-      console.error('Provide template name: --delete <name>')
-      process.exit(1)
+    const missing = TEMPLATES.filter(t => !relevant.find(r => r.name === t.name))
+    if (missing.length) {
+      console.log(`\n⚠️  Aún no subidas: ${missing.map(m => m.name).join(', ')}`)
     }
-    await deleteOne(args[1])
     return
   }
 
@@ -640,7 +466,8 @@ async function main() {
     process.exit(1)
   }
 
-  console.log(`📤 Uploading ${toUpload.length} template(s) to WABA ${WABA_ID}...\n`)
+  console.log(`📤 Uploading ${toUpload.length} template(s) v_next to WABA ${WABA_ID}...`)
+  console.log(`   APP_URL = ${APP_URL}\n`)
 
   const existing = await listExisting()
   const existingNames = new Set(existing.map(e => e.name))
@@ -656,6 +483,7 @@ async function main() {
   }
 
   console.log('\n✨ Done. Run with --check to monitor approval status.')
+  console.log('   Cuando todas estén APPROVED, actualizar whatsapp.service.ts para llamar los nuevos nombres.')
 }
 
 main().catch(err => {
