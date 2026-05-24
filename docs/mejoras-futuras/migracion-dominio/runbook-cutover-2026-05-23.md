@@ -11,20 +11,34 @@
 
 ---
 
-## Estado al iniciar (checkpoint 2026-05-23)
+## Estado final del cutover (2026-05-23 ~22h COL)
 
-| Paso | Estado | Reversible? |
+| Paso | Estado | Notas |
 |---|---|---|
-| 1. Vercel: `lineablanca` → Production/main | ✅ Hecho | Sí, Edit → Preview → test |
-| 2. CNAME exacto capturado: `85e801567623d44c.vercel-dns-017.com.` | ✅ Hecho | N/A |
-| 3. SiteGround: borrar A `34.174.251.210` + crear CNAME | ⏳ Pendiente | Sí, ver §3 |
-| 4. Verificar propagación DNS + SSL Vercel | ⏳ Pendiente | N/A |
-| 5. Smoke test del app sirviendo desde lineablanca | ⏳ Pendiente | N/A |
-| 6. Env var `NEXT_PUBLIC_APP_URL` en Production | ⏳ Pendiente | Sí, ver §6 |
-| 7. Fix hardcoded URLs en código + commit + deploy | ⏳ Pendiente | Sí, ver §7 |
-| 8. Re-subir 16 templates Meta con URLs nuevas | ⏳ Pendiente | Sí, ver §8 |
-| 9. Cambiar webhook Meta al nuevo dominio | ⏳ Pendiente | Sí, ver §9 — el más crítico |
-| 10. Verificar Supabase Auth redirect URLs | ⏳ Pendiente | Aditivo, sin riesgo |
+| 1. Vercel: `lineablanca` → Production/main | ✅ | |
+| 2. CNAME exacto capturado: `85e801567623d44c.vercel-dns-017.com.` | ✅ | |
+| 3. SiteGround: borrar A `34.174.251.210` + crear CNAME (TTL 5min) | ✅ | También se borró el subdomain hosted (Camino A) |
+| 4. Verificar propagación DNS + SSL Vercel | ✅ | DNS público OK desde Google/Cloudflare/Quad9; SSL emitido por Vercel (Let's Encrypt R12) |
+| 5. Smoke test del app sirviendo desde lineablanca | ✅ | `/`, `/solicitar`, `/terminos`, `/api/whatsapp/webhook` todos 200/403-correcto |
+| 6. Env var `NEXT_PUBLIC_APP_URL` en Production | ✅ | Creada como scope "Production and Preview" |
+| 7. Fix hardcoded URLs en código + commit + deploy | ✅ | commit `002ed23` deployed |
+| 8. Re-subir 10 templates Meta con URLs nuevas | ✅ | Las 10 APPROVED por Meta en minutos |
+| 8b. Swap nombres `_v2/_v4/_v6` en código + deploy | ✅ | commit `ca4b2b6` deployed |
+| 9. Cambiar webhook Meta al nuevo dominio | ⏭️ DIFERIDO | Innecesario: ambos dominios sirven el MISMO deployment (etag idéntico verificado), webhook procesa eventos idénticamente. Cambiar es cosmético. |
+| 10. Verificar Supabase Auth redirect URLs | ✅ | Hoy NO usa redirect URLs (Site URL=localhost:3000, lista vacía). Sin acción requerida. |
+
+## Validaciones cruzadas finales
+
+```
+[1] App root lineablanca           → HTTP 200 ✅
+[2] /solicitar (form público)      → HTTP 200, 56KB, form ok ✅
+[3] /terminos (URL en template v6) → HTTP 200, 40KB ✅
+[4] /api/whatsapp/webhook ambos    → 403 (validación funciona) ✅
+[5] Mismo deployment ambos dominios → etag = 5712349... en ambos ✅
+[6] 10 templates v_next            → todas APPROVED ✅
+```
+
+Old runbook starting state:
 
 ---
 
