@@ -56,11 +56,20 @@ function normalizar(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
-/** Default: hoy + 7 días en formato YYYY-MM-DD. */
+/**
+ * Default: hoy + 7 días en formato YYYY-MM-DD (en TZ local, no UTC).
+ * toISOString() convertiría a UTC, lo que en Bogotá (UTC-5) después de 7pm
+ * mostraría "mañana" como inicio — usamos métodos locales para evitarlo.
+ */
 function defaultRangoFechas(): { desde: string; hasta: string } {
   const hoy = new Date()
-  const en7Dias = new Date(hoy.getTime() + 7 * 24 * 60 * 60 * 1000)
-  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  const en7Dias = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 7)
+  const fmt = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${dd}`
+  }
   return { desde: fmt(hoy), hasta: fmt(en7Dias) }
 }
 
