@@ -24,7 +24,7 @@
 | 7. Fix hardcoded URLs en código + commit + deploy | ✅ | commit `002ed23` deployed |
 | 8. Re-subir 10 templates Meta con URLs nuevas | ✅ | Las 10 APPROVED por Meta en minutos |
 | 8b. Swap nombres `_v2/_v4/_v6` en código + deploy | ✅ | commit `ca4b2b6` deployed |
-| 9. Cambiar webhook Meta al nuevo dominio | ⏭️ DIFERIDO | Innecesario: ambos dominios sirven el MISMO deployment (etag idéntico verificado), webhook procesa eventos idénticamente. Cambiar es cosmético. |
+| 9. Cambiar webhook Meta al nuevo dominio | ⏭️ DIFERIDO INDEFINIDAMENTE (decisión 2026-05-23) | Ambos dominios sirven el MISMO deployment (etag idéntico verificado), webhook procesa eventos idénticamente. Cambiar es cosmético + riesgoso (perder eventos durante switch). **Trigger para hacerlo**: cuando se decida borrar el alias `baird-app.vercel.app` o se quiera limpieza total. Pasos en Meta for Developers → app Baird Service → WhatsApp → Configuration → Webhook → Edit Callback URL → `https://lineablanca.bairdservice.com/api/whatsapp/webhook` → Verify and save. |
 | 10. Verificar Supabase Auth redirect URLs | ✅ | Hoy NO usa redirect URLs (Site URL=localhost:3000, lista vacía). Sin acción requerida. |
 
 ## Validaciones cruzadas finales
