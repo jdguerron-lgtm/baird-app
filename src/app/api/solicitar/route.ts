@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
+import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
 import crypto from 'crypto'
 
@@ -79,6 +80,17 @@ export async function POST(req: NextRequest) {
     } catch (waErr) {
       console.error('Error enviando WhatsApp inicial:', waErr)
     }
+
+    // Geocoding fire-and-forget — after() corre tras enviar la respuesta al cliente.
+    // No bloquea el response; si falla solo loguea (la solicitud queda sin coords y
+    // el backfill o la próxima edición admin lo intentará de nuevo).
+    after(async () => {
+      try {
+        await geocodificarYGuardar(solicitud.id)
+      } catch (err) {
+        console.error(`[solicitar] geocoding falló para solicitud ${solicitud.id}:`, err)
+      }
+    })
 
     return NextResponse.json({
       success: true,

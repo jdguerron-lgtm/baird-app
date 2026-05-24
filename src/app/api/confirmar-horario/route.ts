@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { notificarTecnicos } from '@/lib/services/whatsapp.service'
+import { parsearFechaVisita } from '@/lib/utils/fecha-visita'
 import { TYC_VERSION } from '@/types/solicitud'
 
 // Permitir hasta 60s — notificarTecnicos puede tardar varios segundos por técnico
@@ -49,12 +50,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'La solicitud ya no está esperando confirmación de horario' }, { status: 400 })
     }
 
+    // Parsear fecha de visita estructurada (null si no se puede).
+    // Sirve al mapa admin para filtrar por día.
+    const fechaVisitaAt = parsearFechaVisita(horarioElegido)
+
     // 2. UPDATE atómico — solo confirma si aún no se ha confirmado
     const { data: updated, error: updateErr } = await supabase
       .from('solicitudes_servicio')
       .update({
         horario_confirmado: horarioElegido,
         horario_confirmado_at: new Date().toISOString(),
+        fecha_visita_at: fechaVisitaAt,
         estado: 'notificada',
         notificados_at: new Date().toISOString(),
         tyc_aceptados_at: new Date().toISOString(),

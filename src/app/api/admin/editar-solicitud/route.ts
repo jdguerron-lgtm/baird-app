@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
+import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { TIPOS_EQUIPO } from '@/types/solicitud'
 
 export const maxDuration = 30
@@ -129,6 +130,19 @@ export async function POST(req: NextRequest) {
       if (auditErr) console.error('[editar-solicitud] audit falló:', auditErr)
     } catch (err) {
       console.error('[editar-solicitud] audit threw:', err)
+    }
+
+    // Si cambió direccion o ciudad_pueblo → re-geocodificar fire-and-forget.
+    // No bloquea la respuesta del admin; el mapa verá las nuevas coords en el
+    // próximo refresh (segundos después).
+    if (diff.direccion || diff.ciudad_pueblo) {
+      after(async () => {
+        try {
+          await geocodificarYGuardar(id)
+        } catch (err) {
+          console.error(`[editar-solicitud] re-geocoding falló para ${id}:`, err)
+        }
+      })
     }
 
     return NextResponse.json({ success: true, cambios: diff })
