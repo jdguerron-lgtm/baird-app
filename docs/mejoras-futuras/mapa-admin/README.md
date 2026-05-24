@@ -1,6 +1,34 @@
 # Mapa admin de servicios
 
-**Estado:** Idea validada — 5 decisiones pendientes antes de empezar.
+**Estado: ✅ COMPLETADO el 2026-05-23.** Implementado en `/admin/mapa`. Esta carpeta queda como registro histórico del descubrimiento y decisiones tomadas.
+
+> 🆕 **Para entender qué se implementó**: ver `src/app/admin/mapa/page.tsx` + `MapView.tsx`, `src/lib/services/geocoding.service.ts`, `scripts/backfill-geocoding.mjs`, `supabase/migrations/20260523_geocoding_y_fecha_visita.sql`. Commit principal: `dcfbf2d`. Mejoras UI: `80b4819`. Fix TZ: `6d4dcb5`.
+>
+> **Diferencias vs el plan original (las 5 decisiones tomadas):**
+> 1. Geocoding: ✅ Google Maps API (como recomendaba)
+> 2. Fallback aproximadas: ✅ centro de ciudad + badge visual (20+ ciudades CO mapeadas)
+> 3. Fecha "día de reparación": ✅ `fecha_visita_at` parseado desde `horario_confirmado` al confirmar — default UI = "esta semana" (hoy +7d)
+> 4. Tile look: ✅ OSM Estándar default + Carto Positron (claro) + Carto Dark Matter (oscuro) — layer switcher en el mapa
+> 5. GPS técnicos en vivo: ⏭️ diferido a Fase 2 (sigue pendiente)
+
+**Bonus implementado más allá del plan original:**
+- Leyenda flotante con conteo por estado/técnico
+- Search box (cliente, dirección, equipo) — case + acento insensitive
+- Refresh button sin perder filtros
+- Auto-fit a bounds al cargar
+- Cluster fix: radio 30 + disabled desde zoom 12
+
+**Pendientes (Fase 2 / backlog):**
+- GPS técnicos en vivo (datos ya existen en `gps_pings`)
+- Heatmap de demanda por zona
+- Polígono de zona de servicio por técnico
+- Ruta sugerida técnico → servicio
+- Restringir Google API key a SOLO Geocoding (hoy: Ninguno application restriction, 33 APIs allowed — billing alerts $10/$50/$100 mitigan)
+
+---
+
+## Resumen del descubrimiento (histórico)
+
 **Conversación de descubrimiento:** sesión 2026-05-23 (Claude Code).
 
 ## Concepto

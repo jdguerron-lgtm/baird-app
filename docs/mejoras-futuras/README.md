@@ -4,15 +4,14 @@ Backlog de iniciativas en discusión que **aún no están implementadas**. Cada 
 
 ## Inventario actual
 
-| Iniciativa | Estado | Costo dev | Costo operativo proyectado |
-|---|---|---|---|
-| [Mapa admin de servicios](mapa-admin/README.md) | Idea validada — 5 decisiones pendientes | ~4-5 días MVP | $0/mes a la escala actual (free tier Google Maps) |
+*(vacío — todas las iniciativas activas se completaron)*
 
 ## Proyectos completados (registro histórico)
 
 | Iniciativa | Completado | Notas |
 |---|---|---|
 | [Migración a dominio propio](migracion-dominio/README.md) | 2026-05-23 | Cutover ejecutado a `lineablanca.bairdservice.com`. Runbook + plan de rollback en `migracion-dominio/runbook-cutover-2026-05-23.md`. `baird-app.vercel.app` queda vivo como alias del mismo deployment. |
+| [Mapa admin de servicios](mapa-admin/README.md) | 2026-05-23 | Implementado en `/admin/mapa`. Leaflet + OSM + clusters + 9 mejoras UI. Pipeline geocoding Google Maps en `/api/solicitar` y `editar-solicitud`. Fase 2 (GPS técnicos en vivo, heatmap, rutas) diferida. |
 
 ## Convenciones
 

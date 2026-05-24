@@ -69,13 +69,15 @@
 | Subcarpeta | Iniciativa |
 |---|---|
 | [`docs/mejoras-futuras/`](mejoras-futuras/README.md) | Hub: inventario de proyectos en discusión + convenciones para agregar/promover/descartar. |
-| [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Sección admin con mapa de servicios geolocalizados (color por estado/técnico, filtros, panel detalle). |
+
+*(no hay proyectos activos en este momento)*
 
 ### Proyectos completados (registro histórico, no actualizar)
 
 | Subcarpeta | Iniciativa | Completado |
 |---|---|---|
 | [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a `lineablanca.bairdservice.com`. Runbook + rollback documentado. | 2026-05-23 |
+| [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Mapa admin de servicios geolocalizados en `/admin/mapa`. Pipeline geocoding + 9 mejoras UI. Fase 2 (GPS en vivo, heatmap, rutas) diferida. | 2026-05-23 |
 
 ### Documentación deprecated (no actualizar)
 
