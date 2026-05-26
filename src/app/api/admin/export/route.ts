@@ -2,10 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
+import { CODIGOS_FALLA, type CodigoFalla } from '@/lib/constants/codigos-falla'
 
 export const maxDuration = 60
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
+
+// Lookup canónico de complejidad por número de falla.
+// La complejidad oficial vive en CODIGOS_FALLA (catálogo MABE),
+// no en la percepción que el técnico declara en triaje_resultado.
+const FALLA_POR_CODIGO: Map<number, CodigoFalla> = new Map(
+  CODIGOS_FALLA.map((f) => [f.codigo, f]),
+)
+
+function lookupFalla(codigo: unknown): CodigoFalla | null {
+  if (codigo === null || codigo === undefined || codigo === '') return null
+  const n = typeof codigo === 'number' ? codigo : Number(codigo)
+  if (!Number.isFinite(n)) return null
+  return FALLA_POR_CODIGO.get(n) ?? null
+}
 
 type Row = Record<string, unknown>
 
@@ -178,6 +193,7 @@ export async function POST(req: NextRequest) {
       const tec = s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id as string) : null
       const triaje = (s.triaje_resultado ?? null) as Record<string, unknown> | null
       const cotizacion = (s.cotizacion ?? null) as Record<string, unknown> | null
+      const fallaInfo = lookupFalla(triaje?.codigo_falla)
       return {
         ID: s.id,
         Creada: fmtDate(s.created_at),
@@ -217,9 +233,13 @@ export async function POST(req: NextRequest) {
         'Reagendamientos': s.reagendamientos_count ?? 0,
         'Último reagendado': fmtDate(s.ultimo_reagendado_at),
         'Diagnóstico técnico': triaje?.diagnostico_tecnico ?? '',
-        'Complejidad': triaje?.complejidad ?? '',
-        'Código complejidad': triaje?.codigo_complejidad ?? '',
         'Código falla': triaje?.codigo_falla ?? '',
+        'Descripción falla': fallaInfo?.descripcion ?? '',
+        'Familia falla': fallaInfo?.familia ?? '',
+        'Sistema falla': fallaInfo?.sistema ?? '',
+        'Componente falla': fallaInfo?.componente ?? '',
+        'Complejidad': fallaInfo?.complejidad ?? '',
+        'Código complejidad': triaje?.codigo_complejidad ?? '',
         'Cotización total (COP)': cotizacion?.total ?? '',
         'Cotización mano de obra (COP)': cotizacion?.mano_obra ?? '',
         'Cotización repuestos (COP)': cotizacion?.repuestos ?? '',
