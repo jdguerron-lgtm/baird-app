@@ -188,6 +188,7 @@ Cuando busques referencias en código, estos son los identificadores estables:
 | `TARIFAS_MABE_TIPO_D` / `BONOS_CON_ENCUESTA` / `RECARGO_FIN_DE_SEMANA` | Constantes MABE |
 | `MARGEN_BAIRD_GARANTIA` / `MARGEN_BAIRD_PARTICULAR` | Constantes de margen |
 | `parseExcelData` | Mapeo BITÁCORA Excel → solicitud |
+| `CODIGOS_FALLA` / `lookupFalla` | Catálogo MABE de fallas (`src/lib/constants/codigos-falla.ts`). Fuente canónica de **complejidad por número de falla** — usado por `/api/admin/export` para resolver la columna `Complejidad` del resumen Excel (no se confía en `triaje_resultado.complejidad`, que es percepción del técnico). |
 
 ---
 

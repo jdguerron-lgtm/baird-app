@@ -176,7 +176,7 @@ Todas requieren login Supabase Auth en `/admin/login` y validación server-side 
 - En `/admin/solicitudes` → exporta TODAS las visibles. Si hay filas seleccionadas con checkbox, aparece **📥 Descargar selección** que solo exporta esas.
 - En `/admin/solicitudes/[id]` → botón en el header exporta solo esa solicitud.
 - Endpoint server-side: `POST /api/admin/export` (auth admin via `Authorization: Bearer <session.access_token>`). Genera `.xlsx` con 7 hojas:
-  1. **Solicitudes** — fila plana por solicitud con todas las columnas + nombre/whatsapp/documento del técnico asignado + URLs hyperlink (portal cliente, selección horario, verificar paso, detalle admin).
+  1. **Solicitudes** — fila plana por solicitud con todas las columnas + nombre/whatsapp/documento del técnico asignado + URLs hyperlink (portal cliente, selección horario, verificar paso, detalle admin). La columna `Complejidad` se resuelve mirando `CODIGOS_FALLA` (catálogo MABE en `src/lib/constants/codigos-falla.ts`) por el número de falla — **no** usa `triaje_resultado.complejidad`, que es la percepción del técnico. Junto al `Código falla` aparecen `Descripción falla`, `Familia falla`, `Sistema falla` y `Componente falla` del catálogo (vacíos si no hay código).
   2. **Notificaciones WA** — cada `notificaciones_whatsapp` con técnico, estado, timestamps + URL `/aceptar/{token}` clickeable.
   3. **Eventos** — `solicitud_eventos` (audit log: cancelaciones, reagendamientos, notas admin).
   4. **Evidencias** — checklist + firma cliente + oath técnico + GPS (4 fases) + fotos expandidas como columnas separadas con hyperlinks.
