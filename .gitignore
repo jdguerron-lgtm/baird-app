@@ -42,3 +42,11 @@ next-env.d.ts
 
 # claude code
 .claude/
+
+# scratch / ad-hoc probes (scripts/_*.mjs son one-shot DB pokes, no producción)
+scripts/_*.mjs
+scripts/_*.ts
+scripts/_*.js
+
+# office lock files (Word/Excel/PowerPoint cuando hay un .docx/.xlsx/.pptx abierto)
+~$*
