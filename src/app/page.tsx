@@ -221,12 +221,31 @@ export default function Home() {
             <Link href="/registro" className="hover:text-slate-900 transition-colors">Soy técnico</Link>
           </nav>
 
-          {/* CTA */}
-          <Link href="/solicitar">
-            <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">
-              Solicitar servicio
-            </button>
-          </Link>
+          {/* CTAs */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Cross-promo: tienda. Botón secundario (ghost outline) para que no
+                compita con la CTA primaria verde. External link → target=_blank
+                con rel noopener noreferrer. Oculto en mobile para no atestar
+                el header — la tienda queda descubrible vía /#equipos o footer. */}
+            <a
+              href="https://tienda.bairdservice.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-slate-900 border border-slate-300 hover:border-slate-400 hover:bg-slate-50 py-2 px-3.5 rounded-xl transition-all"
+              aria-label="Visitar nuestra tienda online (abre en pestaña nueva)"
+            >
+              🛒 Nuestra tienda
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M7 17L17 7M7 7h10v10" />
+              </svg>
+            </a>
+
+            <Link href="/solicitar">
+              <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">
+                Solicitar servicio
+              </button>
+            </Link>
+          </div>
         </div>
       </header>
 
