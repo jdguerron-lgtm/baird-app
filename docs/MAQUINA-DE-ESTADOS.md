@@ -57,8 +57,20 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 
 4b. PARTS RCV     Admin marks parts as received in /admin/repuestos
                   → POST /api/repuesto-recibido
-                  → If all parts received: estado → en_proceso
-                  → WhatsApp repuesto_recibido_cliente_v1 to customer
+                  → If all parts received: estado → repuesto_recibido
+                                           + repuesto_recibido_at = now()
+                                           + reprogramacion_token (uuid) generado
+                  → WhatsApp repuesto_recibido_cliente_v2 to customer (con botón)
+                  ⚠️ Bug fix 2026-05-29: antes saltaba directo a en_proceso con la
+                     fecha vieja. Entre diagnóstico y llegada del repuesto pasan
+                     semanas → la fecha original queda obsoleta.
+
+4c. REPROGRAM     Customer clicks botón → /reprogramar-repuesto/{reprogramacion_token}
+                  → Elige NUEVA fecha (tentativa) + franja
+                  → POST /api/reprogramar-repuesto (UPDATE atómico WHERE estado=repuesto_recibido)
+                  → estado: repuesto_recibido → en_proceso
+                  → notificarTecnicoVisitaReprogramada → plantilla repuesto_recibido_tecnico_v1
+                    (la fecha es TENTATIVA: el técnico la confirma según disponibilidad)
 
 5. COMPLETION     Tech opens /tecnico/{token}/completar/{id}
                   → Uploads photos, checklist, digital signature
@@ -218,8 +230,11 @@ WARRANTY:
                      │              cliente aprueba ──┬────┘
                      │                                 ▼
                      │                          en_proceso o esperando_repuesto
-                     │                                 │
-                     │                                 ▼
+                     │                                 │           │
+                     │                                 │           ▼ admin marca repuesto recibido
+                     │                                 │      repuesto_recibido
+                     │                                 │           │ cliente elige nueva fecha (tentativa)
+                     │                                 ▼◄──────────┘ /api/reprogramar-repuesto
                      │                          en_verificacion → completada | en_disputa
                      │                          ↘ finalizado_sin_reparacion (terminal)
                      │                          ↘ cancelada_cliente (terminal)
@@ -252,6 +267,15 @@ NON-WARRANTY (v2 2026-05-10):
 
 **Estados desde los que el cliente puede cancelar/reagendar** están definidos en `src/types/solicitud.ts` como `ESTADOS_CANCELABLES_POR_CLIENTE` y `ESTADOS_REAGENDABLES_POR_CLIENTE`. Tope: `MAX_REAGENDAMIENTOS_CLIENTE = 2` por solicitud.
 
-**Escape hatch del admin** — `POST /api/admin/cambiar-estado` (UI en `/admin/solicitudes/[id]` → "Cambiar estado manualmente") permite forzar cualquier estado de `ESTADOS_VALIDOS` cuando el flujo automático quedó atascado (p. ej. el técnico o el cliente perdió señal y la transición nunca se disparó). **No** valida la transición contra la state machine ni envía WhatsApp — solo mueve el estado en BD con guard de concurrencia (`.eq('estado', estadoActual)`) y audita en `solicitud_eventos` (`tipo='cambio_estado_admin'`). `ESTADOS_VALIDOS` (en `src/lib/constants/estados.ts`) debe coincidir con el CHECK constraint `solicitudes_servicio_estado_check`.
+**Escape hatch del admin** — `POST /api/admin/cambiar-estado` (UI en `/admin/solicitudes/[id]` → "Cambiar estado manualmente") permite forzar cualquier estado de `ESTADOS_VALIDOS` cuando el flujo automático quedó atascado (p. ej. el técnico o el cliente perdió señal y la transición nunca se disparó). **No** valida la transición contra la state machine ni envía WhatsApp al cliente/técnico — solo mueve el estado en BD con guard de concurrencia (`.eq('estado', estadoActual)`) y audita en `solicitud_eventos` (`tipo='cambio_estado_admin'`). **Sí** dispara `notificarCambioEstado` (notificación a supervisores). `ESTADOS_VALIDOS` (en `src/lib/constants/estados.ts`) debe coincidir con el CHECK constraint `solicitudes_servicio_estado_check`.
 
 State labels and CSS classes are defined in `src/lib/constants/estados.ts`.
+
+## Notificación a supervisores en cada cambio de estado (v1 2026-05-29)
+
+Toda transición de `estado` puede notificar por WhatsApp a supervisores internos (tabla `supervisores`, CRUD en `/admin/supervisores`). El helper `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` (en `whatsapp.service.ts`) se invoca en **cada función/route que muta `estado`** (el *transition owner*, no en los helpers de envío compartidos que re-setean estado de forma idempotente — eso causaría doble disparo).
+
+- **Filtrado por supervisor:** `ambito` (todos/garantia/particular vía `es_garantia`), `marca` (NULL=todas, comparada con `normalizeForMatch`), `estados` (text[], NULL/[]=todos). Ej.: un supervisor general (ámbito `todos`, sin marca) ve todo; otro con ámbito `garantia` + marca `MABE` solo ve garantías MABE.
+- **Nunca rompe el flujo:** el helper atrapa y loguea todos los errores; corta si `estadoPrevio === estadoNuevo`. Los call-sites hacen `await` sin try/catch.
+- **NO se dispara en la creación** de solicitudes (`/api/solicitar`, `/api/admin/carga-masiva`) — son inserts sin estado previo. Decisión de producto abierta: ver plan de despliegue en `supabase/migrations/README.md`.
+- Plantilla: `supervisor_cambio_estado_v1` (ver `docs/WHATSAPP_TEMPLATES.md`). Lista completa de call-sites en `docs/ARQUITECTURA.md`.

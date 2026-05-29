@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarMensajeTexto } from '@/lib/services/whatsapp.service'
+import { enviarMensajeTexto, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
       .from('solicitudes_servicio')
       .update({ estado: nuevoEstado })
       .eq('id', evidencia.solicitud_id)
+
+    await notificarCambioEstado(evidencia.solicitud_id, 'en_verificacion', nuevoEstado)
 
     // Fetch solicitud and technician data to send WhatsApp notifications
     const [{ data: sol }, { data: tecnico }] = await Promise.all([

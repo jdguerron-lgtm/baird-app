@@ -143,9 +143,12 @@ const TEMPLATES = [
     ],
   },
 
-  // 5. Repuesto disponible — reanudar flujo
+  // 5. Repuesto disponible — el cliente elige una NUEVA fecha tentativa.
+  //    v2 (2026-05-29): agrega botón URL → /reprogramar-repuesto/{token} y deja
+  //    claro que la fecha es tentativa (sujeta a disponibilidad del técnico).
+  //    Llamado por: enviarRepuestoRecibidoCliente()
   {
-    name: 'repuesto_recibido_cliente_v1',
+    name: 'repuesto_recibido_cliente_v2',
     category: 'UTILITY',
     language: 'es',
     components: [
@@ -153,11 +156,24 @@ const TEMPLATES = [
         type: 'BODY',
         text:
           '¡Buenas noticias {{1}}! 📦\n\n' +
-          'El repuesto para tu {{2}} ya llegó. El técnico {{3}} se contactará ' +
-          'pronto para reagendar la visita y completar la reparación.',
+          'El repuesto para tu {{2}} ya llegó. Para continuar, elige una nueva fecha ' +
+          'para la visita del técnico {{3}}.\n\n' +
+          '🗓️ La fecha que elijas es *tentativa*: el técnico la confirmará según su ' +
+          'disponibilidad y coordinará contigo.',
         example: { body_text: [['María', 'Lavadora LG', 'Pedro Gómez']] },
       },
-      { type: 'FOOTER', text: 'Baird Service' },
+      { type: 'FOOTER', text: 'Toca el botón para elegir tu nueva fecha' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Elegir nueva fecha',
+            url: `${APP_URL}/reprogramar-repuesto/{{1}}`,
+            example: [`${APP_URL}/reprogramar-repuesto/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
     ],
   },
 
@@ -563,6 +579,76 @@ const TEMPLATES = [
         example: { body_text: [['Carlos', 'Bogotá', 'Lavadoras']] },
       },
       { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 16. Notificar a un supervisor que un servicio cambió de estado
+  // Llamado por: notificarCambioEstado() — para cada supervisor activo cuyo
+  // filtro (ambito/marca/estados) matchea la solicitud. Sin botón: informativo.
+  {
+    name: 'supervisor_cambio_estado_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Actualización de servicio',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, un servicio que supervisas cambió de estado:\n\n' +
+          '👤 Cliente: {{2}}\n' +
+          '🔧 Equipo: {{3}}\n' +
+          '📍 Ciudad: {{4}}\n' +
+          '📋 Tipo: {{5}}\n' +
+          '🔄 Nuevo estado: {{6}}',
+        example: {
+          body_text: [['Andrés', 'María Gómez', 'Lavadora Mabe', 'Bogotá', 'Garantía', 'En proceso']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+    ],
+  },
+
+  // 17. Repuesto recibido — notificar al TÉCNICO la nueva fecha tentativa.
+  //     v1 (2026-05-29): reemplaza el texto libre de notificarTecnicoVisitaReprogramada.
+  //     Motivo: entre diagnóstico y llegada del repuesto pasan semanas → la ventana
+  //     24h del técnico casi siempre está cerrada → el texto libre fallaba en silencio.
+  //     Una plantilla funciona fuera de la ventana. {{1}}=nombre, {{2}}=equipo,
+  //     {{3}}=cliente, {{4}}=fecha tentativa; botón URL → /tecnico/{portal_token}.
+  //     Llamado por: notificarTecnicoVisitaReprogramada()
+  {
+    name: 'repuesto_recibido_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          '📅 Hola {{1}}, los repuestos para {{2}} ya llegaron y {{3}} eligió una nueva fecha ' +
+          'tentativa para la visita:\n\n' +
+          '🗓️ *{{4}}*\n\n' +
+          'Es una fecha *tentativa*: coordina con el cliente y confírmala según tu ' +
+          'disponibilidad. El servicio ya está *en proceso*; puedes completar la reparación ' +
+          'cuando coordines. Abre el portal para subir las evidencias.',
+        example: {
+          body_text: [['Carlos', 'Lavadora Mabe', 'Juan Pérez', 'Martes 3 de junio, 9:00 AM']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir portal',
+            url: `${APP_URL}/tecnico/{{1}}`,
+            example: [`${APP_URL}/tecnico/abc123def456`],
+          },
+        ],
+      },
     ],
   },
 ]

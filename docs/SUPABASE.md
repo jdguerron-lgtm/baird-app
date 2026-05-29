@@ -6,7 +6,7 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 
 | Table | Purpose | Key Fields |
 |-------|---------|------------|
-| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count, **diagnosticado_at, cumple_ta** (tracking TA — 20260513), **cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado** (auditoría tarifa MABE — 20260510) |
+| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count, **diagnosticado_at, cumple_ta** (tracking TA — 20260513), **cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado** (auditoría tarifa MABE — 20260510), **reprogramacion_token, repuesto_recibido_at** (reprogramación tras repuesto — 20260529) |
 | `notificaciones_whatsapp` | One record per tech notification | token, estado, timestamps |
 | `tecnicos` | Technician profiles | portal_token, whatsapp, especialidades, verificado, **acepta_garantias, especialidad_principal** (20260508) |
 | `especialidades_tecnico` | Many-to-many: technicians ↔ skills | tecnico_id, especialidad |
@@ -16,6 +16,7 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 | `solicitud_eventos` (NEW 2026-05-06) | Append-only audit log para cancelaciones, reagendamientos y cambios manuales de admin | solicitud_id, tipo, estado_previo, estado_nuevo, actor, motivo, payload (JSONB), ocurrido_at |
 | `cliente_historial` (NEW 2026-05-10) | Tracking de comportamiento del cliente (no-shows, cancelaciones tardías, servicios completados). Lookup por documento (preferido) o teléfono | documento, telefono, no_shows_count, cancelaciones_tarde_count, servicios_completados_count, bloqueado, bloqueado_motivo, requiere_confirmacion_llamada, ultimo_evento_at. RLS service_role-only. |
 | `connection_errors` (NEW observability) | Telemetría de errores de red enviada por el browser vía `/api/log-error`. Backend del panel `/admin/errores` | url, error_type, error_message, attempt_number, network_effective_type, network_downlink, network_rtt, online, actor, ip, user_agent, created_at |
+| `supervisores` (NEW 2026-05-29) | Destinatarios internos de notificaciones WhatsApp en cada cambio de estado. CRUD admin en `/admin/supervisores` | nombre, whatsapp (normalizado por trigger), activo, ambito (todos/garantia/particular), marca (NULL=todas), estados (text[], NULL/[]=todos los cambios), created_at, updated_at |
 
 ### Important JSONB Columns on solicitudes_servicio
 
@@ -23,12 +24,13 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 - Warranty (v2 2026-05-07): `{ diagnostico_tecnico, complejidad, codigo_complejidad, tarifa_mano_obra, bono_incentivo, total_servicio, productos_necesarios[], productos_recomendados[], codigo_falla, ... }`
 - Non-warranty (v2 2026-05-07): `{ diagnostico_tecnico, complejidad, productos_necesarios[], productos_recomendados[], evidencias_diagnostico }`
 - Legacy (pre-2026-05-07): `{ ..., requiere_repuestos, repuestos_detalle }` — el código maneja ambas formas con fallback.
+- Cada item de `productos_necesarios[]` admite `imagen_url?` (2026-05-29): foto opcional del repuesto subida por el técnico al bucket público `evidencias-servicio`. El sanitizador de `/api/diagnostico` solo acepta URLs de ese bucket.
 
 **`cotizacion`** (non-warranty only, v2 2026-05-07):
 ```
 {
   diagnostico_tecnico,
-  productos_necesarios: [{ sku, descripcion, cantidad, precio_unitario?, subtotal? }],
+  productos_necesarios: [{ sku, descripcion, cantidad, precio_unitario?, subtotal?, imagen_url? }],
   productos_recomendados: [{ nombre, descripcion }],
   pendiente_precio: boolean,           // true hasta que admin completa
   pricing_set_at?, pricing_set_by?,
@@ -62,6 +64,7 @@ Todas las migraciones viven en `supabase/migrations/`. **No usamos el Supabase C
 | `20260508_fix_cotizacion_column.sql` | **HOTFIX** — agrega columna `cotizacion JSONB` que estaba referenciada en código pero nunca creada |
 | `20260508_fix_tecnicos_columns.sql` | **HOTFIX** — agrega `acepta_garantias` + `especialidad_principal` en `tecnicos` (mismo bug histórico que el de `cotizacion`) |
 | `20260516_perf_fk_index_rls.sql` | Performance: índice FK `idx_solicitudes_tecnico_asignado`; wrap `auth.role()` en `(SELECT auth.role())` para evitar re-evaluación por fila; re-scope `service_role_all_*` a role `{service_role}` (elimina multiple permissive con `anon_*`); drop duplicada `"Allow public update evidencias"` |
+| `20260529_supervisores_y_repuesto_recibido.sql` | Tabla `supervisores` (+ RLS anon CRUD + trigger normalización teléfono); estado `repuesto_recibido` en el CHECK (22 estados); columnas `reprogramacion_token` + `repuesto_recibido_at` en `solicitudes_servicio` (+ índices). **PENDIENTE DE APLICAR** — ver plan de despliegue en `supabase/migrations/README.md` |
 
 Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/README.md`.
 
@@ -77,8 +80,9 @@ Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/R
 | `repuestos_pendientes` | ✅ | `SELECT true` | service_role = ALL (scoped a role `service_role`, initplan optimizado — `20260516`) |
 | `gps_pings` | ✅ | `INSERT true` | service_role = ALL (idem); SELECT requiere service_role |
 | `solicitud_eventos` | ✅ | `SELECT true`, `INSERT true` | service_role = ALL (idem) |
+| `supervisores` (20260529) | ✅ | full CRUD (`SELECT/INSERT/UPDATE/DELETE true`) | service_role = ALL. Patrón `tecnicos`: anon abierto porque la app solo usa anon key; autorización real la impone `verificarAdmin` en `/api/admin/supervisores`. Contiene WhatsApp interno, no PII de clientes |
 
-**Pendiente para producción seria** (ver `improvement-plan.md`): habilitar RLS en las 5 tablas con ❌ y políticas que filtren por `cliente_token`/`portal_token`.
+**Pendiente para producción seria** (ver `improvement-plan.md`): habilitar RLS efectiva en las tablas con ❌ y políticas que filtren por `cliente_token`/`portal_token`. (`supervisores` tiene RLS habilitada pero con políticas anon abiertas — mismo modelo que `tecnicos`.)
 
 ### Storage buckets
 
@@ -171,7 +175,7 @@ DELETE FROM notificaciones_whatsapp
 ```
 
 ### CHECK constraints
-Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El último vigente está en `20260507_admin_pricing_gate.sql:11-33` y enumera 20 estados — sincronizado 1:1 con `EstadoSolicitud` en `src/types/solicitud.ts`. Si agregas un nuevo estado **debes**:
+Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El último **aplicado** está en `20260507_admin_pricing_gate.sql:11-33` (20 estados). La migración `20260529_supervisores_y_repuesto_recibido.sql` (PENDIENTE DE APLICAR) lo reemplaza con **22 estados** — agrega `repuesto_recibido` y deja el set 1:1 con `EstadoSolicitud` en `src/types/solicitud.ts`. Si agregas un nuevo estado **debes**:
 1. Sumarlo al union type en `solicitud.ts`.
 2. Crear nueva migración con el constraint completo (no `ADD ... IN (...)` parcial).
 3. Agregar label/color en `src/lib/constants/estados.ts`.

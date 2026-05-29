@@ -35,7 +35,8 @@ export const maxDuration = 30
  *   pendiente_pricing                → Solo señal admin (no envío)
  *   cotizacion_enviada               → cotizacion_cliente_v2 (cliente)
  *   esperando_repuesto               → esperando_repuesto_cliente_v1 (cliente)
- *   en_proceso                       → repuesto_recibido_cliente_v1 si vino de esperando
+ *   repuesto_recibido                → repuesto_recibido_cliente_v2 (cliente — elige nueva fecha)
+ *   en_proceso                       → sin plantilla específica (cliente ya eligió fecha / aprobó)
  *   en_verificacion                  → confirmar_servicio_v4 (cliente)
  *   finalizado_sin_reparacion        → finalizado_sin_reparacion_v1 (cliente)
  *   terminales restantes             → 409 (sin sentido reenviar)
@@ -223,21 +224,30 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      case 'en_proceso': {
-        // Si la solicitud salió de esperando_repuesto, el último mensaje
-        // natural fue "repuesto recibido". Si es post-aprobación directa
-        // (reparar), no hay plantilla específica — devolver indicación.
+      // ── Repuesto llegó: el cliente debe elegir una nueva fecha tentativa ──
+      case 'repuesto_recibido': {
         const r = await enviarRepuestoRecibidoCliente(solicitudId)
         return NextResponse.json({
-          accion: 'repuesto_recibido_cliente_v1',
+          accion: 'repuesto_recibido_cliente_v2',
           destinatario: 'cliente',
           ok: r.ok,
           error: r.error,
           mensaje: r.ok
-            ? 'Plantilla re-enviada (asumiendo salida de esperando_repuesto)'
+            ? 'Plantilla re-enviada — el cliente puede elegir una nueva fecha tentativa'
             : `Falló: ${r.error}`,
         })
       }
+
+      case 'en_proceso':
+        // El cliente ya eligió fecha (reprogramó tras el repuesto) o aprobó la
+        // reparación directa. La última señal fue al técnico (texto libre) o la
+        // aprobación de cotización — no hay plantilla de cliente para reenviar.
+        return NextResponse.json({
+          ok: false,
+          accion: 'sin_plantilla',
+          destinatario: 'cliente',
+          mensaje: 'El servicio está en proceso; el cliente ya fue notificado y no hay plantilla específica para reenviar.',
+        })
 
       case 'en_verificacion': {
         // Reenviar la confirmación final al cliente desde su confirmacion_token

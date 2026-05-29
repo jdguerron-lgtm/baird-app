@@ -196,6 +196,19 @@ Cuando el técnico va a diagnosticar y el cliente decide no proceder con la repa
 
 Constantes en `src/types/solicitud.ts`.
 
+### Servicios de tarifa fija al solicitar (Mantenimiento, Cambio de filtro)
+
+Algunos servicios particulares tienen **precio fijo de catálogo definido al crear la solicitud** — el cliente lo ve y lo paga sin esperar cotización del técnico. La función `calcularPagoTecnico(tipo_equipo, tipo_solicitud, es_garantia)` en `src/types/solicitud.ts` los resuelve, y `/api/solicitar` lo **recalcula server-side** para evitar manipulación del cliente:
+
+| `tipo_solicitud` | Precio al cliente | Constante |
+|---|---|---|
+| Diagnóstico / Reparación | $84,000 (anticipo 50%) | `TARIFA_DIAGNOSTICO` |
+| Mantenimiento | $105,000–$189,000 según equipo | `TARIFAS_MANTENIMIENTO[tipo_equipo]` |
+| **Cambio de filtro** | **$180,000 todo incluido** | `TARIFA_CAMBIO_FILTRO` |
+| (cualquiera, garantía) | $0 (la marca paga) | — |
+
+**Cambio de filtro** (agregado 2026-05-29): precio fijo todo-incluido de **$180,000 COP** — cubre el **filtro (repuesto)**, la mano de obra y el IVA 19% (base $151,261 + IVA $28,739). El cliente no paga nada adicional al técnico. Solo aplica en flujo particular (`es_garantia=false`); en garantía siempre es 0. La tarjeta de precio en `/solicitar` lo muestra como "Filtro incluido" con desglose de IVA para facturación DIAN.
+
 ---
 
 ## Protocolo de visita y no-show
@@ -246,6 +259,14 @@ Resumen mínimo:
 3. Actualizar callers (formulario diagnóstico, API `/api/diagnostico`, API `/api/confirmar-servicio` si depende de encuesta).
 4. Documentar en este doc.
 5. Si requiere persistir un nuevo dato en `solicitudes_servicio` o `evidencias_servicio`: nueva migración SQL.
+
+### Agregar un servicio de tarifa fija al solicitar (nuevo `tipo_solicitud`)
+Ejemplo de referencia: "Cambio de filtro" ($180k), agregado el 2026-05-29. **No requiere migración** — `tipo_solicitud` no tiene CHECK constraint en BD y Zod deriva el enum del array TS.
+1. Agregar el valor al array `TIPOS_SOLICITUD` en `src/types/solicitud.ts` (el schema Zod `z.enum(TIPOS_SOLICITUD)` se actualiza solo).
+2. Definir la constante de precio (ej. `TARIFA_CAMBIO_FILTRO = 180000`, IVA incluido) y agregar el caso en `calcularPagoTecnico()`. Garantía siempre devuelve 0 antes de los casos particulares.
+3. Agregar la rama de la tarjeta de precio en `src/app/solicitar/page.tsx` (modelar sobre la verde de Mantenimiento; usa `formData.pago_tecnico` + desglose IVA con `calcularBaseSinIva`/`calcularIvaIncluido`).
+4. El hook `useSolicitudForm` y `/api/solicitar` recalculan `pago_tecnico` automáticamente vía `calcularPagoTecnico` — no se confía en el valor del cliente.
+5. Actualizar la tabla de "Servicios de tarifa fija al solicitar" en este doc.
 
 ---
 

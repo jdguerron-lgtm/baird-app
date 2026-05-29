@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarVerificacionPasoCliente, enviarCotizacionCliente } from '@/lib/services/whatsapp.service'
+import { enviarVerificacionPasoCliente, enviarCotizacionCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico } from '@/types/solicitud'
 import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
@@ -60,6 +60,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'siguiente_paso inválido' }, { status: 400 })
     }
 
+    // Solo aceptamos URLs de imagen del bucket público evidencias-servicio.
+    // Evita inyectar URLs arbitrarias en el JSONB (next/image ya está
+    // restringido por dominio, pero esto cubre vistas admin / exportaciones).
+    const esUrlEvidenciaValida = (v: unknown): v is string =>
+      typeof v === 'string' &&
+      v.startsWith('https://') &&
+      v.includes('/storage/v1/object/public/evidencias-servicio/')
+
     // Sanitizar listas de productos
     const necesarios: ProductoNecesario[] = Array.isArray(productosNecesarios)
       ? productosNecesarios
@@ -67,6 +75,7 @@ export async function POST(req: NextRequest) {
             sku: typeof p.sku === 'string' ? p.sku.trim().toUpperCase() : '',
             descripcion: typeof p.descripcion === 'string' ? p.descripcion.trim() : '',
             cantidad: Math.max(1, Number(p.cantidad) || 1),
+            ...(esUrlEvidenciaValida(p.imagen_url) ? { imagen_url: p.imagen_url } : {}),
           }))
           .filter((p: ProductoNecesario) => p.sku && p.descripcion)
       : []
@@ -227,6 +236,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message + hint }, { status: 500 })
       }
 
+      await notificarCambioEstado(sol.id, sol.estado, nuevoEstado)
+
       // Insertar repuestos pendientes (sin costo ni tiempo — admin los fija)
       if (siguientePaso === 'esperar_repuesto' && necesarios.length > 0) {
         const { error: repErr } = await supabase.from('repuestos_pendientes').insert(
@@ -383,6 +394,8 @@ export async function POST(req: NextRequest) {
           : ''
         return NextResponse.json({ error: updateErr.message + hint }, { status: 500 })
       }
+
+      await notificarCambioEstado(sol.id, sol.estado, nuevoEstado)
 
       // Insertar repuestos pendientes solo si esperar_repuesto (en particular el
       // costo ya está incluido en costoTecnico — los registros aquí son para

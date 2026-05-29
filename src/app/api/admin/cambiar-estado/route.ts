@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { ESTADOS_VALIDOS } from '@/lib/constants/estados'
+import { notificarCambioEstado } from '@/lib/services/whatsapp.service'
 
 export const maxDuration = 30
 
@@ -96,6 +97,9 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.error('[cambiar-estado] audit threw:', err)
     }
+
+    // 4. Notificar a supervisores configurados (no bloquea ni revierte si falla).
+    await notificarCambioEstado(id, actual.estado, nuevoEstado)
 
     return NextResponse.json({
       success: true,

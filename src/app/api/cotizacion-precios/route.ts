@@ -4,6 +4,7 @@ import { verificarAdmin } from '@/lib/auth/admin'
 import {
   enviarCotizacionCliente,
   enviarVerificacionPasoCliente,
+  notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
 import type { CotizacionReparacion, ProductoNecesario } from '@/types/solicitud'
 import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
@@ -136,6 +137,8 @@ export async function POST(req: NextRequest) {
         .eq('estado', 'pendiente_pricing')
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
+      await notificarCambioEstado(sol.id, 'pendiente_pricing', 'cotizacion_enviada')
+
       // Sincronizar costos en repuestos_pendientes (best-effort)
       for (const p of necesariosConPrecio) {
         await supabase
@@ -168,6 +171,8 @@ export async function POST(req: NextRequest) {
       .eq('id', sol.id)
       .eq('estado', 'pendiente_pricing')
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+    await notificarCambioEstado(sol.id, 'pendiente_pricing', 'verificacion_pendiente')
 
     await supabase
       .from('repuestos_pendientes')

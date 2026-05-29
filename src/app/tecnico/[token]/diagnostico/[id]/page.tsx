@@ -372,6 +372,7 @@ export default function DiagnosticoPage() {
           sku: p.sku.trim().toUpperCase(),
           descripcion: p.descripcion.trim(),
           cantidad: Math.max(1, p.cantidad || 1),
+          imagen_url: p.imagen_url || undefined,
         })),
         productosRecomendados: productosRecomendados.map(p => ({
           nombre: p.nombre.trim(),
@@ -726,6 +727,7 @@ export default function DiagnosticoPage() {
           onChange={setProductosNecesarios}
           marcaEquipo={servicio!.marca_equipo}
           modeloEquipo={modeloEquipo}
+          solicitudId={servicio!.id}
         />
 
         {/* Productos recomendados (limpiadores, accesorios — opcional) */}

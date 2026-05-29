@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { notificarTecnicos } from '@/lib/services/whatsapp.service'
+import { notificarTecnicos, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import { parsearFechaVisita } from '@/lib/utils/fecha-visita'
 import { TYC_VERSION } from '@/types/solicitud'
 
@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
     if (updateErr || !updated) {
       return NextResponse.json({ error: 'No se pudo confirmar el horario' }, { status: 500 })
     }
+
+    // Notificar a supervisores configurados (no bloquea el flujo si falla).
+    await notificarCambioEstado(sol.id, 'pendiente_horario', 'notificada')
 
     // 3. Notificar técnicos (await — fire-and-forget se cancela en Vercel serverless)
     let notifResult: { notificados: number; matched: number; errors: string[] } | null = null

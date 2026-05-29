@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarRecordatorioHorario } from '@/lib/services/whatsapp.service'
+import { enviarRecordatorioHorario, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import { HORARIO_TIMEOUT_HORAS, HORARIO_FINAL_TIMEOUT_HORAS } from '@/types/solicitud'
 
 export const dynamic = 'force-dynamic'
@@ -65,8 +65,10 @@ export async function GET(req: Request) {
         .from('solicitudes_servicio')
         .update({ estado: 'sin_agendar' })
         .eq('id', s.id)
-      if (!updErr) sinAgendar++
-      else errors.push(`sin_agendar ${s.id}: ${updErr.message}`)
+      if (!updErr) {
+        sinAgendar++
+        await notificarCambioEstado(s.id, 'pendiente_horario', 'sin_agendar')
+      } else errors.push(`sin_agendar ${s.id}: ${updErr.message}`)
     }
   }
 

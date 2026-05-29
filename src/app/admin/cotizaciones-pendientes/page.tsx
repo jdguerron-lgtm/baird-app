@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
 import type { CotizacionReparacion, ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
@@ -238,6 +239,18 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
                         <span className="text-xs text-fuchsia-700">cantidad: {p.cantidad}</span>
                       </div>
                       <p className="text-sm text-slate-700 mb-2">{p.descripcion}</p>
+                      {p.imagen_url && (
+                        <a href={p.imagen_url} target="_blank" rel="noopener noreferrer" className="inline-block mb-2">
+                          <Image
+                            src={p.imagen_url}
+                            alt={`Foto ${p.sku}`}
+                            width={88}
+                            height={88}
+                            className="w-[88px] h-[88px] object-cover rounded-lg border border-fuchsia-200 hover:opacity-90 transition"
+                            unoptimized
+                          />
+                        </a>
+                      )}
                       <div className="flex items-end gap-2">
                         <div className="flex-1">
                           <label className="block text-[10px] font-semibold text-gray-600 uppercase mb-1">

@@ -24,10 +24,11 @@
 2. [Flujo GARANTÍA (es_garantia=true)](#flujo-garantía-es_garantiatrue)
 3. [Flujo PARTICULAR (es_garantia=false)](#flujo-particular-es_garantiafalse)
 4. [Side flow: Cliente cancela / reagenda](#side-flow-cliente-cancela--reagenda)
-5. [Puntos de decisión del cliente — verificación](#puntos-de-decisión-del-cliente--verificación)
-6. [Catálogo de plantillas WhatsApp](#catálogo-de-plantillas-whatsapp)
-7. [Estados terminales y continuidad de comunicación](#estados-terminales-y-continuidad-de-comunicación)
-8. [Gaps conocidos](#gaps-conocidos)
+5. [Side flow: Notificación a supervisores](#side-flow-notificación-a-supervisores)
+6. [Puntos de decisión del cliente — verificación](#puntos-de-decisión-del-cliente--verificación)
+7. [Catálogo de plantillas WhatsApp](#catálogo-de-plantillas-whatsapp)
+8. [Estados terminales y continuidad de comunicación](#estados-terminales-y-continuidad-de-comunicación)
+9. [Gaps conocidos](#gaps-conocidos)
 
 ---
 
@@ -231,17 +232,39 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
    │     "Decisión registrada"│  │                                  │
    └──────────────────────────┘  └──────────────────────────────────┘
                        │
-                       ▼  (rama "reparar" o "esperar_repuesto" → en_proceso)
+                       ▼  (rama "reparar" → en_proceso | "esperar_repuesto" → esperando_repuesto)
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 6b. (Si esperar_repuesto) ADMIN MARCA REPUESTO RECIBIDO                  │
 │ Página /admin/repuestos                                                  │
 │ POST /api/repuesto-recibido { repuestoId }                               │
 │                                                                           │
 │ Cuando todos los repuestos de la solicitud están 'recibido':             │
-│ DB:  estado=esperando_repuesto → en_proceso                              │
+│ DB:  estado=esperando_repuesto → repuesto_recibido                       │
+│      + repuesto_recibido_at = now()                                      │
+│      + reprogramacion_token (uuid)                                       │
 │                                                                           │
-│ 📩 → CLIENTE: repuesto_recibido_cliente_v1                               │
+│ 📩 → CLIENTE: repuesto_recibido_cliente_v2                               │
 │   Body: cliente, equipo, técnico                                         │
+│   Botón: "Elegir nueva fecha" → /reprogramar-repuesto/{token}            │
+│                                                                           │
+│ ⚠️ BUG FIX 2026-05-29: antes saltaba directo a en_proceso con la fecha   │
+│ vieja. Pueden pasar SEMANAS entre el diagnóstico y la llegada del        │
+│ repuesto → la fecha original queda obsoleta. Ahora el cliente reprograma.│
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (cliente abre el link del botón)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 6c. (Si esperar_repuesto) CLIENTE ELIGE NUEVA FECHA                      │
+│ Página /reprogramar-repuesto/{reprogramacion_token}                      │
+│ POST /api/reprogramar-repuesto { token, horario }                        │
+│                                                                           │
+│ DB:  estado=repuesto_recibido → en_proceso (UPDATE atómico)              │
+│      + horario_confirmado = horario | reprogramacion_token = null        │
+│                                                                           │
+│ 📩 → TÉCNICO: repuesto_recibido_tecnico_v1                               │
+│   Body: técnico, equipo, cliente, fecha tentativa                        │
+│   Botón: "Abrir portal" → /tecnico/{portal_token}                        │
+│   La fecha es TENTATIVA: el técnico la confirma según su disponibilidad. │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼  (técnico hace la reparación)
@@ -469,6 +492,41 @@ Audit:                                Audit:
 
 ---
 
+## Side flow: Notificación a supervisores
+
+Transversal a ambos flujos (NEW 2026-05-29). En **cada cambio de estado** de una solicitud, el sistema notifica por WhatsApp a supervisores internos configurables. Es un canal de visibilidad/monitoreo, independiente del cliente y el técnico.
+
+```
+CUALQUIER transición de estado (notificada→asignada, →en_proceso, →completada, etc.)
+                                  │
+                                  ▼
+      notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)
+      (cableado en cada transition owner — ver docs/ARQUITECTURA.md)
+                                  │
+                                  ▼
+      Lee tabla `supervisores` (solo activo=true) y filtra por supervisor:
+        • ambito:  todos | garantia (es_garantia=true) | particular (es_garantia=false)
+        • marca:   NULL = todas | "MABE" = solo esa marca (normalizada)
+        • estados: NULL/[] = todos | ['en_proceso','completada'] = solo esos
+                                  │
+                                  ▼
+      📩 → cada SUPERVISOR que matchea: supervisor_cambio_estado_v1
+           Header: "Actualización de servicio"
+           Body: supervisor, cliente, equipo, ciudad, tipo (Garantía/Particular), nuevo estado
+           (funciona fuera de la ventana 24h — el supervisor no chatea con el negocio)
+```
+
+**Casos de uso configurados** (CRUD admin en `/admin/supervisores`):
+1. **Supervisor general** — ámbito `todos`, sin marca, sin filtro de estados → ve TODO.
+2. **Supervisor MABE** — ámbito `garantia` + marca `MABE` → solo garantías de esa marca.
+
+**Garantías de robustez:**
+- `notificarCambioEstado` **nunca lanza** — si el envío falla, loguea y la transición sigue.
+- Corta si `estadoPrevio === estadoNuevo` (no hay cambio real).
+- **No** se dispara en la creación de solicitudes (`/api/solicitar`, `/api/carga-masiva`) — son inserts sin estado previo. Es una decisión de producto abierta (ver plan de despliegue): notificar el alta podría generar spam en cargas masivas de garantía.
+
+---
+
 ## Puntos de decisión del cliente — verificación
 
 Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rechazar**:
@@ -555,13 +613,21 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | `cotizacion_cliente_v2` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
 | `cotizacion_aprobada_tecnico_v2` | notificarCotizacionAprobada | Técnico |
 | `esperando_repuesto_cliente_v1` | enviarEsperandoRepuestoCliente (post-aprobación cliente) | Cliente |
-| `repuesto_recibido_cliente_v1` | enviarRepuestoRecibidoCliente (admin marca recibido) | Cliente |
+| `repuesto_recibido_cliente_v2` ⏳ | enviarRepuestoRecibidoCliente (admin marca recibido → repuesto_recibido). Botón → reprogramar | Cliente |
+| `repuesto_recibido_tecnico_v1` ⏳ | notificarTecnicoVisitaReprogramada (cliente eligió nueva fecha → en_proceso) | Técnico |
 | `finalizado_sin_reparacion_v1` | enviarFinalizadoSinReparacion (terminal) | Cliente |
 
 ### Final
 | Template | Disparo | Destino |
 |---|---|---|
 | `confirmar_servicio_v4` | POST /api/completar-servicio | Cliente |
+
+### Supervisión (NEW 2026-05-29)
+| Template | Disparo | Destino |
+|---|---|---|
+| `supervisor_cambio_estado_v1` ⏳ | notificarCambioEstado (cada cambio de estado) | Supervisores activos filtrados por ámbito/marca/estados |
+
+> ⏳ = pendiente de subir a Meta (ver `docs/WHATSAPP_TEMPLATES.md` + plan de despliegue). No invocar en prod hasta `APPROVED`.
 
 ### Texto libre (no plantilla)
 - Aceptación/rechazo de paso post-verificación → texto al técnico ("Cliente APROBÓ"/"Cliente RECHAZÓ")
@@ -660,7 +726,7 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 | 4 | Cliente aprueba `negativa_cliente` | texto libre al cliente | 🔴 mayor | `paso_aprobado_cliente_v1` (B) — mismo template, parámetro distinto |
 | 5 | Cliente RECHAZA siguiente paso | NADA al cliente (solo in-app) | 🔴 mayor | `paso_rechazado_cliente_v1` (Backlog C) |
 | 6 | Cliente decide → técnico se entera | texto libre al técnico | 🟡 medio | `paso_resuelto_tecnico_v1` (Backlog D) |
-| 7 | Admin marca repuesto recibido → técnico | texto libre al técnico | 🟡 medio | `repuesto_recibido_tecnico_v1` (Backlog E) |
+| 7 | ~~Admin marca repuesto recibido → técnico~~ | ✅ RESUELTO 2026-05-29 | — | `repuesto_recibido_tecnico_v1` creada + cableada en `notificarTecnicoVisitaReprogramada` (reemplaza el texto libre). ⏳ pendiente subir a Meta |
 | 8 | Cliente confirma satisfacción → técnico | NADA al técnico (solo portal) | 🟢 nice-to-have | `servicio_confirmado_tecnico_v1` (Backlog I) |
 | 9 | Acceso del cliente al portal de gestión | solo via webviews | 🟡 medio | `gestionar_servicio_v1` (Backlog F) — enviar tras confirmar horario |
 

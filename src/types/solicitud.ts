@@ -19,6 +19,7 @@ export const TIPOS_SOLICITUD = [
   'Diagnóstico',
   'Reparación',
   'Mantenimiento',
+  'Cambio de filtro',
 ] as const
 
 export type TipoSolicitud = typeof TIPOS_SOLICITUD[number]
@@ -44,7 +45,7 @@ export interface SolicitudFormData {
 
 // Tipo del registro completo en BD (con ID y metadata del servidor)
 // Estados del flujo de solicitud (customer-first scheduling)
-// Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → en_proceso → en_verificacion → completada | en_disputa
+// Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → repuesto_recibido → en_proceso → en_verificacion → completada | en_disputa
 //                                                          | finalizado_sin_reparacion | cancelada_cliente
 //                                 → sin_agendar (timeout)
 // Non-warranty: pendiente_horario → notificada → diagnostico_pendiente → cotizacion_enviada → cotizacion_aprobada → en_proceso → en_verificacion → completada
@@ -61,6 +62,7 @@ export type EstadoSolicitud =
   | 'cotizacion_aprobada'          // Non-warranty: customer approved quote
   | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote
   | 'esperando_repuesto'           // NEW: post-diagnóstico, repuesto pendiente
+  | 'repuesto_recibido'            // NEW (2026-05-29): repuesto llegó; cliente debe reprogramar fecha (tentativa) antes de en_proceso
   | 'pendiente_pricing'            // NEW (2026-05-07): técnico envió diagnóstico, admin debe fijar precio/tiempo
   | 'reagendamiento_pendiente'     // NEW: cliente pidió reagendar después de aceptación; espera nuevo horario
   | 'finalizado_sin_reparacion'    // NEW: equipo no reparable (terminal)
@@ -97,6 +99,7 @@ export interface ProductoNecesario {
   cantidad: number
   precio_unitario?: number  // admin fills (non-warranty)
   subtotal?: number          // computed: cantidad * precio_unitario
+  imagen_url?: string        // foto del repuesto/producto requerido (Storage: evidencias-servicio)
 }
 
 /**
@@ -138,9 +141,15 @@ export const ESTADOS_CANCELABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
   'pendiente_pricing',
   'cotizacion_enviada',
   'esperando_repuesto',
+  'repuesto_recibido',
   'reagendamiento_pendiente',
 ])
 
+// Nota: `repuesto_recibido` NO entra en ESTADOS_REAGENDABLES_POR_CLIENTE.
+// La reprogramación tras llegada de repuesto usa su propio flujo dedicado
+// (/reprogramar-repuesto/[token] + /api/reprogramar-repuesto), no el botón
+// genérico de reagendar (procesarReagendamientoCliente). Mantener un solo
+// camino evita que dos endpoints escriban horario_confirmado en paralelo.
 /** Estados desde los cuales el cliente puede reagendar por sí mismo */
 export const ESTADOS_REAGENDABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
   'pendiente_horario',
@@ -223,6 +232,11 @@ export function calcularIvaIncluido(precioConIva: number): number {
 export const TARIFA_DIAGNOSTICO = 84000  // COP — diagnostic fee, IVA incluido (base $70.588 + IVA $13.412)
 export const ANTICIPO_PORCENTAJE = 0.5   // 50% upfront
 
+// Cambio de filtro (non-warranty) — precio fijo AL CONSUMIDOR, filtro incluido.
+// Todo-incluido: repuesto (filtro) + mano de obra + IVA 19%. El cliente no paga
+// nada adicional al técnico. Garantía siempre = 0.
+export const TARIFA_CAMBIO_FILTRO = 180000  // COP — filtro incluido, IVA incluido (base $151.261 + IVA $28.739)
+
 // ──────────────────────────────────────────────────────────
 // Tarifas fijas del catálogo (non-warranty). Investigadas
 // contra precios de talleres en Colombia (2025-2026).
@@ -255,6 +269,7 @@ export const TARIFAS_MANTENIMIENTO: Record<TipoEquipo, number> = {
  * - Reparación → TARIFA_DIAGNOSTICO ($80.000) — el técnico cotizará
  *   la reparación tras el diagnóstico (flujo cotización ya existente)
  * - Mantenimiento → tarifa fija por tipo_equipo (TARIFAS_MANTENIMIENTO)
+ * - Cambio de filtro → tarifa fija todo-incluido (TARIFA_CAMBIO_FILTRO, filtro incluido)
  */
 export function calcularPagoTecnico(
   tipoEquipo: TipoEquipo,
@@ -265,6 +280,7 @@ export function calcularPagoTecnico(
   if (tipoSolicitud === 'Diagnóstico') return TARIFA_DIAGNOSTICO
   if (tipoSolicitud === 'Reparación') return TARIFA_DIAGNOSTICO
   if (tipoSolicitud === 'Mantenimiento') return TARIFAS_MANTENIMIENTO[tipoEquipo]
+  if (tipoSolicitud === 'Cambio de filtro') return TARIFA_CAMBIO_FILTRO
   return TARIFA_DIAGNOSTICO
 }
 
@@ -286,6 +302,9 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   siguiente_paso?: SiguientePasoDiagnostico
   siguiente_paso_detalle?: string
   siguiente_paso_at?: string
+  // Reprogramación tras llegada de repuesto (estado repuesto_recibido)
+  reprogramacion_token?: string
+  repuesto_recibido_at?: string
   // T&C acceptance
   tyc_aceptados_at?: string
   tyc_version?: string

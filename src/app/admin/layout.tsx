@@ -68,6 +68,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/mapa', label: 'Mapa', icon: '🗺️' },
     { href: '/admin/cotizaciones-pendientes', label: 'Pricing pendiente', icon: '💵' },
     { href: '/admin/tecnicos', label: 'Técnicos', icon: '🔧' },
+    { href: '/admin/supervisores', label: 'Supervisores', icon: '👥' },
     { href: '/admin/repuestos', label: 'Repuestos', icon: '📦' },
     { href: '/admin/gps-alertas', label: 'Alertas GPS', icon: '🚨' },
     { href: '/admin/errores', label: 'Errores conexión', icon: '📡' },

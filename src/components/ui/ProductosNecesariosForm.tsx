@@ -1,5 +1,9 @@
 'use client'
 
+import { useState } from 'react'
+import Image from 'next/image'
+import { supabase } from '@/lib/supabase'
+import { compressImageIfNeeded, inferExtension } from '@/lib/utils/media'
 import type { ProductoNecesario } from '@/types/solicitud'
 
 interface Props {
@@ -9,6 +13,8 @@ interface Props {
   /** Modelo del equipo (extraído de novedades_equipo). Si se pasa, el link
    * Serviplus se pre-rellena con ?p={modelo} para ir directo al despiece. */
   modeloEquipo?: string | null
+  /** ID de la solicitud — namespacing del path en Storage para evitar colisiones. */
+  solicitudId?: string
 }
 
 const MARCAS_SERVIPLUS = ['mabe', 'ge', 'general electric', 'centrales']
@@ -19,9 +25,13 @@ function urlServiplus(modelo?: string | null): string {
   return m ? `${SERVIPLUS_BASE}?p=${encodeURIComponent(m)}` : SERVIPLUS_BASE
 }
 
-export default function ProductosNecesariosForm({ productos, onChange, marcaEquipo, modeloEquipo }: Props) {
+export default function ProductosNecesariosForm({ productos, onChange, marcaEquipo, modeloEquipo, solicitudId }: Props) {
   const esMarcaServiplus = !!marcaEquipo && MARCAS_SERVIPLUS.some(m => marcaEquipo.toLowerCase().includes(m))
   const linkServiplus = urlServiplus(modeloEquipo)
+
+  // Estado transitorio de subida de imagen por índice de producto.
+  const [subiendo, setSubiendo] = useState<Record<number, boolean>>({})
+  const [errorImg, setErrorImg] = useState<Record<number, string>>({})
 
   const agregar = () => {
     onChange([...productos, { sku: '', descripcion: '', cantidad: 1 }])
@@ -33,6 +43,47 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
 
   const eliminar = (idx: number) => {
     onChange(productos.filter((_, i) => i !== idx))
+  }
+
+  const subirImagen = async (idx: number, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setErrorImg(prev => ({ ...prev, [idx]: 'El archivo debe ser una imagen.' }))
+      return
+    }
+    setErrorImg(prev => ({ ...prev, [idx]: '' }))
+    setSubiendo(prev => ({ ...prev, [idx]: true }))
+    try {
+      const comprimida = await compressImageIfNeeded(file, { maxDimension: 2560, quality: 0.9 })
+      const ext = inferExtension(comprimida)
+      const stamp = Date.now()
+      const rand = Math.random().toString(36).slice(2, 8)
+      const path = `${solicitudId || 'producto'}/producto_${stamp}_${rand}_${idx}.${ext}`
+
+      const { error: uploadErr } = await supabase.storage
+        .from('evidencias-servicio')
+        .upload(path, comprimida, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: comprimida.type || undefined,
+        })
+
+      if (uploadErr) {
+        console.error(`[productos-necesarios] upload imagen ${idx} falló:`, uploadErr)
+        setErrorImg(prev => ({ ...prev, [idx]: 'No se pudo subir la imagen. Intenta de nuevo.' }))
+        return
+      }
+      const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
+      if (urlData?.publicUrl) {
+        actualizar(idx, { imagen_url: urlData.publicUrl })
+      } else {
+        setErrorImg(prev => ({ ...prev, [idx]: 'No se pudo obtener la URL de la imagen.' }))
+      }
+    } catch (err) {
+      console.error(`[productos-necesarios] error procesando imagen ${idx}:`, err)
+      setErrorImg(prev => ({ ...prev, [idx]: 'Error al procesar la imagen.' }))
+    } finally {
+      setSubiendo(prev => ({ ...prev, [idx]: false }))
+    }
   }
 
   return (
@@ -104,6 +155,48 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
               onChange={(e) => actualizar(idx, { cantidad: Math.max(1, Number(e.target.value) || 1) })}
               className="w-32 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
             />
+          </div>
+
+          {/* Imagen del producto (opcional) — foto del repuesto requerido */}
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-600 uppercase mb-1">Foto del producto (opcional)</label>
+            {p.imagen_url ? (
+              <div className="flex items-center gap-3">
+                <Image
+                  src={p.imagen_url}
+                  alt={`Foto producto ${idx + 1}`}
+                  width={72}
+                  height={72}
+                  className="w-[72px] h-[72px] object-cover rounded-lg border border-fuchsia-200"
+                  unoptimized
+                />
+                <button
+                  type="button"
+                  onClick={() => actualizar(idx, { imagen_url: undefined })}
+                  className="text-xs text-red-600 font-semibold hover:underline"
+                >
+                  Quitar foto
+                </button>
+              </div>
+            ) : (
+              <label className={`inline-flex items-center gap-2 rounded-lg border-2 border-dashed border-fuchsia-300 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 ${subiendo[idx] ? 'opacity-60' : 'cursor-pointer hover:border-fuchsia-500'} transition`}>
+                {subiendo[idx] ? '⏳ Subiendo…' : '📷 Agregar foto'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={subiendo[idx]}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) subirImagen(idx, file)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            )}
+            {errorImg[idx] && (
+              <p className="text-[11px] text-red-600 mt-1">{errorImg[idx]}</p>
+            )}
           </div>
         </div>
       ))}

@@ -4,6 +4,7 @@ import { verificarAdmin } from '@/lib/auth/admin'
 import {
   notificarTecnicos,
   enviarSeleccionHorarioCliente,
+  notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
 
 /**
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
           .from('solicitudes_servicio')
           .update({ estado: 'pendiente_horario', horario_recordatorio_at: null })
           .eq('id', sol.id)
+        await notificarCambioEstado(sol.id, 'sin_agendar', 'pendiente_horario')
       }
 
       const result = await enviarSeleccionHorarioCliente(solicitudId)

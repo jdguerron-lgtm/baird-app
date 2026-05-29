@@ -1,7 +1,12 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-05-23 (migración a dominio `lineablanca.bairdservice.com`).
+> Última actualización: 2026-05-29 (supervisores + reprogramación tras repuesto).
+
+> 🆕 **Cambios 2026-05-29 (supervisores + bug repuesto):** tres plantillas nuevas/bumpeadas, **pendientes de subir a Meta** (no invocar en prod hasta `APPROVED`):
+> - `supervisor_cambio_estado_v1` (NUEVA) — notifica a supervisores en cada cambio de estado. Disparada por `notificarCambioEstado()`.
+> - `repuesto_recibido_cliente_v2` (BUMP de `_v1`) — ahora con botón URL → `/reprogramar-repuesto/{token}` para que el cliente elija una nueva fecha **tentativa** tras llegar el repuesto.
+> - `repuesto_recibido_tecnico_v1` (NUEVA) — notifica al técnico la nueva fecha tentativa cuando el cliente reprograma tras el repuesto. Reemplaza el texto libre de `notificarTecnicoVisitaReprogramada()` (que fallaba fuera de la ventana 24h, cerrada tras semanas de espera del repuesto).
 
 > 🆕 **Migración de dominio (2026-05-23):** las 10 plantillas con URLs en su contenido (botones o body) fueron re-subidas con versión incrementada (`_v1` → `_v2`, `_v3` → `_v4`, `_v5` → `_v6`) apuntando a `lineablanca.bairdservice.com`. Las 6 plantillas sin URLs siguen en su versión original. Ver `scripts/upload-templates-v2.mjs` (subscript usado en la migración) y `docs/mejoras-futuras/migracion-dominio/runbook-cutover-2026-05-23.md`. Las versiones viejas (`_v1`, `_v3`, `_v5` de las 10 migradas) siguen aprobadas en Meta pero **ya no se invocan desde el código** — borrarlas tras 1-2 semanas sin issues (respetando el cooldown de 4 semanas para reusar el nombre).
 
@@ -23,7 +28,7 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 
 | Lugar | Qué contiene |
 |---|---|
-| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 16 plantillas. Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
+| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 18 plantillas (las 3 más nuevas — `supervisor_cambio_estado_v1`, `repuesto_recibido_cliente_v2` y `repuesto_recibido_tecnico_v1` — están en el script pero **aún no subidas a Meta**). Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
 | Meta Business Manager → WhatsApp Manager → Message Templates | **Fuente de verdad operacional** — lo que Meta tiene aprobado y permite enviar. Toda plantilla ya enviada al menos una vez está aquí. |
 | `docs/WHATSAPP_TEMPLATES.md` (este archivo) | **Documentación humana** — catálogo, parámetros, propósito. |
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
@@ -184,13 +189,23 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Sin botón**
 - **Propósito**: avisar que el repuesto está siendo gestionado.
 
-#### `repuesto_recibido_cliente_v1`
-- **En script** ✅
-- **Disparo**: `enviarRepuestoRecibidoCliente(solicitudId)` cuando admin marca todos los repuestos recibidos
+#### `repuesto_recibido_cliente_v2` ⏳ pendiente de subir a Meta
+- **En script** ✅ (bump de `_v1` el 2026-05-29)
+- **Disparo**: `enviarRepuestoRecibidoCliente(solicitudId)` cuando admin marca todos los repuestos recibidos (estado pasa a `repuesto_recibido`). También re-enviable desde `/api/admin/reenviar-ultimo-mensaje` para ese estado.
 - **Destino**: cliente
 - **Body** (3 params): `cliente`, `equipo`, `tecnico`
-- **Sin botón**
-- **Propósito**: avisar que el repuesto llegó y la reparación se reanuda.
+- **Botón URL**: `/reprogramar-repuesto/{reprogramacion_token}` — display "Elegir nueva fecha"
+- **Propósito**: el repuesto llegó; el cliente elige una **nueva fecha tentativa** (semanas pueden haber pasado desde el diagnóstico). El copy aclara que la fecha se confirma según disponibilidad del técnico. Al elegir, `/api/reprogramar-repuesto` pasa la solicitud a `en_proceso`.
+- **⚠️ Cambio vs `_v1`**: `_v1` (sin botón) solo avisaba "el técnico se contactará". `_v2` agrega el botón para que el cliente reagende. `_v1` queda deprecated en Meta (cooldown 4 semanas).
+
+#### `repuesto_recibido_tecnico_v1` ⏳ pendiente de subir a Meta
+- **En script** ✅ (nueva 2026-05-29)
+- **Disparo**: `notificarTecnicoVisitaReprogramada(solicitudId, horario)` desde `POST /api/reprogramar-repuesto`, justo después de que el cliente elige la nueva fecha y la solicitud pasa a `en_proceso`.
+- **Destino**: técnico asignado
+- **Body** (4 params): `nombre_tecnico`, `equipo`, `cliente`, `fecha_tentativa`
+- **Botón URL**: `/tecnico/{portal_token}` — display "Abrir portal"
+- **Propósito**: avisar al técnico la nueva fecha **tentativa** que eligió el cliente y recordarle que la confirme según su disponibilidad. El servicio ya está `en_proceso`; puede completar la reparación al coordinar.
+- **⚠️ Por qué plantilla y no texto libre**: entre el diagnóstico (`esperando_repuesto`) y la llegada del repuesto pasan semanas, así que la ventana 24h del técnico casi siempre está cerrada → el texto libre anterior fallaba en silencio. Una plantilla funciona fuera de la ventana. Reemplaza el `enviarMensajeTexto` que usaba `notificarTecnicoVisitaReprogramada` hasta el 2026-05-29.
 
 #### `finalizado_sin_reparacion_v1`
 - **En script** ✅
@@ -217,6 +232,21 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Body** (3 params): `nombre`, `ciudad`, `especialidad`
 - **Sin botón**
 - **Propósito**: bienvenida + indicar que falta verificación admin.
+
+### Supervisión
+
+#### `supervisor_cambio_estado_v1` ⏳ pendiente de subir a Meta
+- **En script** ✅ (nueva 2026-05-29)
+- **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` — se invoca en cada transición de estado de `solicitudes_servicio` (ver lista de call-sites en `docs/ARQUITECTURA.md`).
+- **Destino**: cada supervisor **activo** de la tabla `supervisores` cuyo filtro matchea la solicitud:
+  - `ambito`: `todos` (siempre) | `garantia` (solo `es_garantia=true`) | `particular` (solo `es_garantia=false`)
+  - `marca`: `null` (todas) | string (solo si coincide con `marca_equipo`, normalizado sin acentos)
+  - `estados`: `null`/`[]` (todos) | `text[]` (solo si `estadoNuevo` está en la lista)
+- **Header**: TEXT — "Actualización de servicio"
+- **Body** (6 params): `supervisor_nombre`, `cliente`, `equipo`, `ciudad`, `tipo_flujo` (Garantía/Particular), `estado_nuevo` (label legible de `ESTADO_LABELS`)
+- **Sin botón** (informativo)
+- **Propósito**: dar visibilidad a supervisores (p.ej. uno general que ve todo, otro que solo ve garantías MABE) sobre cualquier cambio de estado. La plantilla funciona fuera de la ventana 24h (los supervisores no chatean con el número del negocio).
+- **Nota**: `notificarCambioEstado` nunca lanza — si el envío falla, loguea y no rompe la transición que lo disparó.
 
 ---
 
@@ -386,32 +416,8 @@ Cubren los gaps detectados al revisar el flujo de garantía (2026-05-08). Cada u
 }
 ```
 
-#### E. `repuesto_recibido_tecnico_v1`
-**Gap**: hoy el técnico recibe texto libre cuando admin marca el repuesto como recibido — depende de su ventana 24h. Mejor usar plantilla.
-**Disparo sugerido**: reemplazar el texto libre en `/api/repuesto-recibido` por esta plantilla.
-
-```js
-{
-  name: 'repuesto_recibido_tecnico_v1',
-  category: 'UTILITY',
-  language: 'es',
-  components: [
-    {
-      type: 'BODY',
-      text:
-        '📦 Hola {{1}}, los repuestos para el servicio de {{2}} ({{3}}) ya llegaron.\n\n' +
-        'El servicio está listo para retomarse. Coordina con el cliente la nueva visita y, cuando termines, abre el portal para subir las evidencias.',
-      example: { body_text: [['Carlos', 'Lavadora Mabe', 'Juan Pérez']] },
-    },
-    {
-      type: 'BUTTONS',
-      buttons: [
-        { type: 'URL', text: 'Abrir portal', url: `${APP_URL}/tecnico/{{1}}`, example: [`${APP_URL}/tecnico/...`] },
-      ],
-    },
-  ],
-}
-```
+#### E. `repuesto_recibido_tecnico_v1` ✅ PROMOVIDA (2026-05-29)
+Ya no está en backlog: se agregó al script y al catálogo (sección "Post-decisión cliente"). La versión final tiene **4 params** (`nombre`, `equipo`, `cliente`, `fecha_tentativa` + botón portal) — diverge del borrador de 3 params de este backlog porque se dispara **después** de que el cliente elige fecha (no al recibir el repuesto), así que incluye la fecha tentativa. Ver entrada de catálogo y `scripts/upload-templates.mjs`.
 
 #### F. `gestionar_servicio_v1`
 **Gap**: el cliente accede al portal `/servicio/{cliente_token}` solo si abre un webview que contenga el `<GestionarServicioLink>` (hoy en /horario, /verificar-paso, /cotizacion). Ideal sería tenerlo en WhatsApp directo en momentos clave.

@@ -13,8 +13,12 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 > schema hasta `20260516` están **aplicadas**. Los estados "PENDIENTE" de la
 > tabla de abajo y la sección "Cómo aplicar las pendientes" quedaron
 > desactualizados — **NO re-corras esas migraciones** (algunas tienen backfills).
-> Lo único realmente pendiente es `20260521_storage_policies_public_role.sql`,
-> y esa va por el **Dashboard de Storage**, no por SQL.
+> Pendientes reales hoy (2026-05-29):
+> - `20260521_storage_policies_public_role.sql` — va por el **Dashboard de Storage**, no por SQL.
+> - `20260529_supervisores_y_repuesto_recibido.sql` — va por **SQL Editor**. Ver
+>   sección dedicada ["Aplicar 20260529"](#aplicar-20260529_supervisores_y_repuesto_recibidosql-pendiente-real)
+>   más abajo y el plan de despliegue en
+>   `docs/mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md`.
 
 | Archivo | Estado | Qué hace |
 |---|---|---|
@@ -35,6 +39,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | **`20260513_tracking_ta.sql`** | **PENDIENTE** | Columnas `diagnosticado_at timestamptz` + `cumple_ta boolean` en `solicitudes_servicio`, con índices. Backfill desde `triaje_resultado` JSONB. Habilita tracking del SLA 24h y filtros admin por TA |
 | `20260516_perf_fk_index_rls.sql` | aplicada (2026-05-16) | Mejoras de performance del advisor de Supabase: (a) índice FK `idx_solicitudes_tecnico_asignado` para `solicitudes_servicio.tecnico_asignado_id`, (b) wrap `auth.role()` en `(SELECT auth.role())` para las policies `service_role_all_*` (RLS initplan, 1 evaluación por query en vez de por fila), (c) re-scope `service_role_all_{gps,repuestos,eventos}` de role `{public}` → `{service_role}` para eliminar superposición con policies `anon_*` (multiple permissive), (d) drop policy duplicada `"Allow public update evidencias"` en `evidencias_servicio`. Aplicada vía MCP — ya no aparece en pendientes |
 | **`20260521_storage_policies_public_role.sql`** | **PENDIENTE — aplicar vía Dashboard** | Fix RLS Storage: amplía las policies de los buckets `evidencias-servicio`, `tecnicos-fotos` y `tecnicos-documentos` de role `{anon}` → `public`. Resuelve `new row violates row-level security policy` al subir evidencia desde el portal del técnico cuando el navegador tiene una sesión de admin activa (rol `authenticated` no matcheaba las policies `{anon}`). **NO se puede correr en el SQL Editor** — `postgres` no es dueño de `storage.objects`. Aplicar vía Dashboard → Storage → Policies (ver cabecera del archivo) |
+| **`20260529_supervisores_y_repuesto_recibido.sql`** | **PENDIENTE — aplicar vía SQL Editor** | (1) Tabla nueva `supervisores` (destinatarios WhatsApp por cambio de estado; filtrable por ámbito `todos`/`garantia`/`particular`, `marca`, subconjunto de `estados[]`) con RLS + 4 policies anon CRUD + service_role + trigger de normalización de teléfono. (2) Estado nuevo `repuesto_recibido` en el CHECK constraint de `solicitudes_servicio.estado` (22 estados). (3) Columnas `reprogramacion_token uuid` + `repuesto_recibido_at timestamptz` + sus índices parciales. Idempotente. **No tiene backfill** — segura de re-correr. Ver sección dedicada abajo + `docs/MAQUINA-DE-ESTADOS.md` §4b/4c y §Supervisores |
 
 ## Cómo aplicar las pendientes
 
@@ -133,13 +138,78 @@ WHERE e.completado_at IS NOT NULL
 
 Si alguna fila vuelve `FALTA ❌`, vuelve a ejecutar la migración correspondiente — son idempotentes.
 
+## Aplicar `20260529_supervisores_y_repuesto_recibido.sql` (pendiente real)
+
+> Esta es la única migración SQL realmente pendiente a 2026-05-29. **No tiene
+> backfill ni dependencias de orden** con las anteriores (solo asume que
+> `normalizar_telefono_co()` ya existe — creada por `20260513_normalizar_telefonos.sql`,
+> ya aplicada). Es 100% idempotente: segura de re-correr.
+
+1. Abre Supabase → **SQL Editor** → **New query**.
+2. Pega el contenido completo de `20260529_supervisores_y_repuesto_recibido.sql` y ejecuta. Espera "Success".
+3. Corre la verificación de abajo (debe devolver todo `OK ✅`).
+4. **Antes de tocar producción**, lee el plan de despliegue completo en
+   `docs/mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md`
+   — incluye el orden migración → plantillas Meta → deploy y la decisión de
+   producto pendiente (¿notificar a supervisores en la *creación* de solicitudes?).
+
+### Verificación de `20260529`
+
+```sql
+-- 1. Tabla supervisores existe
+SELECT
+  CASE WHEN COUNT(*) = 1 THEN 'OK ✅' ELSE 'FALTA ❌' END AS check_tabla_supervisores
+FROM information_schema.tables
+WHERE table_name = 'supervisores';
+
+-- 2. RLS habilitado en supervisores
+SELECT
+  CASE WHEN relrowsecurity THEN 'OK ✅' ELSE 'FALTA ❌' END AS check_rls_supervisores
+FROM pg_class WHERE relname = 'supervisores';
+
+-- 3. Las 5 policies de supervisores existen (4 anon CRUD + service_role)
+SELECT
+  CASE WHEN COUNT(*) = 5 THEN 'OK ✅' ELSE 'FALTA ❌ ' || COUNT(*)::text || '/5' END AS check_policies_supervisores
+FROM pg_policies
+WHERE tablename = 'supervisores';
+
+-- 4. Trigger de normalización de teléfono existe
+SELECT
+  CASE WHEN COUNT(*) = 1 THEN 'OK ✅' ELSE 'FALTA ❌' END AS check_trigger_supervisor
+FROM pg_trigger
+WHERE tgname = 'normalizar_whatsapp_supervisor';
+
+-- 5. Estado repuesto_recibido permitido en el CHECK constraint
+SELECT
+  CASE WHEN check_clause LIKE '%repuesto_recibido%' THEN 'OK ✅' ELSE 'FALTA ❌' END AS check_estado_repuesto_recibido
+FROM information_schema.check_constraints
+WHERE constraint_name = 'solicitudes_servicio_estado_check';
+
+-- 6. Columnas nuevas en solicitudes_servicio
+SELECT
+  CASE WHEN COUNT(*) = 2 THEN 'OK ✅' ELSE 'FALTA ❌ ' || (2 - COUNT(*))::text END AS check_columnas_reprogramacion
+FROM information_schema.columns
+WHERE table_name = 'solicitudes_servicio'
+  AND column_name IN ('reprogramacion_token', 'repuesto_recibido_at');
+
+-- 7. Índices nuevos existen
+SELECT
+  CASE WHEN COUNT(*) = 3 THEN 'OK ✅' ELSE 'FALTA ❌ ' || COUNT(*)::text || '/3' END AS check_indices
+FROM pg_indexes
+WHERE indexname IN (
+  'idx_supervisores_activo',
+  'idx_solicitudes_reprogramacion_token',
+  'idx_solicitudes_repuesto_recibido'
+);
+```
+
 ## Rollback
 
 Las migraciones no traen rollback automático. Si necesitas revertir una columna, hazlo manualmente. **No revertir** mientras haya filas `pendiente_pricing` o `reagendamiento_pendiente` en producción.
 
 ## Nota sobre RLS
 
-- Tablas con RLS habilitado: `repuestos_pendientes`, `gps_pings`, `solicitud_eventos`.
+- Tablas con RLS habilitado: `repuestos_pendientes`, `gps_pings`, `solicitud_eventos`, `supervisores` (esta última desde `20260529`).
 - Tablas sin RLS: `solicitudes_servicio`, `tecnicos`, `especialidades_tecnico`, `notificaciones_whatsapp`, `evidencias_servicio`.
 - Toda la app usa el `anon_key`. Para producción seria, queda pendiente habilitar RLS en las 5 tablas restantes (ver `improvement-plan.md`).
 

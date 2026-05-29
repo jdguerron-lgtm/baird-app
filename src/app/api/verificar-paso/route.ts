@@ -4,6 +4,7 @@ import {
   enviarMensajeTexto,
   enviarEsperandoRepuestoCliente,
   enviarFinalizadoSinReparacion,
+  notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
 import type { SiguientePasoDiagnostico } from '@/types/solicitud'
 
@@ -62,6 +63,8 @@ export async function POST(req: NextRequest) {
 
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
+      await notificarCambioEstado(sol.id, sol.estado, 'en_disputa')
+
       // Notificar técnico (texto libre)
       const { data: tec } = await supabase
         .from('tecnicos').select('whatsapp, nombre_completo').eq('id', sol.tecnico_asignado_id).single()
@@ -100,6 +103,8 @@ export async function POST(req: NextRequest) {
       .eq('id', sol.id)
 
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+    await notificarCambioEstado(sol.id, sol.estado, nuevoEstado)
 
     // Enviar WhatsApp de seguimiento al cliente y/o técnico
     const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarPlantilla } from '@/lib/services/whatsapp.service'
+import { enviarPlantilla, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,6 +32,10 @@ export async function POST(req: NextRequest) {
     if (!sol) {
       return NextResponse.json({ error: 'Servicio no encontrado' }, { status: 404 })
     }
+
+    // El técnico ya marcó la solicitud como 'en_verificacion' (update client-side
+    // en la página de completar). Notificar a supervisores configurados.
+    await notificarCambioEstado(sol.id, 'en_proceso', 'en_verificacion')
 
     // Get the confirmation token and photos from evidencias
     const { data: evidencia } = await supabase

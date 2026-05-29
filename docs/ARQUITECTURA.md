@@ -18,6 +18,7 @@ src/
 │   ├── servicio/[token]/       # Customer self-service portal (cancel/reschedule)
 │   ├── horario/[token]/        # Customer schedule selection (after creating request)
 │   ├── verificar-paso/[token]/ # Customer approval of next-step (post-diagnosis, warranty)
+│   ├── reprogramar-repuesto/[token]/ # Customer picks new tentative date after part arrived
 │   ├── terminos/               # Public Terms & Conditions page
 │   ├── admin/                  # Admin panel (auth-guarded)
 │   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view)
@@ -25,7 +26,8 @@ src/
 │   │   ├── repuestos/          # Pending parts dashboard
 │   │   ├── gps-alertas/        # Silent flagged services (post-visit GPS within 100m)
 │   │   ├── carga-masiva/       # Bulk Excel upload for warranty services
-│   │   └── garantias/          # Warranty dashboard (summary by brand/equipment)
+│   │   ├── garantias/          # Warranty dashboard (summary by brand/equipment)
+│   │   └── supervisores/       # CRUD supervisores (WhatsApp on state changes)
 │   └── api/                    # API routes
 │       ├── solicitar/              # Service request: insert + WhatsApp confirm + notify techs
 │       ├── confirmar-horario/      # Customer schedule confirmation → notify techs
@@ -37,7 +39,8 @@ src/
 │       ├── solicitud/              # Customer self-service (NEW 2026-05-06)
 │       │   ├── cancelar/           #   POST: cancel service request from /servicio portal
 │       │   └── reagendar/          #   POST: reschedule from /servicio portal
-│       ├── repuesto-recibido/      # Admin marks parts arrived → reactivates service
+│       ├── repuesto-recibido/      # Admin marks parts arrived → estado repuesto_recibido
+│       ├── reprogramar-repuesto/   # Public (token): customer picks new tentative date → en_proceso
 │       ├── gps-ping/               # Tech browser GPS ping by phase
 │       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup)
 │       ├── triaje/                 # Gemini AI diagnosis (disabled)
@@ -83,7 +86,9 @@ legal/                          # Legal documents (Baird Service SAS)
 | `notificarTecnicos(solicitudId)` | Send service request to matching technicians | Yes |
 | `procesarAceptacion(token)` | Atomic acceptance (first tech wins) | Yes |
 | `enviarEsperandoRepuestoCliente(...)` | Plantilla esperando_repuesto_cliente_v1 con SKU | No |
-| `enviarRepuestoRecibidoCliente(solicitudId)` | Plantilla repuesto_recibido_cliente_v1 | No |
+| `enviarRepuestoRecibidoCliente(solicitudId)` | Plantilla `repuesto_recibido_cliente_v2` (con botón → `/reprogramar-repuesto/{token}`). Auto-genera `reprogramacion_token` si falta. El cliente elige nueva fecha tentativa. | No |
+| `notificarTecnicoVisitaReprogramada(solicitudId, horario)` | Avisa al técnico la nueva fecha tentativa elegida por el cliente tras el repuesto. Plantilla `repuesto_recibido_tecnico_v1` (NO texto libre — la ventana 24h del técnico suele estar cerrada tras semanas de espera). | No |
+| `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` | Notifica por WhatsApp a supervisores activos (tabla `supervisores`) filtrados por ámbito/marca/estados. Plantilla `supervisor_cambio_estado_v1`. **Nunca lanza** (atrapa+loguea); corta si previo===nuevo. Ver call-sites abajo. | Lee `es_garantia` para filtrar |
 | `enviarFinalizadoSinReparacion(solicitudId, motivo)` | Plantilla finalizado_sin_reparacion_v1 | No |
 | `enviarCotizacionCliente(solicitudId)` | Send quote to customer via WhatsApp | No — non-warranty only |
 | `notificarCotizacionAprobada(solicitudId)` | Notify tech that quote was approved | No — non-warranty only |
@@ -97,6 +102,30 @@ legal/                          # Legal documents (Baird Service SAS)
 | `verificarFirmaWebhook(payload, signature)` | HMAC verification for Meta webhook | N/A |
 
 **Test gate:** todas las primitivas (`enviarPlantilla`, `enviarMensajeTexto`, `enviarImagen`, `enviarMensajeInteractivo`) verifican `BAIRD_TEST_PHONE_WHITELIST`. Si la env está definida (CSV de digits con país, p.ej. `573134951164`), los envíos a números fuera de la lista se omiten silenciosamente con un log `[WhatsApp][test-mode] Skipping ...`. Vacío/no definido → comportamiento normal (envía a todos). Útil para probar nuevos flujos sin alertar a técnicos reales.
+
+### Call-sites de `notificarCambioEstado` (notificación a supervisores)
+
+El helper se invoca en cada **transition owner** (la función/route que muta `estado`). Está cableado aditivamente — una línea `await notificarCambioEstado(...)` que nunca rompe el flujo. Cobertura actual:
+
+| Transición | Origen |
+|---|---|
+| `notificada → asignada`/`diagnostico_pendiente` | `procesarAceptacion` (`whatsapp.service.ts`) |
+| `* → cancelada` | `procesarCancelacionCliente` (`whatsapp.service.ts`) |
+| reagendamiento | `procesarReagendamientoCliente` (`whatsapp.service.ts`) |
+| `pendiente_horario → notificada` | `/api/confirmar-horario` |
+| diagnóstico (garantía + particular) | `/api/diagnostico` (2 ramas) |
+| `pendiente_pricing → cotizacion_enviada`/`verificacion_pendiente` | `/api/cotizacion-precios` |
+| `cotizacion_enviada → aprobada`/`rechazada` | `/api/aprobar-cotizacion` |
+| `* → en_disputa` y aprobación de paso | `/api/verificar-paso` |
+| `esperando_repuesto → repuesto_recibido` | `/api/repuesto-recibido` |
+| `repuesto_recibido → en_proceso` | `/api/reprogramar-repuesto` |
+| `en_proceso → en_verificacion` | `/api/completar-servicio` |
+| `en_verificacion → completada`/`en_disputa` | `/api/confirmar-servicio` |
+| `pendiente_horario → sin_agendar` | `/api/cron/horario-recordatorio` |
+| `sin_agendar → pendiente_horario` (revival) | `/api/whatsapp/notify` |
+| cualquier cambio manual | `/api/admin/cambiar-estado` |
+
+**NO cableado a propósito:** `notificarTecnicos` y `enviarCotizacionCliente` (re-setean estado de forma idempotente; sus owners ya disparan el evento → evitar doble fire). **Creación de solicitudes** (`/api/solicitar`, `/api/carga-masiva`) tampoco dispara — son inserts sin estado previo. Si se quisiera notificar el alta, es una decisión de producto abierta (ver plan de despliegue) por el riesgo de spam en cargas masivas de garantía.
 
 ## API Routes
 
@@ -112,15 +141,17 @@ legal/                          # Legal documents (Baird Service SAS)
 | `/api/solicitud/cancelar` | POST | Cliente cancela desde portal /servicio | Both |
 | `/api/solicitud/reagendar` | POST | Cliente reagenda desde portal /servicio | Both |
 | `/api/cotizacion-precios` | POST | Admin fija precios + tiempo de entrega tras diagnóstico | Both (lógica difiere) |
-| `/api/repuesto-recibido` | POST | Admin marks parts arrived → reactivates service | Both |
+| `/api/repuesto-recibido` | POST | Admin marca repuestos llegados. Si todos recibidos → estado `repuesto_recibido` + `repuesto_recibido_at` + `reprogramacion_token`; envía `repuesto_recibido_cliente_v2` (botón reprogramar). | Both |
+| `/api/reprogramar-repuesto` | POST | Público (gateado por `reprogramacion_token`). Cliente elige NUEVA fecha tentativa tras el repuesto → estado `repuesto_recibido` → `en_proceso`; notifica al técnico. Body `{ token, horario }`. | Both |
 | `/api/gps-ping` | POST | Tech browser sends GPS coords by phase | Both |
 | `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
 | `/api/cron/gps-followup` | GET | Cron 10min: post-visit GPS flagging | N/A |
 | `/api/carga-masiva` | POST | Bulk Excel upload for warranty | Warranty only |
 | `/api/admin/export` | POST | Admin: descarga `.xlsx` con resumen completo de solicitudes (cliente, técnico, evidencias, fotos, eventos, GPS, cotización). Body: `{ ids?: string[] }` — sin IDs exporta todas. | Both |
 | `/api/admin/editar-solicitud` | POST | Admin: corrige manualmente `tipo_equipo`, horario, dirección, ciudad, zona. Auditado en `solicitud_eventos` con diff. | Both |
-| `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp. | Both |
-| `/api/admin/reenviar-ultimo-mensaje` | POST | Admin: re-dispara la plantilla WhatsApp correspondiente al estado actual de la solicitud (útil si el cliente o el técnico borró el mensaje). | Both |
+| `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp al cliente/técnico, pero SÍ notifica supervisores (`notificarCambioEstado`). | Both |
+| `/api/admin/reenviar-ultimo-mensaje` | POST | Admin: re-dispara la plantilla WhatsApp correspondiente al estado actual de la solicitud (útil si el cliente o el técnico borró el mensaje). Incluye `repuesto_recibido` → `repuesto_recibido_cliente_v2`. | Both |
+| `/api/admin/supervisores` | GET/POST/PUT/DELETE | Admin CRUD de la tabla `supervisores` (destinatarios de `notificarCambioEstado`). Auth `verificarAdmin`. | N/A |
 | `/api/whatsapp/accept` | GET | Aceptación 1-click del técnico desde la plantilla WhatsApp. Token único por notificación. Llama `procesarAceptacion()` — atomic update primer-técnico-gana. Redirige al portal del técnico tras aceptar. | Both |
 | `/api/whatsapp/notify` | POST | Admin re-notifica técnicos para una solicitud (volver a disparrar el broadcast a técnicos compatibles). Usa `notificarTecnicos()`. | Both |
 | `/api/notificar-registro` | POST | Post-registro del técnico: envía `registro_bienvenida_v3` con link al portal. | N/A |
@@ -138,6 +169,7 @@ legal/                          # Legal documents (Baird Service SAS)
 | **Self-service portal** | `/servicio/{cliente_token}` | Cancela / reagenda. Token durable, vive en `solicitudes_servicio.cliente_token` |
 | **Verificar siguiente paso** | `/verificar-paso/{verificacion_paso_token}` | Cliente aprueba/rechaza el siguiente paso post-diagnóstico (garantía) |
 | Quote approval | `/cotizacion/{cotizacion.token}` | Customer approves/rejects repair quote (non-warranty) |
+| **Reprogramar tras repuesto** | `/reprogramar-repuesto/{reprogramacion_token}` | Cliente elige nueva fecha tentativa cuando el repuesto llegó (estado `repuesto_recibido`). POST a `/api/reprogramar-repuesto` → `en_proceso`. |
 | Service confirmation | `/confirmar/{confirmacion_token}` | Customer confirms service was completed satisfactorily |
 | **Terms & Conditions** | `/terminos` | Public T&C page (Colombian law-compliant) |
 | Privacy Policy | `/politica-privacidad` | Existing |
@@ -150,7 +182,7 @@ legal/                          # Legal documents (Baird Service SAS)
 | **Registro** | `/registro` | Onboarding del técnico: formulario con datos personales, foto, documento, especialidades, ciudad. Inserta en `tecnicos` con `estado_verificacion='pendiente'`. Al final llama `/api/notificar-registro` para mandar `registro_bienvenida_v3`. |
 | Accept service | `/aceptar/{token}` | 1-click acceptance from WhatsApp notification (la URL del botón apunta a `/api/whatsapp/accept?token=...` que redirige acá tras procesar) |
 | Portal (service list) | `/tecnico/{token}` | View assigned services and history. Auth: `portal_token` UUID en la URL. |
-| Diagnosis form | `/tecnico/{token}/diagnostico/{id}` | Oath modal + diagnosis + 4 next-step options + GPS. Fotos se comprimen client-side (`compressImageIfNeeded`) antes de subirlas en paralelo. |
+| Diagnosis form | `/tecnico/{token}/diagnostico/{id}` | Oath modal + diagnosis + 4 next-step options + GPS. Fotos se comprimen client-side (`compressImageIfNeeded`) antes de subirlas en paralelo. **Productos necesarios** (`ProductosNecesariosForm`) admite **foto opcional por SKU** (ambos flujos): se sube al bucket `evidencias-servicio` y su URL pública se guarda en `imagen_url` dentro del JSONB (`triaje_resultado`/`cotizacion`). Visible en `/admin/cotizaciones-pendientes` y `/admin/solicitudes/{id}`. |
 | Completion form | `/tecnico/{token}/completar/{id}` | Upload photos, checklist, signature, GPS. Misma compresión + paralelización que `diagnostico`. |
 
 ## Admin Pages
@@ -171,6 +203,7 @@ Todas requieren login Supabase Auth en `/admin/login` y validación server-side 
 | **Errores de conexión** | `/admin/errores` | Observabilidad: panel de `connection_errors` (telemetría enviada por el cliente vía `/api/log-error`). Filtros por rango temporal (1h/24h/7d/30d), tipo de error y actor (técnico/cliente/admin). |
 | Carga Masiva | `/admin/carga-masiva` | BITÁCORA Excel upload |
 | Garantías | `/admin/garantias` | Warranty dashboard by brand/equipment |
+| **Supervisores** | `/admin/supervisores` | CRUD de supervisores que reciben notificaciones WhatsApp en cada cambio de estado. Por cada uno: nombre, WhatsApp, activo, ámbito (todos/garantía/particular), marca (opcional), estados (opcional). UI dispara `/api/admin/supervisores`. |
 
 **Exportación de resumen** (botón **📥 Descargar resumen Excel**):
 - En `/admin/solicitudes` → exporta TODAS las visibles. Si hay filas seleccionadas con checkbox, aparece **📥 Descargar selección** que solo exporta esas.

@@ -455,6 +455,47 @@ export default function SolicitarServicio() {
                           El pago se realiza a Baird Service por medios electrónicos (no efectivo).
                         </p>
                       </div>
+                    ) : formData.tipo_solicitud === 'Cambio de filtro' ? (
+                      <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-2">
+                            <BoltIcon className="w-5 h-5 text-teal-600 shrink-0" />
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Cambio de filtro {formData.tipo_equipo}
+                              </p>
+                              <p className="text-2xl font-bold text-teal-700 mt-0.5">
+                                ${formatCOP(formData.pago_tecnico)} <span className="text-sm font-medium text-teal-600">COP</span>
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs text-teal-700 bg-white border border-teal-200 rounded-full px-2.5 py-1 font-medium">
+                            Filtro incluido
+                          </span>
+                        </div>
+
+                        {/* Discriminación del IVA — exigido por DIAN para facturación electrónica */}
+                        <div className="bg-white border border-teal-100 rounded-lg p-2.5 text-[11px] text-gray-700 space-y-0.5">
+                          <div className="flex justify-between">
+                            <span>Base sin IVA</span>
+                            <span className="font-medium tabular-nums">${formatCOP(calcularBaseSinIva(formData.pago_tecnico))}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>IVA ({Math.round(IVA_TARIFA * 100)}%)</span>
+                            <span className="font-medium tabular-nums">${formatCOP(calcularIvaIncluido(formData.pago_tecnico))}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-teal-200 pt-1 mt-1 text-teal-800 font-semibold">
+                            <span>Total a pagar</span>
+                            <span className="tabular-nums">${formatCOP(formData.pago_tecnico)}</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-teal-700 mt-3">
+                          💡 Precio todo-incluido: el <strong>filtro</strong>, la mano de obra y el IVA ya están
+                          cubiertos. No pagas nada adicional al técnico. El pago se realiza a Baird Service por
+                          medios electrónicos (no efectivo).
+                        </p>
+                      </div>
                     ) : (
                       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                         <div className="flex items-center justify-between gap-3 mb-3">

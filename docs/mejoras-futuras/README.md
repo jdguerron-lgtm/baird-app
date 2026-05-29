@@ -4,7 +4,9 @@ Backlog de iniciativas en discusión que **aún no están implementadas**. Cada 
 
 ## Inventario actual
 
-*(vacío — todas las iniciativas activas se completaron)*
+| Iniciativa | Estado | Notas |
+|---|---|---|
+| [Supervisores + estado `repuesto_recibido`](supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md) | **código completo, pendiente de desplegar** | Notificaciones WhatsApp a supervisores en cada cambio de estado (config por ámbito/marca/estados) + fix del bug "repuesto que llega tarde" (cliente reprograma fecha tentativa antes de pasar a `en_proceso`). Runbook de despliegue (migración → plantillas Meta → deploy) y decisión de producto pendiente (¿notificar en creación?) en el plan. Migración: `supabase/migrations/20260529_supervisores_y_repuesto_recibido.sql`. |
 
 ## Proyectos completados (registro histórico)
 

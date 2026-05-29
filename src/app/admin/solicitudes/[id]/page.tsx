@@ -748,7 +748,7 @@ export default function SolicitudDetalle() {
           if (!triaje?.diagnostico_tecnico) return null
 
           // Productos vienen de triaje_resultado (siempre poblado) con fallback a cotizacion.
-          type ProdNec = { sku: string; descripcion: string; cantidad: number; precio_unitario?: number; subtotal?: number }
+          type ProdNec = { sku: string; descripcion: string; cantidad: number; precio_unitario?: number; subtotal?: number; imagen_url?: string }
           type ProdRec = { nombre: string; descripcion: string }
           const productosNec = (triaje.productos_necesarios as ProdNec[] | undefined)
             ?? (cotizacion?.productos_necesarios as ProdNec[] | undefined)
@@ -843,6 +843,18 @@ export default function SolicitudDetalle() {
                                 <span className="text-xs text-fuchsia-700 bg-white px-2 py-0.5 rounded-full">cantidad: {p.cantidad}</span>
                               </div>
                               <p className="text-sm text-slate-800">{p.descripcion}</p>
+                              {p.imagen_url && (
+                                <a href={p.imagen_url} target="_blank" rel="noopener noreferrer" className="inline-block mt-2">
+                                  <Image
+                                    src={p.imagen_url}
+                                    alt={`Foto ${p.sku}`}
+                                    width={88}
+                                    height={88}
+                                    className="w-[88px] h-[88px] object-cover rounded-lg border border-fuchsia-200 hover:opacity-90 transition"
+                                    unoptimized
+                                  />
+                                </a>
+                              )}
                             </div>
                             {tienePrecio && (
                               <div className="text-right shrink-0">

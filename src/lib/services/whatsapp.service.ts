@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
+import { ESTADO_LABELS } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
@@ -646,6 +647,9 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   const sol = updated // aliás semántico
 
+  // Avisar a supervisores que un técnico tomó el servicio (asignada / diagnostico_pendiente).
+  await notificarCambioEstado(sol.id, 'notificada', estadoAsignacion)
+
   // 4. Notificar al técnico ganador con los datos del cliente
   const clienteDigits = phoneToDigits(sol.cliente_telefono)
 
@@ -1014,14 +1018,52 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
 /**
  * Notifica al cliente cuando el repuesto que estaba esperando ya llegó.
  */
+/**
+ * Notifica al cliente que su repuesto llegó y debe elegir una NUEVA fecha de
+ * visita (plantilla repuesto_recibido_cliente_v2, con botón URL a
+ * /reprogramar-repuesto/{token}).
+ *
+ * El token sale de solicitudes_servicio.reprogramacion_token. Si la fila no lo
+ * tiene (p.ej. reenvío manual desde admin sobre una fila vieja), se autogenera
+ * y persiste — mismo patrón self-heal que enviarSeleccionHorarioCliente.
+ *
+ * IMPORTANTE: la fecha que el cliente elige es TENTATIVA, sujeta a la
+ * disponibilidad del técnico asignado; el copy de la plantilla lo deja claro.
+ */
 export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, reprogramacion_token')
     .eq('id', solicitudId)
     .single()
 
   if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  // Self-heal: la fila debería tener reprogramacion_token (se fija al entrar a
+  // repuesto_recibido). Si falta, lo generamos atómicamente.
+  let reprogToken = sol.reprogramacion_token as string | null
+  if (!reprogToken) {
+    const nuevoToken = crypto.randomUUID()
+    const { data: updated } = await supabase
+      .from('solicitudes_servicio')
+      .update({ reprogramacion_token: nuevoToken })
+      .eq('id', solicitudId)
+      .is('reprogramacion_token', null)
+      .select('reprogramacion_token')
+      .single()
+    if (updated?.reprogramacion_token) {
+      reprogToken = updated.reprogramacion_token
+    } else {
+      // Carrera: otro proceso pudo asignarlo; releer.
+      const { data: refetch } = await supabase
+        .from('solicitudes_servicio')
+        .select('reprogramacion_token')
+        .eq('id', solicitudId)
+        .single()
+      reprogToken = refetch?.reprogramacion_token ?? null
+    }
+    if (!reprogToken) return { ok: false, error: 'No se pudo generar reprogramacion_token' }
+  }
 
   const { data: tec } = await supabase
     .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
@@ -1031,7 +1073,7 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
   const tecnico = tec?.nombre_completo ?? 'Técnico asignado'
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v1', 'es', [
+    const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1040,11 +1082,153 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
           { type: 'text', text: tecnico },
         ],
       },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: reprogToken }],
+      },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al técnico asignado que el cliente eligió una NUEVA fecha (tentativa)
+ * tras la llegada del repuesto. La solicitud ya quedó en en_proceso; este mensaje
+ * es la señal para que coordine con el cliente, confirme disponibilidad y complete
+ * la reparación.
+ *
+ * Usa la plantilla `repuesto_recibido_tecnico_v1` (NO texto libre): entre el
+ * diagnóstico y la llegada del repuesto pasan semanas, así que la ventana 24h del
+ * técnico casi siempre está cerrada y un mensaje free-form fallaría en silencio.
+ * Una plantilla funciona fuera de la ventana.
+ */
+export async function notificarTecnicoVisitaReprogramada(
+  solicitudId: string,
+  horario: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo, whatsapp, portal_token')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  if (!tec?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+  if (!tec.portal_token) return { ok: false, error: 'Técnico sin portal_token' }
+
+  const nombreTec = tec.nombre_completo.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+
+  try {
+    await enviarPlantilla(tec.whatsapp, 'repuesto_recibido_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombreTec },
+          { type: 'text', text: equipo },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: horario },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: tec.portal_token }],
+      },
+    ])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica a los supervisores configurados cuando una solicitud cambia de estado.
+ *
+ * NUNCA lanza: atrapa y loguea todos los errores. Los call-sites pueden await sin
+ * try/catch — si falla, no rompe la transición que lo disparó.
+ *
+ * Filtrado por supervisor (tabla `supervisores`, solo activo = true):
+ *   - ambito:  'todos' → siempre | 'garantia' → solo es_garantia | 'particular' → solo !es_garantia
+ *   - marca:   null → todas | string → solo si coincide con marca_equipo (normalizeForMatch)
+ *   - estados: null/[] → todos | string[] → solo si estadoNuevo está en la lista
+ *
+ * Usa la plantilla `supervisor_cambio_estado_v1` (funciona fuera de la ventana 24h:
+ * los supervisores no interactúan con el WhatsApp del negocio).
+ */
+export async function notificarCambioEstado(
+  solicitudId: string,
+  estadoPrevio: string | null,
+  estadoNuevo: string,
+): Promise<void> {
+  try {
+    if (estadoPrevio === estadoNuevo) return
+
+    const { data: sol } = await supabase
+      .from('solicitudes_servicio')
+      .select('cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia')
+      .eq('id', solicitudId)
+      .single()
+    if (!sol) return
+
+    const { data: supervisores } = await supabase
+      .from('supervisores')
+      .select('nombre, whatsapp, ambito, marca, estados')
+      .eq('activo', true)
+    if (!supervisores || supervisores.length === 0) return
+
+    const marcaSol = normalizeForMatch(sol.marca_equipo ?? '')
+
+    const destinatarios = supervisores.filter(s => {
+      if (s.ambito === 'garantia' && !sol.es_garantia) return false
+      if (s.ambito === 'particular' && sol.es_garantia) return false
+      if (s.marca && normalizeForMatch(s.marca) !== marcaSol) return false
+      if (Array.isArray(s.estados) && s.estados.length > 0 && !s.estados.includes(estadoNuevo)) return false
+      return true
+    })
+    if (destinatarios.length === 0) return
+
+    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const tipoFlujo = sol.es_garantia ? 'Garantía' : 'Particular'
+    const estadoLabel = ESTADO_LABELS[estadoNuevo] ?? estadoNuevo
+
+    await Promise.all(
+      destinatarios.map(async s => {
+        try {
+          await enviarPlantilla(s.whatsapp, 'supervisor_cambio_estado_v1', 'es', [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: s.nombre.split(' ')[0] },
+                { type: 'text', text: sol.cliente_nombre },
+                { type: 'text', text: equipo },
+                { type: 'text', text: sol.ciudad_pueblo ?? '—' },
+                { type: 'text', text: tipoFlujo },
+                { type: 'text', text: estadoLabel },
+              ],
+            },
+          ])
+        } catch (err) {
+          console.error(`[notificarCambioEstado] Error notificando a ${s.nombre}:`, err)
+        }
+      }),
+    )
+  } catch (err) {
+    console.error('[notificarCambioEstado] Error general:', err)
   }
 }
 
@@ -1380,6 +1564,8 @@ export async function procesarCancelacionCliente(
     return { ok: false, estado_previo: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
   }
 
+  await notificarCambioEstado(sol.id, sol.estado, 'cancelada')
+
   // 2. Invalidar notificaciones activas a técnicos (pre-aceptación)
   await supabase
     .from('notificaciones_whatsapp')
@@ -1508,6 +1694,9 @@ export async function procesarReagendamientoCliente(
   if (updErr) {
     return { ok: false, estado_previo: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
   }
+
+  // Notificar a supervisores configurados (short-circuit si estadoNuevo === sol.estado).
+  await notificarCambioEstado(sol.id, sol.estado, estadoNuevo)
 
   const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
   const clienteNombre = sol.cliente_nombre.split(' ')[0]

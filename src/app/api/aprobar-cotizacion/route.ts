@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { notificarCotizacionAprobada, enviarMensajeTexto } from '@/lib/services/whatsapp.service'
+import { notificarCotizacionAprobada, enviarMensajeTexto, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 
 /**
  * POST /api/aprobar-cotizacion
@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 })
       }
 
+      await notificarCambioEstado(solMatch.id, 'cotizacion_enviada', estadoFinal)
+
       // Notificar al técnico que la cotización fue aprobada
       const waResult = await notificarCotizacionAprobada(solMatch.id)
       if (!waResult.ok) {
@@ -105,6 +107,8 @@ export async function POST(req: NextRequest) {
       if (updateErr) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 })
       }
+
+      await notificarCambioEstado(solMatch.id, 'cotizacion_enviada', 'cotizacion_rechazada')
 
       // Notify technician that quote was rejected
       const { data: tecnico } = await supabase
