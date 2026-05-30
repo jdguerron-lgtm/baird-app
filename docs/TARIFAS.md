@@ -187,6 +187,12 @@ Entre 2026-05-07 y 2026-05-10 el flujo particular obligaba al admin a fijar `man
 - Función principal: `calcularTarifaParticular({ costoTecnico })` → `{ costoTecnico, subtotalConIva, totalCliente, baseBaird, ivaCliente, margenBaird }`
 - Constantes de IVA: `IVA_TARIFA = 0.19`, `MARGEN_BAIRD_PARTICULAR = 0.10`
 
+### Ajuste manual del valor al cliente (admin, 2026-05-30)
+
+El admin puede reajustar el valor que paga el cliente desde `/admin/solicitudes/[id]` → tarjeta "Actualizar valor del servicio" (`POST /api/admin/actualizar-valor`). Solo aplica a **particular** (`es_garantia=false`) con cotización existente y en estado no terminal. Sobreescribe `cotizacion.total`, limpia el desglose (`mano_obra/repuestos→0`), reabre la aprobación (`estado→cotizacion_enviada`) y avisa al cliente con la plantilla `valor_actualizado_cliente_v1` para que re-confirme en `/cotizacion/{token}`.
+
+**Importante:** este override afecta el **precio al cliente** (y por tanto el margen Baird), **no** el `pago_tecnico` — lo que recibe el técnico se fijó en el diagnóstico y queda intacto. Guarda `valor_anterior`/`valor_actualizado_at`/`valor_actualizado_motivo` en `cotizacion` para auditoría. Si en el futuro se quiere que el ajuste también recalcule el pago al técnico, hay que tocar el endpoint explícitamente (hoy lo deja igual a propósito).
+
 ### Tarifa de diagnóstico (cuando aplica)
 
 Cuando el técnico va a diagnosticar y el cliente decide no proceder con la reparación, se cobra una tarifa fija:

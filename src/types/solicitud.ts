@@ -199,6 +199,13 @@ export interface CotizacionReparacion {
   rechazado_at?: string
   comentario_rechazo?: string
   token: string                // Token for customer approval page
+  // Ajuste manual del valor al cliente (admin, 2026-05-30).
+  // Set por /api/admin/actualizar-valor: sobreescribe `total` con un valor
+  // nuevo, reabre la aprobación (estado → cotizacion_enviada) y notifica al
+  // cliente vía plantilla valor_actualizado_cliente_v1. No toca pago_tecnico.
+  valor_anterior?: number        // total previo al último ajuste manual
+  valor_actualizado_at?: string  // timestamp ISO del último ajuste manual
+  valor_actualizado_motivo?: string
 }
 
 // ──────────────────────────────────────────────────────────

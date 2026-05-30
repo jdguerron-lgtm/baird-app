@@ -107,6 +107,10 @@ export default function SolicitudDetalle() {
   const [motivoEstado, setMotivoEstado] = useState('')
   const [cambiandoEstado, setCambiandoEstado] = useState(false)
   const [resultadoEstado, setResultadoEstado] = useState<{ ok: boolean; mensaje: string } | null>(null)
+  const [nuevoValorInput, setNuevoValorInput] = useState('')
+  const [motivoValor, setMotivoValor] = useState('')
+  const [actualizandoValor, setActualizandoValor] = useState(false)
+  const [resultadoValor, setResultadoValor] = useState<{ ok: boolean; mensaje: string } | null>(null)
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -277,6 +281,70 @@ export default function SolicitudDetalle() {
       setResultadoEstado({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
     }
     setCambiandoEstado(false)
+  }
+
+  async function handleActualizarValor() {
+    if (!solicitud) return
+    const valor = Math.round(Number(nuevoValorInput.replace(/[^\d]/g, '')))
+    if (!Number.isFinite(valor) || valor < 1000) {
+      setResultadoValor({ ok: false, mensaje: 'Ingresá un valor válido (mínimo $1.000).' })
+      return
+    }
+    const confirmado = window.confirm(
+      `¿Actualizar el valor del servicio a $${valor.toLocaleString('es-CO')} COP?\n\n` +
+      `Esto reabre la aprobación (estado → Cotización enviada) y le avisa al cliente por WhatsApp.`,
+    )
+    if (!confirmado) return
+
+    setActualizandoValor(true)
+    setResultadoValor(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoValor({ ok: false, mensaje: 'Sesión expirada — vuelve a iniciar sesión.' })
+        setActualizandoValor(false)
+        return
+      }
+      const res = await fetch('/api/admin/actualizar-valor', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          id: solicitud.id,
+          nuevoValor: valor,
+          motivo: motivoValor.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setResultadoValor({ ok: false, mensaje: data.error || 'No se pudo actualizar el valor.' })
+        setActualizandoValor(false)
+        return
+      }
+      setSolicitud(prev => {
+        if (!prev) return prev
+        const rec = prev as unknown as Record<string, unknown>
+        const prevCot = (rec.cotizacion ?? {}) as Record<string, unknown>
+        return {
+          ...rec,
+          estado: 'cotizacion_enviada',
+          cotizacion: { ...prevCot, total: valor, mano_obra: 0, repuestos: 0 },
+        } as unknown as Solicitud
+      })
+      setNuevoValorInput('')
+      setMotivoValor('')
+      setResultadoValor({
+        ok: true,
+        mensaje: data.whatsapp_enviado
+          ? `Valor actualizado a $${valor.toLocaleString('es-CO')}. Cliente notificado por WhatsApp.`
+          : `Valor actualizado a $${valor.toLocaleString('es-CO')}, pero el WhatsApp no salió${data.whatsapp_error ? ` (${data.whatsapp_error})` : ''}.`,
+      })
+    } catch (e) {
+      setResultadoValor({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
+    }
+    setActualizandoValor(false)
   }
 
   async function runDiagnostics(sol: Solicitud) {
@@ -1348,6 +1416,79 @@ export default function SolicitudDetalle() {
           </div>
         )}
       </div>
+
+      {/* Actualizar valor del servicio — solo flujo particular con cotización.
+          Sobreescribe cotizacion.total, reabre la aprobación (estado →
+          cotizacion_enviada) y le avisa al cliente por WhatsApp
+          (plantilla valor_actualizado_cliente_v1). NO toca pago_tecnico.
+          Vía /api/admin/actualizar-valor. */}
+      {(() => {
+        if (solicitud.es_garantia) return null
+        const cot = (solicitud as unknown as Record<string, unknown>).cotizacion as
+          | { total?: number; token?: string }
+          | null
+        if (!cot?.token) return null
+        const valorActual = typeof cot.total === 'number' ? cot.total : 0
+        return (
+          <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              Actualizar valor del servicio
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Ajusta el valor que paga el <strong>cliente</strong> por este servicio
+              particular. Reabre la aprobación (estado → <strong>Cotización
+              enviada</strong>) y le envía un WhatsApp al cliente con el nuevo valor
+              para que lo confirme. No modifica el pago al técnico.
+            </p>
+            <div className="inline-flex items-center gap-2 mb-3 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
+              <span className="text-xs text-gray-500">Valor actual:</span>
+              <span className="text-sm font-semibold text-gray-900">
+                ${valorActual.toLocaleString('es-CO')} COP
+              </span>
+            </div>
+            <div className="flex items-end gap-3 flex-wrap">
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Nuevo valor (COP)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={nuevoValorInput}
+                  onChange={(e) => setNuevoValorInput(e.target.value)}
+                  placeholder="Ej: 430000"
+                  className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                />
+              </label>
+              <label className="block flex-1 min-w-[200px]">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Motivo (opcional)</span>
+                <input
+                  type="text"
+                  value={motivoValor}
+                  onChange={(e) => setMotivoValor(e.target.value)}
+                  placeholder="Ej: Se sumó repuesto adicional"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                />
+              </label>
+              <button
+                onClick={handleActualizarValor}
+                disabled={actualizandoValor}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {actualizandoValor ? 'Guardando...' : 'Guardar y notificar'}
+              </button>
+            </div>
+
+            {resultadoValor && (
+              <div className={`mt-3 rounded-lg p-3 text-sm ${
+                resultadoValor.ok
+                  ? 'bg-green-50 border border-green-200 text-green-900'
+                  : 'bg-amber-50 border border-amber-200 text-amber-900'
+              }`}>
+                {resultadoValor.ok ? '✅ ' : '⚠️ '}{resultadoValor.mensaje}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Cambiar estado manualmente — herramienta de recuperación.
           Para destrabar una solicitud cuando el flujo automático no avanzó

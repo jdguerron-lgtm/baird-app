@@ -92,6 +92,7 @@ legal/                          # Legal documents (Baird Service SAS)
 | `enviarFinalizadoSinReparacion(solicitudId, motivo)` | Plantilla finalizado_sin_reparacion_v1 | No |
 | `enviarCotizacionCliente(solicitudId)` | Send quote to customer via WhatsApp | No — non-warranty only |
 | `notificarCotizacionAprobada(solicitudId)` | Notify tech that quote was approved | No — non-warranty only |
+| `enviarValorActualizadoCliente(solicitudId)` | Plantilla `valor_actualizado_cliente_v1`: avisa al cliente que el admin reajustó el valor del servicio (botón → `/cotizacion/{token}` para re-aprobar). **Solo envía**, no muta estado (eso lo hace `/api/admin/actualizar-valor`). Guarda `{ok, error?}`. | No — particular únicamente |
 | `procesarCancelacionCliente(token, motivo)` | Cancela la solicitud desde /servicio portal — actualiza estado, invalida notifs, avisa al cliente y al técnico | Sí (audit en `solicitud_eventos`) |
 | `procesarReagendamientoCliente(token, horario, motivo?)` | Reagenda manteniendo técnico asignado si lo hay; incrementa `reagendamientos_count` (max 2) | Sí (audit en `solicitud_eventos`) |
 | `enviarVerificacionPasoCliente(solicitudId)` | Plantilla `verificar_siguiente_paso_v2` post-diagnóstico garantía. Genera `verificacion_paso_token` y disparra link `/verificar-paso/{token}`. | No — garantía únicamente |
@@ -152,6 +153,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp al cliente/técnico, pero SÍ notifica supervisores (`notificarCambioEstado`). | Both |
 | `/api/admin/reenviar-ultimo-mensaje` | POST | Admin: re-dispara la plantilla WhatsApp correspondiente al estado actual de la solicitud (útil si el cliente o el técnico borró el mensaje). Incluye `repuesto_recibido` → `repuesto_recibido_cliente_v2`. | Both |
 | `/api/admin/supervisores` | GET/POST/PUT/DELETE | Admin CRUD de la tabla `supervisores` (destinatarios de `notificarCambioEstado`). Auth `verificarAdmin`. | N/A |
+| `/api/admin/actualizar-valor` | POST | Admin: ajusta `cotizacion.total` (valor al **cliente**) de un servicio particular. Sobreescribe total + limpia desglose (`mano_obra/repuestos→0`), reabre aprobación (`estado→cotizacion_enviada`), audita en `solicitud_eventos`, notifica supervisores y envía `valor_actualizado_cliente_v1` al cliente. **NO toca `pago_tecnico`.** Body `{id, nuevoValor, motivo?}`. Guard concurrencia `.eq(estado)`. | Particular only |
 | `/api/whatsapp/accept` | GET | Aceptación 1-click del técnico desde la plantilla WhatsApp. Token único por notificación. Llama `procesarAceptacion()` — atomic update primer-técnico-gana. Redirige al portal del técnico tras aceptar. | Both |
 | `/api/whatsapp/notify` | POST | Admin re-notifica técnicos para una solicitud (volver a disparrar el broadcast a técnicos compatibles). Usa `notificarTecnicos()`. | Both |
 | `/api/notificar-registro` | POST | Post-registro del técnico: envía `registro_bienvenida_v3` con link al portal. | N/A |

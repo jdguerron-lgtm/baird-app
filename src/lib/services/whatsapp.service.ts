@@ -1385,6 +1385,57 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
 }
 
 /**
+ * Notifica al CLIENTE que el valor de su servicio particular se actualizó.
+ *
+ * Pura: solo envía la plantilla `valor_actualizado_cliente_v1` con el nuevo
+ * total que ya quedó persistido en `cotizacion.total`. NO cambia el estado ni
+ * la cotización — eso lo hace /api/admin/actualizar-valor antes de llamar acá.
+ *
+ * El botón URL lleva al cliente a /cotizacion/{token} para re-aprobar (el
+ * endpoint dejó la solicitud en `cotizacion_enviada`).
+ */
+export async function enviarValorActualizadoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('*, cotizacion')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (sol.es_garantia) return { ok: false, error: 'El ajuste de valor solo aplica para servicios particulares' }
+  if (!sol.cotizacion) return { ok: false, error: 'No hay cotización registrada' }
+
+  const cot = sol.cotizacion as { total: number; token: string }
+  if (!cot.token) return { ok: false, error: 'La cotización no tiene token de aprobación' }
+
+  try {
+    const result = await enviarPlantilla(sol.cliente_telefono, 'valor_actualizado_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: formatCOP(cot.total) },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: cot.token }],
+      },
+    ])
+
+    if (result.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
  * Notifica al técnico que el cliente aprobó la cotización.
  */
 export async function notificarCotizacionAprobada(solicitudId: string): Promise<{ ok: boolean; error?: string }> {

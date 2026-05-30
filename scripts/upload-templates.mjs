@@ -652,6 +652,47 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // 18. Valor del servicio actualizado — notificar al CLIENTE (particular).
+  //     v1 (2026-05-30): admin ajusta el valor a pagar desde el detalle de
+  //     solicitud (/admin/solicitudes/[id]) y reabre la aprobación. La plantilla
+  //     informa el nuevo valor y lleva al cliente a re-aprobar.
+  //     {{1}}=nombre, {{2}}=equipo, {{3}}=nuevo valor; botón URL → /cotizacion/{token}.
+  //     Llamado por: enviarValorActualizadoCliente()
+  {
+    name: 'valor_actualizado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Actualización de tu cotización',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el valor de tu servicio de {{2}} se actualizó.\n\n' +
+          '💰 Nuevo valor: ${{3}} COP\n\n' +
+          'Ingresa para ver el detalle y confirmar tu aprobación. Todos los pagos se gestionan vía Baird Service.',
+        example: {
+          body_text: [['Juan', 'Nevera LG', '430,000']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver y aprobar',
+            url: `${APP_URL}/cotizacion/{{1}}`,
+            example: [`${APP_URL}/cotizacion/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 async function listExisting() {
