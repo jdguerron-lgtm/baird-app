@@ -603,7 +603,8 @@ const TEMPLATES = [
           '🔧 Equipo: {{3}}\n' +
           '📍 Ciudad: {{4}}\n' +
           '📋 Tipo: {{5}}\n' +
-          '🔄 Nuevo estado: {{6}}',
+          '🔄 Nuevo estado: {{6}}\n\n' +
+          'Revisa el panel de supervisión para más detalles.',
         example: {
           body_text: [['Andrés', 'María Gómez', 'Lavadora Mabe', 'Bogotá', 'Garantía', 'En proceso']],
         },
