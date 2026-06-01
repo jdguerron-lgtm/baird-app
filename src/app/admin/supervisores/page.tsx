@@ -36,6 +36,7 @@ export default function SupervisoresAdmin() {
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null)
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [form, setForm] = useState(FORM_VACIO)
 
@@ -66,6 +67,7 @@ export default function SupervisoresAdmin() {
   const editar = (s: Supervisor) => {
     setEditandoId(s.id)
     setError('')
+    setAviso(null)
     setForm({
       nombre: s.nombre,
       whatsapp: s.whatsapp,
@@ -86,6 +88,7 @@ export default function SupervisoresAdmin() {
 
   const guardar = async () => {
     setError('')
+    setAviso(null)
     if (!form.nombre.trim()) return setError('El nombre es obligatorio')
     if (!form.whatsapp.trim()) return setError('El WhatsApp es obligatorio')
 
@@ -110,8 +113,24 @@ export default function SupervisoresAdmin() {
       setError(data.error ?? 'Error al guardar')
       return
     }
+
+    const fueCreacion = !editandoId
     resetForm()
     cargar()
+    if (fueCreacion) {
+      setAviso(
+        data.whatsapp_bienvenida
+          ? { ok: true, texto: 'Supervisor creado. Mensaje de bienvenida enviado por WhatsApp.' }
+          : {
+              ok: false,
+              texto: `Supervisor creado, pero la bienvenida por WhatsApp no salió${
+                data.whatsapp_error ? ` (${data.whatsapp_error})` : ''
+              }.`,
+            },
+      )
+    } else {
+      setAviso({ ok: true, texto: 'Cambios guardados.' })
+    }
   }
 
   const toggleActivo = async (s: Supervisor) => {
@@ -138,8 +157,21 @@ export default function SupervisoresAdmin() {
         <h1 className="text-2xl font-bold text-slate-900">Supervisores</h1>
         <p className="text-sm text-gray-500 mt-1">
           Reciben por WhatsApp los cambios de estado según su configuración (ámbito, marca y estados).
+          Al crear un supervisor activo, se le envía un mensaje de bienvenida con su alcance.
         </p>
       </div>
+
+      {aviso && (
+        <div
+          className={`mb-6 rounded-lg p-3 text-sm ${
+            aviso.ok
+              ? 'bg-green-50 border border-green-200 text-green-900'
+              : 'bg-amber-50 border border-amber-200 text-amber-900'
+          }`}
+        >
+          {aviso.ok ? '✅ ' : '⚠️ '}{aviso.texto}
+        </div>
+      )}
 
       {/* Formulario crear / editar */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">

@@ -1233,6 +1233,77 @@ export async function notificarCambioEstado(
 }
 
 /**
+ * Describe en lenguaje natural el alcance de un supervisor, para la plantilla
+ * de bienvenida. Combina ámbito + marca + estados:
+ *   - todos + sin marca       → "todos los servicios y marcas"
+ *   - garantia + MABE         → "los servicios de garantía de la marca MABE"
+ *   - particular + sin marca  → "los servicios particulares de todas las marcas"
+ * Si hay filtro de estados, lo añade al final ("…, solo cuando pasan a: X, Y").
+ */
+export function describirAmbitoSupervisor(
+  ambito: string | null,
+  marca: string | null,
+  estados: string[] | null,
+): string {
+  const amb = ambito === 'garantia' || ambito === 'particular' ? ambito : 'todos'
+  const base =
+    amb === 'garantia'
+      ? 'los servicios de garantía'
+      : amb === 'particular'
+        ? 'los servicios particulares'
+        : 'todos los servicios'
+
+  let scope: string
+  if (amb === 'todos' && !marca) {
+    scope = 'todos los servicios y marcas'
+  } else if (marca) {
+    scope = `${base} de la marca ${marca}`
+  } else {
+    scope = `${base} de todas las marcas`
+  }
+
+  if (Array.isArray(estados) && estados.length > 0) {
+    const labels = estados.map(e => ESTADO_LABELS[e] ?? e).join(', ')
+    scope += `, solo cuando pasan a: ${labels}`
+  }
+  return scope
+}
+
+/**
+ * Envía el WhatsApp de bienvenida a un supervisor recién creado/activado.
+ * Best-effort: no lanza, devuelve { ok, error? }. Usa la plantilla
+ * `supervisor_bienvenida_v1` (funciona fuera de la ventana 24h: el supervisor
+ * no interactúa con el WhatsApp del negocio). El cuerpo le confirma su alcance
+ * (ámbito + marca + estados) y que recibirá los cambios de estado por aquí.
+ */
+export async function enviarBienvenidaSupervisor(supervisor: {
+  nombre: string
+  whatsapp: string
+  ambito: string | null
+  marca: string | null
+  estados: string[] | null
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const scope = describirAmbitoSupervisor(supervisor.ambito, supervisor.marca, supervisor.estados)
+    const result = await enviarPlantilla(supervisor.whatsapp, 'supervisor_bienvenida_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: supervisor.nombre.split(' ')[0] },
+          { type: 'text', text: scope },
+        ],
+      },
+    ])
+    if (result.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
  * Notifica al cliente cuando se necesita esperar repuesto (incluye SKU).
  */
 export async function enviarEsperandoRepuestoCliente(

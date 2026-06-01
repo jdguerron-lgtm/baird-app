@@ -693,6 +693,37 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // 19. Bienvenida a un nuevo SUPERVISOR.
+  //     v1 (2026-05-30): al crear un supervisor (POST /api/admin/supervisores y
+  //     activo) se le avisa que ya es supervisor, de qué ámbito/marca, y que
+  //     recibirá los cambios de estado por este medio. Sin botón: informativo.
+  //     {{1}}=nombre, {{2}}=ámbito descrito (p.ej. "todos los servicios y marcas"
+  //     o "los servicios de garantía de la marca MABE").
+  //     Llamado por: enviarBienvenidaSupervisor()
+  {
+    name: 'supervisor_bienvenida_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Bienvenido al equipo de supervisión',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, te damos la bienvenida como supervisor de Baird Service. 🎉\n\n' +
+          'A partir de ahora supervisas {{2}}.\n\n' +
+          'Te notificaremos por este mismo chat cada cambio de estado de los servicios bajo tu supervisión.',
+        example: {
+          body_text: [['Andrés', 'todos los servicios y marcas']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+    ],
+  },
 ]
 
 async function listExisting() {

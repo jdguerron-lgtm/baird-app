@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { isValidPhone, phoneToDigits } from '@/lib/utils/phone'
 import { ESTADOS_VALIDOS } from '@/lib/constants/estados'
+import { enviarBienvenidaSupervisor } from '@/lib/services/whatsapp.service'
 
 /**
  * CRUD de supervisores. Un supervisor recibe por WhatsApp los cambios de estado
@@ -83,7 +84,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ supervisor: data })
+  // Bienvenida por WhatsApp (best-effort) — solo si el supervisor queda activo.
+  // No bloquea: si el envío falla, el supervisor igual quedó creado. Se reporta
+  // el resultado para que el admin sepa si el mensaje llegó.
+  let whatsappBienvenida = false
+  let whatsappError: string | undefined
+  if (data.activo) {
+    const wa = await enviarBienvenidaSupervisor({
+      nombre: data.nombre,
+      whatsapp: data.whatsapp,
+      ambito: data.ambito,
+      marca: data.marca,
+      estados: data.estados,
+    })
+    whatsappBienvenida = wa.ok
+    if (!wa.ok) {
+      whatsappError = wa.error
+      console.error('[supervisores] Error enviando bienvenida:', wa.error)
+    }
+  }
+
+  return NextResponse.json({
+    supervisor: data,
+    whatsapp_bienvenida: whatsappBienvenida,
+    ...(whatsappError ? { whatsapp_error: whatsappError } : {}),
+  })
 }
 
 export async function PATCH(req: NextRequest) {

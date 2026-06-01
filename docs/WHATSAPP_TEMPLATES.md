@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-05-30 (admin ajusta valor al cliente → `valor_actualizado_cliente_v1`).
+> Última actualización: 2026-05-30 (bienvenida a supervisores → `supervisor_bienvenida_v1`; admin ajusta valor al cliente → `valor_actualizado_cliente_v1`).
 
 > 🆕 **Cambios 2026-05-29 (supervisores + bug repuesto):** tres plantillas nuevas/bumpeadas, **pendientes de subir a Meta** (no invocar en prod hasta `APPROVED`):
 > - `supervisor_cambio_estado_v1` (NUEVA) — notifica a supervisores en cada cambio de estado. Disparada por `notificarCambioEstado()`.
@@ -28,7 +28,7 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 
 | Lugar | Qué contiene |
 |---|---|
-| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 19 plantillas. `valor_actualizado_cliente_v1` ya está subida (status PENDING, esperando aprobación Meta). Las 3 de 2026-05-29 (`supervisor_cambio_estado_v1`, `repuesto_recibido_cliente_v2`, `repuesto_recibido_tecnico_v1`) están en el script pero **aún no subidas a Meta**. Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
+| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 20 plantillas. `valor_actualizado_cliente_v1` y `supervisor_bienvenida_v1` ya están subidas (status PENDING, esperando aprobación Meta). Las 3 de 2026-05-29 (`supervisor_cambio_estado_v1`, `repuesto_recibido_cliente_v2`, `repuesto_recibido_tecnico_v1`) están en el script pero **aún no subidas a Meta**. Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
 | Meta Business Manager → WhatsApp Manager → Message Templates | **Fuente de verdad operacional** — lo que Meta tiene aprobado y permite enviar. Toda plantilla ya enviada al menos una vez está aquí. |
 | `docs/WHATSAPP_TEMPLATES.md` (este archivo) | **Documentación humana** — catálogo, parámetros, propósito. |
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
@@ -247,6 +247,16 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Sin botón** (informativo)
 - **Propósito**: dar visibilidad a supervisores (p.ej. uno general que ve todo, otro que solo ve garantías MABE) sobre cualquier cambio de estado. La plantilla funciona fuera de la ventana 24h (los supervisores no chatean con el número del negocio).
 - **Nota**: `notificarCambioEstado` nunca lanza — si el envío falla, loguea y no rompe la transición que lo disparó.
+
+#### `supervisor_bienvenida_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30)
+- **En script** ✅ (nueva 2026-05-30)
+- **Disparo**: `enviarBienvenidaSupervisor(supervisor)`, llamada desde `POST /api/admin/supervisores` justo después de crear un supervisor **activo**.
+- **Destino**: el supervisor recién creado (`whatsapp`). Solo si queda `activo=true`.
+- **Header**: TEXT — "Bienvenido al equipo de supervisión"
+- **Body** (2 params): `supervisor_nombre` (primer nombre), `ambito_descrito` — string en lenguaje natural que arma `describirAmbitoSupervisor(ambito, marca, estados)`: p.ej. "todos los servicios y marcas", "los servicios de garantía de la marca MABE", "los servicios particulares de todas las marcas, solo cuando pasan a: En proceso".
+- **Sin botón** (informativo)
+- **Propósito**: darle la bienvenida al supervisor, confirmarle su alcance (ámbito + marca + estados) y avisarle que recibirá los cambios de estado por este mismo chat. Funciona fuera de la ventana 24h (el supervisor no chatea con el número del negocio).
+- **Nota**: el BODY no empieza ni termina en variable (regla Meta 2388299) — abre con "Hola {{1}}," y cierra con "…bajo tu supervisión." `enviarBienvenidaSupervisor` es best-effort (no lanza); el POST devuelve `whatsapp_bienvenida` para que el admin sepa si salió. Solo se dispara al **crear** (no en PATCH/reactivación) para no spamear.
 
 #### `valor_actualizado_cliente_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30, status PENDING)
 - **En script** ✅ (nueva 2026-05-30) — id Meta `965589726530805`
