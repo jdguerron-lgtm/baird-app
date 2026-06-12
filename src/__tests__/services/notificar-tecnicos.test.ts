@@ -91,6 +91,59 @@ describe('notificarTecnicos', () => {
     expect(body.to).toBe('573009876543')
   })
 
+  it('notifies tecnico whose ciudades_cobertura includes the solicitud city (Soacha)', async () => {
+    // Técnico con base Bogotá que también cubre Soacha — la cobertura manda.
+    // La grafía difiere a propósito (minúscula vs capitalizada): el matching
+    // es por token normalizado (case/acento-insensitive).
+    const tecnicoConCobertura = {
+      ...TECNICO,
+      ciudad_pueblo: 'Bogota',
+      ciudades_cobertura: ['Bogotá', 'soacha'],
+    }
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'solicitudes_servicio') {
+        return queryBuilder({ data: { ...SOLICITUD, ciudad_pueblo: 'Soacha' }, error: null })
+      }
+      if (table === 'especialidades_tecnico') {
+        return queryBuilder({ data: [{ tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' }], error: null })
+      }
+      if (table === 'tecnicos') {
+        return queryBuilder({ data: [tecnicoConCobertura], error: null })
+      }
+      return queryBuilder({ data: null, error: null })
+    })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.notificados).toBe(1)
+    expect(result.matched).toBe(1)
+    expect(result.errors).toHaveLength(0)
+  })
+
+  it('does NOT notify tecnico without the solicitud city in cobertura (fallback a ciudad base)', async () => {
+    // Técnico de Bogotá SIN cobertura cargada (legacy: []) — fallback a la
+    // ciudad base, que no matchea una solicitud de Soacha.
+    const tecnicoSoloBogota = { ...TECNICO, ciudades_cobertura: [] }
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'solicitudes_servicio') {
+        return queryBuilder({ data: { ...SOLICITUD, ciudad_pueblo: 'Soacha' }, error: null })
+      }
+      if (table === 'especialidades_tecnico') {
+        return queryBuilder({ data: [{ tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' }], error: null })
+      }
+      if (table === 'tecnicos') {
+        return queryBuilder({ data: [tecnicoSoloBogota], error: null })
+      }
+      return queryBuilder({ data: null, error: null })
+    })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.notificados).toBe(0)
+    expect(result.matched).toBe(0)
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
   it('returns 0 when no tecnicos have the matching especialidad', async () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'solicitudes_servicio') {

@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { normalizeForMatch } from '@/lib/utils/format'
+import { CIUDADES_SUGERIDAS } from '@/lib/constants/ciudades'
 
 interface Tecnico {
   id: string
@@ -105,7 +107,8 @@ export default function TecnicoDetalle() {
   const agregarCiudad = () => {
     const c = nuevaCiudad.trim()
     if (!c) return
-    if (ciudades.some(x => x.toLowerCase() === c.toLowerCase())) {
+    // Duplicado acento/case-insensitive: "Bogota" ya cubierta por "Bogotá".
+    if (ciudades.some(x => normalizeForMatch(x) === normalizeForMatch(c))) {
       setNuevaCiudad('')
       return
     }
@@ -121,20 +124,28 @@ export default function TecnicoDetalle() {
     setGuardandoCiudades(true)
     setMensaje(null)
 
-    // Trim + dedupe case-insensitive, conservando la primera grafía ingresada.
+    // Trim + dedupe acento/case-insensitive, conservando la primera grafía
+    // ingresada ("Bogotá" y "Bogota" son la misma ciudad para el matching).
     const limpias = Array.from(
       new Map(
-        ciudades.map(c => c.trim()).filter(Boolean).map(c => [c.toLowerCase(), c]),
+        ciudades.map(c => c.trim()).filter(Boolean).map(c => [normalizeForMatch(c), c]),
       ).values(),
     )
 
-    const { error } = await supabase
+    // .select() para confirmar que la fila realmente se actualizó: un UPDATE
+    // bloqueado por RLS o con id inexistente devuelve error=null y 0 filas —
+    // sin esto el admin vería "actualizadas" sin haberse guardado nada.
+    const { data: updated, error } = await supabase
       .from('tecnicos')
       .update({ ciudades_cobertura: limpias })
       .eq('id', id)
+      .select('ciudades_cobertura')
 
-    if (error) {
-      setMensaje({ texto: 'Error al guardar ciudades: ' + error.message, tipo: 'error' })
+    if (error || !updated || updated.length === 0) {
+      setMensaje({
+        texto: 'Error al guardar ciudades: ' + (error?.message ?? 'la fila no se actualizó (¿permisos RLS o técnico inexistente?)'),
+        tipo: 'error',
+      })
       setGuardandoCiudades(false)
       return
     }
@@ -288,6 +299,8 @@ export default function TecnicoDetalle() {
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Ciudades de cobertura</h2>
             <p className="text-xs text-gray-400 mb-4">
               Ciudades/pueblos donde el técnico recibe solicitudes. La ciudad base es <span className="font-semibold text-gray-500">{tecnico.ciudad_pueblo}</span>.
+              {' '}El matching ignora mayúsculas y tildes (&ldquo;soacha&rdquo; = &ldquo;Soacha&rdquo;). Si la lista
+              queda vacía, las solicitudes se matchean solo contra la ciudad base.
             </p>
 
             {/* Chips */}
@@ -311,16 +324,22 @@ export default function TecnicoDetalle() {
               )}
             </div>
 
-            {/* Agregar ciudad */}
+            {/* Agregar ciudad — con sugerencias (datalist); acepta texto libre */}
             <div className="flex gap-2 mb-4">
               <input
                 type="text"
+                list="ciudades-sugeridas"
                 value={nuevaCiudad}
                 onChange={(e) => setNuevaCiudad(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarCiudad() } }}
                 placeholder="Agregar ciudad o pueblo (ej. Soacha)..."
                 className="flex-1 border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
               />
+              <datalist id="ciudades-sugeridas">
+                {CIUDADES_SUGERIDAS
+                  .filter(c => !ciudades.some(x => normalizeForMatch(x) === normalizeForMatch(c)))
+                  .map(c => <option key={c} value={c} />)}
+              </datalist>
               <button
                 type="button"
                 onClick={agregarCiudad}
