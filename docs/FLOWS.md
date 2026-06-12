@@ -82,8 +82,16 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ 2. CLIENTE CONFIRMA HORARIO                                              │
 │ POST /api/confirmar-horario { token, horario }                           │
 │                                                                           │
+│ Validación de agenda (agenda.service, 2026-06-12):                       │
+│  - Mínimo MAÑANA (TZ Colombia) — no se agenda para el mismo día.         │
+│  - Cupo por slot (día + franja): máx MAX_RESERVAS_POR_FRANJA (2)         │
+│    reservas activas. La UI desactiva franjas llenas vía                  │
+│    GET /api/disponibilidad-horario; el rechazo real es server-side.      │
+│  - Aplica igual en /api/reprogramar-repuesto y reagenda self-service.    │
+│                                                                           │
 │ DB:  estado=notificada                                                   │
 │      horario_confirmado=<string elegido>                                 │
+│      fecha_visita_at=<slot: día + hora inicio franja>                    │
 │      tyc_aceptados_at, tyc_version                                       │
 │                                                                           │
 │ Backend dispara notificarTecnicos(solicitudId).                          │

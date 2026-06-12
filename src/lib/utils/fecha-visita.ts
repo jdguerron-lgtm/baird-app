@@ -25,9 +25,10 @@ const MESES_ES: Record<string, number> = {
 
 /**
  * Extrae día y mes (0-indexed) de un texto como "6 de mayo" o "lunes 6 de Mayo".
- * Retorna null si no matchea.
+ * Devuelve también el tramo matcheado (`matchTexto`) para poder removerlo
+ * antes de buscar la hora. Retorna null si no matchea.
  */
-function extraerDiaMes(texto: string): { dia: number; mes: number } | null {
+function extraerDiaMes(texto: string): { dia: number; mes: number; matchTexto: string } | null {
   const t = texto.toLowerCase()
   // Match "D de MES" donde D es 1-2 dígitos y MES es uno de los meses ES.
   const m = t.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)/i)
@@ -42,7 +43,7 @@ function extraerDiaMes(texto: string): { dia: number; mes: number } | null {
   if (mes === undefined) return null
   if (dia < 1 || dia > 31) return null
 
-  return { dia, mes }
+  return { dia, mes, matchTexto: m[0] }
 }
 
 /**
@@ -85,7 +86,13 @@ export function parsearFechaVisita(horarioTexto: string, referenciaUTC: Date = n
   const dm = extraerDiaMes(horarioTexto)
   if (!dm) return null
 
-  const hora = extraerHoraInicio(horarioTexto) ?? 8 // default 8am si no hay hora reconocible
+  // FIX 2026-06-12: quitar el tramo de fecha ANTES de extraer la hora. En
+  // "lunes, 14 de junio · 8am-12pm" el primer número del texto completo es el
+  // DÍA (14) y extraerHoraInicio lo tomaba como hora de inicio (14:00) en vez
+  // del 8am real de la franja. La hora es la identidad del slot para el cupo
+  // por franja (agenda.service), así que tiene que salir de la franja.
+  const textoSinFecha = horarioTexto.toLowerCase().replace(dm.matchTexto, ' ')
+  const hora = extraerHoraInicio(textoSinFecha) ?? 8 // default 8am si no hay hora reconocible
 
   // Año: el actual de la referencia. Si la fecha resultante ya pasó (más de 1
   // día atrás para evitar drift por TZ), asumimos año siguiente.

@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
+import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 
 interface SolicitudData {
   id: string
@@ -31,13 +33,6 @@ interface Props {
   // este mismo link para que el cliente elija nueva fecha.
   reagendarVencido: boolean
 }
-
-const FRANJAS = [
-  { value: '8am-12pm', label: 'Mañana (8am - 12pm)', icon: '🌅' },
-  { value: '12pm-3pm', label: 'Mediodía (12pm - 3pm)', icon: '☀️' },
-  { value: '3pm-6pm', label: 'Tarde (3pm - 6pm)', icon: '🌤️' },
-  { value: '6pm-8pm', label: 'Noche (6pm - 8pm)', icon: '🌆' },
-]
 
 function formatFechaLarga(iso: string): string {
   if (!iso) return ''
@@ -68,6 +63,10 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
   const [mensajeError, setMensajeError] = useState('')
   const [warning, setWarning] = useState<string | null>(null)
 
+  // Franjas sin cupo para la fecha elegida (máx MAX_RESERVAS_POR_FRANJA por
+  // slot). La UI las desactiva; el guard real está en /api/confirmar-horario.
+  const franjasLlenas = useFranjasLlenas(fechaCustom)
+
   const equipo = `${solicitud.tipo_equipo} ${solicitud.marca_equipo}`
   const cliente = solicitud.cliente_nombre.split(' ')[0]
 
@@ -77,11 +76,13 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
       if (opcionSugerida === 2) return solicitud.horario_visita_2
       return ''
     }
-    if (fechaCustom && franjaCustom) {
+    // Si la franja elegida se llenó (p.ej. cambió la fecha), no hay horario
+    // válido — el botón de confirmar queda deshabilitado sin setState extra.
+    if (fechaCustom && franjaCustom && !franjasLlenas.includes(franjaCustom)) {
       return `${formatFechaLarga(fechaCustom)} · ${franjaCustom}`
     }
     return ''
-  }, [modo, opcionSugerida, fechaCustom, franjaCustom, solicitud.horario_visita_1, solicitud.horario_visita_2])
+  }, [modo, opcionSugerida, fechaCustom, franjaCustom, franjasLlenas, solicitud.horario_visita_1, solicitud.horario_visita_2])
 
   if (expirado) {
     return (
@@ -259,21 +260,28 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
             <label className="block">
               <span className="block text-sm text-gray-700 mb-2">🕒 Franja horaria</span>
               <div className="grid grid-cols-2 gap-2">
-                {FRANJAS.map(f => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    onClick={() => { setModo('custom'); setFranjaCustom(f.value) }}
-                    className={`p-3 rounded-xl border-2 text-left transition ${
-                      modo === 'custom' && franjaCustom === f.value
-                        ? 'border-blue-600 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="text-lg">{f.icon}</div>
-                    <div className="text-xs font-medium text-gray-900">{f.label}</div>
-                  </button>
-                ))}
+                {FRANJAS_HORARIO.map(f => {
+                  const llena = franjasLlenas.includes(f.value)
+                  return (
+                    <button
+                      key={f.value}
+                      type="button"
+                      disabled={llena}
+                      onClick={() => { setModo('custom'); setFranjaCustom(f.value) }}
+                      className={`p-3 rounded-xl border-2 text-left transition ${
+                        llena
+                          ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
+                          : modo === 'custom' && franjaCustom === f.value
+                            ? 'border-blue-600 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="text-lg">{f.icon}</div>
+                      <div className="text-xs font-medium text-gray-900">{f.label}</div>
+                      {llena && <div className="text-[10px] font-semibold text-red-500 mt-0.5">Franja llena — elige otra</div>}
+                    </button>
+                  )
+                })}
               </div>
             </label>
           </div>

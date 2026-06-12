@@ -6,12 +6,8 @@ import {
   notificarTecnicoVisitaReprogramada,
   enviarMensajeTexto,
 } from '@/lib/services/whatsapp.service'
-import {
-  parsearFechaVisita,
-  fechaColombiaYMD,
-  fechaColombiaMasDias,
-  esFechaVisitaPasada,
-} from '@/lib/utils/fecha-visita'
+import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
+import { validarHorarioAgendable } from '@/lib/services/agenda.service'
 import { TYC_VERSION } from '@/types/solicitud'
 
 /**
@@ -84,20 +80,14 @@ export async function confirmarHorarioSolicitud(
     }
   }
 
-  // Parsear fecha de visita estructurada (null si no se puede).
-  // Sirve al mapa admin para filtrar por día y para validar el mínimo (mañana).
-  const fechaVisitaAt = parsearFechaVisita(horarioElegido)
-
-  // Mínimo agendable: a partir de mañana (TZ Colombia) — espejo server-side de
-  // fechaMinima() en HorarioSelector. Solo validable cuando la fecha es
-  // parseable; el texto libre no reconocible se deja pasar (la UI ya impone min).
-  if (fechaVisitaAt && fechaColombiaYMD(new Date(fechaVisitaAt)) < fechaColombiaMasDias(1)) {
-    return {
-      ok: false,
-      httpStatus: 400,
-      body: { error: 'La fecha del servicio debe ser a partir de mañana.' },
-    }
+  // Validación de agenda (agenda.service): mínimo mañana (TZ Colombia) +
+  // cupo de MAX_RESERVAS_POR_FRANJA por slot (día + franja). Texto libre no
+  // parseable pasa con fechaVisitaAt=null (la UI ya impone min; admin coordina).
+  const agenda = await validarHorarioAgendable(horarioElegido, sol.id)
+  if (!agenda.ok) {
+    return { ok: false, httpStatus: 400, body: { error: agenda.error } }
   }
+  const fechaVisitaAt = agenda.fechaVisitaAt
 
   const estadoPrevio = sol.estado
 
@@ -467,8 +457,13 @@ export async function reprogramarRepuestoSolicitud(
     return { ok: false, httpStatus: 400, body: { error: 'Esta reprogramación ya no está disponible' } }
   }
 
-  // Parsear fecha estructurada (null si no se puede) — alimenta el mapa admin.
-  const fechaVisitaAt = parsearFechaVisita(horarioElegido)
+  // Validación de agenda: mínimo mañana + cupo por slot (día + franja).
+  // Devuelve además la fecha estructurada que alimenta el mapa admin.
+  const agenda = await validarHorarioAgendable(horarioElegido, sol.id)
+  if (!agenda.ok) {
+    return { ok: false, httpStatus: 400, body: { error: agenda.error } }
+  }
+  const fechaVisitaAt = agenda.fechaVisitaAt
 
   // 2. UPDATE atómico — solo si sigue en repuesto_recibido. Limpia el token
   //    para que el enlace no se pueda reusar.

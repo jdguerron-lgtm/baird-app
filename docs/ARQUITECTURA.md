@@ -136,7 +136,8 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | Route | Method | Purpose | Flow |
 |-------|--------|---------|------|
 | `/api/solicitar` | POST | Create request + send schedule selection | Both |
-| `/api/confirmar-horario` | POST | Customer confirms schedule, triggers tech notification | Both |
+| `/api/confirmar-horario` | POST | Customer confirms schedule, triggers tech notification. Valida agenda (`validarHorarioAgendable`): mínimo mañana + cupo `MAX_RESERVAS_POR_FRANJA` (2) por slot día+franja | Both |
+| `/api/disponibilidad-horario` | GET | Público (`?fecha=YYYY-MM-DD`): franjas llenas del día para que los selectores del cliente las desactiven. Solo agregados, sin PII. El guard real es server-side en la confirmación (`agenda.service`) | Both |
 | `/api/diagnostico` | POST | Save diagnosis + oath + siguiente_paso (4 options) | Both |
 | `/api/aprobar-cotizacion` | POST | Customer approves/rejects quote | Non-warranty only |
 | `/api/completar-servicio` | POST | Tech marks service complete | Both |

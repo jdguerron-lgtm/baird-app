@@ -5,6 +5,7 @@ import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import { ESTADO_LABELS } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
+import { validarHorarioAgendable } from '@/lib/services/agenda.service'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
@@ -2037,6 +2038,14 @@ export async function procesarReagendamientoCliente(
     return { ok: false, estado_previo: sol.estado, error: `Llegaste al máximo de ${MAX_REAGENDAMIENTOS_CLIENTE} reagendamientos. Contáctanos por WhatsApp para asistencia.` }
   }
 
+  // Validación de agenda (agenda.service): mínimo mañana (TZ Colombia) +
+  // cupo de MAX_RESERVAS_POR_FRANJA por slot. La propia solicitud no cuenta
+  // contra su cupo (su fecha_visita_at previo se está reemplazando).
+  const agenda = await validarHorarioAgendable(horarioLimpio, sol.id)
+  if (!agenda.ok) {
+    return { ok: false, estado_previo: sol.estado, error: agenda.error }
+  }
+
   const horarioPrevio = sol.horario_confirmado
   const tieneTecnico = !!sol.tecnico_asignado_id
 
@@ -2056,6 +2065,9 @@ export async function procesarReagendamientoCliente(
     .update({
       horario_confirmado: horarioLimpio,
       horario_confirmado_at: new Date().toISOString(),
+      // fecha_visita_at se re-materializa con el nuevo horario (antes quedaba
+      // stale: el mapa admin seguía mostrando la fecha vieja tras reagendar).
+      fecha_visita_at: agenda.fechaVisitaAt,
       estado: estadoNuevo,
       reagendamientos_count: count + 1,
       ultimo_reagendado_at: new Date().toISOString(),

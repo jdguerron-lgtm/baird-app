@@ -2,6 +2,9 @@
 
 import { useState, useMemo } from 'react'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
+import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
+import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 
 interface SolicitudData {
   id: string
@@ -21,29 +24,21 @@ interface Props {
   yaReprogramado: boolean
 }
 
-const FRANJAS = [
-  { value: '8am-12pm', label: 'Mañana (8am - 12pm)', icon: '🌅' },
-  { value: '12pm-3pm', label: 'Mediodía (12pm - 3pm)', icon: '☀️' },
-  { value: '3pm-6pm', label: 'Tarde (3pm - 6pm)', icon: '🌤️' },
-  { value: '6pm-8pm', label: 'Noche (6pm - 8pm)', icon: '🌆' },
-]
-
 function formatFechaLarga(iso: string): string {
   if (!iso) return ''
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+// Mínimo agendable: mañana (nunca el mismo día). Máximo: 2 semanas.
+// Día calendario en TZ Colombia — mismo fix que HorarioSelector: toISOString()
+// sobre hora local devolvía el día UTC siguiente por la noche.
 function fechaMinima(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 1) // mínimo: mañana
-  return d.toISOString().slice(0, 10)
+  return fechaColombiaMasDias(1)
 }
 
 function fechaMaxima(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 14) // máximo: 2 semanas
-  return d.toISOString().slice(0, 10)
+  return fechaColombiaMasDias(14)
 }
 
 export default function ReprogramarSelector({ token, solicitud, tecnicoNombre, yaReprogramado }: Props) {
@@ -53,13 +48,19 @@ export default function ReprogramarSelector({ token, solicitud, tecnicoNombre, y
   const [resultado, setResultado] = useState<'success' | 'error' | null>(null)
   const [mensajeError, setMensajeError] = useState('')
 
+  // Franjas sin cupo para la fecha elegida — la UI las desactiva; el guard
+  // real está en /api/reprogramar-repuesto (validarHorarioAgendable).
+  const franjasLlenas = useFranjasLlenas(fecha)
+
   const equipo = `${solicitud.tipo_equipo} ${solicitud.marca_equipo}`
   const cliente = solicitud.cliente_nombre.split(' ')[0]
 
   const horarioFinal = useMemo(() => {
-    if (fecha && franja) return `${formatFechaLarga(fecha)} · ${franja}`
+    if (fecha && franja && !franjasLlenas.includes(franja)) {
+      return `${formatFechaLarga(fecha)} · ${franja}`
+    }
     return ''
-  }, [fecha, franja])
+  }, [fecha, franja, franjasLlenas])
 
   // Ya reprogramado (estado avanzó más allá de repuesto_recibido) y aún no
   // acabamos de confirmar en esta sesión.
@@ -174,21 +175,28 @@ export default function ReprogramarSelector({ token, solicitud, tecnicoNombre, y
           <label className="block">
             <span className="block text-sm text-gray-700 mb-2">🕒 Franja horaria</span>
             <div className="grid grid-cols-2 gap-2">
-              {FRANJAS.map(f => (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setFranja(f.value)}
-                  className={`p-3 rounded-xl border-2 text-left transition ${
-                    franja === f.value
-                      ? 'border-blue-600 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-lg">{f.icon}</div>
-                  <div className="text-xs font-medium text-gray-900">{f.label}</div>
-                </button>
-              ))}
+              {FRANJAS_HORARIO.map(f => {
+                const llena = franjasLlenas.includes(f.value)
+                return (
+                  <button
+                    key={f.value}
+                    type="button"
+                    disabled={llena}
+                    onClick={() => setFranja(f.value)}
+                    className={`p-3 rounded-xl border-2 text-left transition ${
+                      llena
+                        ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
+                        : franja === f.value
+                          ? 'border-blue-600 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-lg">{f.icon}</div>
+                    <div className="text-xs font-medium text-gray-900">{f.label}</div>
+                    {llena && <div className="text-[10px] font-semibold text-red-500 mt-0.5">Franja llena — elige otra</div>}
+                  </button>
+                )
+              })}
             </div>
           </label>
 
