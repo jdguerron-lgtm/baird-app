@@ -69,8 +69,7 @@
 | Subcarpeta | Iniciativa |
 |---|---|
 | [`docs/mejoras-futuras/`](mejoras-futuras/README.md) | Hub: inventario de proyectos en discusión + convenciones para agregar/promover/descartar. |
-
-*(no hay proyectos activos en este momento)*
+| [`docs/mejoras-futuras/segunda-visita/`](mejoras-futuras/segunda-visita/README.md) | Segunda visita técnica sin repuesto. Gap verificado 2026-06-02: la repuesto-arrival ya funciona; falta el camino "reparar requiere otro día sin pieza". 4 opciones para revisar. |
 
 ### Proyectos completados (registro histórico, no actualizar)
 

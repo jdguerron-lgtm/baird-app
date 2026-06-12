@@ -4,6 +4,7 @@ import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
+import { pagoNetoTecnicoTarifaFija } from '@/lib/constants/tarifas/particular'
 import crypto from 'crypto'
 
 /**
@@ -33,11 +34,18 @@ export async function POST(req: NextRequest) {
 
     // Recalcular pago_tecnico server-side para evitar manipulación del cliente.
     // El frontend lo envía pero la fuente de verdad es la tabla TARIFAS_MANTENIMIENTO.
-    const pagoTecnicoCalculado = calcularPagoTecnico(
+    //
+    // IMPORTANTE: `pago_tecnico` guarda el NETO que recibe el técnico, NO el
+    // precio de catálogo al cliente. En servicios particulares (reseller) el
+    // cliente paga catálogo y el técnico recibe catálogo ÷ 1.309 (Baird retiene
+    // IVA 19% + margen 10%). El precio al cliente se deriva donde se necesite
+    // vía precioClienteServicio()/calcularPagoTecnico(). Garantía → 0.
+    const precioClienteCatalogo = calcularPagoTecnico(
       formData.tipo_equipo,
       formData.tipo_solicitud,
       formData.es_garantia,
     )
+    const pagoTecnicoCalculado = pagoNetoTecnicoTarifaFija(precioClienteCatalogo)
 
     const dataToInsert = {
       ...formData,

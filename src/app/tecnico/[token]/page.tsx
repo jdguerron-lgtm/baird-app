@@ -343,7 +343,8 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
  *   - Después del diagnóstico (triaje_resultado.complejidad presente): muestra
  *     el total neto proyectado.
  * Particular:
- *   - Muestra `pago_tecnico` (el técnico ya conoce el monto desde la cotización).
+ *   - Muestra `pago_tecnico`, que es el NETO que recibe el técnico (precio de
+ *     catálogo ÷ 1.309 en tarifa fija, o el costo cotizado tras diagnóstico).
  */
 function PagoLabel({ servicio }: { servicio: Servicio }) {
   if (!servicio.es_garantia) {

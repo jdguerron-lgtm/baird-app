@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { CODIGOS_FALLA, type CodigoFalla } from '@/lib/constants/codigos-falla'
+import { precioClienteServicio } from '@/types/solicitud'
 
 export const maxDuration = 60
 
@@ -89,6 +90,10 @@ export async function POST(req: NextRequest) {
       : undefined
 
     // 1. Solicitudes (todas las columnas)
+    // Sin `ids` se exporta todo, pero con tope defensivo: cada solicitud
+    // arrastra 6 tablas relacionadas y el Excel se arma en memoria, así que
+    // una tabla grande sin límite agota la función (OOM/timeout).
+    const EXPORT_MAX = 5000
     let solQuery = supabase
       .from('solicitudes_servicio')
       .select('*')
@@ -96,6 +101,8 @@ export async function POST(req: NextRequest) {
 
     if (ids) {
       solQuery = solQuery.in('id', ids)
+    } else {
+      solQuery = solQuery.limit(EXPORT_MAX)
     }
 
     const { data: solicitudes, error: solErr } = await solQuery
@@ -209,7 +216,17 @@ export async function POST(req: NextRequest) {
         'Tipo solicitud': s.tipo_solicitud,
         'Problema reportado': s.novedades_equipo,
         'Serie/Factura': s.numero_serie_factura,
-        'Pago técnico (COP)': s.pago_tecnico,
+        // pago_tecnico = NETO al técnico. El valor al cliente (catálogo o total
+        // cotizado, IVA incl.) se deriva aparte para conciliación / DIAN.
+        'Pago técnico neto (COP)': s.pago_tecnico,
+        'Valor al cliente (COP)': s.es_garantia
+          ? 0
+          : precioClienteServicio(
+              String(s.tipo_equipo ?? ''),
+              String(s.tipo_solicitud ?? ''),
+              Boolean(s.es_garantia),
+              cotizacion,
+            ),
         'Horario sugerido 1': s.horario_visita_1,
         'Horario sugerido 2': s.horario_visita_2,
         'Horario confirmado': s.horario_confirmado,

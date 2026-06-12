@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { ESTADO_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
+import { precioClienteServicio } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -17,7 +18,8 @@ interface Solicitud {
   marca_equipo: string
   tipo_solicitud: string
   estado: string
-  pago_tecnico: number
+  pago_tecnico: number          // NETO al técnico (catálogo ÷ 1.309 o costo cotizado)
+  precio_cliente: number        // lo que paga el cliente (catálogo / total cotizado, IVA incl.)
   es_garantia: boolean
   created_at: string
   tecnico_asignado_id: string | null
@@ -51,7 +53,7 @@ export default function SolicitudesAdmin() {
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, es_garantia, created_at, tecnico_asignado_id')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id')
           .order('created_at', { ascending: false })
 
         if (filtro !== 'todos') {
@@ -92,6 +94,7 @@ export default function SolicitudesAdmin() {
           ...s,
           estado: s.estado ?? 'pendiente',
           pago_tecnico: s.pago_tecnico ?? 0,
+          precio_cliente: precioClienteServicio(s.tipo_equipo, s.tipo_solicitud, s.es_garantia, s.cotizacion),
           tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) : undefined,
         }))
 
@@ -369,14 +372,21 @@ export default function SolicitudesAdmin() {
                       <p className="text-xs text-gray-400">{s.zona_servicio ?? '—'}</p>
                     </td>
                     <td className="px-5 py-3">
-                      {s.es_garantia && (!s.pago_tecnico || s.pago_tecnico === 0) ? (
-                        <p className="text-sm font-medium text-gray-700">
-                          <span className="text-xs text-gray-400 mr-1">desde</span>
-                          ${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)}
-                        </p>
+                      {s.es_garantia ? (
+                        (!s.pago_tecnico || s.pago_tecnico === 0) ? (
+                          <p className="text-sm font-medium text-gray-700">
+                            <span className="text-xs text-gray-400 mr-1">desde</span>
+                            ${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)}
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium text-gray-700">
+                            ${formatCOP(s.pago_tecnico)}
+                          </p>
+                        )
                       ) : (
+                        // Particular: el "Valor" es lo que paga el cliente (no el neto del técnico).
                         <p className="text-sm font-medium text-gray-700">
-                          ${formatCOP(s.pago_tecnico)}
+                          ${formatCOP(s.precio_cliente)}
                         </p>
                       )}
                     </td>

@@ -13,6 +13,7 @@ import {
 } from '@/lib/services/whatsapp.service'
 import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits } from '@/lib/utils/phone'
+import { precioClienteServicio } from '@/types/solicitud'
 
 export const maxDuration = 30
 
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const { data: sol, error } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, es_garantia, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, horario_confirmado, pago_tecnico, tyc_aceptados_at, siguiente_paso, siguiente_paso_detalle')
+      .select('id, estado, es_garantia, cliente_telefono, cliente_nombre, tipo_equipo, tipo_solicitud, marca_equipo, tecnico_asignado_id, horario_confirmado, pago_tecnico, cotizacion, tyc_aceptados_at, siguiente_paso, siguiente_paso_detalle')
       .eq('id', solicitudId)
       .single()
 
@@ -128,8 +129,16 @@ export async function POST(req: NextRequest) {
               mensaje: r.sent ? 'Plantilla re-enviada' : 'Filtrado por test mode',
             })
           } else {
-            const tarifa = formatCOP(sol.pago_tecnico ?? 0)
-            const anticipo = formatCOP(Math.round((sol.pago_tecnico ?? 0) * 0.5))
+            // Cliente: mostramos lo que él paga (catálogo / total cotizado),
+            // NO el neto del técnico (pago_tecnico).
+            const precioCliente = precioClienteServicio(
+              sol.tipo_equipo,
+              sol.tipo_solicitud,
+              sol.es_garantia,
+              sol.cotizacion as { total?: number | null } | null,
+            )
+            const tarifa = formatCOP(precioCliente)
+            const anticipo = formatCOP(Math.round(precioCliente * 0.5))
             const r = await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
               {
                 type: 'body',

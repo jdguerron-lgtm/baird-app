@@ -53,8 +53,8 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
   // En garantía MABE no hay pago fijo hasta el diagnóstico: la complejidad
   // y los bonos se conocen después. Mostramos el PAGO MÍNIMO garantizado
   // (Baja sin bonos sin recargo = $32.760) y aclaramos que puede ser mayor.
-  // En particular el cliente ya pagó la tarifa de diagnóstico — ese valor es
-  // exacto y lo mostramos tal cual.
+  // En particular `pago_tecnico` es el NETO que recibe el técnico (precio de
+  // catálogo ÷ 1.309, o el costo cotizado tras diagnóstico); lo mostramos tal cual.
   const pagoFormateado = esGarantia
     ? formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)
     : formatCOP(solicitud.pago_tecnico)

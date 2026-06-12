@@ -7,13 +7,16 @@ import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import { formatCOP } from '@/lib/utils/format'
+import { precioClienteServicio } from '@/types/solicitud'
 
 interface DatosConfirmacion {
   solicitud: {
     id: string
     tipo_equipo: string
     marca_equipo: string
-    pago_tecnico: number
+    // Lo que paga el CLIENTE (catálogo o total cotizado, IVA incl.), no el
+    // neto del técnico que vive en pago_tecnico.
+    precioCliente: number
     novedades_equipo: string
     es_garantia: boolean
   }
@@ -68,7 +71,7 @@ export default function ConfirmarServicioPage() {
         querySupabase(() =>
           supabase
             .from('solicitudes_servicio')
-            .select('id, tipo_equipo, marca_equipo, pago_tecnico, novedades_equipo, es_garantia')
+            .select('id, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, es_garantia, cotizacion')
             .eq('id', evidencia.solicitud_id)
             .single()
         ),
@@ -95,7 +98,19 @@ export default function ConfirmarServicioPage() {
       }
 
       setDatos({
-        solicitud: sol,
+        solicitud: {
+          id: sol.id,
+          tipo_equipo: sol.tipo_equipo,
+          marca_equipo: sol.marca_equipo,
+          novedades_equipo: sol.novedades_equipo,
+          es_garantia: sol.es_garantia,
+          precioCliente: precioClienteServicio(
+            sol.tipo_equipo,
+            sol.tipo_solicitud,
+            sol.es_garantia,
+            sol.cotizacion,
+          ),
+        },
         tecnico: tec,
         fotos: evidencia.fotos ?? [],
         completado_at: evidencia.completado_at,
@@ -322,7 +337,7 @@ export default function ConfirmarServicioPage() {
             ) : (
               <p>
                 <span className="font-semibold text-gray-500">Valor:</span>{' '}
-                ${formatCOP(datos!.solicitud.pago_tecnico)} COP
+                ${formatCOP(datos!.solicitud.precioCliente)} COP
               </p>
             )}
             <p>

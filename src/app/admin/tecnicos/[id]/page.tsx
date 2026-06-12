@@ -11,6 +11,7 @@ interface Tecnico {
   nombre_completo: string
   whatsapp: string
   ciudad_pueblo: string
+  ciudades_cobertura: string[]
   tipo_documento: string
   numero_documento: string
   especialidad_principal: string | null
@@ -34,6 +35,9 @@ export default function TecnicoDetalle() {
   const [nota, setNota] = useState('')
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'exito' | 'error' } | null>(null)
   const [imagenExpandida, setImagenExpandida] = useState<string | null>(null)
+  const [ciudades, setCiudades] = useState<string[]>([])
+  const [nuevaCiudad, setNuevaCiudad] = useState('')
+  const [guardandoCiudades, setGuardandoCiudades] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -45,6 +49,10 @@ export default function TecnicoDetalle() {
       if (tecRes.data) {
         setTecnico(tecRes.data)
         setNota(tecRes.data.nota_verificacion ?? '')
+        const cob = Array.isArray(tecRes.data.ciudades_cobertura) && tecRes.data.ciudades_cobertura.length > 0
+          ? tecRes.data.ciudades_cobertura
+          : (tecRes.data.ciudad_pueblo ? [tecRes.data.ciudad_pueblo] : [])
+        setCiudades(cob)
       }
       setEspecialidades(espRes.data?.map((e: { especialidad: string }) => e.especialidad) ?? [])
       setCargando(false)
@@ -92,6 +100,49 @@ export default function TecnicoDetalle() {
 
     setMensaje({ texto: labels[nuevoEstado], tipo: 'exito' })
     setAccion('idle')
+  }
+
+  const agregarCiudad = () => {
+    const c = nuevaCiudad.trim()
+    if (!c) return
+    if (ciudades.some(x => x.toLowerCase() === c.toLowerCase())) {
+      setNuevaCiudad('')
+      return
+    }
+    setCiudades(prev => [...prev, c])
+    setNuevaCiudad('')
+  }
+
+  const quitarCiudad = (ciudad: string) => {
+    setCiudades(prev => prev.filter(x => x !== ciudad))
+  }
+
+  const guardarCiudades = async () => {
+    setGuardandoCiudades(true)
+    setMensaje(null)
+
+    // Trim + dedupe case-insensitive, conservando la primera grafía ingresada.
+    const limpias = Array.from(
+      new Map(
+        ciudades.map(c => c.trim()).filter(Boolean).map(c => [c.toLowerCase(), c]),
+      ).values(),
+    )
+
+    const { error } = await supabase
+      .from('tecnicos')
+      .update({ ciudades_cobertura: limpias })
+      .eq('id', id)
+
+    if (error) {
+      setMensaje({ texto: 'Error al guardar ciudades: ' + error.message, tipo: 'error' })
+      setGuardandoCiudades(false)
+      return
+    }
+
+    setCiudades(limpias)
+    setTecnico(prev => prev ? { ...prev, ciudades_cobertura: limpias } : null)
+    setMensaje({ texto: 'Ciudades de cobertura actualizadas', tipo: 'exito' })
+    setGuardandoCiudades(false)
   }
 
   if (cargando) {
@@ -230,6 +281,63 @@ export default function TecnicoDetalle() {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Ciudades de cobertura */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Ciudades de cobertura</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Ciudades/pueblos donde el técnico recibe solicitudes. La ciudad base es <span className="font-semibold text-gray-500">{tecnico.ciudad_pueblo}</span>.
+            </p>
+
+            {/* Chips */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {ciudades.length > 0 ? (
+                ciudades.map(c => (
+                  <span key={c} className="inline-flex items-center gap-1.5 text-sm font-medium bg-slate-100 text-slate-700 pl-3 pr-2 py-1.5 rounded-xl border border-slate-200">
+                    {c}
+                    <button
+                      type="button"
+                      onClick={() => quitarCiudad(c)}
+                      className="text-slate-400 hover:text-red-600 transition-colors font-bold leading-none"
+                      title={`Quitar ${c}`}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))
+              ) : (
+                <span className="text-sm text-gray-400">Sin ciudades de cobertura</span>
+              )}
+            </div>
+
+            {/* Agregar ciudad */}
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={nuevaCiudad}
+                onChange={(e) => setNuevaCiudad(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarCiudad() } }}
+                placeholder="Agregar ciudad o pueblo (ej. Soacha)..."
+                className="flex-1 border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+              <button
+                type="button"
+                onClick={agregarCiudad}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-4 rounded-xl text-sm transition-all"
+              >
+                Agregar
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={guardarCiudades}
+              disabled={guardandoCiudades}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {guardandoCiudades ? 'Guardando...' : 'Guardar ciudades'}
+            </button>
           </div>
 
           {/* Especialidades */}

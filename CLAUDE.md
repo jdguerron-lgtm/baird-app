@@ -104,7 +104,21 @@ BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. 
                                   # Si está definida, las primitivas WhatsApp omiten cualquier
                                   # envío a un número fuera de la lista. Útil en dev para no
                                   # alertar a técnicos reales. Vacío/no definido = comportamiento
-                                  # normal (envía a todos).
+                                  # normal (envía a todos). La 2ª línea de voz (Dapta) reusa
+                                  # esta misma whitelist vía isPhoneAllowed.
+
+# Dapta — segunda línea de voz IA (llamadas automatizadas). Ver docs/DAPTA.md.
+DAPTA_ENABLED                     # Kill-switch global: 'true' habilita disparar llamadas. Default off.
+DAPTA_PUBLIC_ROUTE_URL            # Public Route URL del Flow de Dapta (POST con variables + metadata)
+DAPTA_WEBHOOK_SECRET              # Secreto para verificar firma HMAC / token del webhook POST-CALL
+DAPTA_MAX_INTENTOS                # Tope de llamadas por solicitud (default 2)
+DAPTA_REINTENTO_COOLDOWN_HORAS    # Horas entre reintentos a la misma solicitud (default 4)
+DAPTA_HORARIO_INICIO              # Hora hábil inicio, TZ America/Bogota 0–23 (default 8)
+DAPTA_HORARIO_FIN                 # Hora hábil fin, TZ America/Bogota 0–23 (default 19)
+DAPTA_SILENCIO_AGENDAR_HORAS      # Silencio WhatsApp antes de escalar — agendar (default 12)
+DAPTA_SILENCIO_CIERRE_HORAS       # Silencio WhatsApp antes de escalar — cierre (default 24)
+DAPTA_SILENCIO_COTIZACION_HORAS   # Silencio WhatsApp antes de escalar — cotización (default 24)
+DAPTA_SILENCIO_REPUESTO_HORAS     # Silencio WhatsApp antes de escalar — repuesto (default 24)
 ```
 
 ## Testing

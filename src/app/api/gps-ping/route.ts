@@ -5,13 +5,18 @@ import { supabase } from '@/lib/supabase'
  * POST /api/gps-ping
  *
  * Registra un ping GPS del técnico durante la visita.
- * Body: { solicitudId, fase: 'llegada'|'diagnostico'|'completado'|'post_visita', lat, lng }
+ * Body: { solicitudId, portalToken, fase: 'llegada'|'diagnostico'|'completado'|'post_visita', lat, lng }
+ *
+ * Auth: el `portalToken` debe resolver a un técnico que sea el asignado a la
+ * solicitud. Sin esta validación, cualquiera con un solicitudId podría
+ * falsificar o pisar la evidencia GPS, que es la base del modelo
+ * "no-show: nadie paga" (ver docs/PROTOCOLO-VISITA.md).
  */
 export async function POST(req: NextRequest) {
   try {
-    const { solicitudId, fase, lat, lng } = await req.json()
+    const { solicitudId, portalToken, fase, lat, lng } = await req.json()
 
-    if (!solicitudId || !fase || typeof lat !== 'number' || typeof lng !== 'number') {
+    if (!solicitudId || !portalToken || !fase || typeof lat !== 'number' || typeof lng !== 'number') {
       return NextResponse.json({ error: 'Parámetros inválidos' }, { status: 400 })
     }
 
@@ -20,7 +25,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Fase inválida' }, { status: 400 })
     }
 
-    // Obtener técnico asignado
+    // Resolver al técnico dueño del portal_token (mecanismo de auth del portal técnico).
+    const { data: tecnico } = await supabase
+      .from('tecnicos')
+      .select('id')
+      .eq('portal_token', portalToken)
+      .single()
+
+    if (!tecnico) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    // Obtener técnico asignado a la solicitud
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
       .select('tecnico_asignado_id')
@@ -31,12 +47,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Solicitud sin técnico asignado' }, { status: 400 })
     }
 
+    // El portalToken debe pertenecer al técnico asignado a ESTA solicitud.
+    if (sol.tecnico_asignado_id !== tecnico.id) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+    }
+
     // Insertar ping
     const { error: insertErr } = await supabase
       .from('gps_pings')
       .insert({
         solicitud_id: solicitudId,
-        tecnico_id: sol.tecnico_asignado_id,
+        tecnico_id: tecnico.id,
         lat,
         lng,
         fase,
@@ -62,7 +83,7 @@ export async function POST(req: NextRequest) {
       .from('evidencias_servicio')
       .update(updatePayload)
       .eq('solicitud_id', solicitudId)
-      .eq('tecnico_id', sol.tecnico_asignado_id)
+      .eq('tecnico_id', tecnico.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {

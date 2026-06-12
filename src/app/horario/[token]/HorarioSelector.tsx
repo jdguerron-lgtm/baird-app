@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
+import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
 
 interface SolicitudData {
   id: string
@@ -25,6 +26,10 @@ interface Props {
   solicitud: SolicitudData
   yaConfirmado: boolean
   expirado: boolean
+  // true cuando ya se agendó una vez pero la fecha pasó y nadie tomó el
+  // servicio (estado 'notificada' sin técnico): se reabre el formulario por
+  // este mismo link para que el cliente elija nueva fecha.
+  reagendarVencido: boolean
 }
 
 const FRANJAS = [
@@ -40,19 +45,18 @@ function formatFechaLarga(iso: string): string {
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+// Mínimo agendable: mañana (nunca el mismo día). Máximo: 2 semanas.
+// Se calcula sobre el día calendario en TZ Colombia para no correrse un día
+// por la noche (toISOString sobre hora local devolvía el día UTC siguiente).
 function fechaMinima(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)  // mínimo: mañana
-  return d.toISOString().slice(0, 10)
+  return fechaColombiaMasDias(1)
 }
 
 function fechaMaxima(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 14)  // máximo: 2 semanas
-  return d.toISOString().slice(0, 10)
+  return fechaColombiaMasDias(14)
 }
 
-export default function HorarioSelector({ token, solicitud, yaConfirmado, expirado }: Props) {
+export default function HorarioSelector({ token, solicitud, yaConfirmado, expirado, reagendarVencido }: Props) {
   // Modo: 'sugerencia' (clic en una de las 2 opciones del formulario) | 'custom' (fecha + franja libre)
   const [modo, setModo] = useState<'sugerencia' | 'custom'>('custom')
   const [opcionSugerida, setOpcionSugerida] = useState<1 | 2 | null>(null)
@@ -99,7 +103,9 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
     )
   }
 
-  if (yaConfirmado || resultado === 'success') {
+  // Pantalla "ya confirmado" — salvo en modo reagendar-vencido, donde se
+  // reabre el formulario abajo para elegir nueva fecha.
+  if ((yaConfirmado && !reagendarVencido) || resultado === 'success') {
     const horarioSeleccionado = resultado === 'success' ? horarioFinal : solicitud.horario_confirmado
 
     return (
@@ -164,9 +170,21 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="mx-auto max-w-lg">
+        {reagendarVencido && (
+          <div className="rounded-2xl bg-amber-50 border-2 border-amber-200 p-5 mb-4">
+            <h2 className="font-bold text-amber-900 mb-1">⏰ Tu fecha anterior ya pasó</h2>
+            <p className="text-sm text-amber-900">
+              {solicitud.horario_confirmado
+                ? <>Habías agendado para <strong>{solicitud.horario_confirmado}</strong>, pero esa fecha ya pasó y aún no asignamos un técnico. </>
+                : <>La fecha que habías agendado ya pasó y aún no asignamos un técnico. </>}
+              Elige una nueva fecha y volveremos a buscar técnicos verificados para ti.
+            </p>
+          </div>
+        )}
+
         <div className="rounded-2xl bg-white p-6 shadow-lg mb-4">
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Hola {cliente} 👋</h1>
-          <p className="text-gray-600 mb-1">Confirma el horario para tu servicio:</p>
+          <p className="text-gray-600 mb-1">{reagendarVencido ? 'Elige una nueva fecha para tu servicio:' : 'Confirma el horario para tu servicio:'}</p>
           <p className="text-lg font-semibold text-gray-900">🔧 {equipo}</p>
           <p className="text-sm text-gray-500">{solicitud.zona_servicio}, {solicitud.ciudad_pueblo}</p>
         </div>
@@ -174,7 +192,9 @@ export default function HorarioSelector({ token, solicitud, yaConfirmado, expira
         <div className="rounded-2xl bg-white p-6 shadow-lg mb-4">
           <h2 className="font-semibold text-gray-900 mb-3">Elige fecha y franja horaria:</h2>
 
-          {(solicitud.horario_visita_1 || solicitud.horario_visita_2) && (
+          {/* En reagendar-vencido ocultamos las sugerencias originales: son las
+              franjas que el cliente propuso al crear la solicitud y ya pasaron. */}
+          {!reagendarVencido && (solicitud.horario_visita_1 || solicitud.horario_visita_2) && (
             <div className="mb-4 pb-4 border-b border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-2">
                 Sugerencias rápidas

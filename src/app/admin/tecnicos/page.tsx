@@ -11,6 +11,7 @@ interface Tecnico {
   nombre_completo: string
   whatsapp: string
   ciudad_pueblo: string
+  ciudades_cobertura: string[]
   tipo_documento: string
   numero_documento: string
   foto_perfil_url: string | null
@@ -51,7 +52,7 @@ export default function TecnicosAdmin() {
 
       let query = supabase
         .from('tecnicos')
-        .select('id, nombre_completo, whatsapp, ciudad_pueblo, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token')
+        .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token')
         .order('created_at', { ascending: false })
 
       if (filtro !== 'todos') {
@@ -81,6 +82,7 @@ export default function TecnicosAdmin() {
 
       const resultado: Tecnico[] = tecnicosData.map(t => ({
         ...t,
+        ciudades_cobertura: t.ciudades_cobertura ?? [],
         especialidades: espMap.get(t.id) ?? [],
       }))
 
@@ -95,6 +97,7 @@ export default function TecnicosAdmin() {
     ? tecnicos.filter(t =>
         t.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) ||
         t.ciudad_pueblo.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (t.ciudades_cobertura ?? []).some(c => c.toLowerCase().includes(busqueda.toLowerCase())) ||
         t.numero_documento.includes(busqueda)
       )
     : tecnicos
@@ -193,7 +196,20 @@ export default function TecnicosAdmin() {
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      <p className="text-sm text-gray-700">{t.ciudad_pueblo}</p>
+                      {(() => {
+                        const cob = (t.ciudades_cobertura?.length ? t.ciudades_cobertura : [t.ciudad_pueblo]).filter(Boolean)
+                        return cob.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[220px]">
+                            {cob.map(c => (
+                              <span key={c} className="text-[11px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-300">—</span>
+                        )
+                      })()}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex flex-wrap gap-1">

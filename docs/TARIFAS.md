@@ -202,18 +202,30 @@ Cuando el técnico va a diagnosticar y el cliente decide no proceder con la repa
 
 Constantes en `src/types/solicitud.ts`.
 
-### Servicios de tarifa fija al solicitar (Mantenimiento, Cambio de filtro)
+### Servicios de tarifa fija al solicitar (Diagnóstico, Reparación, Mantenimiento, Cambio de filtro)
 
-Algunos servicios particulares tienen **precio fijo de catálogo definido al crear la solicitud** — el cliente lo ve y lo paga sin esperar cotización del técnico. La función `calcularPagoTecnico(tipo_equipo, tipo_solicitud, es_garantia)` en `src/types/solicitud.ts` los resuelve, y `/api/solicitar` lo **recalcula server-side** para evitar manipulación del cliente:
+Algunos servicios particulares tienen **precio fijo de catálogo definido al crear la solicitud** — el cliente lo ve y lo paga sin esperar cotización del técnico. La función `calcularPagoTecnico(tipo_equipo, tipo_solicitud, es_garantia)` en `src/types/solicitud.ts` resuelve el **precio de catálogo al cliente** (IVA incl.).
 
-| `tipo_solicitud` | Precio al cliente | Constante |
-|---|---|---|
-| Diagnóstico / Reparación | $84,000 (anticipo 50%) | `TARIFA_DIAGNOSTICO` |
-| Mantenimiento | $105,000–$189,000 según equipo | `TARIFAS_MANTENIMIENTO[tipo_equipo]` |
-| **Cambio de filtro** | **$180,000 todo incluido** | `TARIFA_CAMBIO_FILTRO` |
-| (cualquiera, garantía) | $0 (la marca paga) | — |
+> ⚠️ **Modelo reseller — el técnico NO recibe el precio de catálogo.** Igual que en cotización libre, el cliente paga `costoTécnico × 1.309` (IVA 19% × margen Baird 10%). En tarifa fija ese 1.309 ya está embebido en el catálogo, así que el **neto del técnico = catálogo ÷ 1.309** (`pagoNetoTecnicoTarifaFija()` en `tarifas/particular.ts`, inversa de `calcularTarifaParticular`). El nombre `calcularPagoTecnico` es histórico: **devuelve el precio al cliente, no el pago al técnico.**
 
-**Cambio de filtro** (agregado 2026-05-29): precio fijo todo-incluido de **$180,000 COP** — cubre el **filtro (repuesto)**, la mano de obra y el IVA 19% (base $151,261 + IVA $28,739). El cliente no paga nada adicional al técnico. Solo aplica en flujo particular (`es_garantia=false`); en garantía siempre es 0. La tarjeta de precio en `/solicitar` lo muestra como "Filtro incluido" con desglose de IVA para facturación DIAN.
+`/api/solicitar` recalcula server-side (anti-manipulación) y guarda en la columna **`pago_tecnico` el NETO** que recibe el técnico:
+
+| `tipo_solicitud` | Precio al cliente (catálogo) | Pago **neto** al técnico (`pago_tecnico`) | Constante |
+|---|---|---|---|
+| Diagnóstico / Reparación | $84.000 (anticipo 50%) | **$64.171** | `TARIFA_DIAGNOSTICO` |
+| Mantenimiento | $105.000–$189.000 según equipo | **$80.214–$144.385** | `TARIFAS_MANTENIMIENTO[tipo_equipo]` |
+| **Cambio de filtro** | **$180.000 todo incluido** | **$137.510** | `TARIFA_CAMBIO_FILTRO` |
+| (cualquiera, garantía) | $0 (la marca paga) | $0 | — |
+
+Detalle de los netos por equipo en [docs/pagos-tecnico.html](./pagos-tecnico.html) (guía del técnico). El cliente nunca ve este desglose.
+
+**Dos conceptos, dos lecturas:**
+- **Pago al técnico (neto):** se lee directo de `pago_tecnico`. Lo usan el portal del técnico (`/tecnico/[token]`, `/aceptar/[token]`, completar), las plantillas WhatsApp al técnico y la columna "Pago técnico neto" del export. Consistente en todos los flujos particulares (tarifa fija o cotización libre).
+- **Precio al cliente:** se **deriva** con `precioClienteServicio(tipo_equipo, tipo_solicitud, es_garantia, cotizacion)` — devuelve `cotizacion.total` si existe (Reparación cotizada o ajuste de admin) o el catálogo si no (tarifa fija). Lo usan la tarjeta de `/solicitar`, las plantillas/`tecnico_asignado_particular_v1` al cliente, `/confirmar/[token]`, las vistas admin y la columna "Valor al cliente" del export. **No se persiste una columna aparte** — siempre es derivable (catálogo es función pura de equipo×tipo, y cotización ya guarda el total al cliente).
+
+**Cambio de filtro** (agregado 2026-05-29): precio fijo todo-incluido de **$180.000 COP** al cliente — cubre el **filtro (repuesto)**, la mano de obra y el IVA 19% (base $151.261 + IVA $28.739). El técnico recibe **$137.510 neto** (de ahí sale el filtro). Solo aplica en flujo particular (`es_garantia=false`); en garantía siempre es 0. La tarjeta de precio en `/solicitar` lo muestra como "Filtro incluido" con desglose de IVA para facturación DIAN.
+
+> 🐛 **Fix 2026-06-09:** antes `pago_tecnico` guardaba el precio de catálogo (sobrepagaba al técnico el IVA+margen) y, al aprobar una cotización, `procesarAprobacionCotizacion` lo sobreescribía con `cotizacion.total` (= precio al cliente). Ahora `pago_tecnico` guarda siempre el neto: tarifa fija → catálogo ÷ 1.309 en `/api/solicitar`; cotización libre → `costoTecnico` fijado en `/api/diagnostico` o `/api/cotizacion-precios`, y la aprobación **ya no lo toca** (mismo criterio que `/api/admin/actualizar-valor`).
 
 ---
 
@@ -269,10 +281,10 @@ Resumen mínimo:
 ### Agregar un servicio de tarifa fija al solicitar (nuevo `tipo_solicitud`)
 Ejemplo de referencia: "Cambio de filtro" ($180k), agregado el 2026-05-29. **No requiere migración** — `tipo_solicitud` no tiene CHECK constraint en BD y Zod deriva el enum del array TS.
 1. Agregar el valor al array `TIPOS_SOLICITUD` en `src/types/solicitud.ts` (el schema Zod `z.enum(TIPOS_SOLICITUD)` se actualiza solo).
-2. Definir la constante de precio (ej. `TARIFA_CAMBIO_FILTRO = 180000`, IVA incluido) y agregar el caso en `calcularPagoTecnico()`. Garantía siempre devuelve 0 antes de los casos particulares.
-3. Agregar la rama de la tarjeta de precio en `src/app/solicitar/page.tsx` (modelar sobre la verde de Mantenimiento; usa `formData.pago_tecnico` + desglose IVA con `calcularBaseSinIva`/`calcularIvaIncluido`).
-4. El hook `useSolicitudForm` y `/api/solicitar` recalculan `pago_tecnico` automáticamente vía `calcularPagoTecnico` — no se confía en el valor del cliente.
-5. Actualizar la tabla de "Servicios de tarifa fija al solicitar" en este doc.
+2. Definir la constante de **precio al cliente** (ej. `TARIFA_CAMBIO_FILTRO = 180000`, IVA incluido) y agregar el caso en `calcularPagoTecnico()` (que devuelve ese precio de catálogo). Garantía siempre devuelve 0 antes de los casos particulares.
+3. Agregar la rama de la tarjeta de precio en `src/app/solicitar/page.tsx` (modelar sobre la verde de Mantenimiento; usa `formData.pago_tecnico` —que en el form es el precio al cliente— + desglose IVA con `calcularBaseSinIva`/`calcularIvaIncluido`).
+4. `/api/solicitar` recalcula server-side y guarda en `pago_tecnico` el **NETO** = `pagoNetoTecnicoTarifaFija(calcularPagoTecnico(...))` (catálogo ÷ 1.309) — no se confía en el valor del cliente. El precio al cliente se deriva donde haga falta con `precioClienteServicio()`; no se persiste aparte.
+5. Actualizar la tabla de "Servicios de tarifa fija al solicitar" en este doc (ambas columnas: precio al cliente y neto al técnico).
 
 ---
 

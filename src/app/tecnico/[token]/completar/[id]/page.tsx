@@ -397,7 +397,7 @@ export default function CompletarServicioPage() {
         fetch('/api/gps-ping', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ solicitudId: servicio.id, fase: 'completado', lat: gps.lat, lng: gps.lng }),
+          body: JSON.stringify({ solicitudId: servicio.id, portalToken: token, fase: 'completado', lat: gps.lat, lng: gps.lng }),
         }).catch(() => {})
       }
 

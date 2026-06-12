@@ -62,6 +62,30 @@ export function calcularTarifaParticular(params: { costoTecnico: number }): Tari
 }
 
 /**
+ * Pago NETO al técnico para un servicio particular de TARIFA FIJA del catálogo
+ * (Mantenimiento, Cambio de filtro, Diagnóstico, Reparación), a partir del
+ * precio de catálogo al cliente (IVA incluido).
+ *
+ * Es la inversa de `calcularTarifaParticular`: el cliente paga
+ *   precioCliente = costoTecnico × MULTIPLICADOR_PARTICULAR (1.19 IVA × 1.10 margen),
+ * así que el neto del técnico es `precioCliente ÷ MULTIPLICADOR_PARTICULAR`.
+ * Reusa la MISMA constante que el cálculo directo para que IVA + margen queden
+ * siempre sincronizados (si cambia uno, ambos sentidos cambian juntos).
+ *
+ * Ejemplos (catálogo → neto técnico):
+ *   $180.000 (cambio de filtro) → $137.510
+ *   $126.000 (mant. lavadora)   → $96.257
+ *   $84.000  (diagnóstico)      → $64.171
+ *
+ * Garantía: el precio de catálogo es 0 (la marca paga vía MABE), así que
+ * devuelve 0. Ver docs/TARIFAS.md § "Particular · servicios de tarifa fija".
+ */
+export function pagoNetoTecnicoTarifaFija(precioCliente: number): number {
+  if (!Number.isFinite(precioCliente) || precioCliente <= 0) return 0
+  return Math.round(precioCliente / MULTIPLICADOR_PARTICULAR)
+}
+
+/**
  * Display string para el cliente: "Total: $130.900 (incluye IVA)".
  * NO desglosa costo técnico ni margen Baird (información comercial).
  */

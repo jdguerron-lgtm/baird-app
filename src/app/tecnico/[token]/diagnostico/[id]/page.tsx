@@ -299,7 +299,7 @@ export default function DiagnosticoPage() {
     setError(null)
 
     // Capturar GPS de la fase diagnóstico (no bloqueante en caso de fallo)
-    enviarPing(servicio.id, 'diagnostico').catch(() => {})
+    enviarPing(servicio.id, 'diagnostico', token).catch(() => {})
 
     try {
       // 1. Comprimir imágenes y subir a Supabase Storage en paralelo.
@@ -571,7 +571,7 @@ export default function DiagnosticoPage() {
           onConfirm={(firma) => {
             setOathFirma(firma)
             // Capturar GPS de llegada cuando firma
-            enviarPing(servicio.id, 'llegada').catch(() => {})
+            enviarPing(servicio.id, 'llegada', token).catch(() => {})
           }}
         />
       )}

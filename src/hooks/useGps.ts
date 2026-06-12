@@ -27,14 +27,18 @@ export function useGps() {
   }, [])
 
   const enviarPing = useCallback(
-    async (solicitudId: string, fase: 'llegada' | 'diagnostico' | 'completado' | 'post_visita') => {
+    async (
+      solicitudId: string,
+      fase: 'llegada' | 'diagnostico' | 'completado' | 'post_visita',
+      portalToken: string,
+    ) => {
       const pos = await capturar()
       if (!pos) return null
       try {
         await fetch('/api/gps-ping', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ solicitudId, fase, lat: pos.lat, lng: pos.lng }),
+          body: JSON.stringify({ solicitudId, portalToken, fase, lat: pos.lat, lng: pos.lng }),
         })
         return pos
       } catch {

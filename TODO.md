@@ -171,6 +171,7 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 ## Pendientes — Fase 2
 
 ### Alta prioridad
+- [ ] **Segunda visita sin repuesto** — Gap verificado 2026-06-02. La segunda visita CON repuesto ya funciona end-to-end; falta el camino "la reparación necesita otro día pero no requiere pieza" (`reparar` cierra en la misma visita, `esperar_repuesto` exige SKU). 4 opciones para revisar en `docs/mejoras-futuras/segunda-visita/README.md` (recomendación tentativa: nuevo `siguiente_paso = agendar_segunda_visita`).
 - [ ] **Auto-cierre 24h** — Si el cliente no confirma en 24h, marcar automáticamente como completada (cron job o edge function)
 - [ ] **Seguimiento para el cliente** — página pública `/solicitud/{id}` con estado en tiempo real
 - [ ] **Notificación de disputa** — cuando el cliente reporta problema, avisar al admin por WhatsApp/email

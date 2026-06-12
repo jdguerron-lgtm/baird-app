@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cuánto ganas con Baird Service — Guía de pagos para técnicos</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #ffffff;
+      --soft: #f1f5f9;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --accent: #10b981;
+      --accent-soft: #d1fae5;
+      --indigo: #4f46e5;
+      --indigo-soft: #e0e7ff;
+      --warn: #f59e0b;
+      --warn-soft: #fef3c7;
+      --bad: #ef4444;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+    }
+    header.hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #f8fafc;
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .hero-eyebrow {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #94a3b8;
+      margin: 0 0 8px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .hero p {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 15px;
+    }
+    .formula {
+      margin-top: 18px;
+      padding: 16px;
+      background: rgba(16, 185, 129, 0.15);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      font-size: 14px;
+      color: #ecfdf5;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    .navlinks { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+    .navlinks a {
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 9px 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      transition: background 0.15s;
+    }
+    .navlinks a:hover { background: rgba(255, 255, 255, 0.16); }
+    .partflag {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 40px 0 16px;
+      scroll-margin-top: 16px;
+    }
+    .partflag .pnum {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 19px;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: var(--shadow);
+    }
+    .partflag.warranty .pnum { background: linear-gradient(135deg, #10b981, #059669); }
+    .partflag.particular .pnum { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+    .partflag h2 { margin: 0; font-size: 22px; letter-spacing: -0.3px; }
+    .partflag .sub { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+    h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin: 0 0 18px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-top: 8px;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: right;
+      border-bottom: 1px solid var(--line);
+    }
+    th:first-child, td:first-child { text-align: left; }
+    thead th {
+      background: var(--soft);
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.7px;
+    }
+    tbody tr:hover { background: #fafbfc; }
+    .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .num.positive { color: var(--accent); }
+    .num.muted { color: var(--muted); font-weight: 500; }
+    .pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    .pill.green { background: var(--accent-soft); color: #047857; }
+    .pill.amber { background: var(--warn-soft); color: #92400e; }
+    .pill.gray { background: var(--soft); color: var(--muted); }
+    .pill.indigo { background: var(--indigo-soft); color: #3730a3; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .card {
+      background: var(--soft);
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+    }
+    .card.highlight {
+      background: linear-gradient(180deg, #eef2ff 0%, #ffffff 100%);
+      border-color: #c7d2fe;
+    }
+    .card .label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+    }
+    .card .value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .card .value.accent { color: var(--accent); }
+    .card .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .example {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 12px;
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+    .example h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .example .conds {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .breakdown .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px dashed var(--line);
+      font-size: 14px;
+    }
+    .breakdown .row.total {
+      border-bottom: none;
+      border-top: 2px solid var(--ink);
+      margin-top: 4px;
+      padding-top: 10px;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .breakdown .row .label { color: var(--muted); }
+    .breakdown .row.total .label { color: var(--ink); }
+    .breakdown .row .amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .note {
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 13px;
+      margin-top: 14px;
+      line-height: 1.5;
+    }
+    .note strong { font-weight: 700; }
+    .note.blue { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+    .note.amber { background: var(--warn-soft); border: 1px solid #fde68a; color: #92400e; }
+    .note.green { background: var(--accent-soft); border: 1px solid #a7f3d0; color: #065f46; }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-top: 8px;
+      background: var(--soft);
+    }
+    details + details { margin-top: 8px; }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    details[open] summary { margin-bottom: 10px; }
+    details p { margin: 6px 0; color: var(--muted); font-size: 13px; }
+    .checklist {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+    }
+    .checklist li {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--soft);
+      margin-bottom: 8px;
+      font-size: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .checklist .check { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 32px;
+    }
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 22px; }
+      .wrap { padding: 16px 12px 60px; }
+      section { padding: 18px 16px; }
+      th, td { padding: 8px 6px; font-size: 13px; }
+      .partflag h2 { font-size: 19px; }
+    }
+    @media print {
+      body { background: #ffffff; }
+      .wrap { padding: 0 8px 8px; max-width: 100%; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      section, .example, .card, .partflag, table, details, .note, ul.checklist li { break-inside: avoid; }
+      .navlinks { display: none; }
+      header.hero { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="hero">
+      <p class="hero-eyebrow">Baird Service · Guía de pagos para técnicos</p>
+      <h1>Cuánto ganas con Baird Service</h1>
+      <p>Hay dos formas de trabajar con nosotros, cada una con su propio pago. Esta guía te explica exactamente cuánto recibes en cada una. Todas las cifras son en pesos colombianos.</p>
+      <div class="navlinks">
+        <a href="#garantia">🛡️ A · Garantía MABE</a>
+        <a href="#particular">🔧 B · Servicios particulares</a>
+      </div>
+    </header>
+
+    <!-- ════════════════════ PARTE A — GARANTÍA MABE ════════════════════ -->
+    <div class="partflag warranty" id="garantia">
+      <div class="pnum">A</div>
+      <div>
+        <h2>Garantía MABE</h2>
+        <p class="sub">La marca paga. El cliente no paga nada. Tu pago = mano de obra + bono por tiempo + recargo de fin de semana.</p>
+      </div>
+    </div>
+
+    <section>
+      <div class="formula" style="background: var(--accent-soft); color: #065f46; border-left-color: var(--accent); margin-top: 0;">
+        Lo que recibes = <strong>Mano de obra</strong> + <strong>Bono por tiempo</strong> + <strong>Recargo fin de semana</strong>
+      </div>
+    </section>
+
+    <section>
+      <h2>1. Mano de obra (lo que recibes por cada servicio)</h2>
+      <p class="subtitle">Depende de la complejidad de la reparación. La complejidad la determina la pieza intervenida y el tiempo estimado.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Complejidad</th>
+            <th>Tu pago</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Baja <span class="pill gray">Ajustes menores, limpieza, piezas accesibles</span></td>
+            <td class="num positive">$32.760</td>
+          </tr>
+          <tr>
+            <td>Media <span class="pill gray">Cambio de componentes internos</span></td>
+            <td class="num positive">$39.000</td>
+          </tr>
+          <tr>
+            <td>Alta <span class="pill gray">Tarjeta electrónica, compresor, motor</span></td>
+            <td class="num positive">$89.700</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Bono por tiempo de solución</h2>
+      <p class="subtitle">El reloj del bono <strong>arranca cuando registras el diagnóstico</strong>. Mientras más rápido resuelvas desde ese momento, mejor bono.</p>
+
+      <ul class="checklist">
+        <li>
+          <span class="check">⏱</span>
+          <span><strong>Diagnostica el día de la visita que el cliente agendó.</strong> Desde ese diagnóstico arranca el conteo — los días de la tabla se miden desde que registras el diagnóstico hasta que resuelves, no desde que se crea la solicitud.</span>
+        </li>
+        <li>
+          <span class="check">✓</span>
+          <span><strong>El cliente debe contestar la encuesta</strong> de satisfacción para que recibas el bono completo. Si no la contesta, el bono se reduce.</span>
+        </li>
+      </ul>
+
+      <h3 style="margin: 22px 0 6px; font-size: 15px;">Bono pleno <span class="pill green">Cliente contestó encuesta</span></h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Días de solución</th>
+            <th>Baja</th>
+            <th>Media</th>
+            <th>Alta</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0 – 1 día</td>
+            <td class="num positive">$8.460</td>
+            <td class="num positive">$11.700</td>
+            <td class="num positive">$15.300</td>
+          </tr>
+          <tr>
+            <td>1.1 – 2 días</td>
+            <td class="num positive">$6.750</td>
+            <td class="num positive">$10.350</td>
+            <td class="num positive">$13.500</td>
+          </tr>
+          <tr>
+            <td>2.1 – 3 días</td>
+            <td class="num positive">$2.700</td>
+            <td class="num positive">$4.500</td>
+            <td class="num positive">$9.000</td>
+          </tr>
+          <tr>
+            <td>Más de 3 días</td>
+            <td class="num">$0</td>
+            <td class="num">$0</td>
+            <td class="num">$0</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin: 22px 0 6px; font-size: 15px;">Bono reducido <span class="pill amber">Cliente no contestó encuesta</span></h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Días de solución</th>
+            <th>Baja</th>
+            <th>Media</th>
+            <th>Alta</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0 – 1 día</td>
+            <td class="num positive">$4.230</td>
+            <td class="num positive">$5.850</td>
+            <td class="num positive">$7.650</td>
+          </tr>
+          <tr>
+            <td>1.1 – 2 días</td>
+            <td class="num positive">$3.420</td>
+            <td class="num positive">$5.040</td>
+            <td class="num positive">$6.750</td>
+          </tr>
+          <tr>
+            <td>2.1 – 3 días</td>
+            <td class="num positive">$1.350</td>
+            <td class="num positive">$2.250</td>
+            <td class="num positive">$4.500</td>
+          </tr>
+          <tr>
+            <td>Más de 3 días</td>
+            <td class="num">$0</td>
+            <td class="num">$0</td>
+            <td class="num">$0</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <details>
+        <summary>¿Cómo se cuentan los días?</summary>
+        <p>Desde que <strong>registras el diagnóstico</strong> hasta que marcas el servicio como completado. El contador <strong>se pausa</strong> mientras el servicio esté esperando un repuesto (porque no depende de ti).</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>3. Recargo de fin de semana</h2>
+      <p class="subtitle">Si el horario confirmado por el cliente cae sábado o domingo, recibes un recargo adicional.</p>
+      <div class="cards">
+        <div class="card">
+          <div class="label">Complejidad Baja</div>
+          <div class="value">$4.500</div>
+          <div class="hint">Extra por servicio en fin de semana</div>
+        </div>
+        <div class="card">
+          <div class="label">Complejidad Media</div>
+          <div class="value">$5.400</div>
+          <div class="hint">Extra por servicio en fin de semana</div>
+        </div>
+        <div class="card">
+          <div class="label">Complejidad Alta</div>
+          <div class="value">$6.300</div>
+          <div class="hint">Extra por servicio en fin de semana</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Ejemplos prácticos — Garantía</h2>
+      <p class="subtitle">Tres escenarios reales para que veas cómo se suma todo.</p>
+
+      <div class="example">
+        <h3>🟢 Mejor caso <span class="pill green">Alta · 1 día · Sábado · Encuesta OK</span></h3>
+        <p class="conds">Reparación compleja, resuelta en 1 día, visita en sábado, cliente contestó la encuesta.</p>
+        <div class="breakdown">
+          <div class="row"><span class="label">Mano de obra (Alta)</span><span class="amount">$89.700</span></div>
+          <div class="row"><span class="label">Bono pleno 0–1 día (Alta)</span><span class="amount">$15.300</span></div>
+          <div class="row"><span class="label">Recargo fin de semana (Alta)</span><span class="amount">$6.300</span></div>
+          <div class="row total"><span class="label">Lo que recibes</span><span class="amount">$111.300</span></div>
+        </div>
+      </div>
+
+      <div class="example">
+        <h3>🟡 Caso típico <span class="pill amber">Media · 2 días · Día de semana · Encuesta OK</span></h3>
+        <p class="conds">Reparación media, resuelta al segundo día, día de semana, cliente contestó la encuesta.</p>
+        <div class="breakdown">
+          <div class="row"><span class="label">Mano de obra (Media)</span><span class="amount">$39.000</span></div>
+          <div class="row"><span class="label">Bono pleno 1.1–2 días (Media)</span><span class="amount">$10.350</span></div>
+          <div class="row"><span class="label">Recargo fin de semana</span><span class="amount">$0</span></div>
+          <div class="row total"><span class="label">Lo que recibes</span><span class="amount">$49.350</span></div>
+        </div>
+      </div>
+
+      <div class="example">
+        <h3>🔴 Caso mínimo <span class="pill gray">Baja · 5 días · Sin encuesta</span></h3>
+        <p class="conds">Reparación menor, demoró más de 3 días, cliente no contestó encuesta.</p>
+        <div class="breakdown">
+          <div class="row"><span class="label">Mano de obra (Baja)</span><span class="amount">$32.760</span></div>
+          <div class="row"><span class="label">Bono (>3 días)</span><span class="amount">$0</span></div>
+          <div class="row"><span class="label">Recargo fin de semana</span><span class="amount">$0</span></div>
+          <div class="row total"><span class="label">Lo que recibes</span><span class="amount">$32.760</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Tips para maximizar tu pago en garantía</h2>
+      <ul class="checklist">
+        <li><span class="check">⏱</span><span><strong>Diagnostica el día de la visita acordada y resuelve rápido.</strong> El reloj del bono arranca cuando registras el diagnóstico — mientras menos días tardes desde ahí en dejar el equipo funcionando, mayor el bono.</span></li>
+        <li><span class="check">📷</span><span><strong>Toma una foto del modelo al diagnosticar</strong> — de la placa de características o de la etiqueta amarilla de consumo energético. Sirve para confirmar el modelo, pedir el repuesto correcto y dejar evidencia.</span></li>
+        <li><span class="check">💬</span><span><strong>Pídele al cliente que conteste la encuesta</strong> después del servicio. Le llega por WhatsApp. Si la contesta, tu bono casi se duplica.</span></li>
+        <li><span class="check">📸</span><span><strong>Sube todas las fotos y la firma del cliente</strong> al cerrar el servicio. Sin evidencia completa, el servicio queda en disputa y se demora el pago.</span></li>
+        <li><span class="check">📅</span><span><strong>Si puedes, acepta turnos de fin de semana</strong> — el recargo es automático cuando el horario confirmado cae sábado o domingo.</span></li>
+        <li><span class="check">🔧</span><span><strong>Reporta el repuesto a tiempo</strong>. Mientras esperamos el repuesto el contador del bono se pausa, así que no pierdes el bono por demoras de fábrica.</span></li>
+      </ul>
+    </section>
+
+    <!-- ════════════════════ PARTE B — SERVICIOS PARTICULARES ════════════════════ -->
+    <div class="partflag particular" id="particular">
+      <div class="pnum">B</div>
+      <div>
+        <h2>Servicios particulares (tarifa fija)</h2>
+        <p class="sub">No es garantía: el cliente te contrata directo y paga una tarifa fija ya publicada. Tú recibes un pago neto fijo, sin esperar cotización.</p>
+      </div>
+    </div>
+
+    <section>
+      <h2>Cómo funciona tu pago en particular</h2>
+      <p class="subtitle">Estos servicios tienen un precio de catálogo que el cliente ve y paga al pedir el servicio. De ese precio, una parte es tuya (tu pago neto) y el resto es IVA + comisión de Baird.</p>
+      <div class="formula" style="background: var(--indigo-soft); color: #3730a3; border-left-color: var(--indigo); margin-top: 0;">
+        Cliente paga la tarifa publicada → <strong>tú recibes tu pago neto</strong> → Baird le suma IVA (19%) + comisión por encima
+      </div>
+      <div class="note green">
+        <strong>El IVA y la comisión NO salen de tu bolsillo.</strong> El cliente paga un poco más que tu pago precisamente porque Baird factura el IVA a la DIAN y cobra su comisión por separado. Lo que ves en la columna "Tú recibes" es lo que te queda a ti.
+      </div>
+    </section>
+
+    <section>
+      <h2>1. Mantenimiento (tarifa fija por equipo)</h2>
+      <p class="subtitle">El cliente elige su electrodoméstico y paga la tarifa publicada. Tú recibes el pago neto de la derecha.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Equipo</th>
+            <th>Cliente paga</th>
+            <th>Tú recibes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Estufa</td><td class="num muted">$105.000</td><td class="num positive">$80.214</td></tr>
+          <tr><td>Horno</td><td class="num muted">$115.500</td><td class="num positive">$88.235</td></tr>
+          <tr><td>Lavadora</td><td class="num muted">$126.000</td><td class="num positive">$96.257</td></tr>
+          <tr><td>Secadora</td><td class="num muted">$136.500</td><td class="num positive">$104.278</td></tr>
+          <tr><td>Aire Acondicionado</td><td class="num muted">$136.500</td><td class="num positive">$104.278</td></tr>
+          <tr><td>Nevera</td><td class="num muted">$147.000</td><td class="num positive">$112.299</td></tr>
+          <tr><td>Lavavajillas</td><td class="num muted">$147.000</td><td class="num positive">$112.299</td></tr>
+          <tr><td>Nevecón</td><td class="num muted">$168.000</td><td class="num positive">$128.342</td></tr>
+          <tr><td>Lavadora Secadora <span class="pill indigo">Combo 2-en-1</span></td><td class="num muted">$189.000</td><td class="num positive">$144.385</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Cambio de filtro</h2>
+      <p class="subtitle">Tarifa única todo-incluido. Tu pago neto cubre el filtro (repuesto) y tu mano de obra.</p>
+      <div class="cards">
+        <div class="card">
+          <div class="label">Cliente paga</div>
+          <div class="value">$180.000</div>
+          <div class="hint">Filtro incluido · IVA incluido</div>
+        </div>
+        <div class="card highlight">
+          <div class="label">Tú recibes</div>
+          <div class="value accent">$137.510</div>
+          <div class="hint">Incluye el costo del filtro que tú pones</div>
+        </div>
+      </div>
+      <div class="note amber">
+        <strong>Ojo:</strong> de tus $137.510 sale el filtro. Lo que te queda como mano de obra depende de cuánto te cueste el repuesto.
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Diagnóstico y reparación</h2>
+      <p class="subtitle">Cuando el cliente pide un diagnóstico o una reparación, paga primero la tarifa de diagnóstico.</p>
+      <div class="cards">
+        <div class="card">
+          <div class="label">Cliente paga (diagnóstico)</div>
+          <div class="value">$84.000</div>
+          <div class="hint">Anticipo del 50% antes de la visita</div>
+        </div>
+        <div class="card highlight">
+          <div class="label">Tú recibes (diagnóstico)</div>
+          <div class="value accent">$64.171</div>
+          <div class="hint">Por desplazarte y diagnosticar</div>
+        </div>
+      </div>
+      <div class="note blue">
+        <strong>¿Y si hay que reparar?</strong> Después de diagnosticar, tú <strong>cotizas la reparación</strong>: el monto que ingreses (mano de obra + repuestos) es lo que recibes <strong>íntegro</strong>. Baird le suma el IVA y su comisión al cliente por encima. Si el cliente aprueba, el anticipo del diagnóstico se le abona al total.
+      </div>
+      <div class="note amber">
+        📷 <strong>Recomendado en todo diagnóstico:</strong> toma una foto del modelo del equipo — de la placa de características o de la etiqueta amarilla de consumo energético. Te asegura pedir el repuesto correcto y deja evidencia del equipo.
+      </div>
+    </section>
+
+    <section>
+      <h2>Ejemplos prácticos — Particular</h2>
+      <p class="subtitle">Dos escenarios para que quede claro qué te queda a ti.</p>
+
+      <div class="example">
+        <h3>🔧 Mantenimiento de nevera <span class="pill indigo">Tarifa fija</span></h3>
+        <p class="conds">Cliente pide mantenimiento de su nevera y paga la tarifa publicada.</p>
+        <div class="breakdown">
+          <div class="row"><span class="label">Cliente paga (incluye IVA + comisión Baird)</span><span class="amount">$147.000</span></div>
+          <div class="row total"><span class="label">Lo que recibes</span><span class="amount">$112.299</span></div>
+        </div>
+      </div>
+
+      <div class="example">
+        <h3>🛠️ Diagnóstico + reparación cotizada <span class="pill indigo">Cotización libre</span></h3>
+        <p class="conds">Diagnosticas ($64.171) y luego cotizas una reparación con costo tuyo de $150.000.</p>
+        <div class="breakdown">
+          <div class="row"><span class="label">Recibes por el diagnóstico</span><span class="amount">$64.171</span></div>
+          <div class="row"><span class="label">Recibes por la reparación (tu costo íntegro)</span><span class="amount">$150.000</span></div>
+          <div class="row total"><span class="label">Lo que recibes en total</span><span class="amount">$214.171</span></div>
+        </div>
+        <div class="note blue" style="margin-top: 12px;">El cliente paga el diagnóstico ($84.000) y la reparación con IVA + comisión por encima ($150.000 × 1,309 ≈ $196.350). El anticipo del diagnóstico se le acredita al total.</div>
+      </div>
+    </section>
+
+    <!-- ════════════════════ FAQ ════════════════════ -->
+    <section>
+      <h2>Preguntas frecuentes</h2>
+
+      <details>
+        <summary>¿El cliente paga lo mismo que recibo yo?</summary>
+        <p>No. En los servicios particulares el cliente paga un poco más que tu pago, porque Baird le suma el IVA (19%) y su comisión por encima. Esa diferencia <strong>no sale de lo tuyo</strong> — tu pago es el que ves en la columna "Tú recibes".</p>
+      </details>
+
+      <details>
+        <summary>¿Qué pasa si el cliente no está cuando llego?</summary>
+        <p>Es un no-show. Nadie paga el servicio en ese caso, pero <strong>debes seguir el protocolo de evidencia</strong>: foto del inmueble, intentos de contacto registrados, espera de 15 minutos documentada y ping de GPS. Con esa evidencia, Baird reporta el caso y te protege de acusaciones falsas.</p>
+      </details>
+
+      <details>
+        <summary>En el cambio de filtro, ¿el filtro sale de mi pago?</summary>
+        <p>Sí. El cambio de filtro es una tarifa todo-incluido, así que tu pago neto ($137.510) cubre tanto el repuesto (el filtro) como tu mano de obra. Lo que te quede limpio depende de cuánto te cueste conseguir el filtro.</p>
+      </details>
+
+      <details>
+        <summary>¿Cuándo me pagan?</summary>
+        <p>En garantía, el pago se acredita después de que el cliente confirme satisfacción y de que MABE liquide a Baird (típicamente NET-30/60). En particular, después de que cierres el servicio con evidencia completa. Mantén tu información bancaria actualizada en el portal.</p>
+      </details>
+
+      <details>
+        <summary>¿Me retienen algo de impuestos?</summary>
+        <p>Según tu régimen tributario, Baird puede tener que aplicar retención en la fuente al pagarte (esto lo declaras como impuesto pagado en tu renta). Las cifras de esta guía son <strong>antes de retenciones de ley</strong>. Consulta tu situación con tu contador.</p>
+      </details>
+
+      <details>
+        <summary>¿Por qué a veces el bono de garantía cambia?</summary>
+        <p>El bono depende de tres factores: la <strong>complejidad</strong> del servicio (la fija el catálogo MABE según la falla), los <strong>días</strong> que demores en resolver <strong>contados desde el diagnóstico</strong>, y si el <strong>cliente contestó la encuesta</strong>. Si alguno de los tres cambia, el bono cambia.</p>
+      </details>
+    </section>
+
+    <footer>
+      Baird Service SAS · Guía de pagos para técnicos · Garantía MABE Tipo D + servicios particulares · Actualizado 2026-06-08
+    </footer>
+
+  </div>
+</body>
+</html>

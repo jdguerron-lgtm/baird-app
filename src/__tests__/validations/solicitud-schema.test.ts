@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest'
 import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import {
   calcularPagoTecnico,
+  precioClienteServicio,
   TARIFA_DIAGNOSTICO,
+  TARIFA_CAMBIO_FILTRO,
   TARIFAS_MANTENIMIENTO,
   IVA_TARIFA,
   calcularBaseSinIva,
   calcularIvaIncluido,
 } from '@/types/solicitud'
+import { pagoNetoTecnicoTarifaFija, MULTIPLICADOR_PARTICULAR } from '@/lib/constants/tarifas/particular'
 
 const VALID_DATA = {
   cliente_nombre: 'Maria Garcia Lopez',
@@ -121,6 +124,72 @@ describe('calcularPagoTecnico', () => {
     expect(TARIFAS_MANTENIMIENTO['Nevera']).toBe(147000)
     expect(TARIFAS_MANTENIMIENTO['Lavadora Secadora']).toBe(189000)
     expect(TARIFA_DIAGNOSTICO).toBe(84000)
+  })
+})
+
+describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.309)', () => {
+  // Cifras canónicas de docs/pagos-tecnico.html (lo que recibe el técnico).
+  it('cambio de filtro $180.000 → $137.510 neto', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBe(137510)
+  })
+
+  it('diagnóstico $84.000 → $64.171 neto', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFA_DIAGNOSTICO)).toBe(64171)
+  })
+
+  it('mantenimiento por equipo = catálogo ÷ 1.309', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Estufa'])).toBe(80214)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Horno'])).toBe(88235)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBe(96257)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Secadora'])).toBe(104278)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Aire Acondicionado'])).toBe(104278)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevera'])).toBe(112299)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavavajillas'])).toBe(112299)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevecón'])).toBe(128342)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora Secadora'])).toBe(144385)
+  })
+
+  it('el neto es siempre menor que el catálogo (Baird retiene IVA + margen)', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBeLessThan(TARIFA_CAMBIO_FILTRO)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBeLessThan(TARIFAS_MANTENIMIENTO['Lavadora'])
+  })
+
+  it('garantía / valores no positivos → 0', () => {
+    expect(pagoNetoTecnicoTarifaFija(0)).toBe(0)
+    expect(pagoNetoTecnicoTarifaFija(-100)).toBe(0)
+  })
+
+  it('reconstruye (±1 por redondeo) el catálogo al multiplicar por 1.309', () => {
+    for (const precio of [TARIFA_DIAGNOSTICO, TARIFA_CAMBIO_FILTRO, ...Object.values(TARIFAS_MANTENIMIENTO)]) {
+      const reconstruido = Math.round(pagoNetoTecnicoTarifaFija(precio) * MULTIPLICADOR_PARTICULAR)
+      expect(Math.abs(reconstruido - precio)).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+describe('precioClienteServicio (lo que paga el cliente)', () => {
+  it('tarifa fija sin cotización → precio de catálogo (IVA incl.)', () => {
+    expect(precioClienteServicio('Lavadora', 'Mantenimiento', false)).toBe(TARIFAS_MANTENIMIENTO['Lavadora'])
+    expect(precioClienteServicio('Nevera', 'Diagnóstico', false)).toBe(TARIFA_DIAGNOSTICO)
+    expect(precioClienteServicio('Lavadora', 'Cambio de filtro', false)).toBe(TARIFA_CAMBIO_FILTRO)
+  })
+
+  it('con cotización (total > 0) → total cotizado (ya con IVA + margen Baird)', () => {
+    expect(precioClienteServicio('Nevera', 'Reparación', false, { total: 196350 })).toBe(196350)
+  })
+
+  it('cotización con total 0/null cae al catálogo', () => {
+    expect(precioClienteServicio('Nevera', 'Reparación', false, { total: 0 })).toBe(TARIFA_DIAGNOSTICO)
+    expect(precioClienteServicio('Nevera', 'Reparación', false, null)).toBe(TARIFA_DIAGNOSTICO)
+  })
+
+  it('garantía → 0 (la marca paga, el cliente no)', () => {
+    expect(precioClienteServicio('Lavadora', 'Mantenimiento', true)).toBe(0)
+  })
+
+  it('precio al cliente ≥ pago neto al técnico para tarifa fija', () => {
+    const precio = precioClienteServicio('Nevera', 'Mantenimiento', false)
+    expect(precio).toBeGreaterThan(pagoNetoTecnicoTarifaFija(precio))
   })
 })
 

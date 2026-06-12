@@ -281,3 +281,11 @@ Toda transición de `estado` puede notificar por WhatsApp a supervisores interno
 - **Nunca rompe el flujo:** el helper atrapa y loguea todos los errores; corta si `estadoPrevio === estadoNuevo`. Los call-sites hacen `await` sin try/catch.
 - **NO se dispara en la creación** de solicitudes (`/api/solicitar`, `/api/admin/carga-masiva`) — son inserts sin estado previo. Decisión de producto abierta: ver plan de despliegue en `supabase/migrations/README.md`.
 - Plantilla: `supervisor_cambio_estado_v1` (ver `docs/WHATSAPP_TEMPLATES.md`). Lista completa de call-sites en `docs/ARQUITECTURA.md`.
+
+## Gap conocido: segunda visita sin repuesto (verificado 2026-06-02)
+
+La **segunda visita CON repuesto** está completa (ver bloque "4b PARTS RCV" / "4c REPROGRAM" arriba: `esperar_repuesto → … → repuesto_recibido → /reprogramar-repuesto → en_proceso`, garantía y particular).
+
+**Lo que NO existe:** un camino para agendar una segunda visita cuando la reparación necesita otro día pero **no** requiere repuesto. El diagnóstico solo tiene 4 `siguiente_paso` (`reparar`, `esperar_repuesto`, `no_reparable`, `negativa_cliente`); `reparar` cierra en la misma visita (`→ en_proceso`) y `esperar_repuesto` **exige SKU** (`diagnostico/route.ts:91`). Workaround actual: escape-hatch admin (`/api/admin/cambiar-estado`) + WhatsApp libre.
+
+Opciones para cerrar el gap (A: nuevo `siguiente_paso = agendar_segunda_visita` + estado `pendiente_segunda_visita`; B: generalizar la máquina de reprogramación; C: disparar desde el portal a mitad de reparación; D: solo admin) → ver **[`docs/mejoras-futuras/segunda-visita/README.md`](mejoras-futuras/segunda-visita/README.md)**.
