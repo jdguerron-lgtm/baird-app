@@ -40,6 +40,16 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | `20260516_perf_fk_index_rls.sql` | aplicada (2026-05-16) | Mejoras de performance del advisor de Supabase: (a) índice FK `idx_solicitudes_tecnico_asignado` para `solicitudes_servicio.tecnico_asignado_id`, (b) wrap `auth.role()` en `(SELECT auth.role())` para las policies `service_role_all_*` (RLS initplan, 1 evaluación por query en vez de por fila), (c) re-scope `service_role_all_{gps,repuestos,eventos}` de role `{public}` → `{service_role}` para eliminar superposición con policies `anon_*` (multiple permissive), (d) drop policy duplicada `"Allow public update evidencias"` en `evidencias_servicio`. Aplicada vía MCP — ya no aparece en pendientes |
 | **`20260521_storage_policies_public_role.sql`** | **PENDIENTE — aplicar vía Dashboard** | Fix RLS Storage: amplía las policies de los buckets `evidencias-servicio`, `tecnicos-fotos` y `tecnicos-documentos` de role `{anon}` → `public`. Resuelve `new row violates row-level security policy` al subir evidencia desde el portal del técnico cuando el navegador tiene una sesión de admin activa (rol `authenticated` no matcheaba las policies `{anon}`). **NO se puede correr en el SQL Editor** — `postgres` no es dueño de `storage.objects`. Aplicar vía Dashboard → Storage → Policies (ver cabecera del archivo) |
 | **`20260529_supervisores_y_repuesto_recibido.sql`** | **PENDIENTE — aplicar vía SQL Editor** | (1) Tabla nueva `supervisores` (destinatarios WhatsApp por cambio de estado; filtrable por ámbito `todos`/`garantia`/`particular`, `marca`, subconjunto de `estados[]`) con RLS + 4 policies anon CRUD + service_role + trigger de normalización de teléfono. (2) Estado nuevo `repuesto_recibido` en el CHECK constraint de `solicitudes_servicio.estado` (22 estados). (3) Columnas `reprogramacion_token uuid` + `repuesto_recibido_at timestamptz` + sus índices parciales. Idempotente. **No tiene backfill** — segura de re-correr. Ver sección dedicada abajo + `docs/MAQUINA-DE-ESTADOS.md` §4b/4c y §Supervisores |
+| `20260602_dapta_llamadas.sql` | aplicada vía MCP (2026-06-12) | Segunda línea de voz IA (Dapta). (1) Tabla nueva `llamadas` (un intento por fila; auditoría + idempotencia del webhook por `dapta_call_id` vía índice UNIQUE parcial) con RLS + 4 policies anon CRUD + service_role. (2) Columnas en `solicitudes_servicio`: `llamada_intentos int DEFAULT 0`, `ultima_llamada_at timestamptz` (cerrojo de cooldown), `requiere_confirmacion_llamada boolean DEFAULT false`. **No toca** el CHECK de `estado` ni el enum `solicitud_eventos.tipo`. Idempotente. **No tiene backfill** — segura de re-correr. La Fase 2 (cierre + encuesta) además requiere la columna `cumple_encuesta` que vive en `20260510_no_show_protocolo.sql`. Ver `docs/DAPTA.md` |
+| `20260609_tecnicos_ciudades_cobertura.sql` | aplicada vía MCP (2026-06-12) — backfill OK (13 técnicos) | Multi-ciudad por técnico: columna nueva `ciudades_cobertura text[]` (NOT NULL DEFAULT `'{}'`) en `tecnicos` + backfill `ARRAY[ciudad_pueblo]` para técnicos existentes. El matching de `notificarTecnicos` ahora compara la solicitud contra TODAS las ciudades de cobertura (fallback a `ciudad_pueblo`). Editable desde `/admin/tecnicos/[id]`. Idempotente; backfill seguro de re-correr (solo toca filas con cobertura vacía). Ver `docs/SUPABASE.md` |
+| `20260612_evento_cambio_estado.sql` | aplicada vía MCP (2026-06-12) — verificado: queda UN solo CHECK con 11 tipos | Historial de estados: agrega tipo `cambio_estado` al CHECK de `solicitud_eventos.tipo` (lo inserta `notificarCambioEstado()` en cada transición, con actor inferido cliente/tecnico/admin/sistema; lo muestra "Historial de estados" en `/admin/solicitudes/[id]`). **Fix incluido**: dropea el constraint viejo `chk_evento_tipo` (de `20260506`) que `20260510` no reemplazó por usar otro nombre — sin este fix, los tipos de no-show y `cambio_estado` violan el CHECK viejo aunque `20260510` esté aplicada. Idempotente, sin backfill. Si el código se deploya antes de aplicarla, las transiciones NO se rompen (insert best-effort) — solo no se llena el historial |
+
+> **Nota 2026-06-12**: al aplicar `20260612` se verificó contra la BD real que los
+> constraints de `20260506` Y `20260510` ya existían (ambos CHECK activos a la vez —
+> bug corregido por `20260612`). Es decir: varias filas marcadas **PENDIENTE** arriba
+> probablemente ya fueron aplicadas y el doc quedó desactualizado. Antes de re-aplicar
+> una "pendiente", verificar contra la BD (`information_schema`) — todas son
+> idempotentes, pero conviene saber el estado real.
 
 ## Cómo aplicar las pendientes
 
@@ -201,6 +211,35 @@ WHERE indexname IN (
   'idx_solicitudes_reprogramacion_token',
   'idx_solicitudes_repuesto_recibido'
 );
+```
+
+## Aplicar `20260609_tecnicos_ciudades_cobertura.sql` (multi-ciudad por técnico)
+
+> Idempotente y con backfill seguro (solo setea `ciudades_cobertura` donde está
+> vacío). No depende de otras migraciones. Sin esto, el editor de ciudades en
+> `/admin/tecnicos/[id]` falla al guardar (la columna no existe) y el matching
+> cae al fallback de `ciudad_pueblo` (comportamiento previo, una sola ciudad).
+
+1. Abre Supabase → **SQL Editor** → **New query**.
+2. Pega el contenido de `20260609_tecnicos_ciudades_cobertura.sql` y ejecuta. Espera "Success".
+3. Corre la verificación de abajo.
+
+### Verificación de `20260609`
+
+```sql
+-- 1. Columna ciudades_cobertura existe y es text[]
+SELECT
+  CASE WHEN data_type = 'ARRAY' THEN 'OK ✅' ELSE 'FALTA ❌' END AS check_columna_cobertura
+FROM information_schema.columns
+WHERE table_name = 'tecnicos' AND column_name = 'ciudades_cobertura';
+
+-- 2. Backfill: ningún técnico con ciudad base queda sin cobertura
+SELECT
+  CASE WHEN COUNT(*) = 0 THEN 'OK ✅'
+       ELSE 'FALTA ❌ ' || COUNT(*)::text || ' técnico(s) sin cobertura' END AS check_backfill_cobertura
+FROM tecnicos
+WHERE coalesce(array_length(ciudades_cobertura, 1), 0) = 0
+  AND ciudad_pueblo IS NOT NULL AND btrim(ciudad_pueblo) <> '';
 ```
 
 ## Rollback

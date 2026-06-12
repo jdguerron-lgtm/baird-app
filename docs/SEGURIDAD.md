@@ -72,6 +72,7 @@ Endpoints protegidos con `verificarAdmin`:
 | `/api/admin/reenviar-ultimo-mensaje` | POST | Re-disparar la plantilla correspondiente al estado actual |
 | `/api/admin/editar-solicitud` | POST | Editar manualmente tipo_equipo, horario_confirmado, dirección, ciudad, zona. Cambios auditados en `solicitud_eventos` con diff |
 | `/api/admin/cambiar-estado` | POST | Forzar el `estado` de una solicitud (recuperación de flujos atascados). Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). No envía WhatsApp |
+| `/api/admin/notas` | POST | Agregar nota interna a una solicitud. Insert append-only en `solicitud_eventos` (`tipo='nota_admin'`, `payload.origen='nota_manual'`); `actor` = email del admin autenticado (variante `obtenerEmailAdmin`). No envía WhatsApp |
 | `/api/carga-masiva` | POST + DELETE | Bulk upload BITÁCORA Excel y borrado masivo |
 | `/api/whatsapp/notify` | POST | Re-notificar técnicos o re-enviar plantilla horario |
 | `/api/cotizacion-precios` | POST | Admin fija precios + tiempo entrega (gate de pricing) |

@@ -10,7 +10,7 @@ import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS, ESTADOS_VALIDOS } from '@
 import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { escapeLikePattern } from '@/lib/utils/format'
-import { TIPOS_EQUIPO, type ChecklistServicio } from '@/types/solicitud'
+import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -77,6 +77,38 @@ interface MatchDiagnostic {
   detail: string
 }
 
+// Fila de solicitud_eventos (audit log append-only). Se parte en dos vistas:
+//   - Notas (tipo='nota_admin'): payload.origen='nota_manual' → nota escrita
+//     por el admin; payload.campos_modificados → audit de edición de campos;
+//     actor='sistema' → avisos automáticos (p.ej. 0 técnicos notificados).
+//   - Historial de estados (resto de tipos con estado_previo ≠ estado_nuevo):
+//     'cambio_estado' (flujo, actor inferido), 'cambio_estado_admin' (manual),
+//     'cancelacion', 'reagendamiento*', etc.
+interface EventoSolicitud {
+  id: number
+  tipo: string
+  estado_previo: string | null
+  estado_nuevo: string | null
+  actor: string | null
+  motivo: string | null
+  payload: Record<string, unknown> | null
+  ocurrido_at: string
+}
+
+// Badge de actor para el historial de estados. Valores fuera del mapa
+// (p.ej. el email del admin en notas) se muestran como admin con ese texto.
+const ACTOR_BADGES: Record<string, { label: string; clase: string }> = {
+  cliente: { label: '👤 Cliente', clase: 'bg-blue-50 text-blue-700 border-blue-200' },
+  tecnico: { label: '🔧 Técnico', clase: 'bg-green-50 text-green-700 border-green-200' },
+  admin: { label: '🛡️ Admin', clase: 'bg-purple-50 text-purple-700 border-purple-200' },
+  sistema: { label: '⚙️ Sistema', clase: 'bg-gray-100 text-gray-600 border-gray-200' },
+}
+
+function actorBadge(actor: string | null): { label: string; clase: string } {
+  if (!actor) return ACTOR_BADGES.sistema
+  return ACTOR_BADGES[actor] ?? { label: `🛡️ ${actor}`, clase: ACTOR_BADGES.admin.clase }
+}
+
 export default function SolicitudDetalle() {
   const params = useParams()
   const id = params.id as string
@@ -111,6 +143,11 @@ export default function SolicitudDetalle() {
   const [motivoValor, setMotivoValor] = useState('')
   const [actualizandoValor, setActualizandoValor] = useState(false)
   const [resultadoValor, setResultadoValor] = useState<{ ok: boolean; mensaje: string } | null>(null)
+  const [notas, setNotas] = useState<EventoSolicitud[]>([])
+  const [historial, setHistorial] = useState<EventoSolicitud[]>([])
+  const [nuevaNota, setNuevaNota] = useState('')
+  const [guardandoNota, setGuardandoNota] = useState(false)
+  const [errorNota, setErrorNota] = useState<string | null>(null)
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -231,6 +268,45 @@ export default function SolicitudDetalle() {
       setErrorEdicion(e instanceof Error ? e.message : 'Error de conexión')
     }
     setGuardandoEdicion(false)
+  }
+
+  const handleAgregarNota = async () => {
+    if (!solicitud) return
+    const texto = nuevaNota.trim()
+    if (!texto) {
+      setErrorNota('Escribe la nota antes de guardar.')
+      return
+    }
+    setGuardandoNota(true)
+    setErrorNota(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorNota('Sesión expirada — vuelve a iniciar sesión.')
+        setGuardandoNota(false)
+        return
+      }
+      const res = await fetch('/api/admin/notas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ solicitudId: solicitud.id, texto }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorNota(data.error || 'No se pudo guardar la nota.')
+        setGuardandoNota(false)
+        return
+      }
+      setNotas(prev => [data.nota as EventoSolicitud, ...prev])
+      setNuevaNota('')
+    } catch (e) {
+      setErrorNota(e instanceof Error ? e.message : 'Error de conexión.')
+    } finally {
+      setGuardandoNota(false)
+    }
   }
 
   const handleCambiarEstado = async () => {
@@ -565,7 +641,18 @@ export default function SolicitudDetalle() {
 
       if (evData) setEvidencia(evData)
 
-      // 5. Run matching diagnostics
+      // 5. Eventos del audit log: notas (tipo nota_admin) + historial de
+      //    cambios de estado (resto de tipos con transición real).
+      const { data: eventosData } = await supabase
+        .from('solicitud_eventos')
+        .select('id, tipo, estado_previo, estado_nuevo, actor, motivo, payload, ocurrido_at')
+        .eq('solicitud_id', id)
+        .order('ocurrido_at', { ascending: false })
+      const eventos: EventoSolicitud[] = eventosData ?? []
+      setNotas(eventos.filter(e => e.tipo === 'nota_admin'))
+      setHistorial(eventos.filter(e => e.tipo !== 'nota_admin' && e.estado_previo !== e.estado_nuevo))
+
+      // 6. Run matching diagnostics
       await runDiagnostics(sol)
 
       setCargando(false)
@@ -756,7 +843,9 @@ export default function SolicitudDetalle() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <dt className="text-xs text-gray-500">Valor del servicio</dt>
+                <dt className="text-xs text-gray-500">
+                  {solicitud.es_garantia ? 'Pago al técnico' : 'Valor al cliente'}
+                </dt>
                 <dd className="text-sm font-bold text-green-700">
                   {solicitud.es_garantia
                     ? solicitud.pago_tecnico && solicitud.pago_tecnico > 0
@@ -767,7 +856,20 @@ export default function SolicitudDetalle() {
                           ${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP
                         </>
                       )
-                    : `$${formatCOP(solicitud.pago_tecnico)} COP`}
+                    : (
+                      <>
+                        ${formatCOP(precioClienteServicio(
+                          solicitud.tipo_equipo,
+                          solicitud.tipo_solicitud,
+                          solicitud.es_garantia,
+                          (solicitud as unknown as { cotizacion?: { total?: number | null } | null }).cotizacion,
+                        ))} COP
+                        {/* Neto que recibe el técnico (catálogo ÷ 1.309 o costo cotizado). */}
+                        <span className="block text-xs font-normal text-gray-500 mt-0.5">
+                          Pago al técnico (neto): ${formatCOP(solicitud.pago_tecnico)} COP
+                        </span>
+                      </>
+                    )}
                 </dd>
               </div>
               <div>
@@ -1548,6 +1650,136 @@ export default function SolicitudDetalle() {
           }`}>
             {resultadoEstado.ok ? '✅ ' : '⚠️ '}{resultadoEstado.mensaje}
           </div>
+        )}
+      </div>
+
+      {/* Notas del administrador — notas internas + eventos nota_admin del
+          audit log (ediciones de campos, avisos del sistema). Solo visibles
+          en el panel; NO envían WhatsApp. Append-only via /api/admin/notas:
+          una nota equivocada se corrige con otra nota. */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Notas del administrador
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Notas internas del equipo sobre este servicio. Solo se ven aquí — no
+          se envía nada al cliente ni al técnico. Quedan en el audit log y no
+          se pueden borrar; si te equivocas, agrega otra nota aclarando.
+        </p>
+        <div className="flex items-start gap-3 flex-wrap sm:flex-nowrap">
+          <textarea
+            value={nuevaNota}
+            onChange={(e) => { setNuevaNota(e.target.value); if (errorNota) setErrorNota(null) }}
+            placeholder="Ej: Repuesto solicitado a MABE el 12/06. Cliente pide que el técnico llame antes de ir."
+            rows={2}
+            maxLength={2000}
+            className="w-full sm:flex-1 border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-y"
+          />
+          <button
+            onClick={handleAgregarNota}
+            disabled={guardandoNota || nuevaNota.trim().length === 0}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+          >
+            {guardandoNota ? 'Guardando...' : 'Guardar nota'}
+          </button>
+        </div>
+
+        {errorNota && (
+          <div className="mt-3 rounded-lg p-3 text-sm bg-amber-50 border border-amber-200 text-amber-900">
+            ⚠️ {errorNota}
+          </div>
+        )}
+
+        {notas.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-400">Sin notas todavía.</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {notas.map((n) => {
+              const payload = n.payload ?? {}
+              const esSistema = n.actor === 'sistema'
+              const camposModificados = payload.campos_modificados as
+                | Record<string, { previo: string | null; nuevo: string }>
+                | undefined
+              return (
+                <div
+                  key={n.id}
+                  className={`rounded-lg border p-3 ${
+                    esSistema ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-gray-200'
+                  }`}
+                >
+                  <p className="text-sm text-slate-900 whitespace-pre-wrap">{n.motivo ?? '—'}</p>
+                  {camposModificados && (
+                    <ul className="mt-1 text-xs text-gray-500 list-disc list-inside">
+                      {Object.entries(camposModificados).map(([campo, v]) => (
+                        <li key={campo}>{campo}: “{v.previo ?? '—'}” → “{v.nuevo}”</li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    {esSistema ? '🤖 Sistema' : `✍️ ${n.actor ?? 'admin'}`} · {new Date(n.ocurrido_at).toLocaleString('es-CO')}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Historial de estados — cada transición con QUIÉN la disparó
+          (cliente / técnico / admin / sistema). Fuente: solicitud_eventos.
+          Los eventos 'cambio_estado' los inserta notificarCambioEstado con el
+          actor inferido del par previo→nuevo (migración 20260612). Solicitudes
+          anteriores a la migración solo muestran los eventos dedicados que ya
+          existían (cancelaciones, cambios manuales del admin, reagendas). */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Historial de estados
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Cada cambio de estado de este servicio y quién lo disparó: el cliente
+          (confirmó horario, aprobó pasos), el técnico (aceptó, diagnosticó,
+          completó), un admin (acciones manuales) o el sistema (timeouts).
+        </p>
+        <div className="space-y-2">
+          {historial.map((e) => {
+            const badge = actorBadge(e.actor)
+            return (
+              <div key={e.id} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-slate-50 p-3">
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${badge.clase}`}>
+                  {badge.label}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-900">
+                    {e.estado_previo ? (ESTADO_LABELS[e.estado_previo] ?? e.estado_previo) : '—'}
+                    {' → '}
+                    <span className="font-semibold">{e.estado_nuevo ? (ESTADO_LABELS[e.estado_nuevo] ?? e.estado_nuevo) : '—'}</span>
+                    {e.tipo === 'cambio_estado_admin' && (
+                      <span className="ml-2 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-700">manual</span>
+                    )}
+                  </p>
+                  {e.motivo && <p className="mt-0.5 text-xs text-gray-500">{e.motivo}</p>}
+                  <p className="mt-0.5 text-xs text-gray-400">{new Date(e.ocurrido_at).toLocaleString('es-CO')}</p>
+                </div>
+              </div>
+            )
+          })}
+          {/* Entrada sintética: creación de la solicitud (no hay evento en BD) */}
+          <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-slate-50 p-3">
+            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${ACTOR_BADGES.cliente.clase}`}>
+              {ACTOR_BADGES.cliente.label}
+            </span>
+            <div>
+              <p className="text-sm text-slate-900">Solicitud creada</p>
+              <p className="mt-0.5 text-xs text-gray-400">{new Date(solicitud.created_at).toLocaleString('es-CO')}</p>
+            </div>
+          </div>
+        </div>
+        {historial.length === 0 && (
+          <p className="mt-3 text-xs text-gray-400">
+            Las transiciones del flujo se registran desde la migración
+            20260612_evento_cambio_estado — esta solicitud aún no tiene eventos
+            de cambio de estado en el audit log.
+          </p>
         )}
       </div>
 

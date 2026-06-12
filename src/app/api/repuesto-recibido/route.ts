@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { verificarAdmin } from '@/lib/auth/admin'
-import { enviarRepuestoRecibidoCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
+import {
+  enviarRepuestoLlegadoTecnico,
+  enviarRepuestoRecibidoCliente,
+  notificarCambioEstado,
+} from '@/lib/services/whatsapp.service'
 
 /**
  * POST /api/repuesto-recibido
@@ -15,8 +19,13 @@ import { enviarRepuestoRecibidoCliente, notificarCambioEstado } from '@/lib/serv
  *       nueva fecha (tentativa) antes de avanzar a en_proceso.
  *     - Genera reprogramacion_token y notifica al cliente vía plantilla
  *       repuesto_recibido_cliente_v2 (botón → /reprogramar-repuesto/{token}).
- *     - NO se notifica al técnico todavía: eso ocurre cuando el cliente elige
- *       fecha en /api/reprogramar-repuesto (pasa a en_proceso y avisa al técnico).
+ *     - Notifica al técnico que el repuesto ya fue entregado (plantilla
+ *       repuesto_llegado_tecnico_v1, informativa). La fecha tentativa le llega
+ *       después, cuando el cliente la elige en /api/reprogramar-repuesto
+ *       (pasa a en_proceso y avisa vía repuesto_recibido_tecnico_v1).
+ *     - Notifica a supervisores vía notificarCambioEstado: en garantía con la
+ *       plantilla de repuesto (No. garantía + SKU + dirección); en particular
+ *       con la genérica de cambio de estado.
  *
  * Body: { repuestoId: string }
  */
@@ -88,6 +97,10 @@ export async function POST(req: NextRequest) {
         await enviarRepuestoRecibidoCliente(repuesto.solicitud_id).catch(err => {
           console.error('[repuesto-recibido] Error notificando cliente:', err)
         })
+        // Notificar al técnico que el repuesto ya fue entregado al cliente
+        // (informativo — la fecha tentativa le llega cuando el cliente la elija).
+        const tecResult = await enviarRepuestoLlegadoTecnico(repuesto.solicitud_id)
+        if (!tecResult.ok) console.error('[repuesto-recibido] Error notificando técnico:', tecResult.error)
         await notificarCambioEstado(repuesto.solicitud_id, 'esperando_repuesto', 'repuesto_recibido')
       }
     }

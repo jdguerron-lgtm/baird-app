@@ -724,6 +724,106 @@ const TEMPLATES = [
       { type: 'FOOTER', text: 'Baird Service — Supervisión' },
     ],
   },
+
+  // 20. Espera de repuesto aprobada — notificar al TÉCNICO (solo GARANTÍA).
+  //     v1 (2026-06-12): incluye los datos de gestión del repuesto ante la marca:
+  //     No. de garantía (numero_serie_factura), SKU(s) y dirección del cliente
+  //     (la marca despacha el repuesto a esa dirección). En particular NO se
+  //     envía — el técnico ya recibe cotizacion_aprobada_tecnico_v2.
+  //     {{1}}=nombre técnico, {{2}}=equipo, {{3}}=cliente, {{4}}=No. garantía,
+  //     {{5}}=SKU(s), {{6}}=dirección.
+  //     Llamado por: enviarEsperandoRepuestoTecnico()
+  {
+    name: 'esperando_repuesto_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, quedó aprobada la espera del repuesto para continuar la reparación 📦\n\n' +
+          '🔧 Equipo: {{2}}\n' +
+          '👤 Cliente: {{3}}\n' +
+          '📋 No. de garantía: {{4}}\n' +
+          '📦 SKU: {{5}}\n' +
+          '📍 Dirección de entrega: {{6}}\n\n' +
+          'Te avisaremos por este medio cuando el repuesto sea entregado al cliente.',
+        example: {
+          body_text: [
+            ['Carlos', 'Lavadora Mabe', 'Juan Pérez', '9415091231', 'WM-PCB-7421', 'Calle 53 #24-18, Chapinero, Bogotá'],
+          ],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 21. Repuesto entregado al cliente — notificar al TÉCNICO (AMBOS flujos).
+  //     v1 (2026-06-12): se dispara cuando admin marca el último repuesto como
+  //     recibido (/api/repuesto-recibido), en paralelo al aviso al cliente.
+  //     Informativo: la fecha tentativa llega después vía
+  //     repuesto_recibido_tecnico_v1 cuando el cliente la elige.
+  //     {{1}}=nombre técnico, {{2}}=equipo, {{3}}=cliente.
+  //     Llamado por: enviarRepuestoLlegadoTecnico()
+  {
+    name: 'repuesto_llegado_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el repuesto para la reparación de {{2}} del cliente {{3}} ya fue entregado ✅\n\n' +
+          'El cliente está eligiendo una nueva fecha tentativa para la visita. Te avisaremos por ' +
+          'este medio cuando la confirme para que coordines y completes la reparación.',
+        example: {
+          body_text: [['Carlos', 'Lavadora Mabe', 'Juan Pérez']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 22. Novedad de repuesto en GARANTÍA — notificar a SUPERVISORES.
+  //     v1 (2026-06-12): reemplaza a supervisor_cambio_estado_v1 SOLO para las
+  //     transiciones a esperando_repuesto / repuesto_recibido de servicios en
+  //     garantía. Incluye los datos de gestión del repuesto ante la marca:
+  //     No. de garantía, SKU(s) y dirección del cliente. En particular se
+  //     mantiene la plantilla genérica de cambio de estado.
+  //     {{1}}=nombre supervisor, {{2}}=novedad (Repuesto requerido | Repuesto
+  //     entregado al cliente), {{3}}=cliente, {{4}}=equipo, {{5}}=No. garantía,
+  //     {{6}}=SKU(s), {{7}}=dirección.
+  //     Llamado por: notificarCambioEstado()
+  {
+    name: 'supervisor_repuesto_garantia_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Actualización de repuesto',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, novedad de repuesto en un servicio de garantía que supervisas:\n\n' +
+          '📌 Novedad: {{2}}\n' +
+          '👤 Cliente: {{3}}\n' +
+          '🔧 Equipo: {{4}}\n' +
+          '📋 No. de garantía: {{5}}\n' +
+          '📦 SKU: {{6}}\n' +
+          '📍 Dirección del cliente: {{7}}\n\n' +
+          'Revisa el panel de supervisión para más detalles.',
+        example: {
+          body_text: [
+            ['Andrés', 'Repuesto requerido', 'María Gómez', 'Lavadora Mabe', '9415091231', 'WM-PCB-7421', 'Calle 53 #24-18, Chapinero, Bogotá'],
+          ],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+    ],
+  },
 ]
 
 async function listExisting() {

@@ -23,3 +23,18 @@ export async function verificarAdmin(req: NextRequest): Promise<boolean> {
   const { data: { user } } = await supabase.auth.getUser(token)
   return !!user
 }
+
+/**
+ * Igual que `verificarAdmin`, pero devuelve el email del admin autenticado
+ * (o `null` si la request no está autorizada). Útil cuando el endpoint
+ * necesita registrar QUIÉN hizo la acción (p.ej. `actor` en el audit log
+ * `solicitud_eventos`), no solo si puede hacerla.
+ */
+export async function obtenerEmailAdmin(req: NextRequest): Promise<string | null> {
+  const authHeader = req.headers.get('authorization')
+  const token = authHeader?.replace('Bearer ', '')
+  if (!token) return null
+  const { data: { user } } = await supabase.auth.getUser(token)
+  if (!user) return null
+  return user.email ?? 'admin'
+}

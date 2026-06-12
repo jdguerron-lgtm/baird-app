@@ -99,7 +99,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Notificar a supervisores configurados (no bloquea ni revierte si falla).
-    await notificarCambioEstado(id, actual.estado, nuevoEstado)
+    // registrarEvento:false — arriba se insertó el evento dedicado 'cambio_estado_admin'.
+    await notificarCambioEstado(id, actual.estado, nuevoEstado, { registrarEvento: false })
 
     return NextResponse.json({
       success: true,

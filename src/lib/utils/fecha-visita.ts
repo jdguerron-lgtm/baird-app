@@ -102,3 +102,35 @@ export function parsearFechaVisita(horarioTexto: string, referenciaUTC: Date = n
 
   return candidato.toISOString()
 }
+
+// ──────────────────────────────────────────────────────────────────
+// Helpers de día calendario en TZ Colombia (America/Bogota).
+//
+// Node corre en UTC en Vercel y el navegador del cliente está en CO; ambos
+// necesitan razonar sobre "hoy / mañana / ¿ya pasó?" en hora local Colombia.
+// Usamos `en-CA` porque formatea como YYYY-MM-DD, que ordena lexicográficamente
+// igual que cronológicamente — así la comparación con `<`/`>` es válida.
+// ──────────────────────────────────────────────────────────────────
+
+/** Día calendario (YYYY-MM-DD) de una fecha, en TZ Colombia. */
+export function fechaColombiaYMD(fecha: Date = new Date()): string {
+  return fecha.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+}
+
+/** Día calendario CO de hoy + `dias` (YYYY-MM-DD). `dias=1` → mañana. */
+export function fechaColombiaMasDias(dias: number, ahora: Date = new Date()): string {
+  const [y, m, d] = fechaColombiaYMD(ahora).split('-').map(Number)
+  const base = new Date(Date.UTC(y, m - 1, d))
+  base.setUTCDate(base.getUTCDate() + dias)
+  return base.toISOString().slice(0, 10)
+}
+
+/**
+ * true si la fecha de visita (ISO timestamptz) cae en un día calendario CO
+ * estrictamente anterior a hoy. El mismo día NO cuenta como pasado (la franja
+ * podría no haber arrancado). null/undefined → false (no se puede afirmar).
+ */
+export function esFechaVisitaPasada(fechaVisitaIso: string | null | undefined, ahora: Date = new Date()): boolean {
+  if (!fechaVisitaIso) return false
+  return fechaColombiaYMD(new Date(fechaVisitaIso)) < fechaColombiaYMD(ahora)
+}

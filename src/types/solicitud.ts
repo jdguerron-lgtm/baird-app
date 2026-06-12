@@ -269,11 +269,18 @@ export const TARIFAS_MANTENIMIENTO: Record<TipoEquipo, number> = {
 }
 
 /**
- * Calcula el valor del servicio que el cliente paga a Baird Service.
+ * Precio de CATÁLOGO que paga el CLIENTE (IVA 19% incluido) por un servicio
+ * de tarifa fija. NO es lo que recibe el técnico.
+ *
+ * ⚠️ Nombre histórico: devuelve el PRECIO AL CLIENTE, no el pago al técnico.
+ * El neto que recibe el técnico se obtiene con `pagoNetoTecnicoTarifaFija()`
+ * (= este valor ÷ 1.309). La columna `pago_tecnico` guarda el NETO; este
+ * valor se usa para el desglose IVA del cliente en /solicitar y se deriva
+ * donde se necesite vía `precioClienteServicio()`. Ver docs/TARIFAS.md.
  *
  * - Garantía → 0 (la marca paga vía tarifa por código de complejidad)
- * - Diagnóstico → TARIFA_DIAGNOSTICO ($80.000)
- * - Reparación → TARIFA_DIAGNOSTICO ($80.000) — el técnico cotizará
+ * - Diagnóstico → TARIFA_DIAGNOSTICO
+ * - Reparación → TARIFA_DIAGNOSTICO — el técnico cotizará
  *   la reparación tras el diagnóstico (flujo cotización ya existente)
  * - Mantenimiento → tarifa fija por tipo_equipo (TARIFAS_MANTENIMIENTO)
  * - Cambio de filtro → tarifa fija todo-incluido (TARIFA_CAMBIO_FILTRO, filtro incluido)
@@ -289,6 +296,34 @@ export function calcularPagoTecnico(
   if (tipoSolicitud === 'Mantenimiento') return TARIFAS_MANTENIMIENTO[tipoEquipo]
   if (tipoSolicitud === 'Cambio de filtro') return TARIFA_CAMBIO_FILTRO
   return TARIFA_DIAGNOSTICO
+}
+
+/**
+ * Precio que paga el CLIENTE por un servicio particular (IVA incluido) — para
+ * mostrar en páginas/mensajes al cliente, vistas admin y facturación DIAN.
+ *
+ * Distinto de `pago_tecnico` (lo que recibe el técnico, NETO de IVA + margen).
+ *
+ * - Si hay cotización con `total > 0` (Reparación tras diagnóstico, o ajuste
+ *   manual de admin) → ese total, que ya es `costoTecnico × 1.309` (IVA + margen).
+ * - Si no (tarifa fija: Mantenimiento, Cambio de filtro, o el anticipo de
+ *   Diagnóstico/Reparación antes de cotizar) → el precio de catálogo.
+ *
+ * Ver docs/TARIFAS.md § "Particular".
+ */
+// Params tipados como string (no las uniones) porque los call sites leen
+// columnas de un cliente Supabase sin tipos generados; el cast interno a las
+// uniones es seguro porque los valores provienen del enum fijado al crear.
+export function precioClienteServicio(
+  tipoEquipo: string,
+  tipoSolicitud: string,
+  esGarantia: boolean,
+  cotizacion?: { total?: unknown } | null,
+): number {
+  const totalCotizacion = cotizacion?.total
+  if (typeof totalCotizacion === 'number' && totalCotizacion > 0) return totalCotizacion
+  const catalogo = calcularPagoTecnico(tipoEquipo as TipoEquipo, tipoSolicitud as TipoSolicitud, esGarantia)
+  return Number.isFinite(catalogo) ? catalogo : 0
 }
 
 export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico'> {
@@ -331,6 +366,8 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
 }
 
 // Evento append-only en la tabla solicitud_eventos.
+// Mantener sincronizado con el CHECK solicitud_eventos_tipo_check
+// (última migración: 20260612_evento_cambio_estado.sql).
 export interface SolicitudEvento {
   id: number
   solicitud_id: string
@@ -341,6 +378,11 @@ export interface SolicitudEvento {
     | 'cancelacion_revertida'
     | 'cambio_estado_admin'
     | 'nota_admin'
+    | 'cambio_estado'          // transición del flujo con actor inferido (2026-06-12)
+    | 'no_show_cliente'
+    | 'alerta_visita'
+    | 'cliente_bloqueado'
+    | 'cliente_desbloqueado'
   estado_previo: string | null
   estado_nuevo: string | null
   actor: string | null

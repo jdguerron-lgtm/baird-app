@@ -9,6 +9,7 @@ import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
   MAX_REAGENDAMIENTOS_CLIENTE,
+  precioClienteServicio,
 } from '@/types/solicitud'
 
 export const WA_API_BASE = 'https://graph.facebook.com/v22.0'
@@ -28,7 +29,9 @@ const TOKEN_EXPIRATION_MS = 3 * 60 * 60 * 1000 // 3 hours
 // Formato: "573134951164,573001234567" (digits con país, separados por coma).
 // Vacío/no definido = comportamiento normal (envía a todos).
 // ─────────────────────────────────────────
-function isPhoneAllowed(rawPhone: string): boolean {
+// Exportada para que dapta.service reuse el MISMO gate de whitelist en la
+// segunda línea de voz (no se duplica el algoritmo ni la env var).
+export function isPhoneAllowed(rawPhone: string): boolean {
   const whitelist = process.env.BAIRD_TEST_PHONE_WHITELIST?.trim()
   if (!whitelist) return true
   const allowed = whitelist
@@ -364,7 +367,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
   const { data: tecnicosConEsp } = await supabase
     .from('tecnicos')
-    .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
+    .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, estado_verificacion')
     .in('id', tecnicoIds)
 
   if (!tecnicosConEsp || tecnicosConEsp.length === 0) {
@@ -381,15 +384,26 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     }
   }
 
+  // Un técnico puede cubrir VARIAS ciudades/pueblos (`ciudades_cobertura`).
+  // Matchea si CUALQUIERA de sus ciudades coincide con la de la solicitud.
+  // Fallback a `ciudad_pueblo` para técnicos aún sin cobertura cargada.
   const tecnicos = tecnicosVerificados.filter(t => {
     if (!ciudadNorm) return true
-    const tecCiudad = cityTokenForMatch(t.ciudad_pueblo ?? '')
-    if (!tecCiudad) return false
-    return tecCiudad.includes(ciudadNorm) || ciudadNorm.includes(tecCiudad)
+    const cobertura: string[] = Array.isArray(t.ciudades_cobertura) && t.ciudades_cobertura.length > 0
+      ? t.ciudades_cobertura
+      : [t.ciudad_pueblo ?? '']
+    const tokens = cobertura.map(c => cityTokenForMatch(c ?? '')).filter(Boolean)
+    if (tokens.length === 0) return false
+    return tokens.some(tc => tc.includes(ciudadNorm) || ciudadNorm.includes(tc))
   })
 
   if (tecnicos.length === 0) {
-    const ciudades = tecnicosVerificados.map(t => `${t.nombre_completo}: "${t.ciudad_pueblo}"`)
+    const ciudades = tecnicosVerificados.map(t => {
+      const cob = Array.isArray(t.ciudades_cobertura) && t.ciudades_cobertura.length > 0
+        ? t.ciudades_cobertura
+        : [t.ciudad_pueblo]
+      return `${t.nombre_completo}: "${cob.join(', ')}"`
+    })
     return {
       notificados: 0, matched: 0,
       errors: [`${tecnicosVerificados.length} técnico(s) verificado(s) pero ninguno en "${sol.ciudad_pueblo}". Ciudades: ${ciudades.join(', ')}`],
@@ -663,8 +677,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // El monto real puede subir según complejidad real + bonos por entrega
     // a tiempo y satisfacción del cliente.
     //
-    // Particular: el cliente ya pagó la tarifa de diagnóstico por adelantado;
-    // se la mostramos al técnico para que sepa cuánto recibió Baird.
+    // Particular: `pago_tecnico` es el NETO que recibe el técnico (catálogo ÷
+    // 1.309); se lo mostramos tal cual.
     const pago = sol.es_garantia
       ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
       : `$${formatCOP(sol.pago_tecnico)} COP`
@@ -718,8 +732,16 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     )
   } else {
     // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
-    const tarifaDiagnostico = formatCOP(sol.pago_tecnico)
-    const anticipo = formatCOP(Math.round(sol.pago_tecnico * 0.5))
+    // Aquí mostramos al CLIENTE lo que él paga (precio de catálogo / total
+    // cotizado, IVA incl.), NO el neto del técnico que vive en pago_tecnico.
+    const precioCliente = precioClienteServicio(
+      sol.tipo_equipo,
+      sol.tipo_solicitud,
+      sol.es_garantia,
+      sol.cotizacion as { total?: number | null } | null,
+    )
+    const tarifaDiagnostico = formatCOP(precioCliente)
+    const anticipo = formatCOP(Math.round(precioCliente * 0.5))
 
     await logEnvio(
       enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
@@ -1157,30 +1179,125 @@ export async function notificarTecnicoVisitaReprogramada(
 }
 
 /**
- * Notifica a los supervisores configurados cuando una solicitud cambia de estado.
+ * SKUs de los repuestos registrados para una solicitud (excluye cancelados),
+ * en una sola línea "SKU1, SKU2" — apto como parámetro de plantilla Meta
+ * (los parámetros no admiten saltos de línea). '—' si no hay registros.
+ */
+async function listarSkusSolicitud(solicitudId: string): Promise<string> {
+  const { data } = await supabase
+    .from('repuestos_pendientes')
+    .select('sku')
+    .eq('solicitud_id', solicitudId)
+    .neq('estado', 'cancelado')
+    .order('solicitado_at', { ascending: true })
+  const skus = (data ?? []).map(r => r.sku).filter(Boolean)
+  return skus.length > 0 ? skus.join(', ') : '—'
+}
+
+/** Dirección completa del cliente en una línea (dirección, zona, ciudad). */
+function direccionUnaLinea(sol: {
+  direccion?: string | null
+  zona_servicio?: string | null
+  ciudad_pueblo?: string | null
+}): string {
+  return [sol.direccion, sol.zona_servicio, sol.ciudad_pueblo].filter(Boolean).join(', ') || '—'
+}
+
+/**
+ * Infere QUIÉN disparó una transición de estado a partir del par
+ * (estado_previo → estado_nuevo). Funciona porque cada transición tiene un
+ * único endpoint dueño (ver "transition owners" en docs/ARQUITECTURA.md) y
+ * cada endpoint está gateado a un solo rol (token de portal técnico, token
+ * de cliente, Supabase Auth admin, o cron).
+ *
+ * Se usa para el `actor` del evento 'cambio_estado' en solicitud_eventos
+ * (historial de estados del panel admin). Si el flujo cambia de dueños,
+ * actualizar este mapa.
+ */
+function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string): string {
+  switch (estadoNuevo) {
+    case 'pendiente_horario': return 'admin'        // re-notificar tras sin_agendar (/api/whatsapp/notify)
+    case 'notificada': return 'cliente'             // confirmó horario (/api/confirmar-horario)
+    case 'asignada':
+    case 'diagnostico_pendiente': return 'tecnico'  // aceptó el servicio (procesarAceptacion)
+    case 'pendiente_pricing': return 'tecnico'      // diagnóstico con esperar_repuesto (/api/diagnostico)
+    case 'verificacion_pendiente':
+    case 'cotizacion_enviada':
+      // pendiente_pricing → admin fijó precios (/api/cotizacion-precios);
+      // si no, viene del diagnóstico del técnico (/api/diagnostico).
+      return estadoPrevio === 'pendiente_pricing' ? 'admin' : 'tecnico'
+    case 'cotizacion_aprobada':
+    case 'cotizacion_rechazada': return 'cliente'   // decidió la cotización (/api/aprobar-cotizacion)
+    case 'esperando_repuesto': return 'cliente'     // aprobó esperar el repuesto
+    case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido)
+    case 'en_proceso': return 'cliente'             // aprobó reparar/cotización o eligió fecha tras repuesto
+    case 'en_verificacion': return 'tecnico'        // completó el servicio (/api/completar-servicio)
+    case 'completada':
+    case 'en_disputa': return 'cliente'             // confirmó satisfacción o reportó problema
+    case 'finalizado_sin_reparacion':
+    case 'cancelada_cliente':
+      // Vía verificación → decisión del cliente; directo del diagnóstico → técnico.
+      return estadoPrevio === 'verificacion_pendiente' ? 'cliente' : 'tecnico'
+    case 'sin_agendar': return 'sistema'            // cron horario-recordatorio (timeout)
+    case 'cancelada': return 'cliente'
+    default: return 'sistema'
+  }
+}
+
+/**
+ * Notifica a los supervisores configurados cuando una solicitud cambia de estado
+ * Y registra la transición en el historial (`solicitud_eventos`, tipo
+ * 'cambio_estado', actor inferido con `inferirActorTransicion`).
  *
  * NUNCA lanza: atrapa y loguea todos los errores. Los call-sites pueden await sin
  * try/catch — si falla, no rompe la transición que lo disparó.
+ *
+ * opciones.registrarEvento (default true): pasar `false` desde call-sites que
+ * YA insertan su propio evento de cambio de estado (cancelacion,
+ * reagendamiento, reagendamiento_confirmado, cambio_estado_admin) para no
+ * duplicar filas en el historial.
  *
  * Filtrado por supervisor (tabla `supervisores`, solo activo = true):
  *   - ambito:  'todos' → siempre | 'garantia' → solo es_garantia | 'particular' → solo !es_garantia
  *   - marca:   null → todas | string → solo si coincide con marca_equipo (normalizeForMatch)
  *   - estados: null/[] → todos | string[] → solo si estadoNuevo está en la lista
  *
- * Usa la plantilla `supervisor_cambio_estado_v1` (funciona fuera de la ventana 24h:
- * los supervisores no interactúan con el WhatsApp del negocio).
+ * Plantillas (ambas funcionan fuera de la ventana 24h — los supervisores no
+ * interactúan con el WhatsApp del negocio):
+ *   - `supervisor_repuesto_garantia_v1` cuando el cambio es un evento de repuesto
+ *     en GARANTÍA (→ esperando_repuesto | repuesto_recibido): incluye No. de
+ *     garantía, SKU(s) y dirección del cliente — los datos con los que se
+ *     gestiona el repuesto ante la marca. Si Meta aún no la aprueba, cae a la
+ *     genérica para no perder el aviso.
+ *   - `supervisor_cambio_estado_v1` (genérica) para todo lo demás — incluido
+ *     cualquier evento de repuesto en flujo particular, que se mantiene igual.
  */
 export async function notificarCambioEstado(
   solicitudId: string,
   estadoPrevio: string | null,
   estadoNuevo: string,
+  opciones?: { registrarEvento?: boolean },
 ): Promise<void> {
   try {
     if (estadoPrevio === estadoNuevo) return
 
+    // Historial de estados: registro append-only de la transición con su actor.
+    // Best-effort (logEvento nunca lanza). Requiere migración
+    // 20260612_evento_cambio_estado.sql (tipo 'cambio_estado' en el CHECK).
+    if (opciones?.registrarEvento !== false) {
+      await logEvento({
+        solicitudId,
+        tipo: 'cambio_estado',
+        estadoPrevio,
+        estadoNuevo,
+        actor: inferirActorTransicion(estadoPrevio, estadoNuevo),
+        payload: { origen: 'flujo' },
+      })
+    }
+
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
-      .select('cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia')
+      .select('cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, direccion, zona_servicio')
       .eq('id', solicitudId)
       .single()
     if (!sol) return
@@ -1206,9 +1323,44 @@ export async function notificarCambioEstado(
     const tipoFlujo = sol.es_garantia ? 'Garantía' : 'Particular'
     const estadoLabel = ESTADO_LABELS[estadoNuevo] ?? estadoNuevo
 
+    // Evento de repuesto en garantía → plantilla con datos de gestión del repuesto.
+    const esEventoRepuestoGarantia =
+      sol.es_garantia && (estadoNuevo === 'esperando_repuesto' || estadoNuevo === 'repuesto_recibido')
+    const detalleRepuesto = esEventoRepuestoGarantia
+      ? {
+          novedad: estadoNuevo === 'esperando_repuesto' ? 'Repuesto requerido' : 'Repuesto entregado al cliente',
+          garantia: sol.numero_serie_factura ?? '—',
+          skus: await listarSkusSolicitud(solicitudId),
+          direccion: direccionUnaLinea(sol),
+        }
+      : null
+
     await Promise.all(
       destinatarios.map(async s => {
         try {
+          if (detalleRepuesto) {
+            try {
+              await enviarPlantilla(s.whatsapp, 'supervisor_repuesto_garantia_v1', 'es', [
+                {
+                  type: 'body',
+                  parameters: [
+                    { type: 'text', text: s.nombre.split(' ')[0] },
+                    { type: 'text', text: detalleRepuesto.novedad },
+                    { type: 'text', text: sol.cliente_nombre },
+                    { type: 'text', text: equipo },
+                    { type: 'text', text: detalleRepuesto.garantia },
+                    { type: 'text', text: detalleRepuesto.skus },
+                    { type: 'text', text: detalleRepuesto.direccion },
+                  ],
+                },
+              ])
+              return
+            } catch (err) {
+              // Fallback mientras supervisor_repuesto_garantia_v1 no esté APPROVED
+              // en Meta: el supervisor recibe al menos el cambio de estado genérico.
+              console.error(`[notificarCambioEstado] supervisor_repuesto_garantia_v1 falló para ${s.nombre}, fallback a genérica:`, err)
+            }
+          }
           await enviarPlantilla(s.whatsapp, 'supervisor_cambio_estado_v1', 'es', [
             {
               type: 'body',
@@ -1338,6 +1490,102 @@ export async function enviarEsperandoRepuestoCliente(
           { type: 'text', text: sku },
           { type: 'text', text: descripcionRepuesto },
           { type: 'text', text: tiempoEstimado },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al TÉCNICO que quedó aprobada la espera del repuesto (solo GARANTÍA).
+ *
+ * Incluye los datos con los que se gestiona el repuesto ante la marca:
+ * No. de garantía (numero_serie_factura), SKU(s) solicitados y dirección del
+ * cliente (la marca despacha el repuesto a esa dirección).
+ *
+ * En particular NO se envía (guard interno): el técnico ya recibe
+ * `cotizacion_aprobada_tecnico_v2` al aprobarse la cotización y el repuesto
+ * lo gestiona él dentro de su costo — ese flujo se mantiene como está.
+ *
+ * Usa la plantilla `esperando_repuesto_tecnico_v1` (NO texto libre): la
+ * aprobación del cliente puede llegar días después de la visita, con la
+ * ventana 24h del técnico cerrada.
+ */
+export async function enviarEsperandoRepuestoTecnico(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, es_garantia, numero_serie_factura, direccion, zona_servicio, ciudad_pueblo')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.es_garantia) return { ok: false, error: 'Solo aplica a flujo garantía (particular se mantiene igual)' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo, whatsapp').eq('id', sol.tecnico_asignado_id).single()
+  if (!tec?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  const skus = await listarSkusSolicitud(solicitudId)
+
+  try {
+    const r = await enviarPlantilla(tec.whatsapp, 'esperando_repuesto_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: tec.nombre_completo.split(' ')[0] },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: sol.numero_serie_factura ?? '—' },
+          { type: 'text', text: skus },
+          { type: 'text', text: direccionUnaLinea(sol) },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al TÉCNICO que el repuesto ya fue entregado al cliente (AMBOS flujos).
+ *
+ * Se dispara al marcar el último repuesto como recibido (/api/repuesto-recibido),
+ * en paralelo al aviso al cliente. Es informativo: la nueva fecha tentativa le
+ * llega después vía `repuesto_recibido_tecnico_v1` cuando el cliente la elige
+ * en /reprogramar-repuesto.
+ *
+ * Usa la plantilla `repuesto_llegado_tecnico_v1` (NO texto libre): entre el
+ * diagnóstico y la llegada del repuesto pasan semanas → ventana 24h cerrada.
+ */
+export async function enviarRepuestoLlegadoTecnico(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo, whatsapp').eq('id', sol.tecnico_asignado_id).single()
+  if (!tec?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  try {
+    const r = await enviarPlantilla(tec.whatsapp, 'repuesto_llegado_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: tec.nombre_completo.split(' ')[0] },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: sol.cliente_nombre },
         ],
       },
     ])
@@ -1610,7 +1858,7 @@ export async function notificarRegistroTecnico(tecnicoId: string): Promise<{ ok:
  */
 async function logEvento(params: {
   solicitudId: string
-  tipo: 'cancelacion' | 'reagendamiento' | 'reagendamiento_confirmado' | 'cancelacion_revertida' | 'cambio_estado_admin' | 'nota_admin'
+  tipo: 'cancelacion' | 'reagendamiento' | 'reagendamiento_confirmado' | 'cancelacion_revertida' | 'cambio_estado_admin' | 'nota_admin' | 'cambio_estado'
   estadoPrevio: string | null
   estadoNuevo: string | null
   actor: string
@@ -1686,7 +1934,8 @@ export async function procesarCancelacionCliente(
     return { ok: false, estado_previo: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
   }
 
-  await notificarCambioEstado(sol.id, sol.estado, 'cancelada')
+  // registrarEvento:false — abajo se inserta el evento dedicado 'cancelacion'.
+  await notificarCambioEstado(sol.id, sol.estado, 'cancelada', { registrarEvento: false })
 
   // 2. Invalidar notificaciones activas a técnicos (pre-aceptación)
   await supabase
@@ -1818,7 +2067,8 @@ export async function procesarReagendamientoCliente(
   }
 
   // Notificar a supervisores configurados (short-circuit si estadoNuevo === sol.estado).
-  await notificarCambioEstado(sol.id, sol.estado, estadoNuevo)
+  // registrarEvento:false — abajo se inserta el evento dedicado 'reagendamiento'.
+  await notificarCambioEstado(sol.id, sol.estado, estadoNuevo, { registrarEvento: false })
 
   const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
   const clienteNombre = sol.cliente_nombre.split(' ')[0]

@@ -222,6 +222,17 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
    │     esperando_repuesto_  │  │                                  │
    │     cliente_v1           │  │                                  │
    │     (sku + desc + tiempo)│  │                                  │
+   │   📩 → TÉCNICO:          │  │                                  │
+   │     esperando_repuesto_  │  │                                  │
+   │     tecnico_v1 ⏳        │  │                                  │
+   │     (No. garantía + SKU  │  │                                  │
+   │      + dirección cliente)│  │                                  │
+   │   📩 → SUPERVISORES:     │  │                                  │
+   │     supervisor_repuesto_ │  │                                  │
+   │     garantia_v1 ⏳       │  │                                  │
+   │     (vía notificarCambio │  │                                  │
+   │      Estado, mismos datos│  │                                  │
+   │      de gestión)         │  │                                  │
    │  Si no_reparable:        │  │                                  │
    │   📩 → CLIENTE:          │  │                                  │
    │     finalizado_sin_      │  │                                  │
@@ -246,6 +257,10 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ 📩 → CLIENTE: repuesto_recibido_cliente_v2                               │
 │   Body: cliente, equipo, técnico                                         │
 │   Botón: "Elegir nueva fecha" → /reprogramar-repuesto/{token}            │
+│ 📩 → TÉCNICO: repuesto_llegado_tecnico_v1 ⏳ (2026-06-12)                │
+│   "El repuesto ya fue entregado; el cliente está eligiendo nueva fecha". │
+│ 📩 → SUPERVISORES: supervisor_repuesto_garantia_v1 ⏳ (garantía: No.     │
+│   garantía + SKU + dirección) | particular: supervisor_cambio_estado_v1. │
 │                                                                           │
 │ ⚠️ BUG FIX 2026-05-29: antes saltaba directo a en_proceso con la fecha   │
 │ vieja. Pueden pasar SEMANAS entre el diagnóstico y la llegada del        │
@@ -266,6 +281,12 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │   Botón: "Abrir portal" → /tecnico/{portal_token}                        │
 │   La fecha es TENTATIVA: el técnico la confirma según su disponibilidad. │
 └──────────────────────────────────────────────────────────────────────────┘
+
+> ℹ️ **Gap conocido (verificado 2026-06-02): segunda visita SIN repuesto.**
+> Los pasos 6b/6c de arriba solo se disparan vía `esperar_repuesto` (exige SKU).
+> NO hay camino para agendar una segunda visita cuando la reparación necesita
+> otro día pero no requiere repuesto (`reparar` cierra en la misma visita).
+> Opciones para cerrar el gap: ver `docs/mejoras-futuras/segunda-visita/README.md`.
                                   │
                                   ▼  (técnico hace la reparación)
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -613,7 +634,9 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | `cotizacion_cliente_v2` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
 | `cotizacion_aprobada_tecnico_v2` | notificarCotizacionAprobada | Técnico |
 | `esperando_repuesto_cliente_v1` | enviarEsperandoRepuestoCliente (post-aprobación cliente) | Cliente |
+| `esperando_repuesto_tecnico_v1` ⏳ | enviarEsperandoRepuestoTecnico (post-aprobación cliente, **solo garantía**: No. garantía + SKU + dirección) | Técnico |
 | `repuesto_recibido_cliente_v2` ⏳ | enviarRepuestoRecibidoCliente (admin marca recibido → repuesto_recibido). Botón → reprogramar | Cliente |
+| `repuesto_llegado_tecnico_v1` ⏳ | enviarRepuestoLlegadoTecnico (admin marca recibido → repuesto_recibido, ambos flujos) | Técnico |
 | `repuesto_recibido_tecnico_v1` ⏳ | notificarTecnicoVisitaReprogramada (cliente eligió nueva fecha → en_proceso) | Técnico |
 | `finalizado_sin_reparacion_v1` | enviarFinalizadoSinReparacion (terminal) | Cliente |
 
@@ -625,7 +648,8 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 ### Supervisión (NEW 2026-05-29)
 | Template | Disparo | Destino |
 |---|---|---|
-| `supervisor_cambio_estado_v1` ⏳ | notificarCambioEstado (cada cambio de estado) | Supervisores activos filtrados por ámbito/marca/estados |
+| `supervisor_cambio_estado_v1` ⏳ | notificarCambioEstado (cada cambio de estado, salvo eventos de repuesto en garantía) | Supervisores activos filtrados por ámbito/marca/estados |
+| `supervisor_repuesto_garantia_v1` ⏳ | notificarCambioEstado cuando garantía pasa a esperando_repuesto / repuesto_recibido (No. garantía + SKU + dirección; fallback a la genérica si Meta no la aprobó) | Supervisores activos filtrados por ámbito/marca/estados |
 
 > ⏳ = pendiente de subir a Meta (ver `docs/WHATSAPP_TEMPLATES.md` + plan de despliegue). No invocar en prod hasta `APPROVED`.
 

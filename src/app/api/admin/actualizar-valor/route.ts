@@ -138,8 +138,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Notificar supervisores configurados (solo si hubo transición real).
+    // registrarEvento:false — arriba se insertó el evento dedicado 'cambio_estado_admin'.
     if (estadoPrevio !== 'cotizacion_enviada') {
-      await notificarCambioEstado(id, estadoPrevio, 'cotizacion_enviada')
+      await notificarCambioEstado(id, estadoPrevio, 'cotizacion_enviada', { registrarEvento: false })
     }
 
     // 6. Avisar al cliente del nuevo valor (lo lleva a re-aprobar).

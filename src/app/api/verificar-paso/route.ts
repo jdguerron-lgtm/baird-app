@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import {
   enviarMensajeTexto,
   enviarEsperandoRepuestoCliente,
+  enviarEsperandoRepuestoTecnico,
   enviarFinalizadoSinReparacion,
   notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
@@ -139,6 +140,12 @@ export async function POST(req: NextRequest) {
         if (rep) {
           await enviarEsperandoRepuestoCliente(sol.id, rep.sku, rep.descripcion, rep.tiempo_estimado ?? 'Por confirmar')
         }
+        // Garantía: el técnico recibe los datos de gestión del repuesto
+        // (No. de garantía, SKU, dirección del cliente). El supervisor recibe
+        // lo propio vía notificarCambioEstado (plantilla de repuesto garantía).
+        // En particular la función no envía (guard interno) — se mantiene igual.
+        const tecRep = await enviarEsperandoRepuestoTecnico(sol.id)
+        if (!tecRep.ok) console.error('[verificar-paso] enviarEsperandoRepuestoTecnico falló:', tecRep.error)
       } else if (paso === 'no_reparable') {
         await enviarFinalizadoSinReparacion(sol.id, sol.siguiente_paso_detalle ?? 'Daño no reparable')
       } else if (paso === 'negativa_cliente') {
