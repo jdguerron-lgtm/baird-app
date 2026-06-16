@@ -21,7 +21,7 @@ src/
 │   ├── reprogramar-repuesto/[token]/ # Customer picks new tentative date after part arrived
 │   ├── terminos/               # Public Terms & Conditions page
 │   ├── admin/                  # Admin panel (auth-guarded)
-│   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view)
+│   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view) + calendario de agenda por franja
 │   │   ├── tecnicos/           # Technician management
 │   │   ├── repuestos/          # Pending parts dashboard
 │   │   ├── gps-alertas/        # Silent flagged services (post-visit GPS within 100m)
@@ -200,7 +200,7 @@ Todas requieren login Supabase Auth en `/admin/login` y validación server-side 
 |------|-----|---------|
 | Login | `/admin/login` | Login Supabase Auth (email + password). La sesión queda en `localStorage`; OJO: misma sesión se filtra a portales con token en el mismo browser — ver gotcha en `docs/GOTCHAS.md`. |
 | Dashboard | `/admin` | KPIs and recent activity |
-| Solicitudes | `/admin/solicitudes` | Service requests list/detail |
+| Solicitudes | `/admin/solicitudes` | Service requests list/detail. Toggle **Lista \| Calendario**: el calendario (`src/components/admin/AgendaCalendario.tsx`) muestra por día+franja el conteo `n/cupo` de servicios agendados (semana = detalle por franja con los servicios; mes = resumen por día). `n` y `cupo` espejan `agenda.service` (no-terminales con ese `fecha_visita_at`, tope `MAX_RESERVAS_POR_FRANJA`). Solo lectura. |
 | Solicitud detalle | `/admin/solicitudes/[id]` | Detalle + edit + reenviar último mensaje + **cambiar estado manualmente** (escape hatch, ver `docs/MAQUINA-DE-ESTADOS.md`). |
 | Técnicos | `/admin/tecnicos` | Listado de técnicos con estado de verificación |
 | Técnico detalle | `/admin/tecnicos/[id]` | Detalle del técnico: documento, foto, especialidades, historial de servicios, toggle de verificación. |

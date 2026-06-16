@@ -7,6 +7,7 @@ import { ESTADO_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { precioClienteServicio } from '@/types/solicitud'
+import AgendaCalendario from '@/components/admin/AgendaCalendario'
 
 interface Solicitud {
   id: string
@@ -37,6 +38,7 @@ const ESTADOS = [
 
 export default function SolicitudesAdmin() {
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
+  const [vista, setVista] = useState<'lista' | 'calendario'>('lista')
   const [filtro, setFiltro] = useState('todos')
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
@@ -237,12 +239,31 @@ export default function SolicitudesAdmin() {
         </button>
       </div>
 
+      {/* Toggle de vista: lista vs calendario de agenda */}
+      <div className="mb-5 flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
+        {([['lista', '📋 Lista'], ['calendario', '🗓️ Calendario']] as const).map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setVista(v)}
+            className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
+              vista === v ? 'bg-white text-slate-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {errorExport && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
           {errorExport}
         </div>
       )}
 
+      {vista === 'calendario' && <AgendaCalendario />}
+
+      {vista === 'lista' && (
+        <>
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="flex gap-2 flex-wrap">
@@ -422,6 +443,8 @@ export default function SolicitudesAdmin() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }
