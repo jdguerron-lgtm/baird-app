@@ -143,6 +143,8 @@ export default function SolicitudDetalle() {
   const [motivoValor, setMotivoValor] = useState('')
   const [actualizandoValor, setActualizandoValor] = useState(false)
   const [resultadoValor, setResultadoValor] = useState<{ ok: boolean; mensaje: string } | null>(null)
+  const [pidiendoRepuesto, setPidiendoRepuesto] = useState(false)
+  const [resultadoRepuesto, setResultadoRepuesto] = useState<{ ok: boolean; mensaje: string } | null>(null)
   const [notas, setNotas] = useState<EventoSolicitud[]>([])
   const [historial, setHistorial] = useState<EventoSolicitud[]>([])
   const [nuevaNota, setNuevaNota] = useState('')
@@ -1591,6 +1593,71 @@ export default function SolicitudDetalle() {
           </div>
         )
       })()}
+
+      {/* Pedir repuestos en garantía — avisa a los supervisores con visibilidad
+          de la marca (SKU, modelo, No. de garantía, dirección y diagnóstico del
+          técnico). Solo garantía. NO cambia estado.
+          Vía /api/admin/pedir-repuesto-supervisores. */}
+      {solicitud.es_garantia && (
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Pedir repuestos en garantía
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Envía a los supervisores con <strong>visibilidad de la marca</strong> de
+            este servicio el pedido de repuesto con todo lo necesario para
+            gestionarlo ante la marca: <strong>SKU, modelo, No. de garantía,
+            dirección del cliente y el diagnóstico del técnico</strong>. No cambia el
+            estado de la solicitud.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={async () => {
+                setPidiendoRepuesto(true)
+                setResultadoRepuesto(null)
+                try {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (!session) {
+                    setResultadoRepuesto({ ok: false, mensaje: 'Sesión expirada. Inicia sesión de nuevo.' })
+                    setPidiendoRepuesto(false)
+                    return
+                  }
+                  const res = await fetch('/api/admin/pedir-repuesto-supervisores', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({ solicitudId: id }),
+                  })
+                  const data = await res.json()
+                  setResultadoRepuesto({ ok: !!data.ok, mensaje: data.mensaje ?? data.error ?? 'Sin respuesta' })
+                } catch (e) {
+                  setResultadoRepuesto({ ok: false, mensaje: e instanceof Error ? e.message : String(e) })
+                }
+                setPidiendoRepuesto(false)
+              }}
+              disabled={pidiendoRepuesto}
+              className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {pidiendoRepuesto ? 'Enviando...' : '📦 Pedir repuesto a supervisores'}
+            </button>
+            <span className="text-xs text-gray-500">
+              Los SKU se toman de los repuestos registrados en la solicitud.
+            </span>
+          </div>
+
+          {resultadoRepuesto && (
+            <div className={`mt-3 rounded-lg p-3 text-sm ${
+              resultadoRepuesto.ok
+                ? 'bg-green-50 border border-green-200 text-green-900'
+                : 'bg-amber-50 border border-amber-200 text-amber-900'
+            }`}>
+              {resultadoRepuesto.ok ? '✅ ' : '⚠️ '}{resultadoRepuesto.mensaje}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Cambiar estado manualmente — herramienta de recuperación.
           Para destrabar una solicitud cuando el flujo automático no avanzó

@@ -787,12 +787,13 @@ const TEMPLATES = [
   // 22. Novedad de repuesto en GARANTÍA — notificar a SUPERVISORES.
   //     v1 (2026-06-12): reemplaza a supervisor_cambio_estado_v1 SOLO para las
   //     transiciones a esperando_repuesto / repuesto_recibido de servicios en
-  //     garantía. Incluye los datos de gestión del repuesto ante la marca:
-  //     No. de garantía, SKU(s) y dirección del cliente. En particular se
-  //     mantiene la plantilla genérica de cambio de estado.
+  //     garantía. Incluye los datos de gestión del repuesto ante la marca.
+  //     En particular se mantiene la plantilla genérica de cambio de estado.
+  //     2026-06-16: ampliada de 7 a 9 params — se agregan Modelo y Diagnóstico
+  //     del técnico (nunca llegó a subirse a Meta, así que se amplía en sitio).
   //     {{1}}=nombre supervisor, {{2}}=novedad (Repuesto requerido | Repuesto
-  //     entregado al cliente), {{3}}=cliente, {{4}}=equipo, {{5}}=No. garantía,
-  //     {{6}}=SKU(s), {{7}}=dirección.
+  //     entregado al cliente), {{3}}=cliente, {{4}}=equipo, {{5}}=modelo,
+  //     {{6}}=No. garantía, {{7}}=SKU(s), {{8}}=dirección, {{9}}=diagnóstico.
   //     Llamado por: notificarCambioEstado()
   {
     name: 'supervisor_repuesto_garantia_v1',
@@ -811,13 +812,15 @@ const TEMPLATES = [
           '📌 Novedad: {{2}}\n' +
           '👤 Cliente: {{3}}\n' +
           '🔧 Equipo: {{4}}\n' +
-          '📋 No. de garantía: {{5}}\n' +
-          '📦 SKU: {{6}}\n' +
-          '📍 Dirección del cliente: {{7}}\n\n' +
+          '🏷️ Modelo: {{5}}\n' +
+          '📋 No. de garantía: {{6}}\n' +
+          '📦 SKU: {{7}}\n' +
+          '📍 Dirección del cliente: {{8}}\n' +
+          '🩺 Diagnóstico del técnico: {{9}}\n\n' +
           'Revisa el panel de supervisión para más detalles.',
         example: {
           body_text: [
-            ['Andrés', 'Repuesto requerido', 'María Gómez', 'Lavadora Mabe', '9415091231', 'WM-PCB-7421', 'Calle 53 #24-18, Chapinero, Bogotá'],
+            ['Andrés', 'Repuesto requerido', 'María Gómez', 'Lavadora Mabe', 'WM-3000-X', '9415091231', 'WM-PCB-7421', 'Calle 53 #24-18, Chapinero, Bogotá', 'Tarjeta de control quemada; no enciende. Requiere reemplazo de la PCB principal.'],
           ],
         },
       },

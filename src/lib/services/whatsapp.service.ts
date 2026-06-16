@@ -1205,6 +1205,28 @@ function direccionUnaLinea(sol: {
 }
 
 /**
+ * Modelo del equipo, embebido como prefijo "[Modelo: X]" en `novedades_equipo`
+ * (mismo formato que parsea notificarTecnicos). Saneado para parámetro Meta
+ * (sin saltos de línea). '—' si no viene.
+ */
+function modeloDeNovedades(novedades?: string | null): string {
+  const m = novedades?.match(/^\[Modelo:\s*(.+?)\]\s*/)
+  const modelo = (m?.[1] ?? '').replace(/\s+/g, ' ').trim()
+  return modelo ? modelo.substring(0, 80) : '—'
+}
+
+/**
+ * Diagnóstico del técnico desde `triaje_resultado.diagnostico_tecnico` (flujo
+ * garantía). Saneado para parámetro Meta (colapsa whitespace, sin saltos de
+ * línea, tope 200). Default legible si no hay texto.
+ */
+function diagnosticoDeTriaje(triaje: unknown): string {
+  const d = (triaje as { diagnostico_tecnico?: string } | null)?.diagnostico_tecnico
+  const limpio = (d ?? '').replace(/\s+/g, ' ').trim()
+  return limpio ? limpio.substring(0, 200) : 'Diagnóstico realizado'
+}
+
+/**
  * Infere QUIÉN disparó una transición de estado a partir del par
  * (estado_previo → estado_nuevo). Funciona porque cada transición tiene un
  * único endpoint dueño (ver "transition owners" en docs/ARQUITECTURA.md) y
@@ -1267,9 +1289,9 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
  * interactúan con el WhatsApp del negocio):
  *   - `supervisor_repuesto_garantia_v1` cuando el cambio es un evento de repuesto
  *     en GARANTÍA (→ esperando_repuesto | repuesto_recibido): incluye No. de
- *     garantía, SKU(s) y dirección del cliente — los datos con los que se
- *     gestiona el repuesto ante la marca. Si Meta aún no la aprueba, cae a la
- *     genérica para no perder el aviso.
+ *     garantía, SKU(s), dirección del cliente, modelo del equipo y diagnóstico
+ *     del técnico — los datos con los que se gestiona el repuesto ante la marca.
+ *     Si Meta aún no la aprueba, cae a la genérica para no perder el aviso.
  *   - `supervisor_cambio_estado_v1` (genérica) para todo lo demás — incluido
  *     cualquier evento de repuesto en flujo particular, que se mantiene igual.
  */
@@ -1298,7 +1320,7 @@ export async function notificarCambioEstado(
 
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
-      .select('cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, direccion, zona_servicio')
+      .select('cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, direccion, zona_servicio, novedades_equipo, triaje_resultado')
       .eq('id', solicitudId)
       .single()
     if (!sol) return
@@ -1333,6 +1355,8 @@ export async function notificarCambioEstado(
           garantia: sol.numero_serie_factura ?? '—',
           skus: await listarSkusSolicitud(solicitudId),
           direccion: direccionUnaLinea(sol),
+          modelo: modeloDeNovedades(sol.novedades_equipo),
+          diagnostico: diagnosticoDeTriaje(sol.triaje_resultado),
         }
       : null
 
@@ -1349,9 +1373,11 @@ export async function notificarCambioEstado(
                     { type: 'text', text: detalleRepuesto.novedad },
                     { type: 'text', text: sol.cliente_nombre },
                     { type: 'text', text: equipo },
+                    { type: 'text', text: detalleRepuesto.modelo },
                     { type: 'text', text: detalleRepuesto.garantia },
                     { type: 'text', text: detalleRepuesto.skus },
                     { type: 'text', text: detalleRepuesto.direccion },
+                    { type: 'text', text: detalleRepuesto.diagnostico },
                   ],
                 },
               ])
@@ -1382,6 +1408,121 @@ export async function notificarCambioEstado(
     )
   } catch (err) {
     console.error('[notificarCambioEstado] Error general:', err)
+  }
+}
+
+/**
+ * Envía ON-DEMAND el pedido de repuesto en GARANTÍA a los supervisores con
+ * VISIBILIDAD DE LA MARCA del servicio (activos, ámbito todos|garantía, y marca
+ * null o == marca del equipo). Mismo mensaje (supervisor_repuesto_garantia_v1)
+ * que dispara notificarCambioEstado al pasar a esperando_repuesto, pero gatillado
+ * desde el botón "Pedir repuestos en garantía" del admin
+ * (POST /api/admin/pedir-repuesto-supervisores). NO cambia estado. Solo GARANTÍA.
+ *
+ * NO filtra por el campo `estados` del supervisor: es un pedido on-demand, no un
+ * cambio de estado, así que cualquier supervisor que vea la marca debe recibirlo.
+ *
+ * NUNCA lanza. Devuelve cuántos supervisores recibieron el aviso.
+ *
+ * ⚠️ El bloque de parámetros de supervisor_repuesto_garantia_v1 (9 params) está
+ * duplicado a propósito respecto a notificarCambioEstado: no se comparte para no
+ * tocar el path automático crítico. Si cambian los params de la plantilla,
+ * actualizar AMBOS lugares.
+ */
+export async function notificarRepuestoSupervisores(
+  solicitudId: string,
+): Promise<{ enviados: number; total: number; error?: string }> {
+  try {
+    const { data: sol } = await supabase
+      .from('solicitudes_servicio')
+      .select('cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, direccion, zona_servicio, novedades_equipo, triaje_resultado')
+      .eq('id', solicitudId)
+      .single()
+    if (!sol) return { enviados: 0, total: 0, error: 'Solicitud no encontrada' }
+    if (!sol.es_garantia) {
+      return { enviados: 0, total: 0, error: 'El pedido de repuesto a supervisores es solo para servicios en garantía' }
+    }
+
+    const { data: supervisores } = await supabase
+      .from('supervisores')
+      .select('nombre, whatsapp, ambito, marca')
+      .eq('activo', true)
+    if (!supervisores || supervisores.length === 0) {
+      return { enviados: 0, total: 0, error: 'No hay supervisores activos configurados' }
+    }
+
+    const marcaSol = normalizeForMatch(sol.marca_equipo ?? '')
+    // Visibilidad de marca: ámbito incluye garantía (todos|garantia) + marca
+    // null (todas) o coincidente con la del equipo.
+    const destinatarios = supervisores.filter(s => {
+      if (s.ambito === 'particular') return false
+      if (s.marca && normalizeForMatch(s.marca) !== marcaSol) return false
+      return true
+    })
+    if (destinatarios.length === 0) {
+      return { enviados: 0, total: 0, error: 'Ningún supervisor con visibilidad de esta marca' }
+    }
+
+    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const detalle = {
+      novedad: 'Repuesto requerido',
+      garantia: sol.numero_serie_factura ?? '—',
+      skus: await listarSkusSolicitud(solicitudId),
+      direccion: direccionUnaLinea(sol),
+      modelo: modeloDeNovedades(sol.novedades_equipo),
+      diagnostico: diagnosticoDeTriaje(sol.triaje_resultado),
+    }
+    const estadoLabelRepuesto = ESTADO_LABELS['esperando_repuesto'] ?? 'Esperando repuesto'
+
+    let enviados = 0
+    await Promise.all(
+      destinatarios.map(async s => {
+        try {
+          try {
+            await enviarPlantilla(s.whatsapp, 'supervisor_repuesto_garantia_v1', 'es', [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: s.nombre.split(' ')[0] },
+                  { type: 'text', text: detalle.novedad },
+                  { type: 'text', text: sol.cliente_nombre },
+                  { type: 'text', text: equipo },
+                  { type: 'text', text: detalle.modelo },
+                  { type: 'text', text: detalle.garantia },
+                  { type: 'text', text: detalle.skus },
+                  { type: 'text', text: detalle.direccion },
+                  { type: 'text', text: detalle.diagnostico },
+                ],
+              },
+            ])
+          } catch (err) {
+            // Fallback mientras supervisor_repuesto_garantia_v1 no esté APPROVED.
+            console.error(`[notificarRepuestoSupervisores] v1 falló para ${s.nombre}, fallback a genérica:`, err)
+            await enviarPlantilla(s.whatsapp, 'supervisor_cambio_estado_v1', 'es', [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: s.nombre.split(' ')[0] },
+                  { type: 'text', text: sol.cliente_nombre },
+                  { type: 'text', text: equipo },
+                  { type: 'text', text: sol.ciudad_pueblo ?? '—' },
+                  { type: 'text', text: 'Garantía' },
+                  { type: 'text', text: estadoLabelRepuesto },
+                ],
+              },
+            ])
+          }
+          enviados++
+        } catch (err) {
+          console.error(`[notificarRepuestoSupervisores] Error notificando a ${s.nombre}:`, err)
+        }
+      }),
+    )
+
+    return { enviados, total: destinatarios.length }
+  } catch (err) {
+    console.error('[notificarRepuestoSupervisores] Error general:', err)
+    return { enviados: 0, total: 0, error: err instanceof Error ? err.message : 'Error interno' }
   }
 }
 

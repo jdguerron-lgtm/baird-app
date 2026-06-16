@@ -1,7 +1,9 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-06-12 (notificaciones de repuesto a técnico y supervisor).
+> Última actualización: 2026-06-16 (`supervisor_repuesto_garantia_v1` ampliada con Modelo + Diagnóstico).
+
+> 🆕 **Cambios 2026-06-16:** `supervisor_repuesto_garantia_v1` ampliada de **7 a 9 params** — ahora incluye **Modelo** del equipo (prefijo `[Modelo: X]` de `novedades_equipo`) y **Diagnóstico del técnico** (`triaje_resultado.diagnostico_tecnico`), además de SKU y dirección que ya tenía. Verificado con `--check`: la plantilla **nunca llegó a Meta** (solo están `supervisor_bienvenida_v1` y `supervisor_cambio_estado_v1`), así que se amplió en sitio en vez de crear `_v2`. `notificarCambioEstado()` sigue cayendo a la genérica mientras Meta no apruebe → **sin regresión**. Falta subir a Meta para que el aviso enriquecido salga en vivo.
 
 > 🆕 **Cambios 2026-06-12 (repuestos → técnico + supervisor):** tres plantillas nuevas, **pendientes de subir a Meta** (no deployar sin `APPROVED`):
 > - `esperando_repuesto_tecnico_v1` (NUEVA) — al aprobarse la espera del repuesto (garantía), el técnico recibe No. de garantía + SKU + dirección del cliente. Disparada por `enviarEsperandoRepuestoTecnico()`.
@@ -272,13 +274,13 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Excepción (2026-06-12)**: para transiciones a `esperando_repuesto` / `repuesto_recibido` de servicios en **garantía**, `notificarCambioEstado` envía `supervisor_repuesto_garantia_v1` (con datos del repuesto) en lugar de esta genérica — con fallback a esta si aquella falla (p.ej. aún no aprobada en Meta).
 
 #### `supervisor_repuesto_garantia_v1` ⏳ pendiente de subir a Meta
-- **En script** ✅ (nueva 2026-06-12)
+- **En script** ✅ (nueva 2026-06-12; ampliada a 9 params 2026-06-16)
 - **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` cuando `es_garantia=true` y `estadoNuevo` ∈ {`esperando_repuesto`, `repuesto_recibido`} — cubre `/api/verificar-paso`, `/api/repuesto-recibido` y cambios manuales de admin. Mismo filtrado por supervisor (`ambito`/`marca`/`estados`) que la genérica.
 - **Destino**: cada supervisor activo cuyo filtro matchea
 - **Header**: TEXT — "Actualización de repuesto"
-- **Body** (7 params): `supervisor_nombre`, `novedad` ("Repuesto requerido" | "Repuesto entregado al cliente"), `cliente`, `equipo`, `numero_garantia` (= `numero_serie_factura`), `sku` (lista de `repuestos_pendientes`, excluye cancelados), `direccion` (dirección + zona + ciudad)
+- **Body** (9 params): `supervisor_nombre`, `novedad` ("Repuesto requerido" | "Repuesto entregado al cliente"), `cliente`, `equipo`, `modelo` (prefijo `[Modelo: X]` de `novedades_equipo`; '—' si no viene), `numero_garantia` (= `numero_serie_factura`), `sku` (lista de `repuestos_pendientes`, excluye cancelados), `direccion` (dirección + zona + ciudad), `diagnostico` (`triaje_resultado.diagnostico_tecnico`, saneado a una línea, tope 200; 'Diagnóstico realizado' si no hay)
 - **Sin botón** (informativo)
-- **Propósito**: que el supervisor tenga los datos con los que se gestiona el repuesto ante la marca (No. de garantía, SKU, dirección de despacho) sin abrir el panel. En **particular** los eventos de repuesto siguen llegando con la genérica `supervisor_cambio_estado_v1` (se mantiene como estaba).
+- **Propósito**: que el supervisor tenga los datos con los que se gestiona el repuesto ante la marca (modelo del equipo, No. de garantía, SKU, dirección de despacho y el diagnóstico del técnico) sin abrir el panel. En **particular** los eventos de repuesto siguen llegando con la genérica `supervisor_cambio_estado_v1` (se mantiene como estaba).
 - **Nota**: mientras Meta no la apruebe, `notificarCambioEstado` cae automáticamente a la genérica — no se pierde el aviso.
 
 #### `supervisor_bienvenida_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30)
