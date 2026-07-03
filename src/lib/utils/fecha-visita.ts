@@ -132,6 +132,29 @@ export function fechaColombiaMasDias(dias: number, ahora: Date = new Date()): st
   return base.toISOString().slice(0, 10)
 }
 
+const DIAS_LARGOS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const MESES_LARGOS_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+]
+
+/**
+ * Texto largo "lunes, 6 de mayo" (TZ Colombia) para un día YYYY-MM-DD. Es el
+ * formato canónico que consume `parsearFechaVisita` ("D de MES") y el que arma
+ * el HorarioSelector del cliente, así que el `horario_confirmado` que escribe
+ * el admin desde el calendario queda idéntico al del flujo self-service.
+ *
+ * Determinístico sobre YMD puro (no usa Intl/locale del runtime): el día de la
+ * semana sale de `getUTCDay()` de la fecha construida con `Date.UTC`, leyendo
+ * los mismos campos UTC con los que se construye — sin drift de zona.
+ */
+export function formatearFechaLargaCO(fechaYMD: string): string {
+  const [y, m, d] = fechaYMD.split('-').map(Number)
+  const fecha = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
+  const diaSemana = DIAS_LARGOS_ES[fecha.getUTCDay()]
+  return `${diaSemana}, ${d} de ${MESES_LARGOS_ES[m - 1]}`
+}
+
 /**
  * true si la fecha de visita (ISO timestamptz) cae en un día calendario CO
  * estrictamente anterior a hoy. El mismo día NO cuenta como pasado (la franja

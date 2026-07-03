@@ -82,7 +82,11 @@ export function CodigoFallaSelector({ tipoEquipo, diagnosticoTexto, value, onCha
   // Items to display in modal
   const displayItems = busqueda.length >= 2 ? resultadosBusqueda : autoSugerencias
 
-  // Focus search when modal opens
+  // Sincroniza el estado del buscador con la apertura/cierre del modal: enfoca al
+  // abrir y limpia búsqueda/clarificación al cerrar. Los resets son a valores
+  // constantes (no producen cascada); react-hooks/set-state-in-effect los marca
+  // igual, por eso el disable acotado a este efecto.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (open) {
       setTimeout(() => searchRef.current?.focus(), 300)
@@ -92,6 +96,7 @@ export function CodigoFallaSelector({ tipoEquipo, diagnosticoTexto, value, onCha
       setShowClarification(false)
     }
   }, [open, needsClarification, value])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSelect = useCallback((codigo: CodigoFalla) => {
     onChange(codigo)

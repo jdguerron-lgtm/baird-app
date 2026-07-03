@@ -347,6 +347,10 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
  *     catálogo ÷ 1.309 en tarifa fija, o el costo cotizado tras diagnóstico).
  */
 function PagoLabel({ servicio }: { servicio: Servicio }) {
+  // Reloj leído una sola vez al montar: mantiene el render puro (evita Date.now()
+  // en cada re-render, que la regla react-hooks/purity marca como impuro).
+  const [ahoraMs] = useState(() => Date.now())
+
   if (!servicio.es_garantia) {
     return (
       <p className="text-sm font-bold text-green-700">${formatCOP(servicio.pago_tecnico)} COP</p>
@@ -355,7 +359,7 @@ function PagoLabel({ servicio }: { servicio: Servicio }) {
 
   const complejidad = servicio.triaje_resultado?.complejidad ?? null
   const diasSolucion = Math.floor(
-    (Date.now() - new Date(servicio.created_at).getTime()) / (1000 * 60 * 60 * 24)
+    (ahoraMs - new Date(servicio.created_at).getTime()) / (1000 * 60 * 60 * 24)
   )
   const breakdown = estimarPagoTecnicoGarantia({
     complejidad,

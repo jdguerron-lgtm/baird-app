@@ -97,6 +97,22 @@ function isoDeSlot(fechaYMD: string, horaInicio: number): string {
 }
 
 /**
+ * `fecha_visita_at` (ISO) para un día YYYY-MM-DD + una franja (`value` de
+ * FRANJAS_HORARIO). Produce el MISMO timestamp que `parsearFechaVisita` para ese
+ * día+franja, así que cuenta contra el mismo slot de cupo. A diferencia de
+ * `parsearFechaVisita`, NO infiere el año (recibe el YMD explícito), por lo que
+ * no rota a +1 año en fechas cercanas — pensado para el calendario del admin,
+ * donde la fecha se elige sin ambigüedad. null si la franja no está en el
+ * catálogo o el YMD está mal formado.
+ */
+export function materializarFechaVisita(fechaYMD: string, franjaValue: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaYMD)) return null
+  const franja = FRANJAS_HORARIO.find(f => f.value === franjaValue)
+  if (!franja) return null
+  return isoDeSlot(fechaYMD, franja.horaInicio)
+}
+
+/**
  * Franjas SIN cupo para un día dado (YYYY-MM-DD). Para que la UI las
  * desactive antes de que el cliente intente confirmar. Ante error de BD
  * devuelve [] (fail-open — el guard real es validarHorarioAgendable).

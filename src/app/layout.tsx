@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import Script from 'next/script'
 import './globals.css'
+import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
+
+const GOOGLE_ADS_ID = 'AW-18163777075'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -32,6 +36,21 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
+        <BotonWhatsAppFlotante />
+
+        {/* Google tag (gtag.js) — Google Ads conversion tracking */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="google-ads-gtag" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${GOOGLE_ADS_ID}');
+          `}
+        </Script>
       </body>
     </html>
   )

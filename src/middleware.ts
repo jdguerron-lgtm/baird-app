@@ -47,6 +47,13 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
   { path: '/api/carga-masiva', limit: 5, windowMs: 60_000 },
   { path: '/api/completar-servicio', limit: 10, windowMs: 60_000 },
   { path: '/api/confirmar-servicio', limit: 10, windowMs: 60_000 },
+  // Entrada pública del marketplace: un humano envía 1-2 veces; 8/min bloquea
+  // loops de spam (cada solicitud dispara un WhatsApp = costo) sin afectar a un
+  // cliente que reintenta tras un error de red.
+  { path: '/api/solicitar', limit: 8, windowMs: 60_000 },
+  // Telemetría fire-and-forget: tolera ráfagas de reintentos en redes flaky;
+  // throttlearla solo descarta telemetría, no afecta UX.
+  { path: '/api/log-error', limit: 30, windowMs: 60_000 },
 ]
 
 // Token pages: prevent brute-force enumeration

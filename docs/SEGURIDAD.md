@@ -162,6 +162,8 @@ Estado verificado contra producción **2026-05-23** (`pg_tables.rowsecurity`):
 | `solicitud_eventos` | ✅ | `SELECT true`, `INSERT true` | service_role = ALL |
 | `cliente_historial` | ✅ | service_role-only | Solo backend (no-show tracking) |
 
+⚠️ **El "✅ Habilitada" engaña (verificado 2026-06-24):** varias de las tablas con RLS on tienen policies de escritura `USING(true)`/`WITH CHECK(true)` para anon → la RLS está **efectivamente bypasseada en writes**. En particular `tecnicos`, `supervisores` y `llamadas` permiten **DELETE/UPDATE/INSERT anon**. Apretar esto requiere primero mover los writes de la app (registro client-side, singleton server-side) a `service_role`. Ver § 7 ítem 1.
+
 **Backlog activo**: solo quedan `solicitudes_servicio` y `especialidades_tecnico` sin RLS. La habilitación de `solicitudes_servicio` **no es un toggle trivial** — la app entera consulta esa tabla con el `anon_key` (singleton client). Habilitar RLS con policies restrictivas rompe el sitio; habilitarlo con `USING (true)` para anon es seguridad-teatro. Plan correcto (ver § 7): mover queries server-side a `service_role` + diseñar policies anon por token.
 
 ---
@@ -203,6 +205,16 @@ Limitación: no simula el caso "admin logueado en mismo navegador → rol `authe
 
 ## 6. Histórico de incidentes y fixes
 
+### 2026-06-24 — Auditoría de seguridad (Supabase advisors en vivo + lectura de código)
+
+**Capa de auth: sólida.** 12 endpoints admin con `verificarAdmin` (ya usa el singleton); webhooks Meta + Dapta con HMAC + `timingSafeEqual`; security headers single-source en `middleware.ts`; `escapeLikePattern` aplicado en el único `.ilike()`; `/api/gps-ping` **ya valida `portal_token`** (backlog #8 quedó cerrado); `/api/solicitar` recalcula `pago_tecnico` server-side. Varios ítems del viejo improvement-plan estaban ya resueltos.
+
+**Hallazgo nuevo — capa de datos expuesta.** Con el `anon_key` (extraíble del bundle JS) cualquiera puede **DELETE / UPDATE / INSERT en `tecnicos`, `supervisores` y `llamadas`**: esas tablas "tienen RLS" pero con policies `USING(true)` (advisor `0024_permissive_rls_policy`). Borrar técnicos o pisar datos es trivial. **Raíz**: la app escribe con el `anon_key` — `/registro` inserta/borra/actualiza `tecnicos` **client-side**, y el singleton anon hace writes server-side (supervisores, `portal_token`). No se puede apretar sin antes mover esas escrituras a `service_role` (`src/lib/supabase-admin.ts` ya existe **sin usar**). Ver § 7.
+
+**Fixes aplicados (verificados, reversibles):**
+- **Migración `20260624_storage_quitar_listing_publico.sql`**: quitó las policies SELECT de listado de los 3 buckets públicos (advisor `0025_public_bucket_allows_listing`) → **cerró la enumeración de cédulas/fotos/evidencias**. Las lecturas por URL pública (`getPublicUrl`) y los uploads (policies INSERT separadas) quedaron intactos; `verify-flows.mjs` 11/11 antes y después; advisor confirmó las 3 warnings resueltas.
+- **Código** (batch seguro): rate-limit a `/api/solicitar` (8/min) y `/api/log-error` (30/min) en `middleware.ts`; `/api/test-whatsapp` apagado en prod salvo `ENABLE_TEST_ENDPOINTS=true`; `*.log` agregado a `.gitignore`.
+
 ### 2026-05-12 — Endpoints admin sin auth (cotizacion-precios, repuesto-recibido)
 - **Bug**: `/api/cotizacion-precios` y `/api/repuesto-recibido` se crearon sin `verificarAdmin`, asumiendo "solo el admin tiene la URL". Cualquiera con la URL podía:
   - Fijar precios y disparar la cotización al cliente.
@@ -217,15 +229,18 @@ Limitación: no simula el caso "admin logueado en mismo navegador → rol `authe
 Una vez la app esté estable y validada en producción, atender en este orden:
 
 1. **RLS en `solicitudes_servicio`** — máxima prioridad de seguridad. Hoy el `anon_key` (extraíble del bundle JS) da acceso completo a esa tabla (datos del cliente, dirección, teléfono, cotización). La auth admin es de fachada hasta que esto se cierre. **No es un toggle simple** — la app consulta esa tabla con anon-key tanto en cliente como en API routes (singleton); habilitar RLS sin policies rompe el sitio. Plan: (a) crear cliente `service_role` server-side, (b) migrar API routes (admin + flujos protegidos) a ese cliente, (c) diseñar policies anon estrictas por token (`cliente_token`, `horario_token`, `verificacion_paso_token`, `cotizacion.token`, `portal_token`), (d) probar end-to-end cada flujo. Estimación: 1-2 días dedicados + testing. `especialidades_tecnico` también queda sin RLS pero es datos no sensibles — baja prioridad.
-2. **`tecnicos-documentos` → signed URLs** — exposición de PII (cédulas). Implementar en `uploadHelpers.ts`. TTL 1h.
+2. **`tecnicos-documentos` → signed URLs** — exposición de PII (cédulas). Implementar en `uploadHelpers.ts`. TTL 1h. **(Parcial hecho 2026-06-24:** se cerró el *listado* del bucket — ya no se pueden enumerar las cédulas. Falta el bucket privado + signed URLs para que un objeto no sea accesible por su URL exacta.)
 3. **Rate limiting en `/api/solicitar` y `/api/admin/login`** — sin rate limit, spam de solicitudes falsas y brute-force de passwords son posibles. Recomendado: `@vercel/firewall` + Vercel KV.
 4. **MFA (TOTP) en login admin** — Supabase Auth lo soporta nativo. Una contraseña filtrada hoy = acceso total.
 5. **Audit log de acciones admin** — tabla `admin_actions(user_id, action, target_id, payload, at)`. Hoy nada queda registrado de qué admin marcó qué repuesto, fijó qué precio, exportó qué Excel.
 6. **Password policy en Supabase** (Settings > Auth > Password requirements): mín. 12 caracteres + complejidad.
 7. **Server-side guard en `/admin/*`** — convertir el layout a Server Component que verifique sesión antes de servir HTML (evita el flash del HTML estructural).
-8. **`/api/gps-ping` validar `portal_token`** — hoy es público. Que pase token en body y validate.
+8. ✅ **HECHO** — `/api/gps-ping` ya valida `portal_token`: resuelve el técnico por el token y verifica que sea el asignado a ESA solicitud (401/403 si no). Verificado 2026-06-24.
 9. **Webhook Meta — log de eventos** — el webhook recibe estados de delivery (read, delivered, failed) pero no se persiste. Útil para debug.
 10. **Token rotación** — para `portal_token` específicamente. Si un técnico se va o filtra, hoy hay que generar UUID manual en SQL. Endpoint admin "regenerar portal_token".
+11. **Apretar policies de write anon** (advisor `0024_permissive_rls_policy`) — `tecnicos`, `supervisores`, `llamadas` permiten DELETE/UPDATE/INSERT anon vía `USING(true)`. Mismo prerequisito que el ítem 1: mover los writes de la app a `service_role`, luego reemplazar las policies anon por unas restrictivas (o quitarlas y dejar solo `service_role`). El INSERT anon de `tecnicos` lo necesita `/registro` (client-side) → o se crea un API route server-side para el registro, o se mantiene una policy INSERT acotada.
+12. **`search_path` mutable en 5 funciones** (`normalizar_telefono_co` + 4 triggers de normalización) — advisor `0011_function_search_path_mutable`. Fix: `ALTER FUNCTION … SET search_path = public` (behavior-neutral; solo usan `public` + built-ins). ⚠️ **Sin red automática**: `verify-flows.mjs` no testea inserts que disparan el trigger → aplicar con una prueba de registro/solicitud manual inmediatamente después.
+13. **Auth dashboard Supabase** (no togglable vía MCP): activar **leaked-password protection** (HaveIBeenPwned, advisor `auth_leaked_password_protection`), **MFA TOTP**, y **password policy ≥12** (Settings → Auth). Una contraseña filtrada hoy = acceso admin total (no hay role check: cualquier user autenticado = admin).
 
 ---
 

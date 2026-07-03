@@ -56,6 +56,9 @@ export default function SupervisoresAdmin() {
     setCargando(false)
   }, [authHeaders])
 
+  // Carga inicial con el patrón idiomático setCargando(true)→await→setCargando(false).
+  // react-hooks/set-state-in-effect lo marca como falso positivo (código correcto).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargar() }, [cargar])
 
   const resetForm = () => {

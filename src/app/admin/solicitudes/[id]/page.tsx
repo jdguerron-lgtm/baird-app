@@ -11,6 +11,9 @@ import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { escapeLikePattern } from '@/lib/utils/format'
 import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
+import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
+import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 
 interface Solicitud {
   id: string
@@ -109,6 +112,13 @@ function actorBadge(actor: string | null): { label: string; clase: string } {
   return ACTOR_BADGES[actor] ?? { label: `🛡️ ${actor}`, clase: ACTOR_BADGES.admin.clase }
 }
 
+/** "lunes, 6 de mayo" para preview del calendario (YYYY-MM-DD). Solo display. */
+function formatFechaLargaLocal(ymd: string): string {
+  if (!ymd) return ''
+  const d = new Date(ymd + 'T12:00:00')
+  return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
 export default function SolicitudDetalle() {
   const params = useParams()
   const id = params.id as string
@@ -123,7 +133,6 @@ export default function SolicitudDetalle() {
   const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
   const [reenviando, setReenviando] = useState(false)
   const [editando, setEditando] = useState(false)
-  const [edicionHorario, setEdicionHorario] = useState('')
   const [edicionDireccion, setEdicionDireccion] = useState('')
   const [edicionCiudad, setEdicionCiudad] = useState('')
   const [edicionZona, setEdicionZona] = useState('')
@@ -150,6 +159,15 @@ export default function SolicitudDetalle() {
   const [nuevaNota, setNuevaNota] = useState('')
   const [guardandoNota, setGuardandoNota] = useState(false)
   const [errorNota, setErrorNota] = useState<string | null>(null)
+  // Cambiar fecha de servicio (calendario + franja → /api/admin/reagendar-solicitud)
+  const [fechaReagenda, setFechaReagenda] = useState('')
+  const [franjaReagenda, setFranjaReagenda] = useState('')
+  const [motivoReagenda, setMotivoReagenda] = useState('')
+  const [reagendando, setReagendando] = useState(false)
+  const [resultadoReagenda, setResultadoReagenda] = useState<{ ok: boolean; mensaje: string } | null>(null)
+  // Franjas sin cupo para la fecha elegida — se MUESTRAN como aviso pero NO se
+  // bloquean (el admin puede forzar). El guard real (no bloqueante) está en el route.
+  const franjasLlenasReagenda = useFranjasLlenas(fechaReagenda)
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -200,7 +218,6 @@ export default function SolicitudDetalle() {
 
   const abrirEdicion = () => {
     if (!solicitud) return
-    setEdicionHorario(solicitud.horario_confirmado ?? '')
     setEdicionDireccion(solicitud.direccion ?? '')
     setEdicionCiudad(solicitud.ciudad_pueblo ?? '')
     setEdicionZona(solicitud.zona_servicio ?? '')
@@ -216,9 +233,6 @@ export default function SolicitudDetalle() {
     setErrorEdicion(null)
 
     const cambios: Record<string, string> = {}
-    if (edicionHorario.trim() && edicionHorario.trim() !== (solicitud.horario_confirmado ?? '')) {
-      cambios.horario_confirmado = edicionHorario.trim()
-    }
     if (edicionDireccion.trim() && edicionDireccion.trim() !== solicitud.direccion) {
       cambios.direccion = edicionDireccion.trim()
     }
@@ -270,6 +284,72 @@ export default function SolicitudDetalle() {
       setErrorEdicion(e instanceof Error ? e.message : 'Error de conexión')
     }
     setGuardandoEdicion(false)
+  }
+
+  async function handleReagendar() {
+    if (!solicitud) return
+    if (!fechaReagenda) { setResultadoReagenda({ ok: false, mensaje: 'Elegí una fecha.' }); return }
+    if (!franjaReagenda) { setResultadoReagenda({ ok: false, mensaje: 'Elegí una franja horaria.' }); return }
+
+    const llena = franjasLlenasReagenda.includes(franjaReagenda)
+    const confirmado = window.confirm(
+      `¿Reprogramar el servicio para ${formatFechaLargaLocal(fechaReagenda)} · ${franjaReagenda}?\n\n` +
+      (llena ? '⚠️ Esa franja ya está llena para ese día — la estás forzando.\n\n' : '') +
+      'Se le avisará por WhatsApp al cliente, al técnico asignado y a los supervisores con visibilidad del servicio.',
+    )
+    if (!confirmado) return
+
+    setReagendando(true)
+    setResultadoReagenda(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoReagenda({ ok: false, mensaje: 'Sesión expirada — vuelve a iniciar sesión.' })
+        setReagendando(false)
+        return
+      }
+      const res = await fetch('/api/admin/reagendar-solicitud', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          id: solicitud.id,
+          fecha: fechaReagenda,
+          franja: franjaReagenda,
+          motivo: motivoReagenda.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setResultadoReagenda({ ok: false, mensaje: data.error || 'No se pudo reprogramar.' })
+        setReagendando(false)
+        return
+      }
+
+      // Reflejar en memoria para que el card "Horario confirmado" muestre la
+      // nueva fecha sin recargar (el polling también la traería en ≤10s).
+      const nowIso = new Date().toISOString()
+      setSolicitud(prev => prev ? {
+        ...prev,
+        horario_confirmado: data.horario,
+        horario_confirmado_at: nowIso,
+        ultimo_reagendado_at: nowIso,
+        reagendamientos_count: (prev.reagendamientos_count ?? 0) + 1,
+      } : prev)
+
+      const partes: string[] = [`Cliente ${data.cliente_notificado ? '✅' : '⚠️'}`]
+      if (data.tenia_tecnico) partes.push(`Técnico ${data.tecnico_notificado ? '✅' : '⚠️'}`)
+      const sup = data.supervisores as { enviados: number; total: number } | undefined
+      if (sup && sup.total > 0) partes.push(`Supervisores ${sup.enviados}/${sup.total}`)
+      const avisos = Array.isArray(data.avisos) && data.avisos.length > 0 ? ` · ${data.avisos.join(' ')}` : ''
+      setResultadoReagenda({ ok: true, mensaje: `Fecha reprogramada a ${data.horario}. ${partes.join(' · ')}.${avisos}` })
+      setFechaReagenda(''); setFranjaReagenda(''); setMotivoReagenda('')
+    } catch (e) {
+      setResultadoReagenda({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
+    }
+    setReagendando(false)
   }
 
   const handleAgregarNota = async () => {
@@ -1130,6 +1210,102 @@ export default function SolicitudDetalle() {
         </div>
       </div>
 
+      {/* Cambiar fecha de servicio — calendario (fecha + franja). Materializa
+          fecha_visita_at (aparece en la vista Calendario de /admin/solicitudes) y
+          notifica a cliente, técnico y supervisores. Vía /api/admin/reagendar-solicitud.
+          Reemplaza la edición de horario por texto libre (que no avisaba ni
+          cargaba el calendario). El admin puede forzar fechas/franjas (con aviso). */}
+      <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          Cambiar fecha de servicio
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Elegí la nueva fecha y franja en el calendario. Al guardar se{' '}
+          <strong>notifica por WhatsApp</strong> al cliente, al técnico asignado y a
+          los supervisores con visibilidad del servicio, y la fecha queda cargada en
+          la vista <strong>Calendario</strong>. Podés forzar fechas cercanas o franjas
+          llenas (se avisa, no se bloquea).
+        </p>
+        {solicitud.horario_confirmado && (
+          <p className="text-xs text-gray-500 mb-3">
+            Fecha actual:{' '}
+            <span className="font-semibold text-slate-800">{solicitud.horario_confirmado}</span>
+          </p>
+        )}
+        <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">📅 Nueva fecha</span>
+            <input
+              type="date"
+              value={fechaReagenda}
+              min={fechaColombiaYMD()}
+              onChange={(e) => setFechaReagenda(e.target.value)}
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            />
+            {fechaReagenda && (
+              <span className="block text-[11px] text-gray-500 mt-1 capitalize">
+                {formatFechaLargaLocal(fechaReagenda)}
+              </span>
+            )}
+          </label>
+          <div className="flex-1">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">🕒 Franja horaria</span>
+            <div className="grid grid-cols-2 gap-2 max-w-md">
+              {FRANJAS_HORARIO.map(f => {
+                const llena = franjasLlenasReagenda.includes(f.value)
+                const sel = franjaReagenda === f.value
+                return (
+                  <button
+                    key={f.value}
+                    type="button"
+                    onClick={() => setFranjaReagenda(f.value)}
+                    className={`p-2.5 rounded-lg border-2 text-left transition ${
+                      sel ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-base leading-none">{f.icon}</div>
+                    <div className="text-xs font-medium text-gray-900 mt-1">{f.label}</div>
+                    {llena && <div className="text-[10px] font-semibold text-red-500 mt-0.5">Cupo lleno — forzar</div>}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        <label className="block mt-4 max-w-md">
+          <span className="block text-xs font-semibold text-gray-700 mb-1">Motivo (opcional)</span>
+          <input
+            type="text"
+            value={motivoReagenda}
+            onChange={(e) => setMotivoReagenda(e.target.value)}
+            placeholder="Ej: Cliente pidió cambio por teléfono"
+            className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          />
+        </label>
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={handleReagendar}
+            disabled={reagendando || !fechaReagenda || !franjaReagenda}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {reagendando ? 'Reprogramando…' : '📅 Reprogramar y notificar'}
+          </button>
+          <span className="text-[11px] text-gray-400">
+            A supervisores les llega vía la plantilla <code>supervisor_reagendamiento_v1</code> (requiere aprobación de Meta).
+          </span>
+        </div>
+        {resultadoReagenda && (
+          <div className={`mt-3 rounded-lg p-3 text-sm ${
+            resultadoReagenda.ok
+              ? 'bg-green-50 border border-green-200 text-green-900'
+              : 'bg-amber-50 border border-amber-200 text-amber-900'
+          }`}>
+            {resultadoReagenda.ok ? '✅ ' : '⚠️ '}{resultadoReagenda.mensaje}
+          </div>
+        )}
+      </div>
+
       {/* Full photo gallery — todas las fotos del flujo en un solo lugar.
           Junta evidencias_diagnostico (de triaje_resultado / cotizacion) +
           fotos de completación + firma del técnico (oath) + firma del cliente.
@@ -1961,19 +2137,10 @@ export default function SolicitudDetalle() {
 
             <div className="px-5 py-4 space-y-4">
               <p className="text-xs text-gray-500">
-                Los cambios quedan registrados en el audit log. Si modificas el horario, el cliente y técnico <strong>NO</strong> reciben WhatsApp automáticamente — usa el botón &ldquo;Reenviar último mensaje&rdquo; para avisarles.
+                Los cambios quedan registrados en el audit log y <strong>NO</strong> envían WhatsApp.
+                Para cambiar la <strong>fecha del servicio</strong> (y avisar a cliente, técnico y
+                supervisores), usá &ldquo;Cambiar fecha de servicio&rdquo;.
               </p>
-
-              <label className="block">
-                <span className="block text-xs font-semibold text-gray-700 mb-1">Horario confirmado</span>
-                <input
-                  type="text"
-                  value={edicionHorario}
-                  onChange={(e) => setEdicionHorario(e.target.value)}
-                  placeholder="Ej: Lunes 12 de mayo · 3pm-6pm"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                />
-              </label>
 
               <label className="block">
                 <span className="block text-xs font-semibold text-gray-700 mb-1">Dirección</span>

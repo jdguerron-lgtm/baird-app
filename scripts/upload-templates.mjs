@@ -12,6 +12,8 @@
  *   WABA_ID env var (defaults to Baird Service WABA: 2354953275016882).
  */
 
+import { readFileSync, existsSync, statSync } from 'node:fs'
+
 const WABA_ID = process.env.WABA_ID || '2354953275016882'
 const TOKEN = process.env.WHATSAPP_API_TOKEN
 const API_BASE = 'https://graph.facebook.com/v22.0'
@@ -827,6 +829,68 @@ const TEMPLATES = [
       { type: 'FOOTER', text: 'Baird Service — Supervisión' },
     ],
   },
+
+  // 24. Reprogramación de FECHA por el admin — notificar a SUPERVISORES.
+  //     v1 (2026-06-26): cuando el admin cambia la fecha del servicio desde el
+  //     panel (POST /api/admin/reagendar-solicitud), los supervisores con
+  //     visibilidad del servicio reciben la nueva fecha. No es un cambio de
+  //     estado, así que no la cubre supervisor_cambio_estado_v1. Funciona fuera
+  //     de la ventana 24h (los supervisores no chatean con el número).
+  //     {{1}}=nombre supervisor, {{2}}=cliente, {{3}}=equipo, {{4}}=ciudad,
+  //     {{5}}=tipo (Garantía|Particular), {{6}}=nueva fecha.
+  //     Llamado por: notificarReagendamientoSupervisores() en whatsapp.service.
+  {
+    name: 'supervisor_reagendamiento_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Servicio reprogramado',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, se reprogramó la fecha de un servicio que supervisas:\n\n' +
+          '👤 Cliente: {{2}}\n' +
+          '🔧 Equipo: {{3}}\n' +
+          '📍 Ciudad: {{4}}\n' +
+          '📋 Tipo: {{5}}\n' +
+          '📅 Nueva fecha: {{6}}\n\n' +
+          'Es solo para tu visibilidad; no necesitas hacer nada.',
+        example: {
+          body_text: [['Andrés', 'María Gómez', 'Lavadora Mabe', 'Bogotá', 'Garantía', 'lunes, 6 de julio · 8am-12pm']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+    ],
+  },
+
+  // 23. Resumen semanal de operaciones — para SUPERVISORES. Header de DOCUMENTO (PDF).
+  //     v1 (2026-06-24): el PDF real se adjunta en el ENVÍO como header.document.link
+  //     (URL pública del Storage); acá solo va una MUESTRA para que Meta apruebe —
+  //     el `header_handle` se genera al vuelo desde `_sampleDoc` (Resumable Upload API).
+  //     Funciona fuera de la ventana 24h (los supervisores no chatean con el número).
+  //     {{1}}=nombre supervisor, {{2}}=semana/corte. Sin botón.
+  //     Enviar con: scripts/enviar-resumen-supervisores.mjs (solo si está APPROVED).
+  {
+    name: 'resumen_semanal_supervisores_v1',
+    category: 'UTILITY',
+    language: 'es',
+    _sampleDoc: 'Resumen_Semanal_Baird_2026-06-21.pdf',
+    components: [
+      { type: 'HEADER', format: 'DOCUMENT' },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, te compartimos el resumen semanal de operaciones de Baird Service correspondiente a {{2}}.\n\n' +
+          'Incluye el estado de los servicios activos, los repuestos en espera y las inconsistencias a revisar. Cualquier novedad, quedamos atentos.',
+        example: { body_text: [['Andrés', 'la semana del 15 al 21 de junio de 2026']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+    ],
+  },
 ]
 
 async function listExisting() {
@@ -838,14 +902,49 @@ async function listExisting() {
   return body.data
 }
 
+let _appIdCache = null
+async function getAppId() {
+  if (_appIdCache) return _appIdCache
+  if (process.env.WHATSAPP_APP_ID) return (_appIdCache = process.env.WHATSAPP_APP_ID)
+  const r = await fetch(`${API_BASE}/debug_token?input_token=${encodeURIComponent(TOKEN)}&access_token=${encodeURIComponent(TOKEN)}`)
+  const b = await r.json()
+  if (!b?.data?.app_id) throw new Error('No pude obtener app_id via debug_token: ' + JSON.stringify(b))
+  return (_appIdCache = b.data.app_id)
+}
+
+// Resumable Upload API: sube un archivo de muestra y devuelve el header_handle
+// que exige Meta para aprobar plantillas con header de DOCUMENTO.
+async function getHeaderHandle(sampleFile) {
+  if (!existsSync(sampleFile)) throw new Error('Falta archivo de muestra: ' + sampleFile)
+  const appId = await getAppId()
+  const buf = readFileSync(sampleFile)
+  const size = statSync(sampleFile).size
+  const cs = await fetch(`${API_BASE}/${appId}/uploads?file_name=muestra.pdf&file_length=${size}&file_type=application%2Fpdf&access_token=${encodeURIComponent(TOKEN)}`, { method: 'POST' })
+  const csb = await cs.json()
+  if (!cs.ok || !csb.id) throw new Error('Crear sesión de subida falló: ' + JSON.stringify(csb))
+  const up = await fetch(`${API_BASE}/${csb.id}`, { method: 'POST', headers: { Authorization: `OAuth ${TOKEN}`, file_offset: '0' }, body: buf })
+  const upb = await up.json()
+  if (!up.ok || !upb.h) throw new Error('Subir muestra falló: ' + JSON.stringify(upb))
+  return upb.h
+}
+
 async function uploadOne(tpl) {
+  // Header de documento: generar un header_handle fresco desde el archivo de muestra.
+  let payload = tpl
+  if (tpl._sampleDoc) {
+    const handle = await getHeaderHandle(tpl._sampleDoc)
+    payload = JSON.parse(JSON.stringify(tpl))
+    delete payload._sampleDoc
+    const header = payload.components.find(c => c.type === 'HEADER')
+    if (header) header.example = { header_handle: [handle] }
+  }
   const res = await fetch(`${API_BASE}/${WABA_ID}/message_templates`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${TOKEN}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(tpl),
+    body: JSON.stringify(payload),
   })
 
   const body = await res.json()

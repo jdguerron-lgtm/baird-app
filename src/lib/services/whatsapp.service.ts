@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
-import { ESTADO_LABELS } from '@/lib/constants/estados'
+import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { validarHorarioAgendable } from '@/lib/services/agenda.service'
 import {
@@ -417,7 +417,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     ? sol.novedades_equipo.replace(notifModeloMatch[0], '').trim()
     : sol.novedades_equipo
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const problema = notifNovedades.substring(0, 100)
   // Ubicación para el técnico: dirección exacta + zona + ciudad. La dirección
   // le permite evaluar distancia/parqueo/acceso antes de aceptar. Si no está
@@ -669,7 +669,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   const clienteDigits = phoneToDigits(sol.cliente_telefono)
 
   if (tecnico) {
-    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const equipo = equipoConGarantia(sol)
     const direccion = `${sol.direccion}, ${sol.zona_servicio}`
     // Pago mostrado al técnico tras ganar el servicio.
     //
@@ -723,7 +723,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
           parameters: [
             { type: 'text', text: sol.cliente_nombre },
             { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: equipoConGarantia(sol) },
             { type: 'text', text: horarioServicio },
             { type: 'text', text: `+${tecnicoDigits}` },
           ],
@@ -816,7 +816,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 export async function enviarSeleccionHorarioCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_visita_1, horario_visita_2, horario_token, horario_confirmado_at, estado')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_visita_1, horario_visita_2, horario_token, horario_confirmado_at, estado, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -865,7 +865,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
     }
   }
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]
 
   try {
@@ -900,7 +900,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
 export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_token, horario_recordatorio_at')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_token, horario_recordatorio_at, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -908,7 +908,7 @@ export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ 
   if (!sol.horario_token) return { ok: false, error: 'horario_token no existe' }
   if (sol.horario_recordatorio_at) return { ok: false, error: 'Recordatorio ya enviado' }
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]
 
   try {
@@ -977,7 +977,7 @@ export function describirSiguientePaso(
 export async function enviarVerificacionPasoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, triaje_resultado, siguiente_paso, siguiente_paso_detalle, verificacion_paso_token')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, triaje_resultado, siguiente_paso, siguiente_paso_detalle, verificacion_paso_token, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -1006,7 +1006,7 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
   const diagnostico = (triajeJson.diagnostico_tecnico ?? 'Diagnóstico realizado').substring(0, 200)
   const accion = describirSiguientePaso(sol.siguiente_paso, sol.siguiente_paso_detalle, repuesto).substring(0, 250)
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
@@ -1056,7 +1056,7 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
 export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, reprogramacion_token')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, reprogramacion_token, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -1091,7 +1091,7 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
   const { data: tec } = await supabase
     .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]
   const tecnico = tec?.nombre_completo ?? 'Técnico asignado'
 
@@ -1136,7 +1136,7 @@ export async function notificarTecnicoVisitaReprogramada(
 ): Promise<{ ok: boolean; error?: string }> {
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -1153,7 +1153,7 @@ export async function notificarTecnicoVisitaReprogramada(
   if (!tec.portal_token) return { ok: false, error: 'Técnico sin portal_token' }
 
   const nombreTec = tec.nombre_completo.split(' ')[0]
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
 
   try {
     await enviarPlantilla(tec.whatsapp, 'repuesto_recibido_tecnico_v1', 'es', [
@@ -1202,6 +1202,29 @@ function direccionUnaLinea(sol: {
   ciudad_pueblo?: string | null
 }): string {
   return [sol.direccion, sol.zona_servicio, sol.ciudad_pueblo].filter(Boolean).join(', ') || '—'
+}
+
+/**
+ * Texto del equipo para los mensajes WhatsApp, con el No. de garantía anexado
+ * cuando aplica: `"Nevera Mabe · Garantía 9415091231"`. Para servicios que NO
+ * son garantía (o sin número cargado) devuelve solo el equipo: `"Nevera LG"`.
+ *
+ * Se usa en TODOS los mensajes de actualización del flujo garantía para que el
+ * supervisor/técnico/cliente vea el No. de garantía (orden de la marca) sin
+ * re-aprobar plantillas en Meta — el número viaja dentro del parámetro `equipo`
+ * que esas plantillas ya tienen. NO se usa en los mensajes que ya llevan el
+ * número en su propia línea (esperando_repuesto_tecnico_v1,
+ * supervisor_repuesto_garantia_v1) para no duplicarlo.
+ */
+function equipoConGarantia(sol: {
+  tipo_equipo?: string | null
+  marca_equipo?: string | null
+  es_garantia?: boolean | null
+  numero_serie_factura?: string | null
+}): string {
+  const base = `${sol.tipo_equipo ?? ''} ${sol.marca_equipo ?? ''}`.trim()
+  const num = sol.numero_serie_factura?.replace(/\s+/g, ' ').trim()
+  return sol.es_garantia && num ? `${base} · Garantía ${num}` : base
 }
 
 /**
@@ -1342,7 +1365,7 @@ export async function notificarCambioEstado(
     })
     if (destinatarios.length === 0) return
 
-    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const equipoPlano = `${sol.tipo_equipo} ${sol.marca_equipo}`
     const tipoFlujo = sol.es_garantia ? 'Garantía' : 'Particular'
     const estadoLabel = ESTADO_LABELS[estadoNuevo] ?? estadoNuevo
 
@@ -1372,7 +1395,7 @@ export async function notificarCambioEstado(
                     { type: 'text', text: s.nombre.split(' ')[0] },
                     { type: 'text', text: detalleRepuesto.novedad },
                     { type: 'text', text: sol.cliente_nombre },
-                    { type: 'text', text: equipo },
+                    { type: 'text', text: equipoPlano },
                     { type: 'text', text: detalleRepuesto.modelo },
                     { type: 'text', text: detalleRepuesto.garantia },
                     { type: 'text', text: detalleRepuesto.skus },
@@ -1394,7 +1417,7 @@ export async function notificarCambioEstado(
               parameters: [
                 { type: 'text', text: s.nombre.split(' ')[0] },
                 { type: 'text', text: sol.cliente_nombre },
-                { type: 'text', text: equipo },
+                { type: 'text', text: equipoConGarantia(sol) },
                 { type: 'text', text: sol.ciudad_pueblo ?? '—' },
                 { type: 'text', text: tipoFlujo },
                 { type: 'text', text: estadoLabel },
@@ -1463,7 +1486,7 @@ export async function notificarRepuestoSupervisores(
       return { enviados: 0, total: 0, error: 'Ningún supervisor con visibilidad de esta marca' }
     }
 
-    const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+    const equipoPlano = `${sol.tipo_equipo} ${sol.marca_equipo}`
     const detalle = {
       novedad: 'Repuesto requerido',
       garantia: sol.numero_serie_factura ?? '—',
@@ -1486,7 +1509,7 @@ export async function notificarRepuestoSupervisores(
                   { type: 'text', text: s.nombre.split(' ')[0] },
                   { type: 'text', text: detalle.novedad },
                   { type: 'text', text: sol.cliente_nombre },
-                  { type: 'text', text: equipo },
+                  { type: 'text', text: equipoPlano },
                   { type: 'text', text: detalle.modelo },
                   { type: 'text', text: detalle.garantia },
                   { type: 'text', text: detalle.skus },
@@ -1504,7 +1527,7 @@ export async function notificarRepuestoSupervisores(
                 parameters: [
                   { type: 'text', text: s.nombre.split(' ')[0] },
                   { type: 'text', text: sol.cliente_nombre },
-                  { type: 'text', text: equipo },
+                  { type: 'text', text: equipoConGarantia(sol) },
                   { type: 'text', text: sol.ciudad_pueblo ?? '—' },
                   { type: 'text', text: 'Garantía' },
                   { type: 'text', text: estadoLabelRepuesto },
@@ -1608,7 +1631,7 @@ export async function enviarEsperandoRepuestoCliente(
 ): Promise<{ ok: boolean; error?: string }> {
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -1617,7 +1640,7 @@ export async function enviarEsperandoRepuestoCliente(
   const { data: tec } = await supabase
     .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
@@ -1709,7 +1732,7 @@ export async function enviarEsperandoRepuestoTecnico(solicitudId: string): Promi
 export async function enviarRepuestoLlegadoTecnico(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -1726,7 +1749,7 @@ export async function enviarRepuestoLlegadoTecnico(solicitudId: string): Promise
         type: 'body',
         parameters: [
           { type: 'text', text: tec.nombre_completo.split(' ')[0] },
-          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: equipoConGarantia(sol) },
           { type: 'text', text: sol.cliente_nombre },
         ],
       },
@@ -1747,7 +1770,7 @@ export async function enviarFinalizadoSinReparacion(
 ): Promise<{ ok: boolean; error?: string }> {
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, es_garantia, numero_serie_factura')
     .eq('id', solicitudId)
     .single()
 
@@ -1756,7 +1779,7 @@ export async function enviarFinalizadoSinReparacion(
   const { data: tec } = await supabase
     .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
@@ -2048,7 +2071,7 @@ export async function procesarCancelacionCliente(
 ): Promise<CancelacionResult> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, horario_confirmado_at, es_garantia')
+    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, horario_confirmado_at, es_garantia, numero_serie_factura')
     .eq('cliente_token', clienteToken)
     .single()
 
@@ -2087,7 +2110,7 @@ export async function procesarCancelacionCliente(
     .eq('estado', 'enviado')
 
   // 3. Notificar al cliente (texto libre — está dentro de su 24h por la interacción)
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const clienteNombre = sol.cliente_nombre.split(' ')[0]
   await enviarMensajeTexto(
     sol.cliente_telefono,
@@ -2164,7 +2187,7 @@ export async function procesarReagendamientoCliente(
 
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, reagendamientos_count, es_garantia')
+    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, reagendamientos_count, es_garantia, numero_serie_factura')
     .eq('cliente_token', clienteToken)
     .single()
 
@@ -2223,7 +2246,7 @@ export async function procesarReagendamientoCliente(
   // registrarEvento:false — abajo se inserta el evento dedicado 'reagendamiento'.
   await notificarCambioEstado(sol.id, sol.estado, estadoNuevo, { registrarEvento: false })
 
-  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const equipo = equipoConGarantia(sol)
   const clienteNombre = sol.cliente_nombre.split(' ')[0]
 
   // Confirmar al cliente
@@ -2264,6 +2287,207 @@ export async function procesarReagendamientoCliente(
   })
 
   return { ok: true, estado_previo: sol.estado, reagendamientos_count: count + 1 }
+}
+
+/**
+ * Notifica a los supervisores con visibilidad del servicio que su FECHA fue
+ * reprogramada por el admin (plantilla supervisor_reagendamiento_v1). Mismo
+ * filtrado por ámbito/marca que notificarCambioEstado, pero SIN filtro por
+ * `estados`: no es un cambio de estado sino un evento on-demand (igual que
+ * notificarRepuestoSupervisores). Funciona fuera de la ventana 24h (los
+ * supervisores no chatean con el número del negocio). NUNCA lanza.
+ *
+ * ⚠️ El bloque de parámetros (6) está duplicado a propósito respecto a otras
+ * plantillas de supervisor para no acoplar paths. Si cambian los params de
+ * supervisor_reagendamiento_v1, actualizar aquí y en scripts/upload-templates.mjs.
+ */
+async function notificarReagendamientoSupervisores(
+  sol: {
+    cliente_nombre: string
+    tipo_equipo: string | null
+    marca_equipo: string | null
+    ciudad_pueblo: string | null
+    es_garantia: boolean | null
+    numero_serie_factura: string | null
+  },
+  nuevoHorario: string,
+): Promise<{ enviados: number; total: number }> {
+  try {
+    const { data: supervisores } = await supabase
+      .from('supervisores')
+      .select('nombre, whatsapp, ambito, marca')
+      .eq('activo', true)
+    if (!supervisores || supervisores.length === 0) return { enviados: 0, total: 0 }
+
+    const marcaSol = normalizeForMatch(sol.marca_equipo ?? '')
+    const destinatarios = supervisores.filter(s => {
+      if (s.ambito === 'garantia' && !sol.es_garantia) return false
+      if (s.ambito === 'particular' && sol.es_garantia) return false
+      if (s.marca && normalizeForMatch(s.marca) !== marcaSol) return false
+      return true
+    })
+    if (destinatarios.length === 0) return { enviados: 0, total: 0 }
+
+    const tipoFlujo = sol.es_garantia ? 'Garantía' : 'Particular'
+
+    const results = await Promise.all(
+      destinatarios.map(async s => {
+        try {
+          await enviarPlantilla(s.whatsapp, 'supervisor_reagendamiento_v1', 'es', [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: s.nombre.split(' ')[0] },
+                { type: 'text', text: sol.cliente_nombre },
+                { type: 'text', text: equipoConGarantia(sol) },
+                { type: 'text', text: sol.ciudad_pueblo ?? '—' },
+                { type: 'text', text: tipoFlujo },
+                { type: 'text', text: nuevoHorario },
+              ],
+            },
+          ])
+          return true
+        } catch (err) {
+          console.error(`[notificarReagendamientoSupervisores] Error notificando a ${s.nombre}:`, err)
+          return false
+        }
+      }),
+    )
+    return { enviados: results.filter(Boolean).length, total: destinatarios.length }
+  } catch (err) {
+    console.error('[notificarReagendamientoSupervisores] Error general:', err)
+    return { enviados: 0, total: 0 }
+  }
+}
+
+export interface ReagendamientoAdminResult {
+  ok: boolean
+  error?: string
+  estado?: string
+  horarioPrevio?: string | null
+  teniaTecnico?: boolean
+  clienteNotificado?: boolean
+  tecnicoNotificado?: boolean
+  supervisores?: { enviados: number; total: number }
+}
+
+/**
+ * Reagendamiento iniciado por el ADMIN desde el panel
+ * (/admin/solicitudes/[id], POST /api/admin/reagendar-solicitud).
+ *
+ * A diferencia de `procesarReagendamientoCliente`:
+ *   - Se identifica por `id` (no por cliente_token) y NO aplica el cap de
+ *     MAX_REAGENDAMIENTOS_CLIENTE: el admin puede forzar.
+ *   - NO cambia el estado del servicio (solo mueve la fecha). Por eso notifica a
+ *     supervisores con plantilla propia (supervisor_reagendamiento_v1) en vez de
+ *     depender de notificarCambioEstado, que solo dispara si el estado cambia.
+ *   - `fecha_visita_at` ya viene materializado (agenda.service) para que la vista
+ *     de calendario del panel ubique el servicio en su slot.
+ *
+ * Notifica a los tres: cliente y técnico por texto libre (mejor esfuerzo dentro
+ * de la ventana 24h), supervisores por plantilla (fuera de ventana). NUNCA lanza
+ * por un fallo de notificación — la fecha ya quedó guardada.
+ */
+export async function procesarReagendamientoAdmin(
+  solicitudId: string,
+  nuevoHorario: string,
+  fechaVisitaAt: string | null,
+): Promise<ReagendamientoAdminResult> {
+  const horarioLimpio = nuevoHorario.trim()
+  if (!horarioLimpio || horarioLimpio.length > 200) {
+    return { ok: false, error: 'Horario inválido' }
+  }
+
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, horario_confirmado, reagendamientos_count, es_garantia, numero_serie_factura')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  // El admin fuerza fecha/franja, pero reprogramar un servicio ya cerrado
+  // (completado/cancelado/etc.) casi siempre es un error de clic — se bloquea.
+  if (ESTADOS_TERMINALES.has(sol.estado)) {
+    return {
+      ok: false,
+      estado: sol.estado,
+      error: `No se puede reprogramar un servicio en estado "${ESTADO_LABELS[sol.estado] ?? sol.estado}"`,
+    }
+  }
+
+  const count = sol.reagendamientos_count ?? 0
+  const horarioPrevio = sol.horario_confirmado
+  const tieneTecnico = !!sol.tecnico_asignado_id
+  const now = new Date().toISOString()
+
+  const { error: updErr } = await supabase
+    .from('solicitudes_servicio')
+    .update({
+      horario_confirmado: horarioLimpio,
+      horario_confirmado_at: now,
+      // Materializa el slot para la vista de calendario (mismo timestamp que el
+      // cupo de agenda.service). Antes el admin editaba horario como texto libre
+      // y fecha_visita_at quedaba stale → el servicio no aparecía en el calendario.
+      fecha_visita_at: fechaVisitaAt,
+      ultimo_reagendado_at: now,
+      reagendamientos_count: count + 1,
+    })
+    .eq('id', sol.id)
+
+  if (updErr) {
+    return { ok: false, estado: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
+  }
+
+  const equipo = equipoConGarantia(sol)
+  const clienteNombre = sol.cliente_nombre.split(' ')[0]
+
+  // Cliente — texto libre (mejor esfuerzo dentro de la ventana 24h).
+  let clienteNotificado = false
+  try {
+    await enviarMensajeTexto(
+      sol.cliente_telefono,
+      `Hola ${clienteNombre} 👋 Reprogramamos tu servicio de ${equipo}. 📅 Nueva fecha: ${horarioLimpio}. ${tieneTecnico ? 'Ya le avisamos al técnico asignado.' : 'Estamos buscando un técnico verificado y te avisamos cuando alguno acepte.'}`,
+    )
+    clienteNotificado = true
+  } catch (err) {
+    console.error('[procesarReagendamientoAdmin] error notificando cliente:', err)
+  }
+
+  // Técnico asignado — texto libre.
+  let tecnicoNotificado = false
+  if (tieneTecnico && sol.tecnico_asignado_id) {
+    const { data: tec } = await supabase
+      .from('tecnicos')
+      .select('whatsapp, nombre_completo')
+      .eq('id', sol.tecnico_asignado_id)
+      .single()
+    if (tec?.whatsapp) {
+      const tecNombre = tec.nombre_completo.split(' ')[0]
+      try {
+        await enviarMensajeTexto(
+          tec.whatsapp,
+          `Hola ${tecNombre}, Baird reprogramó el servicio de ${sol.cliente_nombre} (${equipo}). 📅 Nueva fecha: ${horarioLimpio}. Si no puedes asistir, contáctanos por este chat.`,
+        )
+        tecnicoNotificado = true
+      } catch (err) {
+        console.error('[procesarReagendamientoAdmin] error notificando técnico:', err)
+      }
+    }
+  }
+
+  // Supervisores — plantilla (fuera de la ventana 24h).
+  const supervisores = await notificarReagendamientoSupervisores(sol, horarioLimpio)
+
+  return {
+    ok: true,
+    estado: sol.estado,
+    horarioPrevio,
+    teniaTecnico: tieneTecnico,
+    clienteNotificado,
+    tecnicoNotificado,
+    supervisores,
+  }
 }
 
 /**

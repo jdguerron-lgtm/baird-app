@@ -1,7 +1,11 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-06-16 (`supervisor_repuesto_garantia_v1` ampliada con Modelo + Diagnóstico).
+> Última actualización: 2026-06-24 (plantilla de documento para el resumen semanal a supervisores).
+
+> 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
+
+> 🆕 **Cambios 2026-06-19:** TODOS los mensajes de actualización del flujo **garantía** (supervisor, técnico y cliente) ahora incluyen el **No. de garantía** (`numero_serie_factura`), anexado al parámetro `equipo`: `"Nevera Mabe · Garantía 9415091231"`. Implementado con el helper `equipoConGarantia(sol)` en `whatsapp.service.ts` — **sin re-aprobar plantillas en Meta** (el número viaja dentro de un parámetro que las plantillas ya tienen). En **particular** los mensajes quedan igual (solo `"Nevera Mabe"`). NO se aplica a `esperando_repuesto_tecnico_v1` ni a `supervisor_repuesto_garantia_v1`, que ya llevan el número en su propia línea (se evita duplicarlo).
 
 > 🆕 **Cambios 2026-06-16:** `supervisor_repuesto_garantia_v1` ampliada de **7 a 9 params** — ahora incluye **Modelo** del equipo (prefijo `[Modelo: X]` de `novedades_equipo`) y **Diagnóstico del técnico** (`triaje_resultado.diagnostico_tecnico`), además de SKU y dirección que ya tenía. Verificado con `--check`: la plantilla **nunca llegó a Meta** (solo están `supervisor_bienvenida_v1` y `supervisor_cambio_estado_v1`), así que se amplió en sitio en vez de crear `_v2`. `notificarCambioEstado()` sigue cayendo a la genérica mientras Meta no apruebe → **sin regresión**. Falta subir a Meta para que el aviso enriquecido salga en vivo.
 
@@ -293,6 +297,16 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: darle la bienvenida al supervisor, confirmarle su alcance (ámbito + marca + estados) y avisarle que recibirá los cambios de estado por este mismo chat. Funciona fuera de la ventana 24h (el supervisor no chatea con el número del negocio).
 - **Nota**: el BODY no empieza ni termina en variable (regla Meta 2388299) — abre con "Hola {{1}}," y cierra con "…bajo tu supervisión." `enviarBienvenidaSupervisor` es best-effort (no lanza); el POST devuelve `whatsapp_bienvenida` para que el admin sepa si salió. Solo se dispara al **crear** (no en PATCH/reactivación) para no spamear.
 
+#### `supervisor_reagendamiento_v1` ⏳ pendiente de subir a Meta
+- **En script** ✅ (nueva 2026-06-26)
+- **Disparo**: `notificarReagendamientoSupervisores(sol, nuevoHorario)` desde `procesarReagendamientoAdmin()`, cuando el admin cambia la fecha del servicio en `POST /api/admin/reagendar-solicitud` (botón "Cambiar fecha de servicio" del panel).
+- **Destino**: cada supervisor **activo** cuyo filtro matchea (mismo `ambito`/`marca` que `supervisor_cambio_estado_v1`). **NO** filtra por `estados`: reprogramar no es un cambio de estado, es on-demand — igual que `notificarRepuestoSupervisores`.
+- **Header**: TEXT — "Servicio reprogramado"
+- **Body** (6 params): `supervisor_nombre`, `cliente`, `equipo` (`equipoConGarantia`), `ciudad`, `tipo_flujo` (Garantía/Particular), `fecha_nueva` (el `horario_confirmado` nuevo: "lunes, 6 de julio · 8am-12pm")
+- **Sin botón** (informativo)
+- **Propósito**: dar visibilidad al supervisor de que la fecha del servicio se movió, sin abrir el panel. Es la única vía para avisar a supervisores fuera de la ventana 24h; cliente y técnico se notifican por **texto libre** (ver tabla de texto libre). El BODY abre con "Hola {{1}}," y cierra con "…no necesitas hacer nada." (regla Meta 2388299).
+- **Nota**: `notificarReagendamientoSupervisores` nunca lanza — si la plantilla aún no está APPROVED, el envío falla, se loguea y la reprogramación NO se rompe (la fecha ya quedó guardada y cliente/técnico igual reciben su texto libre).
+
 #### `valor_actualizado_cliente_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30, status PENDING)
 - **En script** ✅ (nueva 2026-05-30) — id Meta `965589726530805`
 - **Disparo**: `enviarValorActualizadoCliente(solicitudId)`, llamada desde `/api/admin/actualizar-valor` cuando el admin ajusta el valor al cliente de un servicio **particular**.
@@ -313,6 +327,7 @@ Algunos avisos se envían como **texto libre** (`enviarMensajeTexto`) en vez de 
 |---|---|---|
 | Cliente cancela su solicitud | cliente + técnico | Texto dinámico, sin plantilla aprobada hoy |
 | Cliente reagenda | cliente + técnico | Idem |
+| Admin reprograma fecha (panel) | cliente + técnico | Texto dinámico; los **supervisores** sí reciben plantilla (`supervisor_reagendamiento_v1`) por estar fuera de la ventana 24h |
 | Cliente APROBÓ siguiente paso (warranty) | técnico | Confirmación corta |
 | Cliente RECHAZÓ siguiente paso | técnico | Confirmación corta |
 | Cliente RECHAZÓ cotización | técnico | Confirmación con motivo |

@@ -39,6 +39,10 @@ export default function PricingPendientePage() {
     setCargando(false)
   }
 
+  // Carga inicial con el patrón idiomático setCargando(true)→await→setCargando(false).
+  // react-hooks/set-state-in-effect lo marca como falso positivo (el setState sync solo
+  // repite el estado inicial `true`; no hay cascada de renders).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargar() }, [])
 
   const cerrar = () => {

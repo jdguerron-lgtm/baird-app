@@ -50,6 +50,9 @@ export default function AdminRepuestosPage() {
     setCargando(false)
   }
 
+  // Recarga por filtro con el patrón idiomático setCargando(true)→await→setCargando(false).
+  // react-hooks/set-state-in-effect lo marca como falso positivo (código correcto).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { cargar() }, [filtro])
 
   const marcarRecibido = async (id: string) => {
