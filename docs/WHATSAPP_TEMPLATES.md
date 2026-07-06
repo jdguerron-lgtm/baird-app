@@ -45,9 +45,7 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
 | `CLAUDE.md` | Resumen para agentes de IA. |
 
-**Estado de cobertura del script (actualizado 2026-07-06):** el script registra **32 plantillas** — las 25 previas + las 7 del ex-backlog (ya APPROVED en Meta, registradas con su contenido exacto aprobado). Status:
-- **29 APPROVED** (verificado en vivo con `--check`).
-- **3 PENDING** (subidas 2026-07-05): `esperando_repuesto_tecnico_v1` (la invoca `/api/verificar-paso`), `repuesto_llegado_tecnico_v1` (`/api/repuesto-recibido`), `supervisor_reagendamiento_v1` (reagendamiento admin). Hasta que aprueben, esos 3 envíos fallan best-effort (no rompen el flujo). Monitorear con `--check`.
+**Estado de cobertura del script (actualizado 2026-07-06, cierre):** **todas las plantillas que invoca el código desplegado están APPROVED en Meta** (verificado en vivo con `--check`) — incluidas las 3 subidas el 2026-07-05 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_reagendamiento_v1`, aprobadas el mismo día: sus avisos ya operan) y las `cotizacion_*_v3` del modelo de tarifas. Única PENDING: `supervisor_acceso_v1` (subida 2026-07-06) — pertenece al portal de supervisores aún sin deployar, no bloquea nada en vivo.
 - ⚠️ 4 plantillas del ex-backlog llevan botones con URL `baird-app.vercel.app` (pre-migración de dominio) — **funcionan** porque ese dominio sigue vivo como alias del mismo deployment; al re-subirlas algún día, bumpear a `_v2` con `lineablanca`.
 
 (10 plantillas fueron bumpeadas de versión el 2026-05-23 por la migración de dominio — ver banda informativa al inicio de este doc.)

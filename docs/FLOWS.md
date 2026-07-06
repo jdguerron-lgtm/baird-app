@@ -762,7 +762,7 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 | 8 | ~~Cliente confirma satisfacción → técnico~~ | ✅ RESUELTO 2026-07-06 | — | `servicio_confirmado_tecnico_v1` cableada en `confirmarServicioCliente` con calificación (fallback: texto libre si no hay nota) |
 | 9 | ~~Acceso del cliente al portal de gestión~~ | ✅ RESUELTO 2026-07-06 | — | Cubierto por el botón "Gestionar servicio" de `horario_confirmado_cliente_v1` (gap H1). `gestionar_servicio_v1` quedó aprobada pero sin disparo automático — enviarla además sería redundante |
 
-> ✅ **Cerrado 2026-07-06** (probado en vivo contra el número de prueba antes del deploy): gaps 1, 3–6, 8, 9 y H1 resueltos cableando las plantillas del ex-backlog (ya APPROVED). Todos los envíos nuevos son best-effort con fallback al comportamiento previo. Las 3 plantillas subidas el 2026-07-05 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_reagendamiento_v1`) siguen **PENDING** — sus envíos fallan best-effort hasta que aprueben. Ver `docs/WHATSAPP_TEMPLATES.md` § "Estado de cobertura".
+> ✅ **Cerrado 2026-07-06** (probado en vivo contra el número de prueba antes del deploy): gaps 1, 3–6, 8, 9 y H1 resueltos cableando las plantillas del ex-backlog (APPROVED). Todos los envíos nuevos son best-effort con fallback al comportamiento previo. Las 3 plantillas subidas el 2026-07-05 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_reagendamiento_v1`) **ya fueron APROBADAS** — sus avisos están operativos. Ver `docs/WHATSAPP_TEMPLATES.md` § "Estado de cobertura".
 
 ### Gaps que NO requieren plantillas (cambios de código pendientes)
 

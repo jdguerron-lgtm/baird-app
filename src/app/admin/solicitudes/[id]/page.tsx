@@ -1292,7 +1292,7 @@ export default function SolicitudDetalle() {
             {reagendando ? 'Reprogramando…' : '📅 Reprogramar y notificar'}
           </button>
           <span className="text-[11px] text-gray-400">
-            A supervisores les llega vía la plantilla <code>supervisor_reagendamiento_v1</code> (requiere aprobación de Meta).
+            A supervisores les llega vía la plantilla <code>supervisor_reagendamiento_v1</code>.
           </span>
         </div>
         {resultadoReagenda && (
