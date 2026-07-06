@@ -19,7 +19,7 @@ interface Solicitud {
   marca_equipo: string
   tipo_solicitud: string
   estado: string
-  pago_tecnico: number          // NETO al técnico (catálogo ÷ 1.309 o costo cotizado)
+  pago_tecnico: number          // NETO al técnico (catálogo ÷ 1.3447, $35k fijo diagnóstico, o costo cotizado)
   precio_cliente: number        // lo que paga el cliente (catálogo / total cotizado, IVA incl.)
   es_garantia: boolean
   created_at: string

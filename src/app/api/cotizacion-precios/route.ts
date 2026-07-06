@@ -93,12 +93,11 @@ export async function POST(req: NextRequest) {
       })
       const repuestosTotal = necesariosConPrecio.reduce((acc, p) => acc + (p.subtotal ?? 0), 0)
 
-      // FÓRMULA NUEVA 2026-05-12: el total al cliente incluye IVA + margen Baird.
+      // FÓRMULA 2026-07-05: el total al cliente incluye utilidad Baird + IVA.
       //   costoTecnico = manoObra (admin) + sum(subtotales repuestos)
-      //   totalCliente = costoTecnico × 1.19 (IVA) × 1.10 (margen Baird)
-      // Antes este endpoint hacía `total = manoObra + repuestosTotal` (sin IVA
-      // ni margen) — lo que descuadraba con el flujo particular sin gate
-      // (rama reparar) donde sí se aplica la fórmula completa.
+      //   totalCliente = costoTecnico × 1.13 (utilidad Baird) × 1.19 (IVA)
+      // El IVA se aplica sobre la venta completa (costo + utilidad) para que
+      // la factura DIAN cuadre. Ver src/lib/constants/tarifas/particular.ts.
       const costoTecnico = manoObra + repuestosTotal
       const tarifa = calcularTarifaParticular({ costoTecnico })
 
@@ -119,7 +118,8 @@ export async function POST(req: NextRequest) {
         costo_tecnico: costoTecnico,
         mano_obra_admin: manoObra,
         repuestos_total_admin: repuestosTotal,
-        subtotal_con_iva: tarifa.subtotalConIva,
+        base_venta: tarifa.baseVenta,
+        iva_venta: tarifa.ivaCliente,
         margen_baird: tarifa.margenBaird,
         tiempo_entrega: tiempoEntrega,
         pendiente_precio: false,

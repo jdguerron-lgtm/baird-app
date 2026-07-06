@@ -184,7 +184,15 @@ export interface CotizacionReparacion {
   // Totales (admin completa):
   mano_obra: number
   repuestos: number      // suma de subtotales de productos_necesarios
-  total: number          // mano_obra + repuestos
+  total: number          // TOTAL al cliente (costo_tecnico × 1.3447 desde 2026-07-05)
+  // Auditoría interna del cálculo (no visible al cliente):
+  costo_tecnico?: number         // lo que recibe el técnico (su input)
+  base_venta?: number            // costo_tecnico + margen_baird — base gravable DIAN (desde 2026-07-05)
+  iva_venta?: number             // 19% sobre base_venta (desde 2026-07-05)
+  margen_baird?: number          // utilidad Baird (13% del costo_tecnico desde 2026-07-05; antes 10% del subtotal con IVA)
+  mano_obra_admin?: number       // mano de obra fijada por admin (flujo esperar_repuesto)
+  repuestos_total_admin?: number // suma de subtotales fijados por admin
+  subtotal_con_iva?: number      // LEGACY (modelo pre-2026-07-05: costo × 1.19) — solo en cotizaciones viejas
   // Legacy / compat:
   repuestos_detalle?: string
   // Código de falla (opcional, habilitado en particular desde 2026-05-13).
@@ -274,7 +282,8 @@ export const TARIFAS_MANTENIMIENTO: Record<TipoEquipo, number> = {
  *
  * ⚠️ Nombre histórico: devuelve el PRECIO AL CLIENTE, no el pago al técnico.
  * El neto que recibe el técnico se obtiene con `pagoNetoTecnicoTarifaFija()`
- * (= este valor ÷ 1.309). La columna `pago_tecnico` guarda el NETO; este
+ * (= este valor ÷ 1.3447; excepción: diagnóstico paga PAGO_TECNICO_DIAGNOSTICO
+ * fijo, ver tarifas/particular.ts). La columna `pago_tecnico` guarda el NETO; este
  * valor se usa para el desglose IVA del cliente en /solicitar y se deriva
  * donde se necesite vía `precioClienteServicio()`. Ver docs/TARIFAS.md.
  *
@@ -305,7 +314,7 @@ export function calcularPagoTecnico(
  * Distinto de `pago_tecnico` (lo que recibe el técnico, NETO de IVA + margen).
  *
  * - Si hay cotización con `total > 0` (Reparación tras diagnóstico, o ajuste
- *   manual de admin) → ese total, que ya es `costoTecnico × 1.309` (IVA + margen).
+ *   manual de admin) → ese total, que ya es `costoTecnico × 1.3447` (utilidad + IVA).
  * - Si no (tarifa fija: Mantenimiento, Cambio de filtro, o el anticipo de
  *   Diagnóstico/Reparación antes de cotizar) → el precio de catálogo.
  *

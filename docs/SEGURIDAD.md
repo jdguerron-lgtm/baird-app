@@ -73,6 +73,10 @@ Endpoints protegidos con `verificarAdmin`:
 | `/api/admin/editar-solicitud` | POST | Editar manualmente tipo_equipo, horario_confirmado, dirección, ciudad, zona. Cambios auditados en `solicitud_eventos` con diff |
 | `/api/admin/cambiar-estado` | POST | Forzar el `estado` de una solicitud (recuperación de flujos atascados). Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). No envía WhatsApp |
 | `/api/admin/notas` | POST | Agregar nota interna a una solicitud. Insert append-only en `solicitud_eventos` (`tipo='nota_admin'`, `payload.origen='nota_manual'`); `actor` = email del admin autenticado (variante `obtenerEmailAdmin`). No envía WhatsApp |
+| `/api/admin/supervisores` | GET/POST/PUT/DELETE | CRUD de la tabla `supervisores` (destinatarios de avisos WhatsApp por cambio de estado). POST dispara bienvenida `supervisor_bienvenida_v1` si el supervisor queda activo |
+| `/api/admin/reagendar-solicitud` | POST | Reagendar con calendario (fecha + franja): materializa `fecha_visita_at` y notifica cliente + técnico + supervisores. Avisos no bloqueantes de cupo/fecha (variante `obtenerEmailAdmin`) |
+| `/api/admin/actualizar-valor` | POST | Ajustar el valor al cliente de un servicio particular; reabre aprobación y notifica |
+| `/api/admin/pedir-repuesto-supervisores` | POST | Enviar pedido de repuesto en garantía a supervisores con visibilidad de la marca (variante `obtenerEmailAdmin`) |
 | `/api/carga-masiva` | POST + DELETE | Bulk upload BITÁCORA Excel y borrado masivo |
 | `/api/whatsapp/notify` | POST | Re-notificar técnicos o re-enviar plantilla horario |
 | `/api/cotizacion-precios` | POST | Admin fija precios + tiempo entrega (gate de pricing) |
@@ -112,11 +116,17 @@ if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
 
 Configurados en `vercel.json`.
 
+El mismo gate `Bearer CRON_SECRET` (más `ENABLE_TEST_ENDPOINTS=true`, sin el cual responde 404) protege `/api/test-whatsapp` — GET de diagnóstico de configuración WhatsApp (presencia de env vars, whitelist activa, validez del token, salud del número). No filtra secretos ni envía mensajes.
+
 ### Webhook Meta (HMAC)
 
 - `/api/whatsapp/webhook` — verifica firma HMAC-SHA256 con `WHATSAPP_WEBHOOK_SECRET`.
 - Implementación en `verificarFirmaWebhook()` de `whatsapp.service.ts`.
 - Sin firma válida → 401.
+
+### Webhook Dapta (HMAC)
+
+- `/api/dapta/webhook` — webhook POST-CALL de la segunda línea de voz IA. Verifica firma/token con `DAPTA_WEBHOOK_SECRET`; idempotente por `dapta_call_id` (índice UNIQUE parcial en tabla `llamadas`). Fase 0 desplegada pero apagada (`DAPTA_ENABLED=false`). Ver `docs/DAPTA.md`.
 
 ### Público por diseño
 

@@ -17,13 +17,16 @@ export function TextAreaField({
     ? 'border-red-300 focus:ring-red-500'
     : 'border-gray-200 focus:ring-orange-500 hover:border-orange-300'
 
+  const inputId = `field-${name}`
+
   return (
     <div>
-      <label className="block text-sm font-semibold text-gray-700 mb-2">
+      <label htmlFor={inputId} className="block text-sm font-semibold text-gray-700 mb-2">
         {icon && <span className="flex items-center">{icon} {label}</span>}
         {!icon && label}
       </label>
       <textarea
+        id={inputId}
         name={name}
         value={value}
         onChange={onChange}

@@ -524,6 +524,95 @@ const TEMPLATES = [
     ],
   },
 
+  // 13b. Cotización al cliente para aprobar — v3 (2026-07-05).
+  //      Reemplaza a cotizacion_cliente_v2: elimina las líneas "Mano de obra"
+  //      y "Repuestos" (desde 2026-05-12 se persisten en 0 y el cliente veía
+  //      "$0 + $0 = total", que generaba desconfianza) y agrega tiempo
+  //      estimado (backlog H). {{1}}=cliente, {{2}}=técnico, {{3}}=equipo,
+  //      {{4}}=diagnóstico (200 chars), {{5}}=total, {{6}}=tiempo estimado
+  //      (fallback "inmediato tras tu aprobación" cuando no hay repuesto).
+  //      ⚠️ El código sigue enviando _v2 hasta que Meta apruebe esta versión —
+  //      flip en enviarCotizacionCliente() (whatsapp.service.ts).
+  {
+    name: 'cotizacion_cliente_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Cotización lista para tu aprobación',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el técnico {{2}} terminó el diagnóstico de tu {{3}}:\n\n' +
+          '🔍 Diagnóstico: {{4}}\n\n' +
+          '🧾 Total: {{5}} COP (incluye repuestos, mano de obra e IVA)\n' +
+          '⏱ Inicio de la reparación: {{6}}\n\n' +
+          'Si apruebas, el técnico procede con la reparación. Todos los pagos se gestionan via Baird Service.',
+        example: {
+          body_text: [[
+            'Juan',
+            'Carlos',
+            'Nevera LG',
+            'Compresor en mal estado, requiere reemplazo',
+            '430,000',
+            'inmediato tras tu aprobación',
+          ]],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Aprobar cotización',
+            url: `${APP_URL}/cotizacion/{{1}}`,
+            example: [`${APP_URL}/cotizacion/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 13c. Cliente aprobó cotización → técnico — v3 (2026-07-05).
+  //      Reemplaza a cotizacion_aprobada_tecnico_v2, que enviaba en {{4}} el
+  //      TOTAL AL CLIENTE (con utilidad Baird + IVA) rotulado "Total aprobado"
+  //      — el técnico creía que ese era su pago y luego recibía menos. v3
+  //      separa explícitamente su pago del total del cliente.
+  //      {{1}}=técnico, {{2}}=cliente, {{3}}=equipo, {{4}}=pago NETO al
+  //      técnico (pago_tecnico), {{5}}=total que paga el cliente.
+  //      ⚠️ El código sigue enviando _v2 hasta que Meta apruebe esta versión —
+  //      flip en notificarCotizacionAprobada() (whatsapp.service.ts).
+  {
+    name: 'cotizacion_aprobada_tecnico_v3',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          '✅ Hola {{1}}, el cliente {{2}} aprobó la cotización para {{3}}.\n\n' +
+          '💰 Tu pago por este servicio: {{4}} COP\n' +
+          '🧾 Total que paga el cliente a Baird: {{5}} COP (incluye IVA y comisión de plataforma)\n\n' +
+          'Procede con la reparación según lo acordado. Cuando termines, abre el portal para subir fotos, checklist y firma del cliente.',
+        example: { body_text: [['Carlos', 'Juan Pérez', 'Nevera LG', '320,000', '430,000']] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir portal',
+            url: `${APP_URL}/tecnico/{{1}}`,
+            example: [`${APP_URL}/tecnico/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
   // 14. Pedir confirmación al cliente tras completar el servicio
   // Llamado por: POST /api/completar-servicio
   {
@@ -889,6 +978,203 @@ const TEMPLATES = [
         example: { body_text: [['Andrés', 'la semana del 15 al 21 de junio de 2026']] },
       },
       { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+    ],
+  },
+
+  // ──────────────────────────────────────────────────────────────────
+  // 26–32. Plantillas del ex-"backlog de gaps" (docs/WHATSAPP_TEMPLATES.md).
+  // Ya estaban APPROVED en Meta desde antes de registrarse acá (subidas por
+  // fuera del script, pre-migración de dominio) — se registran 2026-07-06 con
+  // el contenido EXACTO aprobado para que el script vuelva a ser la fuente
+  // canónica. ⚠️ Las que llevan botón URL apuntan a baird-app.vercel.app
+  // (alias vivo del mismo deployment — funcionan); al re-subirlas algún día,
+  // bumpear a _v2 con APP_URL (lineablanca). Cableadas en código 2026-07-06
+  // (gaps 1, 3-6, 8, H1). `gestionar_servicio_v1` quedó SIN disparo automático
+  // a propósito: horario_confirmado_cliente_v1 ya entrega el mismo botón.
+  // ──────────────────────────────────────────────────────────────────
+
+  // 26. Solicitud expirada (sin_agendar) — CLIENTE. Cableada en cron
+  //     horario-recordatorio (enviarSolicitudExpiradaCliente). Botón estático.
+  {
+    name: 'solicitud_expirada_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, no recibimos la confirmación de horario para tu {{2}} y por eso cerramos la solicitud. ' +
+          'Si todavía necesitas el servicio, puedes crear una nueva en cualquier momento.',
+        example: { body_text: [['Juan', 'Lavadora Mabe']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Crear nueva solicitud',
+            url: 'https://baird-app.vercel.app/solicitar',
+            example: ['https://baird-app.vercel.app/solicitar'],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 27. Paso aprobado — CLIENTE. Cableada en /api/verificar-paso para
+  //     `reparar` y `negativa_cliente` (enviarPasoAprobadoCliente).
+  //     {{1}}=nombre, {{2}}=equipo, {{3}}=acción, {{4}}=detalle.
+  {
+    name: 'paso_aprobado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          '✅ Hola {{1}}, registramos tu aprobación para tu {{2}}.\n\n' +
+          'Acción: {{3}}\n\n' +
+          'Detalle: {{4}}\n\n' +
+          'Gracias por confiar en Baird Service. Quedamos atentos a cualquier inquietud por este mismo canal.',
+        example: {
+          body_text: [['Juan', 'Lavadora Mabe', 'Proceder con la reparación', 'El técnico Carlos procederá según lo acordado. Te avisaremos al completar el servicio.']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 28. Paso rechazado — CLIENTE. Cableada en /api/verificar-paso rama
+  //     'rechazado' (enviarPasoRechazadoCliente). {{1}}=nombre, {{2}}=equipo.
+  {
+    name: 'paso_rechazado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, registramos tu rechazo del siguiente paso propuesto para tu {{2}}.\n\n' +
+          'El equipo de Baird Service se pondrá en contacto contigo en las próximas horas para resolver la situación. Mientras tanto, no realices ningún pago al técnico.',
+        example: { body_text: [['Juan', 'Lavadora Mabe']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 29. Decisión del cliente sobre el paso — TÉCNICO. Cableada en
+  //     /api/verificar-paso (enviarPasoResueltoTecnico). {{1}}=técnico,
+  //     {{2}}=cliente, {{3}}=decisión (APROBÓ|RECHAZÓ), {{4}}=equipo,
+  //     {{5}}=detalle. Botón → /tecnico/{portal_token}.
+  {
+    name: 'paso_resuelto_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, recibimos la respuesta del cliente {{2}} sobre el siguiente paso propuesto para {{4}}.\n\n' +
+          'Decisión del cliente: {{3}}\n\n' +
+          'Detalle adicional para tu seguimiento del servicio: {{5}}\n\n' +
+          'Si tienes dudas o necesitas apoyo del equipo Baird, contáctanos por este chat antes de proceder.',
+        example: {
+          body_text: [['Carlos', 'Juan Pérez', 'APROBÓ', 'Lavadora Mabe', 'Procede según lo acordado. Si llegas a sospechar algo, contacta a Baird Service antes de actuar.']],
+        },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir portal',
+            url: 'https://baird-app.vercel.app/tecnico/{{1}}',
+            example: ['https://baird-app.vercel.app/tecnico/00000000-0000-0000-0000-000000000000'],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 30. Link permanente de gestión — CLIENTE. APROBADA pero SIN disparo
+  //     automático (el botón de horario_confirmado_cliente_v1 ya entrega el
+  //     mismo link — enviarla además sería redundante). Disponible para
+  //     reenvíos manuales. Botón → /servicio/{cliente_token}.
+  {
+    name: 'gestionar_servicio_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, este es tu enlace permanente para gestionar el servicio de tu {{2}}.\n\n' +
+          '🔧 Desde acá puedes cancelar o cambiar la fecha en cualquier momento mientras el técnico no haya completado el servicio.',
+        example: { body_text: [['Juan', 'Lavadora Mabe']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Gestionar servicio',
+            url: 'https://baird-app.vercel.app/servicio/{{1}}',
+            example: ['https://baird-app.vercel.app/servicio/00000000-0000-0000-0000-000000000000'],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 31. Cliente confirmó satisfacción — TÉCNICO. Cableada en
+  //     confirmarServicioCliente (enviarServicioConfirmadoTecnico).
+  //     {{1}}=técnico, {{2}}=cliente, {{3}}=equipo, {{4}}=calificación.
+  {
+    name: 'servicio_confirmado_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          '✅ Hola {{1}}, el cliente {{2}} confirmó satisfacción del servicio de {{3}}. Calificación: {{4}}/10.\n\n' +
+          'Servicio cerrado exitosamente. Próxima liquidación te llegará en el ciclo correspondiente.',
+        example: { body_text: [['Carlos', 'Juan Pérez', 'Lavadora Mabe', '10']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
+  // 32. Horario confirmado — CLIENTE. Cableada en confirmarHorarioSolicitud
+  //     (enviarHorarioConfirmadoCliente). {{1}}=nombre, {{2}}=equipo,
+  //     {{3}}=horario. Botón → /servicio/{cliente_token} (cubre también el
+  //     acceso permanente al portal de gestión).
+  {
+    name: 'horario_confirmado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋, confirmamos que tu servicio de {{2}} quedó agendado para {{3}}.\n\n' +
+          'Estamos contactando a los técnicos verificados de tu zona. Te avisaremos por este mismo chat tan pronto uno acepte la solicitud. Si necesitas cancelar o cambiar la fecha, usa el botón de abajo.',
+        example: { body_text: [['Juan', 'Lavadora Mabe', 'lunes 12 de mayo · 8am-12pm']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Gestionar servicio',
+            url: 'https://baird-app.vercel.app/servicio/{{1}}',
+            example: ['https://baird-app.vercel.app/servicio/00000000-0000-0000-0000-000000000000'],
+          },
+        ],
+      },
     ],
   },
 ]

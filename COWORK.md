@@ -172,7 +172,7 @@ Si está disponible, usar para:
 
 ## 6. Estado actual del ciclo de vida del servicio
 
-Cada paso envía WhatsApp automáticamente:
+> ⚠️ **Diagrama simplificado (abril 2026).** La state machine real tiene 20+ estados y se parte en dos flujos según `es_garantia` (customer-first scheduling, pricing gate, repuestos, no-show, reagendamiento). **El diagrama canónico y completo está en `docs/MAQUINA-DE-ESTADOS.md`**; los flujos narrativos con cada plantilla WhatsApp en `docs/FLOWS.md`. Este bosquejo sirve solo como intuición del camino feliz:
 
 ```
  ┌─────────────┐    WhatsApp al cliente: "Recibimos tu solicitud"
@@ -209,15 +209,7 @@ Cada paso envía WhatsApp automáticamente:
 
 ## 7. API routes — referencia rápida
 
-| Ruta | Método | Auth | Función | WhatsApp |
-|------|--------|------|---------|----------|
-| `/api/solicitar` | POST | No | Crear solicitud + notificar | Cliente + técnicos |
-| `/api/diagnostico` | POST | portal_token | Guardar diagnóstico | Cliente |
-| `/api/completar-servicio` | POST | portal_token | Enviar link confirmación | Cliente |
-| `/api/confirmar-servicio` | POST | confirmacion_token | Confirmar/disputar | Técnico |
-| `/api/whatsapp/notify` | POST | Bearer (admin) | Re-notificar técnicos | Técnicos |
-| `/api/whatsapp/accept` | POST | token notificación | Aceptar servicio | Cliente + técnico |
-| `/api/carga-masiva` | POST | Bearer (admin) | Upload Excel masivo | Clientes + técnicos |
+> ⚠️ Esta tabla era un extracto de abril 2026 y hoy existen ~30 endpoints. **El catálogo canónico es `docs/ARQUITECTURA.md` § "API Routes"** y el mapa de auth por endpoint es `docs/SEGURIDAD.md` § "Endpoints API". No agregar filas acá.
 
 ---
 

@@ -19,13 +19,16 @@ export function InputField({
     ? 'border-red-300 focus:ring-red-500'
     : 'border-gray-200 focus:ring-green-500 hover:border-green-300'
 
+  const inputId = `field-${name}`
+
   return (
     <div>
-      <label className="block text-sm font-semibold text-gray-700 mb-2">
+      <label htmlFor={inputId} className="block text-sm font-semibold text-gray-700 mb-2">
         {icon && <span className="flex items-center">{icon} {label}</span>}
         {!icon && label}
       </label>
       <input
+        id={inputId}
         type={type}
         name={name}
         value={value}

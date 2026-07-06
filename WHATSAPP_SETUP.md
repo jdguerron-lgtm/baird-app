@@ -2,6 +2,8 @@
 
 Esta guía explica paso a paso cómo obtener las credenciales, configurar el webhook y probar la integración de WhatsApp en Baird Service.
 
+> ✅ **Producción ya está configurada** — esta guía aplica solo si montas un entorno desde cero (dev local con ngrok, o una cuenta Meta nueva). Valores reales en producción: App "Baird Service" (App ID `735192439530818`), WABA ID `2354953275016882`, Phone Number ID `1148716061648720`, número propio +57 313 4951164, token permanente de System User `baird-api`, webhook verificado apuntando al deployment de Vercel. Para operar plantillas en producción, el doc canónico es **`docs/WHATSAPP_TEMPLATES.md`**; para diagnóstico rápido de config existe `GET /api/test-whatsapp`.
+
 ---
 
 ## ⏱️ Tiempo estimado de configuración
@@ -247,4 +249,4 @@ curl "https://tu-url.ngrok-free.app/api/whatsapp/webhook?hub.mode=subscribe&hub.
 → `NEXT_PUBLIC_APP_URL` no está configurado correctamente. En desarrollo debe ser la URL de ngrok.
 
 ### El cliente no recibe la foto del técnico
-→ Las URLs de Supabase Storage deben ser **públicas**. Verificar en Supabase → Storage → Políticas que el bucket `fotos-perfil` tenga acceso de lectura pública.
+→ Las URLs de Supabase Storage deben ser **públicas**. Verificar en Supabase → Storage → Políticas que el bucket `tecnicos-fotos` tenga acceso de lectura pública.

@@ -179,6 +179,17 @@ export default function PortalTecnicoPage() {
             </h1>
             <p className="text-xs text-gray-400">Portal del técnico</p>
           </div>
+          {/* Guía canónica de pagos (public/guia-pagos.html) — quick win
+              auditoría 2026-07-05: antes vivía solo en docs/ y el técnico no
+              podía consultarla. */}
+          <a
+            href="/guia-pagos.html"
+            target="_blank"
+            rel="noopener"
+            className="shrink-0 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"
+          >
+            💰 Guía de pagos
+          </a>
         </div>
       </header>
 
@@ -344,7 +355,7 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
  *     el total neto proyectado.
  * Particular:
  *   - Muestra `pago_tecnico`, que es el NETO que recibe el técnico (precio de
- *     catálogo ÷ 1.309 en tarifa fija, o el costo cotizado tras diagnóstico).
+ *     catálogo ÷ 1.3447 en tarifa fija, $35.000 fijo en diagnóstico, o el costo cotizado tras diagnóstico).
  */
 function PagoLabel({ servicio }: { servicio: Servicio }) {
   // Reloj leído una sola vez al montar: mantiene el render puro (evita Date.now()

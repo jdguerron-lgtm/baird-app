@@ -5,6 +5,9 @@ import {
   enviarEsperandoRepuestoCliente,
   enviarEsperandoRepuestoTecnico,
   enviarFinalizadoSinReparacion,
+  enviarPasoAprobadoCliente,
+  enviarPasoRechazadoCliente,
+  enviarPasoResueltoTecnico,
   notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
 import type { SiguientePasoDiagnostico } from '@/types/solicitud'
@@ -66,17 +69,30 @@ export async function POST(req: NextRequest) {
 
       await notificarCambioEstado(sol.id, sol.estado, 'en_disputa')
 
-      // Notificar técnico (texto libre)
-      const { data: tec } = await supabase
-        .from('tecnicos').select('whatsapp, nombre_completo').eq('id', sol.tecnico_asignado_id).single()
-      if (tec?.whatsapp) {
-        const nombreTec = tec.nombre_completo.split(' ')[0]
-        const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
-        const motivo = comentario ? `\n\nMotivo: ${comentario}` : ''
-        enviarMensajeTexto(
-          tec.whatsapp,
-          `⚠️ Hola ${nombreTec}, el cliente ${sol.cliente_nombre} RECHAZÓ el siguiente paso propuesto para ${equipo}.${motivo}\n\nNo procedas con ninguna acción. El equipo de Baird Service se contactará contigo para resolver.`,
-        ).catch(err => console.error('Error notificando rechazo al tec:', err))
+      // Confirmación al cliente (plantilla — llega fuera de la ventana 24h).
+      // Best-effort: si falla no bloquea; el cliente ya vio la confirmación in-app.
+      enviarPasoRechazadoCliente(sol.id)
+        .then(r => { if (!r.ok) console.error('[verificar-paso] enviarPasoRechazadoCliente falló:', r.error) })
+        .catch(err => console.error('[verificar-paso] enviarPasoRechazadoCliente error:', err))
+
+      // Notificar técnico: plantilla primero (funciona fuera de la ventana 24h);
+      // fallback al texto libre previo si la plantilla falla.
+      const motivoRechazo = comentario ? ` Motivo del cliente: ${comentario}.` : ''
+      const detalleRechazo = `No procedas con ninguna acción.${motivoRechazo} El equipo de Baird Service se contactará contigo para resolver.`
+      const tecRechazo = await enviarPasoResueltoTecnico(sol.id, 'RECHAZÓ', detalleRechazo)
+      if (!tecRechazo.ok) {
+        console.error('[verificar-paso] enviarPasoResueltoTecnico (rechazo) falló, fallback a texto libre:', tecRechazo.error)
+        const { data: tec } = await supabase
+          .from('tecnicos').select('whatsapp, nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+        if (tec?.whatsapp) {
+          const nombreTec = tec.nombre_completo.split(' ')[0]
+          const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+          const motivo = comentario ? `\n\nMotivo: ${comentario}` : ''
+          enviarMensajeTexto(
+            tec.whatsapp,
+            `⚠️ Hola ${nombreTec}, el cliente ${sol.cliente_nombre} RECHAZÓ el siguiente paso propuesto para ${equipo}.${motivo}\n\nNo procedas con ninguna acción. El equipo de Baird Service se contactará contigo para resolver.`,
+          ).catch(err => console.error('Error notificando rechazo al tec:', err))
+        }
       }
 
       return NextResponse.json({ success: true, decision: 'rechazado', estado: 'en_disputa' })
@@ -117,11 +133,27 @@ export async function POST(req: NextRequest) {
 
     try {
       if (paso === 'reparar') {
-        await enviarMensajeTexto(
-          sol.cliente_telefono,
-          `✅ Hola ${cliente}, aprobaste la reparación de tu ${equipo}. El técnico ${nombreTec} está procediendo.\n\nTe avisaremos al completar el servicio. 🔧 Baird Service`,
+        // Cliente: plantilla (llega fuera de la ventana 24h) con fallback al texto libre previo.
+        const cliAprobado = await enviarPasoAprobadoCliente(
+          sol.id,
+          'Proceder con la reparación',
+          `El técnico ${nombreTec} procederá según lo acordado. Te avisaremos al completar el servicio.`,
         )
-        if (tec?.whatsapp) {
+        if (!cliAprobado.ok) {
+          console.error('[verificar-paso] enviarPasoAprobadoCliente (reparar) falló, fallback a texto libre:', cliAprobado.error)
+          await enviarMensajeTexto(
+            sol.cliente_telefono,
+            `✅ Hola ${cliente}, aprobaste la reparación de tu ${equipo}. El técnico ${nombreTec} está procediendo.\n\nTe avisaremos al completar el servicio. 🔧 Baird Service`,
+          )
+        }
+        // Técnico: plantilla con fallback al texto libre previo.
+        const tecAprobado = await enviarPasoResueltoTecnico(
+          sol.id,
+          'APROBÓ',
+          'Procede con la reparación según lo acordado. Te avisaremos cuando el cliente confirme la finalización.',
+        )
+        if (!tecAprobado.ok && tec?.whatsapp) {
+          console.error('[verificar-paso] enviarPasoResueltoTecnico (reparar) falló, fallback a texto libre:', tecAprobado.error)
           await enviarMensajeTexto(
             tec.whatsapp,
             `✅ ${nombreTec}, el cliente ${sol.cliente_nombre} APROBÓ la reparación. Procede según lo acordado.`,
@@ -149,10 +181,19 @@ export async function POST(req: NextRequest) {
       } else if (paso === 'no_reparable') {
         await enviarFinalizadoSinReparacion(sol.id, sol.siguiente_paso_detalle ?? 'Daño no reparable')
       } else if (paso === 'negativa_cliente') {
-        await enviarMensajeTexto(
-          sol.cliente_telefono,
-          `Hola ${cliente}, registramos tu decisión de no proceder con la reparación de tu ${equipo}. Cualquier duda escríbenos. Gracias por confiar en Baird Service.`,
+        // Cliente: plantilla con fallback al texto libre previo.
+        const cliNegativa = await enviarPasoAprobadoCliente(
+          sol.id,
+          'No proceder con la reparación',
+          'Registramos tu decisión de no continuar con el servicio. Cualquier duda escríbenos por este canal.',
         )
+        if (!cliNegativa.ok) {
+          console.error('[verificar-paso] enviarPasoAprobadoCliente (negativa) falló, fallback a texto libre:', cliNegativa.error)
+          await enviarMensajeTexto(
+            sol.cliente_telefono,
+            `Hola ${cliente}, registramos tu decisión de no proceder con la reparación de tu ${equipo}. Cualquier duda escríbenos. Gracias por confiar en Baird Service.`,
+          )
+        }
       }
     } catch (waErr) {
       console.error('Error WhatsApp post-verificación:', waErr)

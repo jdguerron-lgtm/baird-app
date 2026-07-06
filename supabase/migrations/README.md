@@ -9,16 +9,17 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 
 ## Orden de aplicación (alfanumérico)
 
-> ✅ **Verificado 2026-05-21 contra producción:** todas las migraciones de
-> schema hasta `20260516` están **aplicadas**. Los estados "PENDIENTE" de la
-> tabla de abajo y la sección "Cómo aplicar las pendientes" quedaron
-> desactualizados — **NO re-corras esas migraciones** (algunas tienen backfills).
-> Pendientes reales hoy (2026-05-29):
-> - `20260521_storage_policies_public_role.sql` — va por el **Dashboard de Storage**, no por SQL.
-> - `20260529_supervisores_y_repuesto_recibido.sql` — va por **SQL Editor**. Ver
->   sección dedicada ["Aplicar 20260529"](#aplicar-20260529_supervisores_y_repuesto_recibidosql-pendiente-real)
->   más abajo y el plan de despliegue en
->   `docs/mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md`.
+> ✅ **VERIFICADO 2026-07-05 CONTRA LA BD DE PRODUCCIÓN** (queries a
+> `information_schema`/`pg_catalog` vía MCP): **TODAS las migraciones del repo
+> están aplicadas.** Evidencia por artefacto: columnas de `20260506/07/08/10/13/23/29/0602/0609`
+> presentes (3/3, 5/5, 2/2, 8/8), `completado_at` sin DEFAULT, 0 filas sin
+> `horario_token` (backfill OK), función `normalizar_telefono_co` + 3 triggers,
+> CHECK de `estado` con los **22 estados** (incl. `repuesto_recibido`,
+> `no_show_cliente`, `pendiente_pricing`), `tiempo_estimado` nullable, tablas
+> `llamadas`/`connection_errors`/`supervisores`/`cliente_historial` existentes,
+> policies de Storage con role `public` (`20260521`) y sin policy de listing
+> (`20260624`). Los estados "PENDIENTE" que queden en la tabla de abajo son
+> **históricos** — no re-correr nada sin necesidad (todas son idempotentes igual).
 
 | Archivo | Estado | Qué hace |
 |---|---|---|
@@ -29,17 +30,21 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | `20260327_portal_evidencias.sql` | aplicada | Bucket evidencias + portal_token |
 | `20260427_customer_first_scheduling.sql` | aplicada | Customer-first flow + repuestos_pendientes + gps_pings |
 | `20260428_verificacion_paso.sql` | aplicada | verificación de paso post-diagnóstico |
-| **`20260506_cliente_self_service.sql`** | **PENDIENTE** | cliente_token + cancelar/reagendar + solicitud_eventos |
-| **`20260507_admin_pricing_gate.sql`** | **PENDIENTE** | estado `pendiente_pricing` + repuestos_pendientes.tiempo_estimado nullable |
+| `20260506_cliente_self_service.sql` | aplicada ✓ (verificado 2026-07-05 vs BD) | cliente_token + cancelar/reagendar + solicitud_eventos |
+| `20260507_admin_pricing_gate.sql` | aplicada ✓ (verificado 2026-07-05 vs BD) | estado `pendiente_pricing` + repuestos_pendientes.tiempo_estimado nullable |
 | **`20260508_fix_cotizacion_column.sql`** | **APLICADA** (verificado 2026-07-01 vía REST probe: `SELECT id,cotizacion` → HTTP 200 con datos) | Agrega columna faltante `cotizacion JSONB` en solicitudes_servicio (rompía POST /api/diagnostico no-garantía) |
-| **`20260508_fix_tecnicos_columns.sql`** | **PENDIENTE — HOTFIX URGENTE** | Agrega `acepta_garantias` + `especialidad_principal` en tecnicos (rompía registro de técnicos). Incluye backfill desde especialidades_tecnico |
-| **`20260508_fix_completado_at_default.sql`** | **PENDIENTE — HOTFIX URGENTE** | Drop DEFAULT NOW() de evidencias_servicio.completado_at + backfill rows mal seteadas (rompía botón "Completar servicio" tras diagnóstico) |
-| **`20260510_no_show_protocolo.sql`** | **PENDIENTE** | Estado terminal `no_show_cliente`, columna `evidencia_no_show` JSONB, columnas auditoría de tarifa MABE (cumple_ta, cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado), tabla nueva `cliente_historial`, tipos extra en `solicitud_eventos`. Ver `docs/PROTOCOLO-VISITA.md` y `docs/TARIFAS.md` |
-| **`20260513_normalizar_telefonos.sql`** | **PENDIENTE** | Función `normalizar_telefono_co()` + triggers BEFORE INSERT/UPDATE en `tecnicos.whatsapp` y `solicitudes_servicio.cliente_telefono`. Backfill: normaliza datos existentes a dígitos puros con prefijo 57 (strip `+`, espacios, guiones, pipe). Resuelve "técnico no recibe WhatsApp porque `whatsapp` quedó con +57" |
-| **`20260513_tracking_ta.sql`** | **PENDIENTE** | Columnas `diagnosticado_at timestamptz` + `cumple_ta boolean` en `solicitudes_servicio`, con índices. Backfill desde `triaje_resultado` JSONB. Habilita tracking del SLA 24h y filtros admin por TA |
+| `20260508_fix_tecnicos_columns.sql` | aplicada ✓ (verificado 2026-07-05 vs BD) | Agrega `acepta_garantias` + `especialidad_principal` en tecnicos (rompía registro de técnicos). Incluye backfill desde especialidades_tecnico |
+| `20260508_fix_completado_at_default.sql` | aplicada ✓ (verificado 2026-07-05: sin DEFAULT) | Drop DEFAULT NOW() de evidencias_servicio.completado_at + backfill rows mal seteadas (rompía botón "Completar servicio" tras diagnóstico) |
+| `20260510_no_show_protocolo.sql` | aplicada ✓ (verificado 2026-07-05 vs BD) | Estado terminal `no_show_cliente`, columna `evidencia_no_show` JSONB, columnas auditoría de tarifa MABE (cumple_ta, cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado), tabla nueva `cliente_historial`, tipos extra en `solicitud_eventos`. Ver `docs/PROTOCOLO-VISITA.md` y `docs/TARIFAS.md` |
+| `20260513_normalizar_telefonos.sql` | aplicada ✓ (verificado 2026-07-05: función + 3 triggers) | Función `normalizar_telefono_co()` + triggers BEFORE INSERT/UPDATE en `tecnicos.whatsapp` y `solicitudes_servicio.cliente_telefono`. Backfill: normaliza datos existentes a dígitos puros con prefijo 57 (strip `+`, espacios, guiones, pipe). Resuelve "técnico no recibe WhatsApp porque `whatsapp` quedó con +57" |
+| `20260513_tracking_ta.sql` | aplicada ✓ (verificado 2026-07-05 vs BD) | Columnas `diagnosticado_at timestamptz` + `cumple_ta boolean` en `solicitudes_servicio`, con índices. Backfill desde `triaje_resultado` JSONB. Habilita tracking del SLA 24h y filtros admin por TA |
+| `20260508_backfill_horario_token.sql` | aplicada ✓ (verificado 2026-07-05: 0 filas sin token) | Backfill de UUID a filas de `solicitudes_servicio` sin `horario_token`. Idempotente (solo toca filas NULL) |
+| `20260516_connection_errors.sql` | aplicada | Tabla nueva `connection_errors` (log de errores de conexión del cliente: url, error_type, network_*, actor, ip) con RLS + 2 policies + 4 índices. Backend del panel `/admin/errores` |
+| `20260523_geocoding_y_fecha_visita.sql` | aplicada (2026-05-23) | Mapa admin: columnas `direccion_lat`, `direccion_lng`, `direccion_geocodificada_at`, `direccion_geocoding_aproximada` (flag fallback centro ciudad) y `fecha_visita_at` (parsed de `horario_confirmado`; identidad del slot de agenda — ver `docs/GOTCHAS.md`) en `solicitudes_servicio` + 2 índices. Alimenta `/admin/mapa` y el cupo por franja |
+| `20260624_storage_quitar_listing_publico.sql` | aplicada (2026-06-24) | Hardening de auditoría de seguridad: cierra el **listing** público de los buckets de Storage (`evidencias-servicio`, `tecnicos-fotos`, `tecnicos-documentos`) — los objetos siguen accesibles por URL directa, pero ya no se puede enumerar el contenido del bucket |
 | `20260516_perf_fk_index_rls.sql` | aplicada (2026-05-16) | Mejoras de performance del advisor de Supabase: (a) índice FK `idx_solicitudes_tecnico_asignado` para `solicitudes_servicio.tecnico_asignado_id`, (b) wrap `auth.role()` en `(SELECT auth.role())` para las policies `service_role_all_*` (RLS initplan, 1 evaluación por query en vez de por fila), (c) re-scope `service_role_all_{gps,repuestos,eventos}` de role `{public}` → `{service_role}` para eliminar superposición con policies `anon_*` (multiple permissive), (d) drop policy duplicada `"Allow public update evidencias"` en `evidencias_servicio`. Aplicada vía MCP — ya no aparece en pendientes |
-| **`20260521_storage_policies_public_role.sql`** | **PENDIENTE — aplicar vía Dashboard** | Fix RLS Storage: amplía las policies de los buckets `evidencias-servicio`, `tecnicos-fotos` y `tecnicos-documentos` de role `{anon}` → `public`. Resuelve `new row violates row-level security policy` al subir evidencia desde el portal del técnico cuando el navegador tiene una sesión de admin activa (rol `authenticated` no matcheaba las policies `{anon}`). **NO se puede correr en el SQL Editor** — `postgres` no es dueño de `storage.objects`. Aplicar vía Dashboard → Storage → Policies (ver cabecera del archivo) |
-| **`20260529_supervisores_y_repuesto_recibido.sql`** | **PENDIENTE — aplicar vía SQL Editor** | (1) Tabla nueva `supervisores` (destinatarios WhatsApp por cambio de estado; filtrable por ámbito `todos`/`garantia`/`particular`, `marca`, subconjunto de `estados[]`) con RLS + 4 policies anon CRUD + service_role + trigger de normalización de teléfono. (2) Estado nuevo `repuesto_recibido` en el CHECK constraint de `solicitudes_servicio.estado` (22 estados). (3) Columnas `reprogramacion_token uuid` + `repuesto_recibido_at timestamptz` + sus índices parciales. Idempotente. **No tiene backfill** — segura de re-correr. Ver sección dedicada abajo + `docs/MAQUINA-DE-ESTADOS.md` §4b/4c y §Supervisores |
+| `20260521_storage_policies_public_role.sql` | aplicada ✓ (verificado 2026-07-05: policies con role `public`) | Fix RLS Storage: amplía las policies de los buckets `evidencias-servicio`, `tecnicos-fotos` y `tecnicos-documentos` de role `{anon}` → `public`. Resuelve `new row violates row-level security policy` al subir evidencia desde el portal del técnico cuando el navegador tiene una sesión de admin activa (rol `authenticated` no matcheaba las policies `{anon}`). **NO se puede correr en el SQL Editor** — `postgres` no es dueño de `storage.objects`. Aplicar vía Dashboard → Storage → Policies (ver cabecera del archivo) |
+| `20260529_supervisores_y_repuesto_recibido.sql` | aplicada (feature en producción desde 2026-05-29) | (1) Tabla nueva `supervisores` (destinatarios WhatsApp por cambio de estado; filtrable por ámbito `todos`/`garantia`/`particular`, `marca`, subconjunto de `estados[]`) con RLS + 4 policies anon CRUD + service_role + trigger de normalización de teléfono. (2) Estado nuevo `repuesto_recibido` en el CHECK constraint de `solicitudes_servicio.estado` (22 estados). (3) Columnas `reprogramacion_token uuid` + `repuesto_recibido_at timestamptz` + sus índices parciales. Idempotente. **No tiene backfill** — segura de re-correr. Ver sección dedicada abajo + `docs/MAQUINA-DE-ESTADOS.md` §4b/4c y §Supervisores |
 | `20260602_dapta_llamadas.sql` | aplicada vía MCP (2026-06-12) | Segunda línea de voz IA (Dapta). (1) Tabla nueva `llamadas` (un intento por fila; auditoría + idempotencia del webhook por `dapta_call_id` vía índice UNIQUE parcial) con RLS + 4 policies anon CRUD + service_role. (2) Columnas en `solicitudes_servicio`: `llamada_intentos int DEFAULT 0`, `ultima_llamada_at timestamptz` (cerrojo de cooldown), `requiere_confirmacion_llamada boolean DEFAULT false`. **No toca** el CHECK de `estado` ni el enum `solicitud_eventos.tipo`. Idempotente. **No tiene backfill** — segura de re-correr. La Fase 2 (cierre + encuesta) además requiere la columna `cumple_encuesta` que vive en `20260510_no_show_protocolo.sql`. Ver `docs/DAPTA.md` |
 | `20260609_tecnicos_ciudades_cobertura.sql` | aplicada vía MCP (2026-06-12) — backfill OK (13 técnicos) | Multi-ciudad por técnico: columna nueva `ciudades_cobertura text[]` (NOT NULL DEFAULT `'{}'`) en `tecnicos` + backfill `ARRAY[ciudad_pueblo]` para técnicos existentes. El matching de `notificarTecnicos` ahora compara la solicitud contra TODAS las ciudades de cobertura (fallback a `ciudad_pueblo`). Editable desde `/admin/tecnicos/[id]`. Idempotente; backfill seguro de re-correr (solo toca filas con cobertura vacía). Ver `docs/SUPABASE.md` |
 | `20260701_reload_cotizacion_schema_cache.sql` | **aplicar vía SQL Editor si reaparece el error** | Recurrencia del error `Could not find the 'cotizacion' column ... in the schema cache` al diagnosticar (no-garantía). La columna YA existe (verificado 2026-07-01); el error es el **schema cache de PostgREST desactualizado** tras correr DDL. Re-asierta la columna `IF NOT EXISTS` + `NOTIFY pgrst, 'reload schema'` para forzar el refresco inmediato. Idempotente, sin backfill. Se autocura solo, pero esta migración lo resuelve al instante |
@@ -52,7 +57,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 > una "pendiente", verificar contra la BD (`information_schema`) — todas son
 > idempotentes, pero conviene saber el estado real.
 
-## Cómo aplicar las pendientes
+## Cómo aplicar las pendientes (histórico — a 2026-07-05 no hay pendientes)
 
 1. Abre Supabase → **SQL Editor** → **New query**
 2. Pega el contenido de `20260506_cliente_self_service.sql` y ejecuta. Espera "Success".
@@ -149,12 +154,13 @@ WHERE e.completado_at IS NOT NULL
 
 Si alguna fila vuelve `FALTA ❌`, vuelve a ejecutar la migración correspondiente — son idempotentes.
 
-## Aplicar `20260529_supervisores_y_repuesto_recibido.sql` (pendiente real)
+## Aplicar `20260529_supervisores_y_repuesto_recibido.sql` (ya aplicada — guía histórica)
 
-> Esta es la única migración SQL realmente pendiente a 2026-05-29. **No tiene
+> ✅ Aplicada — el feature de supervisores está en producción. Se conserva la guía
+> y la verificación por si hay que re-aplicar en otro entorno. **No tiene
 > backfill ni dependencias de orden** con las anteriores (solo asume que
-> `normalizar_telefono_co()` ya existe — creada por `20260513_normalizar_telefonos.sql`,
-> ya aplicada). Es 100% idempotente: segura de re-correr.
+> `normalizar_telefono_co()` ya existe — creada por `20260513_normalizar_telefonos.sql`).
+> Es 100% idempotente: segura de re-correr.
 
 1. Abre Supabase → **SQL Editor** → **New query**.
 2. Pega el contenido completo de `20260529_supervisores_y_repuesto_recibido.sql` y ejecuta. Espera "Success".
@@ -247,11 +253,11 @@ WHERE coalesce(array_length(ciudades_cobertura, 1), 0) = 0
 
 Las migraciones no traen rollback automático. Si necesitas revertir una columna, hazlo manualmente. **No revertir** mientras haya filas `pendiente_pricing` o `reagendamiento_pendiente` en producción.
 
-## Nota sobre RLS
+## Nota sobre RLS (actualizada 2026-07-05, auditoría 2026-06-24)
 
-- Tablas con RLS habilitado: `repuestos_pendientes`, `gps_pings`, `solicitud_eventos`, `supervisores` (esta última desde `20260529`).
-- Tablas sin RLS: `solicitudes_servicio`, `tecnicos`, `especialidades_tecnico`, `notificaciones_whatsapp`, `evidencias_servicio`.
-- Toda la app usa el `anon_key`. Para producción seria, queda pendiente habilitar RLS en las 5 tablas restantes (ver `improvement-plan.md`).
+- Tablas con RLS habilitado: `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `solicitud_eventos`, `repuestos_pendientes`, `gps_pings`, `cliente_historial`, `supervisores` (desde `20260529`), `llamadas` (desde `20260602`), `connection_errors` (desde `20260516`).
+- Tablas **sin** RLS: `solicitudes_servicio` (la principal) y `especialidades_tecnico`.
+- **Ojo**: tener RLS "on" no protege mucho hoy — las policies de write son `USING(true)` para `anon`, así que con el `anon_key` (extraíble del bundle) se puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. La raíz es que la app escribe con anon (registro client-side + cliente singleton). El fix real es migrar los writes a `service_role` server-side antes de endurecer policies. Ver `docs/SEGURIDAD.md`.
 
 ## Hallazgos del audit (2026-05-07) — backlog de migraciones futuras
 

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
+import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 import type { CotizacionReparacion, ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 
@@ -147,13 +148,14 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
     const precio = Number(precios[p.sku]) || 0
     return acc + precio * Math.max(1, p.cantidad || 1)
   }, 0)
-  // En particular el total al cliente lleva IVA + margen Baird
-  // (× 1.19 × 1.10). Calculamos en vivo para mostrar al admin lo que el
-  // cliente va a ver.
+  // En particular el total al cliente lleva utilidad Baird 13% + IVA 19%
+  // (misma fórmula del backend — calcularTarifaParticular, factor 1.3447).
+  // Calculamos en vivo para mostrar al admin lo que el cliente va a ver.
   const costoTecnicoTotal = (Number(manoObra) || 0) + repuestosTotal
+  const tarifaEstimada = calcularTarifaParticular({ costoTecnico: costoTecnicoTotal })
   const totalClienteEstimado = solicitud.es_garantia
     ? costoTecnicoTotal
-    : Math.round(costoTecnicoTotal * 1.19 * 1.10)
+    : tarifaEstimada.totalCliente
 
   const submit = async () => {
     setError('')
@@ -343,16 +345,16 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
                 <span>${formatCOP(repuestosTotal)}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-blue-200">
-                <span>Subtotal técnico</span>
+                <span>Pago al técnico (neto)</span>
                 <span>${formatCOP(costoTecnicoTotal)}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500">
-                <span>+ IVA 19%</span>
-                <span>${formatCOP(Math.round(costoTecnicoTotal * 0.19))}</span>
+                <span>+ Utilidad Baird 13%</span>
+                <span>${formatCOP(tarifaEstimada.margenBaird)}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500">
-                <span>+ Comisión Baird 10%</span>
-                <span>${formatCOP(Math.round(costoTecnicoTotal * 1.19 * 0.10))}</span>
+                <span>+ IVA 19% (sobre la venta)</span>
+                <span>${formatCOP(tarifaEstimada.ivaCliente)}</span>
               </div>
               <div className="flex justify-between text-base font-bold text-blue-900 pt-2 border-t border-blue-300">
                 <span>Total al cliente</span>

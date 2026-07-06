@@ -747,15 +747,15 @@ export default function DiagnosticoPage() {
           </div>
         )}
 
-        {/* Particular only: costo total del técnico (mano de obra + repuestos).
-            El cliente paga = costo × 1.19 IVA × 1.10 margen Baird. Solo se muestra
+        {/* Particular only: lo que el técnico quiere ganar (mano de obra + repuestos).
+            El cliente paga = costo × 1.13 utilidad Baird × 1.19 IVA. Solo se muestra
             cuando el siguiente paso es reparar o esperar_repuesto (los otros
             cierran el servicio sin cotización). */}
         {!servicio!.es_garantia && requiereCostoParticular && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-            <h2 className="text-lg font-bold text-slate-900 mb-1">Tu costo total <span className="text-red-500">*</span></h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-1">¿Cuánto quieres ganar por esta reparación? <span className="text-red-500">*</span></h2>
             <p className="text-xs text-gray-400 mb-4">
-              <strong>Valor en COP requerido.</strong> Mano de obra + repuestos. El cliente NO ve este valor — solo ve el total final con IVA.
+              <strong>Valor en COP requerido.</strong> Mano de obra + repuestos — este monto es TU PAGO y lo recibes completo. El cliente NO ve este valor: a él le llega el total con utilidad Baird e IVA.
             </p>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">$</span>
@@ -778,16 +778,16 @@ export default function DiagnosticoPage() {
             {tarifaParticular && (
               <div className="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs">
                 <div className="flex justify-between text-gray-600 mb-1">
-                  <span>Tu costo</span>
+                  <span>Tu pago (lo que recibes)</span>
                   <span className="font-medium text-slate-800">${formatCOP(tarifaParticular.costoTecnico)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 mb-1">
-                  <span>+ IVA 19%</span>
-                  <span className="text-slate-700">${formatCOP(tarifaParticular.subtotalConIva - tarifaParticular.costoTecnico)}</span>
+                  <span>+ Utilidad Baird 13%</span>
+                  <span className="text-slate-700">${formatCOP(tarifaParticular.margenBaird)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 mb-2">
-                  <span>+ Comisión Baird 10%</span>
-                  <span className="text-slate-700">${formatCOP(tarifaParticular.margenBaird)}</span>
+                  <span>+ IVA 19%</span>
+                  <span className="text-slate-700">${formatCOP(tarifaParticular.ivaCliente)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-purple-900 border-t border-purple-200 pt-2">
                   <span>Total al cliente (incluye IVA)</span>

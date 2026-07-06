@@ -147,7 +147,7 @@ export default function CotizacionPage() {
         setEstado('idle')
       }
     } catch {
-      setError('Error de conexión')
+      setError('No pudimos conectar. Revisa tu señal e intenta de nuevo — la cotización sigue vigente.')
       setEstado('idle')
     }
   }
@@ -168,7 +168,7 @@ export default function CotizacionPage() {
         setEstado('idle')
       }
     } catch {
-      setError('Error de conexión')
+      setError('No pudimos conectar. Revisa tu señal e intenta de nuevo — la cotización sigue vigente.')
       setEstado('idle')
     }
   }

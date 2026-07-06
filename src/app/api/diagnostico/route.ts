@@ -292,7 +292,7 @@ export async function POST(req: NextRequest) {
       //   negativa_cliente → cancelada_cliente (terminal).
       //
       // Ver docs/TARIFAS.md § "Particular" para detalle de la fórmula
-      // (costoTecnico × 1.19 IVA × 1.10 margen Baird).
+      // (costoTecnico × 1.13 utilidad Baird × 1.19 IVA — ver tarifas/particular.ts).
       const { evidenciaUrls, costoTecnico, codigoFalla } = body
       const costoTecnicoNum = Number.isFinite(costoTecnico) && costoTecnico > 0 ? Math.round(costoTecnico) : 0
 
@@ -324,7 +324,8 @@ export async function POST(req: NextRequest) {
         pendiente_precio: necesitaPricingAdmin,
         // Detalle interno (no visible al cliente)
         costo_tecnico: costoTecnicoNum,
-        subtotal_con_iva: tarifa?.subtotalConIva ?? 0,
+        base_venta: tarifa?.baseVenta ?? 0,
+        iva_venta: tarifa?.ivaCliente ?? 0,
         margen_baird: tarifa?.margenBaird ?? 0,
         // Compat con la página de cotización (cliente ve solo total)
         mano_obra: 0,

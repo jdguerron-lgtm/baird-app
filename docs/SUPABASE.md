@@ -6,7 +6,7 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 
 | Table | Purpose | Key Fields |
 |-------|---------|------------|
-| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count, **diagnosticado_at, cumple_ta** (tracking TA — 20260513), **cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado** (auditoría tarifa MABE — 20260510), **reprogramacion_token, repuesto_recibido_at** (reprogramación tras repuesto — 20260529) |
+| `solicitudes_servicio` | Main service request | estado, es_garantia, horario_token, cliente_token, horario_confirmado, siguiente_paso, tyc_aceptados_at, tecnico_asignado_id, triaje_resultado (JSONB), cotizacion (JSONB), cancelado_at, cancelado_por, motivo_cancelacion, cancelado_tarde, reagendamientos_count, **diagnosticado_at, cumple_ta** (tracking TA — 20260513), **cumple_encuesta, dias_solucion_efectivos, pago_tecnico_total, margen_baird, recargo_weekend_aplicado** (auditoría tarifa MABE — 20260510), **reprogramacion_token, repuesto_recibido_at** (reprogramación tras repuesto — 20260529), **direccion_lat, direccion_lng, direccion_geocodificada_at, direccion_geocoding_aproximada, fecha_visita_at** (geocoding + identidad del slot de agenda — 20260523; ver gotcha `fecha_visita_at` en `docs/GOTCHAS.md`), **llamada_intentos, ultima_llamada_at, requiere_confirmacion_llamada** (2ª línea de voz — 20260602) |
 | `notificaciones_whatsapp` | One record per tech notification | token, estado, timestamps |
 | `tecnicos` | Technician profiles | portal_token, whatsapp, ciudad_pueblo (ciudad base), especialidades, verificado, **acepta_garantias, especialidad_principal** (20260508), **ciudades_cobertura text[]** (multi-ciudad — 20260609) |
 | `especialidades_tecnico` | Many-to-many: technicians ↔ skills | tecnico_id, especialidad |
@@ -17,6 +17,7 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 | `cliente_historial` (NEW 2026-05-10) | Tracking de comportamiento del cliente (no-shows, cancelaciones tardías, servicios completados). Lookup por documento (preferido) o teléfono | documento, telefono, no_shows_count, cancelaciones_tarde_count, servicios_completados_count, bloqueado, bloqueado_motivo, requiere_confirmacion_llamada, ultimo_evento_at. RLS service_role-only. |
 | `connection_errors` (NEW observability) | Telemetría de errores de red enviada por el browser vía `/api/log-error`. Backend del panel `/admin/errores` | url, error_type, error_message, attempt_number, network_effective_type, network_downlink, network_rtt, online, actor, ip, user_agent, created_at |
 | `supervisores` (NEW 2026-05-29) | Destinatarios internos de notificaciones WhatsApp en cada cambio de estado. CRUD admin en `/admin/supervisores` | nombre, whatsapp (normalizado por trigger), activo, ambito (todos/garantia/particular), marca (NULL=todas), estados (text[], NULL/[]=todos los cambios), created_at, updated_at |
+| `llamadas` (NEW 2026-06-02) | Segunda línea de voz IA (Dapta) — un intento de llamada por fila. Idempotencia del webhook por `dapta_call_id` (índice UNIQUE parcial). Ver `docs/DAPTA.md` | solicitud_id, proposito, proveedor, dapta_call_id, estado_llamada, intento, resultado (JSONB), transcript, created_at, finished_at |
 
 ### Important JSONB Columns on solicitudes_servicio
 
@@ -64,26 +65,36 @@ Todas las migraciones viven en `supabase/migrations/`. **No usamos el Supabase C
 | `20260508_fix_cotizacion_column.sql` | **HOTFIX** — agrega columna `cotizacion JSONB` que estaba referenciada en código pero nunca creada |
 | `20260508_fix_tecnicos_columns.sql` | **HOTFIX** — agrega `acepta_garantias` + `especialidad_principal` en `tecnicos` (mismo bug histórico que el de `cotizacion`) |
 | `20260516_perf_fk_index_rls.sql` | Performance: índice FK `idx_solicitudes_tecnico_asignado`; wrap `auth.role()` en `(SELECT auth.role())` para evitar re-evaluación por fila; re-scope `service_role_all_*` a role `{service_role}` (elimina multiple permissive con `anon_*`); drop duplicada `"Allow public update evidencias"` |
-| `20260529_supervisores_y_repuesto_recibido.sql` | Tabla `supervisores` (+ RLS anon CRUD + trigger normalización teléfono); estado `repuesto_recibido` en el CHECK (22 estados); columnas `reprogramacion_token` + `repuesto_recibido_at` en `solicitudes_servicio` (+ índices). **PENDIENTE DE APLICAR** — ver plan de despliegue en `supabase/migrations/README.md` |
-| `20260609_tecnicos_ciudades_cobertura.sql` | Columna `ciudades_cobertura text[]` en `tecnicos` (multi-ciudad por técnico) + backfill desde `ciudad_pueblo`. El matching de `notificarTecnicos` compara la solicitud contra todas las ciudades de cobertura. **PENDIENTE DE APLICAR** |
+| `20260513_normalizar_telefonos.sql` | Trigger `normalizar_telefono_co()` en `tecnicos.whatsapp` + `solicitudes_servicio.cliente_telefono` (dígitos puros, prefijo 57) + backfill |
+| `20260516_connection_errors.sql` | Tabla `connection_errors` (telemetría de errores de red del cliente — backend de `/admin/errores`) |
+| `20260521_storage_policies_public_role.sql` | Policies de Storage de `{anon}` → `public` (fix de subida de evidencia con sesión admin activa). Se aplica vía Dashboard, no SQL |
+| `20260523_geocoding_y_fecha_visita.sql` | Columnas geocoding (`direccion_lat/lng`, `direccion_geocodificada_at`, `direccion_geocoding_aproximada`) + `fecha_visita_at` en `solicitudes_servicio` (+2 índices). Alimenta `/admin/mapa` y el cupo por franja |
+| `20260529_supervisores_y_repuesto_recibido.sql` | Tabla `supervisores` (+ RLS anon CRUD + trigger normalización teléfono); estado `repuesto_recibido` en el CHECK (22 estados); columnas `reprogramacion_token` + `repuesto_recibido_at` en `solicitudes_servicio` (+ índices). Aplicada — feature en producción |
+| `20260602_dapta_llamadas.sql` | Tabla `llamadas` + columnas Dapta en `solicitudes_servicio` (`llamada_intentos`, `ultima_llamada_at`, `requiere_confirmacion_llamada`) |
+| `20260609_tecnicos_ciudades_cobertura.sql` | Columna `ciudades_cobertura text[]` en `tecnicos` (multi-ciudad por técnico) + backfill desde `ciudad_pueblo`. El matching de `notificarTecnicos` compara la solicitud contra todas las ciudades de cobertura. Aplicada vía MCP (2026-06-12) |
+| `20260612_evento_cambio_estado.sql` | Tipo `cambio_estado` en el CHECK de `solicitud_eventos.tipo` + fix de constraint duplicado (historial de estados) |
+| `20260624_storage_quitar_listing_publico.sql` | Cierra el listing público de los 3 buckets de Storage (los objetos siguen accesibles por URL directa) |
 
 Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/README.md`.
 
-### RLS por tabla (estado actual)
+### RLS por tabla (estado actual — verificado 2026-05-22, auditoría 2026-06-24)
 
 | Tabla | RLS | Acceso anon | Notas |
 |---|---|---|---|
-| `solicitudes_servicio` | ❌ | full (sin RLS) | Toda la seguridad depende de tokens UUID en URLs |
-| `tecnicos` | ❌ | full | Idem — `portal_token` es el secret |
+| `solicitudes_servicio` | ❌ | full (sin RLS) | **La tabla principal sigue sin RLS.** Toda la seguridad depende de tokens UUID en URLs. OJO: tiene policies `anon_*`/`service_role_*` definidas pero **inertes** (una POLICY no aplica con RLS off) |
 | `especialidades_tecnico` | ❌ | full | OK, datos no sensibles |
-| `evidencias_servicio` | ❌ | full | Token `confirmacion_token` para cliente |
-| `notificaciones_whatsapp` | ❌ | full | Riesgo: token único como secret; sin RLS un atacante podría aceptar masivamente |
+| `tecnicos` | ✅ | full CRUD (`USING(true)`) | Policies anon abiertas — `portal_token` es el secret real |
+| `evidencias_servicio` | ✅ | abierto (`USING(true)`) | Token `confirmacion_token` para cliente |
+| `notificaciones_whatsapp` | ✅ | abierto (`USING(true)`) | Token único por notificación como secret |
 | `repuestos_pendientes` | ✅ | `SELECT true` | service_role = ALL (scoped a role `service_role`, initplan optimizado — `20260516`) |
 | `gps_pings` | ✅ | `INSERT true` | service_role = ALL (idem); SELECT requiere service_role |
 | `solicitud_eventos` | ✅ | `SELECT true`, `INSERT true` | service_role = ALL (idem) |
-| `supervisores` (20260529) | ✅ | full CRUD (`SELECT/INSERT/UPDATE/DELETE true`) | service_role = ALL. Patrón `tecnicos`: anon abierto porque la app solo usa anon key; autorización real la impone `verificarAdmin` en `/api/admin/supervisores`. Contiene WhatsApp interno, no PII de clientes |
+| `cliente_historial` (20260510) | ✅ | service_role only | Tracking de no-shows / cancelaciones |
+| `supervisores` (20260529) | ✅ | full CRUD (`USING(true)`) | Autorización real la impone `verificarAdmin` en `/api/admin/supervisores`. Contiene WhatsApp interno, no PII de clientes |
+| `llamadas` (20260602) | ✅ | full CRUD (`USING(true)`) | + service_role = ALL |
+| `connection_errors` (20260516) | ✅ | insert-only vía `/api/log-error` | 2 policies |
 
-**Pendiente para producción seria** (ver `improvement-plan.md`): habilitar RLS efectiva en las tablas con ❌ y políticas que filtren por `cliente_token`/`portal_token`. (`supervisores` tiene RLS habilitada pero con políticas anon abiertas — mismo modelo que `tecnicos`.)
+**El "✅" engaña** (hallazgo auditoría 2026-06-24): la mayoría de las policies de write son `USING(true)` para anon, así que con el `anon_key` (extraíble del bundle) cualquiera puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. La raíz es que la app escribe con anon (registro client-side + cliente singleton). **Fix real pendiente**: migrar writes a `service_role` server-side, luego endurecer policies y habilitar RLS en `solicitudes_servicio`. Ver `docs/SEGURIDAD.md`.
 
 ### Storage buckets
 
@@ -93,7 +104,7 @@ Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/R
 | `tecnicos-fotos` | Foto de perfil del técnico | **Público** |
 | `tecnicos-documentos` | Documento de identidad del técnico (PII) | **Público** ⚠️ |
 
-⚠️ **Riesgo conocido:** `tecnicos-documentos` es público — cualquiera con la URL puede descargar la cédula. **Pendiente migrar a signed URLs** (TTL 1h) usando `createSignedUrl()` en `src/lib/uploadHelpers.ts`. Mismo aplica con menor severidad a las otras dos.
+⚠️ **Riesgo conocido:** `tecnicos-documentos` es público — cualquiera con la URL puede descargar la cédula. **Pendiente migrar a signed URLs** (TTL 1h) usando `createSignedUrl()` en `src/lib/uploadHelpers.ts`. Mismo aplica con menor severidad a las otras dos. **Mitigación parcial aplicada** (`20260624_storage_quitar_listing_publico.sql`): el listing/enumeración de los 3 buckets quedó cerrado — ya no se puede listar el contenido, pero un objeto sigue accesible por su URL exacta.
 
 Path pattern (todos):
 - evidencias: `{solicitud_id}/{timestamp}_{index}.{ext}` o `{solicitud_id}/diagnostico_{timestamp}_{i}.{ext}`
@@ -176,7 +187,7 @@ DELETE FROM notificaciones_whatsapp
 ```
 
 ### CHECK constraints
-Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El último **aplicado** está en `20260507_admin_pricing_gate.sql:11-33` (20 estados). La migración `20260529_supervisores_y_repuesto_recibido.sql` (PENDIENTE DE APLICAR) lo reemplaza con **22 estados** — agrega `repuesto_recibido` y deja el set 1:1 con `EstadoSolicitud` en `src/types/solicitud.ts`. Si agregas un nuevo estado **debes**:
+Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El vigente está en `20260529_supervisores_y_repuesto_recibido.sql` (**22 estados**, 1:1 con `EstadoSolicitud` en `src/types/solicitud.ts`). Si agregas un nuevo estado **debes**:
 1. Sumarlo al union type en `solicitud.ts`.
 2. Crear nueva migración con el constraint completo (no `ADD ... IN (...)` parcial).
 3. Agregar label/color en `src/lib/constants/estados.ts`.
@@ -192,7 +203,7 @@ Otros constraints relevantes: `siguiente_paso`, `verificacion_paso_decision`, `c
 
 **API routes admin** — todas validan `Authorization: Bearer ${session.access_token}` con el helper compartido `verificarAdmin()` de `src/lib/auth/admin.ts`. Llamadas UI obtienen el token con `supabase.auth.getSession()` y lo envían en el header.
 
-Endpoints con `verificarAdmin`: `/api/admin/export`, `/api/admin/reenviar-ultimo-mensaje`, `/api/carga-masiva` (POST + DELETE), `/api/whatsapp/notify`, `/api/cotizacion-precios`, `/api/repuesto-recibido`.
+La tabla completa de endpoints protegidos (export, editar/cambiar-estado, notas, supervisores, reagendar-solicitud, actualizar-valor, pedir-repuesto-supervisores, carga-masiva, whatsapp/notify, cotizacion-precios, repuesto-recibido, ...) vive en `docs/SEGURIDAD.md` § 2 — no duplicarla acá.
 
 **Patrón nuevo** (cualquier endpoint admin futuro):
 ```ts

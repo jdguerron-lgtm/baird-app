@@ -39,13 +39,20 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 
 | Lugar | Qué contiene |
 |---|---|
-| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: 23 plantillas. `valor_actualizado_cliente_v1` y `supervisor_bienvenida_v1` ya están subidas (status PENDING, esperando aprobación Meta). Las 3 de 2026-05-29 (`supervisor_cambio_estado_v1`, `repuesto_recibido_cliente_v2`, `repuesto_recibido_tecnico_v1`) y las 3 de 2026-06-12 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_repuesto_garantia_v1`) están en el script pero **aún no subidas a Meta**. Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
+| `scripts/upload-templates.mjs` | **Fuente canónica** del repo. Contiene la definición JSON exacta que se sube a Meta. Hoy: **25 plantillas** (la más reciente: `resumen_semanal_supervisores_v1`, plantilla de documento PDF, 2026-06-24). El status real en Meta (APPROVED/PENDING) se consulta con `node --env-file=.env.local scripts/upload-templates.mjs --check` — no confiar en snapshots de este doc. Sólo las versiones vigentes — para subir SOLO las renombradas por la migración a `lineablanca`, ver `scripts/upload-templates-v2.mjs`. |
 | Meta Business Manager → WhatsApp Manager → Message Templates | **Fuente de verdad operacional** — lo que Meta tiene aprobado y permite enviar. Toda plantilla ya enviada al menos una vez está aquí. |
 | `docs/WHATSAPP_TEMPLATES.md` (este archivo) | **Documentación humana** — catálogo, parámetros, propósito. |
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
 | `CLAUDE.md` | Resumen para agentes de IA. |
 
-**Estado de cobertura del script (2026-05-23):** las 16 plantillas en uso por el código ya están todas registradas en `scripts/upload-templates.mjs`, todas en sus versiones vigentes (tras la migración del 2026-05-23 — ver banda informativa al inicio de este doc). Plantillas huérfanas/legacy en Meta que NO se invocan desde el código (NO borrar hasta cooldown de 4 semanas desde su deprecation):
+**Estado de cobertura del script (actualizado 2026-07-06):** el script registra **32 plantillas** — las 25 previas + las 7 del ex-backlog (ya APPROVED en Meta, registradas con su contenido exacto aprobado). Status:
+- **29 APPROVED** (verificado en vivo con `--check`).
+- **3 PENDING** (subidas 2026-07-05): `esperando_repuesto_tecnico_v1` (la invoca `/api/verificar-paso`), `repuesto_llegado_tecnico_v1` (`/api/repuesto-recibido`), `supervisor_reagendamiento_v1` (reagendamiento admin). Hasta que aprueben, esos 3 envíos fallan best-effort (no rompen el flujo). Monitorear con `--check`.
+- ⚠️ 4 plantillas del ex-backlog llevan botones con URL `baird-app.vercel.app` (pre-migración de dominio) — **funcionan** porque ese dominio sigue vivo como alias del mismo deployment; al re-subirlas algún día, bumpear a `_v2` con `lineablanca`.
+
+(10 plantillas fueron bumpeadas de versión el 2026-05-23 por la migración de dominio — ver banda informativa al inicio de este doc.)
+
+**Revisión de redundancias por destinatario (2026-07-05):** se auditó todo call-site de envío agrupado por evento y tipo de usuario (cliente/técnico/supervisor) — **no hay dobles envíos**: el fallback `supervisor_repuesto_garantia_v1` → `supervisor_cambio_estado_v1` en `notificarCambioEstado` es excluyente (el `return` tras el envío exitoso lo garantiza, y `enviarPlantilla` lanza en error, así que el fallback solo corre si la específica falla); `notificarRepuestoSupervisores` (botón admin) reusa la misma plantilla pero es on-demand, no automática; y los pares al técnico (`esperando_repuesto_tecnico` / `repuesto_llegado_tecnico` / `repuesto_recibido_tecnico`) corresponden a eventos distintos con información distinta. La única redundancia existente son las **14 plantillas legacy + `hello_world` que siguen APPROVED en Meta** (versiones reemplazadas el 2026-05-23, lista abajo) — inofensivas y sin costo; el cooldown para borrarlas venció ~2026-06-20, borrarlas es opcional. Plantillas huérfanas/legacy en Meta que NO se invocan desde el código (NO borrar hasta cooldown de 4 semanas desde su deprecation):
 - `solicitud_particular_cliente_v1` — DEPRECATED hace tiempo
 - `cliente_seleccion_horario_v1`, `recordatorio_horario_v1`, `nueva_solicitud_v3`, `solicitud_particular_tecnico_v1`, `servicio_asignado_tecnico_v3`, `tecnico_asignado_cliente_v5`, `verificar_siguiente_paso_v1`, `cotizacion_cliente_v1`, `cotizacion_aprobada_tecnico_v1`, `confirmar_servicio_v3` — reemplazadas por sus versiones `_v2/_v4/_v6` el 2026-05-23 por la migración de dominio. Cooldown hasta ~2026-06-20 para borrar y reusar nombre (o simplemente dejarlas indefinidamente).
 
@@ -175,22 +182,37 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/verificar-paso/{verificacion_paso_token}` — display "Aprobar paso"
 - **Propósito**: cliente aprueba/rechaza el siguiente paso del técnico (4 opciones: reparar, esperar_repuesto, no_reparable, negativa_cliente).
 
-#### `cotizacion_cliente_v2` **En script** ✅ (backfilled 2026-05-08)
+#### `cotizacion_cliente_v2` **En script** ✅ (backfilled 2026-05-08) — ⚠️ REEMPLAZO EN CURSO por `_v3`
 - **Disparo**: `enviarCotizacionCliente(solicitudId)` (particular post-pricing admin)
 - **Destino**: cliente
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `diagnostico`, `mano_obra`, `repuestos`, `total`
 - **Botón URL**: `/cotizacion/{cotizacion.token}` — display "Aprobar cotización"
 - **Propósito**: cliente aprueba/rechaza la cotización particular.
-- **⚠️ Cambio pendiente**: con el admin pricing gate v1 podría ser útil agregar el `tiempo_entrega` al body — requiere nueva versión `_v2`.
+- **⚠️ Problema (auditoría 2026-07-05)**: desde 2026-05-12 `mano_obra`/`repuestos` se persisten en 0, así que el cliente ve "Mano de obra: $0 / Repuestos: $0 / Total: $X" — genera desconfianza. Reemplazo: `cotizacion_cliente_v3` (abajo).
+
+#### `cotizacion_cliente_v3` ⏳ pendiente de subir a Meta **En script** ✅ (nueva 2026-07-05)
+- **Disparo**: `enviarCotizacionCliente(solicitudId)` — **flip pendiente** (hoy el código envía `_v2`; TODO marcado en `whatsapp.service.ts`)
+- **Destino**: cliente
+- **Body** (6 params): `cliente`, `tecnico`, `equipo`, `diagnostico(200)`, `total`, `tiempo_estimado` (fallback `"inmediato tras tu aprobación"` cuando no hay espera de repuesto)
+- **Botón URL**: `/cotizacion/{cotizacion.token}` — display "Aprobar cotización"
+- **Propósito**: igual que `_v2` pero sin las líneas $0 y con el tiempo estimado (cierra el backlog H).
 
 ### Post-decisión cliente
 
-#### `cotizacion_aprobada_tecnico_v2` **En script** ✅ (backfilled 2026-05-08)
+#### `cotizacion_aprobada_tecnico_v2` **En script** ✅ (backfilled 2026-05-08) — ⚠️ REEMPLAZO EN CURSO por `_v3`
 - **Disparo**: `notificarCotizacionAprobada(solicitudId)`
 - **Destino**: técnico
 - **Body** (4 params): `tecnico`, `cliente`, `equipo`, `total`
 - **Botón URL**: `/tecnico/{portal_token}` — display "Ver portal"
 - **Propósito**: avisar al técnico que el cliente aprobó.
+- **⚠️ Problema (auditoría 2026-07-05)**: `{{4}}` es el TOTAL AL CLIENTE (con utilidad Baird + IVA) rotulado "Total aprobado" — el técnico lo confunde con su pago y luego recibe menos. Fuente #1 de confusión de pagos. Reemplazo: `_v3` (abajo).
+
+#### `cotizacion_aprobada_tecnico_v3` ⏳ pendiente de subir a Meta **En script** ✅ (nueva 2026-07-05)
+- **Disparo**: `notificarCotizacionAprobada(solicitudId)` — **flip pendiente** (hoy el código envía `_v2`; TODO marcado en `whatsapp.service.ts`)
+- **Destino**: técnico
+- **Body** (5 params): `tecnico`, `cliente`, `equipo`, `pago_tecnico` (SU pago neto), `total_cliente`
+- **Botón URL**: `/tecnico/{portal_token}` — display "Abrir portal"
+- **Propósito**: separar explícitamente "💰 Tu pago por este servicio" del "🧾 Total que paga el cliente a Baird" para que el técnico sepa exactamente cuánto va a recibir.
 
 #### `esperando_repuesto_cliente_v1`
 - **En script** ✅
@@ -365,9 +387,11 @@ Si rotas el token: actualiza `WHATSAPP_API_TOKEN` en Vercel **y** re-deploy. Los
 
 ---
 
-## Backlog — plantillas pendientes de crear
+## Ex-backlog — plantillas de gaps: aprobadas y CABLEADAS (2026-07-06)
 
-Cubren los gaps detectados al revisar el flujo de garantía (2026-05-08). Cada una con JSON listo para pegar en `scripts/upload-templates.mjs` cuando se priorice. **Ninguna está creada en Meta todavía** — no las invoques desde código hasta que estén `APPROVED`.
+Cubrían los gaps detectados al revisar el flujo de garantía (2026-05-08). Los JSON de abajo quedan como referencia histórica; el contenido canónico ya vive en `scripts/upload-templates.mjs` (entradas 26–32).
+
+> ✅ **Cerrado 2026-07-06:** las 7 plantillas — `solicitud_expirada_cliente_v1` (A), `paso_aprobado_cliente_v1` (B), `paso_rechazado_cliente_v1` (C), `paso_resuelto_tecnico_v1` (D), `gestionar_servicio_v1` (F), `servicio_confirmado_tecnico_v1` (I), `horario_confirmado_cliente_v1` (J) — están APPROVED en Meta y **6 quedaron cableadas en código** (probadas en vivo antes del deploy): A en el cron `horario-recordatorio`; B, C y D en `/api/verificar-paso`; I en `confirmarServicioCliente`; J en `confirmarHorarioSolicitud`. Todas best-effort con fallback al comportamiento previo (texto libre o nada). **F (`gestionar_servicio_v1`) quedó a propósito SIN disparo automático**: el botón de J ya entrega el mismo link `/servicio/{cliente_token}` — enviarla además sería redundante al mismo destinatario. Queda disponible para reenvíos manuales.
 
 ### Alta prioridad (cierran gaps activos en producción)
 
@@ -528,13 +552,8 @@ Ya no está en backlog: se agregó al script y al catálogo (sección "Post-deci
 - Cuando Meta apruebe, deprecar `_v6` y mover invocaciones a `_v7`.
 - **Nota**: el slot `_v6` fue tomado por la migración de dominio del 2026-05-23 (text-only con URL nueva), por eso el siguiente salto es `_v7`.
 
-#### H. `cotizacion_cliente_v3`
-**Gap**: post-admin-pricing-gate, ahora siempre se fija `tiempo_entrega` — pero la plantilla `_v2` (la vigente tras la migración 2026-05-23) no lo incluye. Hoy se omite del WhatsApp; el cliente lo ve en la página `/cotizacion/{token}`.
-**Solución**: nueva versión `_v3` con un parámetro extra (el slot `_v2` está tomado por la migración de dominio):
-```
-'... 🧾 Total: {{7}} COP\n⏱ Tiempo estimado: {{8}}\n\n...'
-```
-8 parámetros. Cuando Meta apruebe, mover invocaciones a `_v2` y deprecar `_v1`.
+#### H. `cotizacion_cliente_v3` — ✅ RESUELTO (2026-07-05)
+La `_v3` quedó definida en `upload-templates.mjs` (6 params, sin líneas $0, con tiempo estimado). Ver su entrada en el Catálogo. Pendiente: subir a Meta + flip del código.
 
 #### J. `horario_confirmado_cliente_v1`
 **Gap (H1, H2 en FLOWS.md)**: tras elegir horario en `/horario/{token}`, el cliente solo ve confirmación in-app — no recibe WhatsApp de "horario registrado, buscando técnico". Cierra el webview y queda en suspenso hasta que un técnico acepte (puede tardar horas) o que abra de nuevo la URL.

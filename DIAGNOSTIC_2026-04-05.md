@@ -1,4 +1,7 @@
 # Baird Service — Platform Diagnostic Report
+
+> ⚠️ **DOCUMENTO HISTÓRICO — NO ACTUALIZAR.** Snapshot de un testing manual de abril 2026, anterior al customer-first scheduling v2 y a la migración de dominio. Varios hallazgos ya fueron resueltos. Para trampas vigentes ver `docs/GOTCHAS.md`; para gaps actuales ver `docs/FLOWS.md` § "Gaps conocidos".
+
 **Date:** April 5, 2026
 **Tested URL:** https://baird-app.vercel.app/solicitar
 **Test data:** nombre: `nombre`, phone: `+573183723213`

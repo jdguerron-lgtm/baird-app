@@ -946,7 +946,7 @@ export default function SolicitudDetalle() {
                           solicitud.es_garantia,
                           (solicitud as unknown as { cotizacion?: { total?: number | null } | null }).cotizacion,
                         ))} COP
-                        {/* Neto que recibe el técnico (catálogo ÷ 1.309 o costo cotizado). */}
+                        {/* Neto que recibe el técnico (catálogo ÷ 1.3447, $35k fijo diagnóstico, o costo cotizado). */}
                         <span className="block text-xs font-normal text-gray-500 mt-0.5">
                           Pago al técnico (neto): ${formatCOP(solicitud.pago_tecnico)} COP
                         </span>

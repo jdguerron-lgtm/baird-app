@@ -131,7 +131,7 @@ All payments go through Baird Service. The customer NEVER pays the technician di
 
 **Warranty:** The brand pays Baird a fixed tariff based on the complexity code. Baird pays the technician `totalServicio` (tariff + bonus).
 
-**Non-warranty:** The customer pays Baird the quoted total (mano de obra + repuestos). The diagnostic fee ($80,000 COP) with 50% advance ($40,000 COP) is collected before the technician visits. These constants are in `src/types/solicitud.ts` as `TARIFA_DIAGNOSTICO` and `ANTICIPO_PORCENTAJE`.
+**Non-warranty:** The customer pays Baird the quoted total. The diagnostic fee ($84,000 COP — `TARIFA_DIAGNOSTICO`) with 50% advance ($42,000 COP — `ANTICIPO_PORCENTAJE`) is collected before the technician visits; the technician receives a fixed $35,000 for the diagnostic visit (`PAGO_TECNICO_DIAGNOSTICO`, 2026-07-05). Constants in `src/types/solicitud.ts` and `src/lib/constants/tarifas/particular.ts`.
 
 ## Admin Pricing Gate (v2 2026-05-10) — solo Garantía + esperar_repuesto
 
@@ -139,7 +139,7 @@ A partir del 2026-05-10, el admin pricing gate aplica **solo** a un caso:
 
 - **Garantía + `esperar_repuesto`**: el admin fija `tiempo_entrega` antes de notificar al cliente. El precio MABE ya está fijo por tarifario (Tipo D, ver `docs/TARIFAS.md`).
 
-**Particular (v2)** ya **NO** pasa por admin gate. El técnico ingresa su `costoTecnico` (mano de obra + repuestos) en el formulario de diagnóstico, y `/api/diagnostico` calcula automáticamente el total al cliente con la fórmula `costoTecnico × 1.19 IVA × 1.10 margen Baird`. La cotización se envía al cliente inmediatamente. Ver `docs/TARIFAS.md` § "Particular".
+**Particular (v2)** ya **NO** pasa por admin gate. El técnico ingresa su `costoTecnico` (lo que quiere ganar: mano de obra + repuestos) en el formulario de diagnóstico, y `/api/diagnostico` calcula automáticamente el total al cliente con la fórmula `costoTecnico × 1.13 utilidad Baird × 1.19 IVA` (= × 1.3447, desde 2026-07-05). La cotización se envía al cliente inmediatamente. Ver `docs/TARIFAS.md` § "Particular".
 
 **Estado `pendiente_pricing`** — solo se usa hoy para garantía con `esperar_repuesto`. Para particular el flujo va directo a `cotizacion_enviada`.
 

@@ -3,7 +3,9 @@
 > Documento canónico de tarifas, bonos, márgenes, y reparto de pagos
 > entre Baird Service, las marcas (MABE) y los técnicos.
 >
-> **Última actualización: 2026-05-12.**
+> **Última actualización: 2026-07-05** (particular: utilidad Baird 13% sobre costo
+> técnico + IVA sobre la venta completa, factor 1.3447; pago fijo $35.000 al
+> técnico por visita de diagnóstico).
 >
 > 🧭 **Ver también**:
 > - [docs/INDEX.md](./INDEX.md) — hub de navegación.
@@ -31,7 +33,7 @@
 
 1. **Dos tarifarios independientes.** Garantía MABE tiene su propia tabla fija (la marca paga). Particular se calcula a partir del costo que el técnico ingresa (el cliente paga).
 2. **Cliente nunca paga directo al técnico.** Todos los pagos pasan por Baird Service. La cláusula está en T&C sección 3.
-3. **Baird siempre toma su margen sobre lo que cobra**, no sobre lo que el cliente paga. En garantía es 22% de la tarifa base MABE; en particular es 10% sobre (costo técnico + IVA).
+3. **Baird siempre toma su margen sobre lo que cobra**, no sobre lo que el cliente paga. En garantía es 22% de la tarifa base MABE; en particular es **13% sobre el costo que ingresa el técnico** (cambio 2026-07-05; antes 10% sobre el subtotal con IVA), y el IVA 19% se aplica sobre la venta completa (costo + utilidad).
 4. **Baird captura 10% sobre cada bono y recargo de fin de semana** (cambio 2026-05-12). El técnico recibe el 90% restante. Antes el bono iba íntegro al técnico; ahora la captura del 10% cubre soporte, dispute resolution y el capital de trabajo (MABE paga NET-30/60). El bono sigue siendo un incentivo diseñado por MABE para premiar al técnico — el 90% que recibe sigue siendo superior al bruto que tendría sin protocolo de TA + encuesta.
 5. **No-show: nadie paga.** Si el cliente no está al momento de la visita, ni MABE ni Baird ni el cliente cubren el costo. El técnico pierde transporte y tiempo. Existe un protocolo de evidencia obligatorio para proteger al técnico de acusaciones falsas y reportar a MABE.
 6. **Tarifas con IVA discriminado.** Para particular el cliente ve solo "Total (incluye IVA)" sin desglose. Internamente se separa base + IVA + margen Baird para facturación electrónica DIAN.
@@ -157,19 +159,34 @@ Aplica cuando `solicitudes_servicio.es_garantia = false`. El cliente paga a Bair
 
 Baird actúa como reseller del servicio: factura al cliente con IVA, paga al técnico el costo neto, y declara IVA + impuestos a la DIAN. Esta decisión está cerrada (ver Apéndice C para análisis del modelo marketplace alternativo).
 
-### Fórmula
+### Fórmula (2026-07-05)
 
 ```
-Costo_Técnico  = lo que el técnico ingresa (mano de obra + repuestos)
-Subtotal_IVA   = Costo_Técnico × 1.19
-Total_Cliente  = Subtotal_IVA × 1.10
-               = Costo_Técnico × 1.309
+Costo_Técnico  = lo que el técnico ingresa — ES SU PAGO, lo recibe completo
+                 (mano de obra + repuestos)
+Utilidad_Baird = Costo_Técnico × 0.13
+Base_Venta     = Costo_Técnico + Utilidad_Baird        (base gravable DIAN)
+IVA            = Base_Venta × 0.19
+Total_Cliente  = Base_Venta + IVA
+               = Costo_Técnico × 1.13 × 1.19
+               = Costo_Técnico × 1.3447
+
+Ejemplo con Costo_Técnico = $100.000:
+  Utilidad Baird  = $13.000
+  Base de venta   = $113.000
+  IVA 19%         = $21.470
+  Total cliente   = $134.470
 
 Distribución del Total_Cliente:
-  Técnico recibe   = Costo_Técnico
-  IVA a la DIAN    = Costo_Técnico × 0.19 (aprox, antes de deducciones)
-  Margen Baird     = Costo_Técnico × 0.119 (10% sobre Subtotal_IVA, neto de IVA sobre comisión)
+  Técnico recibe   = Costo_Técnico (íntegro)
+  IVA a la DIAN    = Base_Venta × 0.19 (sobre la venta completa — la factura cuadra sin ajustes)
+  Utilidad Baird   = Costo_Técnico × 0.13
 ```
+
+> **Modelo anterior (2026-05-12 → 2026-07-05):** `Costo × 1.19 IVA × 1.10 margen = × 1.309`,
+> con el margen calculado sobre el subtotal con IVA. Las cotizaciones creadas antes del
+> cambio conservan sus valores (campo legacy `subtotal_con_iva` en el JSONB `cotizacion`;
+> el modelo nuevo persiste `base_venta` + `iva_venta`).
 
 ### Display al cliente
 
@@ -184,8 +201,8 @@ Entre 2026-05-07 y 2026-05-10 el flujo particular obligaba al admin a fijar `man
 ### Implementación
 
 - Constantes y cálculo: `src/lib/constants/tarifas/particular.ts`
-- Función principal: `calcularTarifaParticular({ costoTecnico })` → `{ costoTecnico, subtotalConIva, totalCliente, baseBaird, ivaCliente, margenBaird }`
-- Constantes de IVA: `IVA_TARIFA = 0.19`, `MARGEN_BAIRD_PARTICULAR = 0.10`
+- Función principal: `calcularTarifaParticular({ costoTecnico })` → `{ costoTecnico, margenBaird, baseVenta, ivaCliente, totalCliente }`
+- Constantes: `IVA_TARIFA = 0.19` (`src/types/solicitud.ts`), `MARGEN_BAIRD_PARTICULAR = 0.13`, `MULTIPLICADOR_PARTICULAR = 1.3447`, `PAGO_TECNICO_DIAGNOSTICO = 35000`
 
 ### Ajuste manual del valor al cliente (admin, 2026-05-30)
 
@@ -199,33 +216,36 @@ Cuando el técnico va a diagnosticar y el cliente decide no proceder con la repa
 - **TARIFA_DIAGNOSTICO** = $84,000 COP (IVA incluido, base $70,588 + IVA $13,412)
 - **ANTICIPO_PORCENTAJE** = 50% — se cobra antes de la visita técnica
 - Si el cliente aprueba la cotización completa, el anticipo se acredita al total.
+- **Pago al técnico por la visita de diagnóstico: `PAGO_TECNICO_DIAGNOSTICO` = $35,000 fijo** (2026-07-05). No sale de la fórmula ÷1.3447 — es una oferta comercial de Baird; la diferencia cubre IVA, adquisición del cliente y operación. Si el cliente aprueba la cotización de reparación, el pago del técnico pasa a ser su costo cotizado.
 
-Constantes en `src/types/solicitud.ts`.
+Constantes en `src/types/solicitud.ts` (`TARIFA_DIAGNOSTICO`, `ANTICIPO_PORCENTAJE`) y `src/lib/constants/tarifas/particular.ts` (`PAGO_TECNICO_DIAGNOSTICO`).
 
 ### Servicios de tarifa fija al solicitar (Diagnóstico, Reparación, Mantenimiento, Cambio de filtro)
 
 Algunos servicios particulares tienen **precio fijo de catálogo definido al crear la solicitud** — el cliente lo ve y lo paga sin esperar cotización del técnico. La función `calcularPagoTecnico(tipo_equipo, tipo_solicitud, es_garantia)` en `src/types/solicitud.ts` resuelve el **precio de catálogo al cliente** (IVA incl.).
 
-> ⚠️ **Modelo reseller — el técnico NO recibe el precio de catálogo.** Igual que en cotización libre, el cliente paga `costoTécnico × 1.309` (IVA 19% × margen Baird 10%). En tarifa fija ese 1.309 ya está embebido en el catálogo, así que el **neto del técnico = catálogo ÷ 1.309** (`pagoNetoTecnicoTarifaFija()` en `tarifas/particular.ts`, inversa de `calcularTarifaParticular`). El nombre `calcularPagoTecnico` es histórico: **devuelve el precio al cliente, no el pago al técnico.**
+> ⚠️ **Modelo reseller — el técnico NO recibe el precio de catálogo.** Igual que en cotización libre, el cliente paga `costoTécnico × 1.3447` (utilidad Baird 13% × IVA 19%). En tarifa fija ese 1.3447 ya está embebido en el catálogo, así que el **neto del técnico = catálogo ÷ 1.3447** (`pagoNetoTecnicoTarifaFija()` en `tarifas/particular.ts`, inversa de `calcularTarifaParticular`). **Excepción (2026-07-05): la visita de diagnóstico paga el fijo `PAGO_TECNICO_DIAGNOSTICO` = $35.000** — decisión comercial, no sale de la fórmula (el cliente sigue pagando $84.000; Baird retiene la diferencia). El nombre `calcularPagoTecnico` es histórico: **devuelve el precio al cliente, no el pago al técnico.**
 
 `/api/solicitar` recalcula server-side (anti-manipulación) y guarda en la columna **`pago_tecnico` el NETO** que recibe el técnico:
 
 | `tipo_solicitud` | Precio al cliente (catálogo) | Pago **neto** al técnico (`pago_tecnico`) | Constante |
 |---|---|---|---|
-| Diagnóstico / Reparación | $84.000 (anticipo 50%) | **$64.171** | `TARIFA_DIAGNOSTICO` |
-| Mantenimiento | $105.000–$189.000 según equipo | **$80.214–$144.385** | `TARIFAS_MANTENIMIENTO[tipo_equipo]` |
-| **Cambio de filtro** | **$180.000 todo incluido** | **$137.510** | `TARIFA_CAMBIO_FILTRO` |
+| Diagnóstico / Reparación | $84.000 (anticipo 50%) | **$35.000 fijo** (si cotiza y el cliente aprueba, pasa a su costo cotizado) | `TARIFA_DIAGNOSTICO` / `PAGO_TECNICO_DIAGNOSTICO` |
+| Mantenimiento | $105.000–$189.000 según equipo | **$78.084–$140.552** (catálogo ÷ 1.3447) | `TARIFAS_MANTENIMIENTO[tipo_equipo]` |
+| **Cambio de filtro** | **$180.000 todo incluido** | **$133.859** | `TARIFA_CAMBIO_FILTRO` |
 | (cualquiera, garantía) | $0 (la marca paga) | $0 | — |
 
-Detalle de los netos por equipo en [docs/pagos-tecnico.html](./pagos-tecnico.html) (guía del técnico). El cliente nunca ve este desglose.
+Netos de mantenimiento por equipo (catálogo ÷ 1.3447): Estufa $78.084 · Horno $85.893 · Lavadora $93.701 · Secadora / Aire Acondicionado $101.510 · Nevera / Lavavajillas $109.318 · Nevecón $124.935 · Lavadora Secadora $140.552.
+
+Detalle en [public/guia-pagos.html](../public/guia-pagos.html) (guía del técnico, servida en `/guia-pagos.html`). El cliente nunca ve este desglose.
 
 **Dos conceptos, dos lecturas:**
 - **Pago al técnico (neto):** se lee directo de `pago_tecnico`. Lo usan el portal del técnico (`/tecnico/[token]`, `/aceptar/[token]`, completar), las plantillas WhatsApp al técnico y la columna "Pago técnico neto" del export. Consistente en todos los flujos particulares (tarifa fija o cotización libre).
 - **Precio al cliente:** se **deriva** con `precioClienteServicio(tipo_equipo, tipo_solicitud, es_garantia, cotizacion)` — devuelve `cotizacion.total` si existe (Reparación cotizada o ajuste de admin) o el catálogo si no (tarifa fija). Lo usan la tarjeta de `/solicitar`, las plantillas/`tecnico_asignado_particular_v1` al cliente, `/confirmar/[token]`, las vistas admin y la columna "Valor al cliente" del export. **No se persiste una columna aparte** — siempre es derivable (catálogo es función pura de equipo×tipo, y cotización ya guarda el total al cliente).
 
-**Cambio de filtro** (agregado 2026-05-29): precio fijo todo-incluido de **$180.000 COP** al cliente — cubre el **filtro (repuesto)**, la mano de obra y el IVA 19% (base $151.261 + IVA $28.739). El técnico recibe **$137.510 neto** (de ahí sale el filtro). Solo aplica en flujo particular (`es_garantia=false`); en garantía siempre es 0. La tarjeta de precio en `/solicitar` lo muestra como "Filtro incluido" con desglose de IVA para facturación DIAN.
+**Cambio de filtro** (agregado 2026-05-29): precio fijo todo-incluido de **$180.000 COP** al cliente — cubre el **filtro (repuesto)**, la mano de obra y el IVA 19% (base $151.261 + IVA $28.739). El técnico recibe **$133.859 neto** desde 2026-07-05 (de ahí sale el filtro). Solo aplica en flujo particular (`es_garantia=false`); en garantía siempre es 0. La tarjeta de precio en `/solicitar` lo muestra como "Filtro incluido" con desglose de IVA para facturación DIAN.
 
-> 🐛 **Fix 2026-06-09:** antes `pago_tecnico` guardaba el precio de catálogo (sobrepagaba al técnico el IVA+margen) y, al aprobar una cotización, `procesarAprobacionCotizacion` lo sobreescribía con `cotizacion.total` (= precio al cliente). Ahora `pago_tecnico` guarda siempre el neto: tarifa fija → catálogo ÷ 1.309 en `/api/solicitar`; cotización libre → `costoTecnico` fijado en `/api/diagnostico` o `/api/cotizacion-precios`, y la aprobación **ya no lo toca** (mismo criterio que `/api/admin/actualizar-valor`).
+> 🐛 **Fix 2026-06-09:** antes `pago_tecnico` guardaba el precio de catálogo (sobrepagaba al técnico el IVA+margen) y, al aprobar una cotización, `procesarAprobacionCotizacion` lo sobreescribía con `cotizacion.total` (= precio al cliente). Ahora `pago_tecnico` guarda siempre el neto: tarifa fija → catálogo ÷ multiplicador en `/api/solicitar` ($35.000 fijo para diagnóstico desde 2026-07-05); cotización libre → `costoTecnico` fijado en `/api/diagnostico` o `/api/cotizacion-precios`, y la aprobación **ya no lo toca** (mismo criterio que `/api/admin/actualizar-valor`).
 
 ---
 
@@ -254,7 +274,7 @@ Resumen mínimo:
 4. Si cambia el código de complejidad (de 24 a otro), agregar al CHECK constraint en una migración SQL (ver `supabase/migrations/README.md` § "Cómo aplicar las pendientes").
 5. `npm test` para confirmar que no rompe nada.
 
-### Cambiar margen Baird (22% MABE / 10% particular)
+### Cambiar margen Baird (22% MABE / 13% particular)
 1. Editar la constante `MARGEN_BAIRD_GARANTIA` (`tarifas/mabe.ts`) o `MARGEN_BAIRD_PARTICULAR` (`tarifas/particular.ts`).
 2. Actualizar las tablas de "casos extremos" en este doc.
 3. Si el cambio es político (no solo numérico), comunicar al equipo de operaciones y al contador.
@@ -283,7 +303,7 @@ Ejemplo de referencia: "Cambio de filtro" ($180k), agregado el 2026-05-29. **No 
 1. Agregar el valor al array `TIPOS_SOLICITUD` en `src/types/solicitud.ts` (el schema Zod `z.enum(TIPOS_SOLICITUD)` se actualiza solo).
 2. Definir la constante de **precio al cliente** (ej. `TARIFA_CAMBIO_FILTRO = 180000`, IVA incluido) y agregar el caso en `calcularPagoTecnico()` (que devuelve ese precio de catálogo). Garantía siempre devuelve 0 antes de los casos particulares.
 3. Agregar la rama de la tarjeta de precio en `src/app/solicitar/page.tsx` (modelar sobre la verde de Mantenimiento; usa `formData.pago_tecnico` —que en el form es el precio al cliente— + desglose IVA con `calcularBaseSinIva`/`calcularIvaIncluido`).
-4. `/api/solicitar` recalcula server-side y guarda en `pago_tecnico` el **NETO** = `pagoNetoTecnicoTarifaFija(calcularPagoTecnico(...))` (catálogo ÷ 1.309) — no se confía en el valor del cliente. El precio al cliente se deriva donde haga falta con `precioClienteServicio()`; no se persiste aparte.
+4. `/api/solicitar` recalcula server-side y guarda en `pago_tecnico` el **NETO** = `pagoNetoTecnicoTarifaFija(calcularPagoTecnico(...))` (catálogo ÷ 1.3447; excepción: Diagnóstico/Reparación → `PAGO_TECNICO_DIAGNOSTICO` fijo) — no se confía en el valor del cliente. El precio al cliente se deriva donde haga falta con `precioClienteServicio()`; no se persiste aparte.
 5. Actualizar la tabla de "Servicios de tarifa fija al solicitar" en este doc (ambas columnas: precio al cliente y neto al técnico).
 
 ---
@@ -298,7 +318,7 @@ Estos puntos requieren validación con el contador antes de que el modelo entre 
 
 3. **Documento equivalente del técnico** — si el técnico es no responsable de IVA, debe emitir documento equivalente (boleta sin IVA) por sus servicios a Baird. Hoy no se emite.
 
-4. **Base 10% margen particular** — modelar P&L con datos reales del primer trimestre. Si los costos operativos por servicio (soporte + dispute + WhatsApp + MDR) superan el margen en servicios chicos ($30k–$50k de costo técnico), considerar:
+4. **Base 13% margen particular** (subió de 10% el 2026-07-05) — modelar P&L con datos reales del primer trimestre. Si los costos operativos por servicio (soporte + dispute + WhatsApp + MDR) superan el margen en servicios chicos ($30k–$50k de costo técnico), considerar:
    - Subir margen a 12–15%
    - Poner piso de "Baird mínimo $8,000 por servicio"
    - Ambos parametrizables sin migración.

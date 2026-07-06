@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { enviarRecordatorioHorario, notificarCambioEstado } from '@/lib/services/whatsapp.service'
+import { enviarRecordatorioHorario, enviarSolicitudExpiradaCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import { HORARIO_TIMEOUT_HORAS, HORARIO_FINAL_TIMEOUT_HORAS } from '@/types/solicitud'
 
 export const dynamic = 'force-dynamic'
@@ -68,6 +68,10 @@ export async function GET(req: Request) {
       if (!updErr) {
         sinAgendar++
         await notificarCambioEstado(s.id, 'pendiente_horario', 'sin_agendar')
+        // Avisar al cliente que la solicitud expiró (gap 1 — antes no recibía nada).
+        // Best-effort: si falla queda en errors del summary pero no bloquea el cron.
+        const exp = await enviarSolicitudExpiradaCliente(s.id)
+        if (!exp.ok) errors.push(`expirada_cliente ${s.id}: ${exp.error}`)
       } else errors.push(`sin_agendar ${s.id}: ${updErr.message}`)
     }
   }

@@ -42,9 +42,11 @@ export function PhoneInput({ label, name, value, onChange, error, icon, required
     ? 'border-red-300 focus:ring-red-500'
     : 'border-gray-200 focus:ring-green-500 hover:border-green-300'
 
+  const inputId = `phone-${name}`
+
   return (
     <div>
-      <label className="block text-sm font-semibold text-gray-700 mb-2">
+      <label htmlFor={inputId} className="block text-sm font-semibold text-gray-700 mb-2">
         {icon && <span className="flex items-center">{icon} {label}</span>}
         {!icon && label}
         {required && !icon && <span className="text-red-500 ml-1">*</span>}
@@ -53,6 +55,7 @@ export function PhoneInput({ label, name, value, onChange, error, icon, required
         <select
           value={countryCode}
           onChange={handleCodeChange}
+          aria-label="Código de país"
           className={`border-2 rounded-xl shadow-sm py-3 px-2 text-gray-900 text-sm
             focus:outline-none focus:ring-2 focus:border-transparent transition-all
             ${borderColor} w-[110px] shrink-0`}
@@ -62,6 +65,7 @@ export function PhoneInput({ label, name, value, onChange, error, icon, required
           ))}
         </select>
         <input
+          id={inputId}
           type="tel"
           name={name}
           value={number}
@@ -69,7 +73,7 @@ export function PhoneInput({ label, name, value, onChange, error, icon, required
           placeholder="3001234567"
           required={required}
           inputMode="numeric"
-          className={`block w-full border-2 rounded-xl shadow-sm py-3 px-4 text-gray-900
+          className={`block w-full min-w-0 border-2 rounded-xl shadow-sm py-3 px-4 text-gray-900
             focus:outline-none focus:ring-2 focus:border-transparent
             transition-all sm:text-sm ${borderColor}`}
         />

@@ -1,5 +1,7 @@
 # TODO — Baird Service
-**Última actualización:** 23 de mayo de 2026
+**Última actualización:** 5 de julio de 2026
+
+> Para el estado de salud (build/tests/migraciones) ver `docs/INDEX.md` § "Estado de salud actual". Para migraciones pendientes, la fuente de verdad es `supabase/migrations/README.md`.
 
 ## Estado general
 
@@ -8,8 +10,10 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 - Oath del técnico con firma digital antes de cada diagnóstico
 - Tracking GPS en 4 fases con flagging silencioso 30 min post-visita
 - Página pública de Términos y Condiciones (Ley 1480/2011, Ley 1581/2012)
-- 16 plantillas WhatsApp aprobadas en Meta (10 con versión incrementada para URLs nuevas tras la migración de dominio)
+- 25 plantillas WhatsApp aprobadas en Meta (catálogo canónico en `docs/WHATSAPP_TEMPLATES.md`; 10 con versión incrementada por la migración de dominio 2026-05-23)
 - UI admin para gestión de repuestos pendientes y alertas GPS
+
+**Novedades 2026-06/07:** supervisores con avisos WhatsApp por cambio de estado + botón "pedir repuesto a supervisores", resumen semanal PDF a supervisores (`resumen_semanal_supervisores_v1`), mapa admin `/admin/mapa` con geocoding, calendario de agenda con cupo por franja, reagendar/cancelar self-service del cliente, Fase 0 de segunda línea de voz IA (Dapta, apagada tras `DAPTA_ENABLED`), endpoint de diagnóstico `/api/test-whatsapp`, gtag de conversiones.
 
 **Migración 2026-05-23 completada.** Ver `docs/mejoras-futuras/migracion-dominio/runbook-cutover-2026-05-23.md` para detalles + rollback.
 
@@ -85,7 +89,7 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 - [x] Imágenes Unsplash configuradas en `remotePatterns`
 - [x] Storage bucket `evidencias-servicio` para fotos de completación
 - [x] Lint cleanup completo — 26 problemas resueltos (commit 3f771c9)
-- [x] RLS habilitado en las 5 tablas de Supabase con políticas apropiadas
+- [x] RLS habilitado en 7 de 9 tablas (sigue **off** en `solicitudes_servicio` y `especialidades_tecnico` — ver pendiente §5 abajo y `docs/GOTCHAS.md`)
 
 ### Flujo particular (no-garantía)
 - [x] Diferenciación completa WARRANTY vs PARTICULAR en todo el stack
@@ -123,17 +127,12 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 ### Migraciones SQL
 - [x] `add_whatsapp_fields.sql` — campos WhatsApp y tabla `notificaciones_whatsapp`
 - [x] `20260327_portal_evidencias.sql` — `portal_token` en tecnicos, tabla `evidencias_servicio`
-- [ ] **`20260427_customer_first_scheduling.sql`** — APLICAR EN SUPABASE STUDIO antes de probar v2
+- [x] `20260427_customer_first_scheduling.sql` — aplicada (v2 en producción)
+- Estado de todas las demás migraciones: **`supabase/migrations/README.md`** (fuente de verdad)
 
 ---
 
 ## Pendientes — para activar producción
-
-### 0. Aplicar migración SQL v2 — BLOQUEADOR DE E2E
-- [ ] Abrir [Supabase Studio](https://supabase.com/dashboard) → SQL Editor
-- [ ] Pegar contenido de `supabase/migrations/20260427_customer_first_scheduling.sql`
-- [ ] Ejecutar (incluye: 9 columnas en solicitudes_servicio, 9 columnas en evidencias_servicio, tablas `repuestos_pendientes` y `gps_pings`, RLS)
-- [ ] Verificar con: `SELECT estado, COUNT(*) FROM solicitudes_servicio GROUP BY estado` — no debería romperse
 
 ### 1. Templates WhatsApp para flujo particular — ✅ APROBADAS
 - [x] `solicitud_particular_cliente_v1` — APPROVED
@@ -162,9 +161,10 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 ### 4. Token permanente (System User) ✅ COMPLETADO
 - [x] System User `baird-api` con token permanente activo
 
-### 5. RLS en Supabase — PARCIAL ⚠️
-- [x] RLS habilitado en `repuestos_pendientes`, `gps_pings`, `solicitud_eventos`
-- [ ] **Pendiente**: habilitar RLS en `solicitudes_servicio`, `tecnicos`, `especialidades_tecnico`, `evidencias_servicio`, `notificaciones_whatsapp`. Hoy la auth admin es de fachada porque el `anon_key` (extraíble del bundle) tiene acceso total. Ver `docs/SEGURIDAD.md` § 4.
+### 5. RLS en Supabase — PARCIAL ⚠️ (revisado en auditoría 2026-06-24)
+- [x] RLS habilitado en 7 tablas: `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `solicitud_eventos`, `repuestos_pendientes`, `gps_pings`, `cliente_historial`
+- [ ] **Pendiente**: habilitar RLS en `solicitudes_servicio` (tabla principal) y `especialidades_tecnico`
+- [ ] **Pendiente (raíz del problema)**: las policies de write de las tablas "con RLS" son `USING(true)` → con el `anon_key` (extraíble del bundle) cualquiera puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. Fix real: migrar writes de anon → `service_role` server-side antes de endurecer policies. Ver `docs/SEGURIDAD.md`.
 
 ---
 
@@ -184,7 +184,8 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 
 ### Media prioridad
 - [ ] **Mappers de Excel adicionales** — para otros formatos de proveedores (no solo Mabe/GE BITÁCORA)
-- [ ] **Exportar reportes** — descargar garantías/solicitudes como Excel desde admin
+- [x] **Exportar reportes** — `/api/admin/export` genera resumen Excel (complejidad derivada de `codigos-falla.ts`)
+- [ ] **Automatizar resumen semanal** — el PDF a supervisores hoy se dispara manualmente (`scripts/enviar-resumen-supervisores.mjs`); falta cron
 - [ ] **Paginación** — queries sin LIMIT actuales serán lentas con volumen
 
 ### Modelo de pago
@@ -193,9 +194,9 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 
 ### Baja prioridad
 - [ ] **Sistema de reseñas** — calificación con estrellas al confirmar servicio
-- [ ] **Integración de pagos** — PSE / tarjeta (Wompi, Kushki)
-- [ ] **Términos y condiciones** — página legal
-- [ ] **Analytics** — dashboard con patrones de fallas más comunes
+- [ ] **Integración de pagos** — PSE / tarjeta (ver apéndice de pasarelas en `docs/TARIFAS.md`)
+- [x] **Términos y condiciones** — página `/terminos` publicada
+- [ ] **Analytics** — gtag de conversiones ya integrado (2026-07-03); falta dashboard con patrones de fallas más comunes
 - [ ] **SEO** — Open Graph, sitemap, meta tags completos
 
 ---
@@ -204,9 +205,10 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 
 | Área | Descripción | Impacto |
 |------|-------------|---------|
-| **Testing** | Sin tests (unitario, integración, e2e). Agregar Vitest + Playwright. | Alto |
-| **RLS Supabase** | ~~Resuelto~~ — RLS habilitado con políticas en las 5 tablas (2026-04-01). | ✅ |
+| **Testing** | Vitest configurado con tests en `src/__tests__/` (utils, validations), pero cobertura delgada — sin integración ni e2e (Playwright pendiente). | Alto |
+| **RLS Supabase** | Parcial — off en `solicitudes_servicio` + `especialidades_tecnico`; policies write `USING(true)` en el resto. Ver pendiente §5. | Alto |
+| **Rate limiting** | In-memory per-isolate (best-effort en serverless). Fix real: Upstash/Vercel KV. Cubre `/solicitar` y `/log-error`. | Medio |
 | **Gestión estado global** | Solo hooks locales. Evaluar Zustand si la app crece. | Bajo |
-| **Phone utilities** | `parsePhone()`, `phoneToDigits()`, `formatearTelefono()` — consolidar en una sola utilidad. | Bajo |
+| **Phone utilities** | ~~Resuelto~~ — consolidadas en `src/lib/utils/phone.ts` + trigger BD `normalizar_telefono_co()` (2026-05-13). | ✅ |
 | **Excel mapper** | Hardcoded para formato BITÁCORA Mabe/GE. No flexible para otros proveedores. | Medio |
 | **Paginación** | Queries sin LIMIT — costosas cuando haya volumen. | Futuro |

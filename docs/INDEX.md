@@ -5,7 +5,7 @@
 > que corresponde y abre el doc específico**. Esto evita drift y
 > duplicación.
 >
-> **Última revisión: 2026-05-23** (cutover a dominio `lineablanca.bairdservice.com`).
+> **Última revisión: 2026-07-05** (auditoría general de docs: raíz deprecada → docs/ canónico, estado de salud refrescado).
 
 ---
 
@@ -51,8 +51,9 @@
 | **`docs/TARIFAS.md`** | Doc canónico de tarifas. MABE garantía (Tipo D + bonos + weekend + margen 22%) y particular multi-marca (× 1.19 IVA × 1.10 margen Baird). Apéndices: marco tributario 2026, pasarelas, decisión reseller vs marketplace. | Antes de tocar cualquier cálculo de pago, agregar bono/recargo, o cambiar margen. | Tras cambiar una tarifa, modificar el modelo de margen, agregar marca nueva al flujo garantía, o cambiar IVA por reforma DIAN. |
 | **`docs/PROTOCOLO-VISITA.md`** | Verificación T-24h / T-2h / llegada / no-show. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
 | **`docs/FLOWS.md`** | Diagramas paso-a-paso de cada flujo end-to-end con cada plantilla WhatsApp en su contexto, puntos de decisión del cliente, gaps conocidos, plan de testing manual. | Cuando vas a tocar el state machine, agregar una página customer-facing, o entender dónde se manda qué WhatsApp. | Tras cambiar el state machine, agregar/cambiar una plantilla en el flujo, o mover un disparo de WhatsApp. |
-| **`docs/WHATSAPP_TEMPLATES.md`** | Catálogo de las 16 plantillas Meta, parámetros, disparo, copy completo. **Define el proceso obligatorio de cambio de plantilla.** Backlog de plantillas nuevas con JSON listo. | Antes de tocar cualquier mensaje WhatsApp. | Tras cambiar params de una plantilla, agregar una nueva, o subirla a Meta. |
+| **`docs/WHATSAPP_TEMPLATES.md`** | Catálogo de las 25 plantillas Meta, parámetros, disparo, copy completo. **Define el proceso obligatorio de cambio de plantilla.** Backlog de plantillas nuevas con JSON listo. | Antes de tocar cualquier mensaje WhatsApp. | Tras cambiar params de una plantilla, agregar una nueva, o subirla a Meta. |
 | **`docs/SEGURIDAD.md`** | Mapa de autenticación y autorización: frontend admin, endpoints API (admin/cliente/cron), tokens UUID, RLS, storage, histórico de incidentes, backlog de hardening. | Antes de tocar cualquier endpoint admin, agregar uno nuevo, o auditar seguridad. | Tras agregar/quitar endpoint admin, cambiar el patrón de auth, habilitar RLS, o resolver un incidente. |
+| **`docs/DAPTA.md`** | Segunda línea de voz IA — resumen operativo de la Fase 0 (servicio, webhook, tabla `llamadas`, env vars, cómo encenderla). El doc de decisión/fases/costos vive en `mejoras-futuras/segunda-linea-voz/`. | Antes de tocar `dapta.service.ts`, el webhook o pensar en encender `DAPTA_ENABLED`. | Tras avanzar una fase, cambiar de proveedor o encender/apagar el kill-switch. |
 | **`supabase/migrations/README.md`** | Lista ordenada de migraciones, status (aplicada/pendiente), hotfixes, verificación SQL post-apply, backlog de migraciones futuras. | Antes de aplicar una migración o cuando hay drift schema↔código. | Tras crear nueva migración o aplicar una. |
 | **`docs/INDEX.md`** (este archivo) | Hub de navegación. Mapea tareas comunes a docs específicos. | Primero al iniciar una iteración. | Cuando creas un nuevo doc o cambias el rol de uno existente. |
 
@@ -70,6 +71,7 @@
 |---|---|
 | [`docs/mejoras-futuras/`](mejoras-futuras/README.md) | Hub: inventario de proyectos en discusión + convenciones para agregar/promover/descartar. |
 | [`docs/mejoras-futuras/segunda-visita/`](mejoras-futuras/segunda-visita/README.md) | Segunda visita técnica sin repuesto. Gap verificado 2026-06-02: la repuesto-arrival ya funciona; falta el camino "reparar requiere otro día sin pieza". 4 opciones para revisar. |
+| [`docs/mejoras-futuras/segunda-linea-voz/`](mejoras-futuras/segunda-linea-voz/README.md) | Segunda línea de voz IA (llamadas cuando WhatsApp no responde). Fase 0 código completo apagada tras `DAPTA_ENABLED=false`; decisión de proveedor pendiente (Dapta $99/mes fijo vs Retell PAYG ~$8–25/mes). |
 
 ### Proyectos completados (registro histórico, no actualizar)
 
@@ -77,6 +79,7 @@
 |---|---|---|
 | [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a `lineablanca.bairdservice.com`. Runbook + rollback documentado. | 2026-05-23 |
 | [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Mapa admin de servicios geolocalizados en `/admin/mapa`. Pipeline geocoding + 9 mejoras UI. Fase 2 (GPS en vivo, heatmap, rutas) diferida. | 2026-05-23 |
+| [`docs/mejoras-futuras/supervisores-y-repuesto-recibido/`](mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md) | Supervisores con avisos WhatsApp por cambio de estado + estado `repuesto_recibido` + botón "pedir repuesto a supervisores". Desplegado en iteraciones sucesivas. | 2026-05-29 → 06-16 |
 
 ### Documentación deprecated (no actualizar)
 
@@ -157,7 +160,7 @@
 | Atomic update pattern (anti-race) | `docs/SUPABASE.md` § "Supabase Architecture" → "Patrones de query" | El modelo es `procesarAceptacion` en `whatsapp.service.ts` |
 | Antipatrón JSONB filter-in-JS | Idem ↑ | Hay que migrar `cotizacion.token` a columna generada |
 | Storage buckets y PII | `docs/SUPABASE.md` § "Supabase Architecture" → "Storage buckets" | `tecnicos-documentos` es público hoy → backlog signed URLs |
-| Phone format `57\|3134951164` | `CLAUDE.md` § "Code Conventions" | `parsePhone`, `phoneToDigits`, `formatearTelefono` |
+| Phone format (dígitos puros `573134951164`, trigger BD) | `CLAUDE.md` § "Code Conventions" + `docs/GOTCHAS.md` | `phoneToDigits`, `isMobileColombiano`; pipe `57\|...` es legacy |
 | Test mode whitelist | `CLAUDE.md` § "Environment Variables" + memoria | `BAIRD_TEST_PHONE_WHITELIST` |
 | WhatsApp 24h window | `docs/GOTCHAS.md` + `docs/WHATSAPP_TEMPLATES.md` § "Texto libre" | Las plantillas siempre llegan; texto libre depende de 24h |
 
@@ -211,19 +214,15 @@ Verificación SQL post-migración: ver `supabase/migrations/README.md` § "Verif
 
 ---
 
-## 🚦 Estado de salud actual (2026-05-12)
+## 🚦 Estado de salud actual (2026-07-05 — verificado contra producción)
 
-- **Build**: ✅ pasa
-- **Typecheck**: ✅ pasa
-- **Lint**: ✅ pasa
-- **Tests**: ✅ 112/112
-- **Migraciones pendientes** (verifica antes de deploy):
-  - `20260508_fix_completado_at_default.sql` — drop DEFAULT NOW() de evidencias_servicio.completado_at
-  - `20260508_fix_cotizacion_column.sql` — agrega columna cotizacion JSONB faltante
-  - `20260508_fix_tecnicos_columns.sql` — agrega acepta_garantias + especialidad_principal
-  - `20260508_backfill_horario_token.sql` — backfill UUID a filas sin token
-  - `20260510_no_show_protocolo.sql` — estado no_show_cliente + columnas auditoría tarifas + tabla cliente_historial
-- **Plantillas Meta pendientes**: 9 plantillas en backlog (A-I + J en `docs/WHATSAPP_TEMPLATES.md`). Ninguna bloquea producción — son mejoras de comunicación.
+- **Código**: producción (Vercel `lineablanca.bairdservice.com`) corre el commit `1479c5f` = `origin/main`. `/api/health` responde `healthy`.
+- **Build / Typecheck / Lint / Tests**: verificar con los comandos del health check de arriba antes de deploy — no confiar en snapshots viejos de esta sección.
+- **Migraciones**: **todas las del repo verificadas APLICADAS contra la BD de producción (2026-07-05)** — detalle y evidencia en **`supabase/migrations/README.md`** (fuente de verdad; esta sección no duplica esa lista).
+- **Plantillas Meta**: 32 registradas en el script — 29 APPROVED y 3 PENDING (subidas 2026-07-05; sus envíos fallan best-effort hasta que aprueben — verificar con `--check`). Las 7 del ex-backlog quedaron cableadas el 2026-07-06 (gaps 1, 3–6, 8, 9, H1 cerrados; `gestionar_servicio_v1` sin disparo automático por redundancia). Sin redundancias de envío por destinatario (revisado 2026-07-05). Ver `docs/WHATSAPP_TEMPLATES.md`.
+- **RLS**: sigue off en `solicitudes_servicio` y `especialidades_tecnico`; policies de write `USING(true)` en el resto — ver `docs/SEGURIDAD.md` (auditoría 2026-06-24).
+- **Dapta (2ª línea de voz)**: Fase 0 desplegada pero apagada (`DAPTA_ENABLED=false`); decisión de proveedor pendiente — ver `docs/mejoras-futuras/segunda-linea-voz/README.md`.
+- **Resumen semanal a supervisores**: operativo pero manual (`scripts/enviar-resumen-supervisores.mjs` + `scripts/resumen-semanal-pdf.py`); automatización pendiente.
 
 ---
 

@@ -54,7 +54,7 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
   // y los bonos se conocen después. Mostramos el PAGO MÍNIMO garantizado
   // (Baja sin bonos sin recargo = $32.760) y aclaramos que puede ser mayor.
   // En particular `pago_tecnico` es el NETO que recibe el técnico (precio de
-  // catálogo ÷ 1.309, o el costo cotizado tras diagnóstico); lo mostramos tal cual.
+  // catálogo ÷ 1.3447, $35.000 fijo en diagnóstico, o el costo cotizado); lo mostramos tal cual.
   const pagoFormateado = esGarantia
     ? formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)
     : formatCOP(solicitud.pago_tecnico)
@@ -142,6 +142,14 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
                   El monto sube si la reparación requiere complejidad mayor + bonos por entrega a tiempo y satisfacción del cliente. <span className="font-semibold">Nunca es menor que este valor.</span>
                 </p>
               )}
+              <a
+                href="/guia-pagos.html"
+                target="_blank"
+                rel="noopener"
+                className="inline-block text-xs font-semibold text-green-700 underline mt-2"
+              >
+                ¿Cómo se calcula tu pago? Ver guía de pagos
+              </a>
             </div>
 
           </div>

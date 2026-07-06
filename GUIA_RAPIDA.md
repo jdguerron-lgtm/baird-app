@@ -25,18 +25,14 @@ cp .env.example .env.local
 
 **3. Configurar la base de datos en Supabase**
 
-Ejecutar en el SQL Editor de Supabase en este orden:
-```
-supabase/migrations/add_solicitud_fields.sql
-supabase/migrations/add_verification_fields_safe.sql
-```
-La tabla base `solicitudes_servicio` debe crearse antes de aplicar `add_solicitud_fields.sql`.
+Aplicar las migraciones de `supabase/migrations/` en el orden y con la verificación que documenta **[supabase/migrations/README.md](./supabase/migrations/README.md)** (sección "Cómo aplicar las pendientes"). Se aplican manualmente en el SQL Editor de Supabase — no hay Supabase CLI configurado.
 
 **4. Crear Storage Buckets en Supabase**
 
-Panel de Supabase → Storage → New Bucket:
-- `fotos-perfil` (público)
-- `fotos-documentos` (privado)
+Panel de Supabase → Storage → New Bucket (los tres públicos; ver `docs/SUPABASE.md` § storage y `docs/GOTCHAS.md` sobre PII):
+- `tecnicos-fotos` — fotos de perfil de técnicos
+- `tecnicos-documentos` — documentos de identidad
+- `evidencias-servicio` — fotos/firmas de completación y repuestos
 
 **5. Iniciar el servidor**
 ```bash
@@ -54,14 +50,15 @@ Archivo: `.env.local` (nunca commitear)
 |----------|---------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Cliente + Servidor | URL del proyecto Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente + Servidor | Clave pública anónima de Supabase |
-| `GEMINI_API_KEY` | **Solo servidor** | Clave API de Google Gemini |
-| `WHATSAPP_API_TOKEN` | **Solo servidor** | Token de autenticación WhatsApp Business API ⏳ |
-| `WHATSAPP_PHONE_ID` | **Solo servidor** | ID del número de teléfono en Meta ⏳ |
-| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | **Solo servidor** | Token para verificar handshake de webhook ⏳ |
-| `WHATSAPP_WEBHOOK_SECRET` | **Solo servidor** | App Secret para verificar firma HMAC de webhooks ⏳ |
-| `NEXT_PUBLIC_APP_URL` | Cliente + Servidor | URL base del sitio (para links de aceptación) ⏳ |
+| `GEMINI_API_KEY` | **Solo servidor** | Clave API de Google Gemini (triaje temporalmente deshabilitado) |
+| `WHATSAPP_API_TOKEN` | **Solo servidor** | Token permanente WhatsApp Business API (System User) |
+| `WHATSAPP_PHONE_ID` | **Solo servidor** | ID del número de teléfono en Meta |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | **Solo servidor** | Token para verificar handshake de webhook |
+| `WHATSAPP_WEBHOOK_SECRET` | **Solo servidor** | App Secret para verificar firma HMAC de webhooks |
+| `NEXT_PUBLIC_APP_URL` | Cliente + Servidor | URL base del sitio (producción: `https://lineablanca.bairdservice.com`) |
+| `BAIRD_TEST_PHONE_WHITELIST` | **Solo servidor** | Opcional en dev: CSV de números permitidos — evita alertar técnicos reales |
 
-Plantilla completa en `.env.example`.
+Lista canónica y completa (incl. variables Dapta) en **[CLAUDE.md](./CLAUDE.md) § "Environment Variables"**. Plantilla en `.env.example`.
 
 ---
 
@@ -73,6 +70,7 @@ Plantilla completa en `.env.example`.
 | Build | `npm run build` | Compilación de producción optimizada |
 | Producción | `npm start` | Sirve el build de producción |
 | Lint | `npm run lint` | Verifica reglas de ESLint |
+| Tests | `npm test` | Vitest (una pasada); `npm run test:watch` para watch |
 | TypeScript check | `npx tsc --noEmit` | Verifica tipos sin compilar |
 
 ---
@@ -87,8 +85,9 @@ Plantilla completa en `.env.example`.
 - `reactCompiler: true` — optimización automática de renders
 
 ### Supabase Storage Buckets requeridos
-- `fotos-perfil` — fotos de perfil de técnicos
-- `fotos-documentos` — fotos de documentos de identidad
+- `tecnicos-fotos` — fotos de perfil de técnicos
+- `tecnicos-documentos` — documentos de identidad
+- `evidencias-servicio` — evidencias de completación y repuestos
 
 ---
 
@@ -161,8 +160,8 @@ Las tablas no existen en Supabase. Ejecutar las migraciones SQL en el panel.
 - Revisar logs del servidor (`npm run dev`) para el error exacto
 
 ### Las imágenes no se suben
-- Crear los buckets `fotos-perfil` y `fotos-documentos` en Supabase Storage
-- Configurar política de acceso (inserción para usuarios anónimos si no hay auth)
+- Crear los buckets `tecnicos-fotos`, `tecnicos-documentos` y `evidencias-servicio` en Supabase Storage
+- Las policies de Storage deben scopearse al rol `public` (anon + authenticated) — ver `docs/GOTCHAS.md` ("Cliente Supabase singleton + sesión admin") y `supabase/migrations/20260521_storage_policies_public_role.sql`
 
 ### Build falla con error de tipos TypeScript
 ```bash

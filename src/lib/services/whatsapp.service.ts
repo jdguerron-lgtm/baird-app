@@ -679,7 +679,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // a tiempo y satisfacción del cliente.
     //
     // Particular: `pago_tecnico` es el NETO que recibe el técnico (catálogo ÷
-    // 1.309); se lo mostramos tal cual.
+    // 1.3447, o $35.000 fijo en diagnóstico); se lo mostramos tal cual.
     const pago = sol.es_garantia
       ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
       : `$${formatCOP(sol.pago_tecnico)} COP`
@@ -1761,6 +1761,227 @@ export async function enviarRepuestoLlegadoTecnico(solicitudId: string): Promise
   }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Plantillas de cierre de gaps (2026-07-06) — aprobadas en Meta desde antes,
+// cableadas acá. Todas best-effort: el caller decide el fallback (texto libre
+// o nada). OJO: los parámetros de plantilla NO admiten saltos de línea.
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Confirma al CLIENTE por WhatsApp que su horario quedó agendado (gap H1) y le
+ * entrega el link permanente de gestión (botón → /servicio/{cliente_token},
+ * cubre el gap 9 sin plantilla aparte — enviar además `gestionar_servicio_v1`
+ * sería redundante). Disparada tras confirmar-horario. Plantilla
+ * `horario_confirmado_cliente_v1` (3 params + botón URL).
+ */
+export async function enviarHorarioConfirmadoCliente(solicitudId: string, horario: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura, cliente_token')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+  if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'horario_confirmado_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre.split(' ')[0] },
+          { type: 'text', text: equipoConGarantia(sol) },
+          { type: 'text', text: horario },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Avisa al CLIENTE que su solicitud expiró por no confirmar horario (gap 1).
+ * Disparada por el cron horario-recordatorio al transicionar a `sin_agendar`.
+ * Plantilla `solicitud_expirada_cliente_v1` (2 params; botón con URL estática
+ * a /solicitar — no lleva parámetro).
+ */
+export async function enviarSolicitudExpiradaCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'solicitud_expirada_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre.split(' ')[0] },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Confirma al CLIENTE que su aprobación del siguiente paso quedó registrada
+ * (gaps 3 y 4 — antes era texto libre, que fuera de la ventana 24h no llega).
+ * `accion`/`detalle` los arma el caller (/api/verificar-paso) según el paso.
+ * Plantilla `paso_aprobado_cliente_v1` (4 params, sin botón).
+ */
+export async function enviarPasoAprobadoCliente(solicitudId: string, accion: string, detalle: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'paso_aprobado_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre.split(' ')[0] },
+          { type: 'text', text: equipoConGarantia(sol) },
+          { type: 'text', text: accion },
+          { type: 'text', text: detalle },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Confirma al CLIENTE que su rechazo del siguiente paso quedó registrado y que
+ * Baird lo contactará (gap 5 — antes el cliente no recibía NADA por WhatsApp).
+ * Plantilla `paso_rechazado_cliente_v1` (2 params, sin botón).
+ */
+export async function enviarPasoRechazadoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'paso_rechazado_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre.split(' ')[0] },
+          { type: 'text', text: equipoConGarantia(sol) },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Avisa al TÉCNICO la decisión del cliente sobre el siguiente paso (gap 6 —
+ * antes era texto libre, que puede no llegar si su ventana 24h está cerrada).
+ * `decision` es el texto que ve el técnico ('APROBÓ' | 'RECHAZÓ'); `detalle`
+ * lo arma el caller. Plantilla `paso_resuelto_tecnico_v1` (5 params + botón
+ * URL → /tecnico/{portal_token}).
+ */
+export async function enviarPasoResueltoTecnico(solicitudId: string, decision: string, detalle: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo, whatsapp, portal_token').eq('id', sol.tecnico_asignado_id).single()
+  if (!tec?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+  if (!tec.portal_token) return { ok: false, error: 'Técnico sin portal_token' }
+
+  try {
+    const r = await enviarPlantilla(tec.whatsapp, 'paso_resuelto_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: tec.nombre_completo.split(' ')[0] },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: decision },
+          { type: 'text', text: equipoConGarantia(sol) },
+          { type: 'text', text: detalle },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: tec.portal_token }] },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Avisa al TÉCNICO que el cliente confirmó satisfacción y el servicio cerró
+ * (gap 8). La calificación viene embebida en el comentario del cliente
+ * ("Calificacion: N/10 ..." — la arma /confirmar); el caller la parsea.
+ * Plantilla `servicio_confirmado_tecnico_v1` (4 params, sin botón).
+ * `tecnicoId` explícito: la evidencia guarda su propio tecnico_id.
+ */
+export async function enviarServicioConfirmadoTecnico(solicitudId: string, tecnicoId: string, calificacion: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo, whatsapp').eq('id', tecnicoId).single()
+  if (!tec?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  try {
+    const r = await enviarPlantilla(tec.whatsapp, 'servicio_confirmado_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: tec.nombre_completo.split(' ')[0] },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: equipoConGarantia(sol) },
+          { type: 'text', text: calificacion },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
 /**
  * Notifica al cliente que el equipo no es reparable (terminal).
  */
@@ -1831,6 +2052,13 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
     .single()
 
   try {
+    // TODO(plantillas 2026-07-05): cuando Meta apruebe `cotizacion_cliente_v3`
+    // (ya está en scripts/upload-templates.mjs), cambiar a:
+    //   enviarPlantilla(..., 'cotizacion_cliente_v3', 'es', [ body con 6 params:
+    //     cliente, tecnico, equipo, diagnostico(200), total,
+    //     (cot.tiempo_entrega || 'inmediato tras tu aprobación') ])
+    // y eliminar los params mano_obra/repuestos — hoy van en 0 y el cliente ve
+    // "Mano de obra: $0 / Repuestos: $0", que genera desconfianza.
     const result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v2', 'es', [
       {
         type: 'body',
@@ -1944,6 +2172,13 @@ export async function notificarCotizacionAprobada(solicitudId: string): Promise<
   const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
   try {
+    // ⚠️ CLARIDAD DE PAGO (auditoría 2026-07-05): {{4}} de _v2 es el TOTAL AL
+    // CLIENTE (costoTecnico × 1.3447, con utilidad Baird + IVA), rotulado
+    // "Total aprobado" — el técnico lo confunde con su pago y luego recibe
+    // menos. TODO: cuando Meta apruebe `cotizacion_aprobada_tecnico_v3` (ya
+    // está en scripts/upload-templates.mjs), cambiar a _v3 con 5 params:
+    //   nombreTecnico, cliente, equipo, formatCOP(sol.pago_tecnico) (SU pago),
+    //   formatCOP(cot.total) (lo que paga el cliente).
     const r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v2', 'es', [
       {
         type: 'body',

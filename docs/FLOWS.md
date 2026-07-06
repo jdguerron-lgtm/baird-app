@@ -742,8 +742,8 @@ HorarioSelector.tsx success view
 
 | # | Gap | Severidad | Mitigación actual / Fix futuro |
 |---|---|---|---|
-| H1 | Cliente NO recibe WhatsApp de confirmación tras elegir horario — solo in-app. Cierra el webview, queda esperando el `tecnico_asignado_*` (puede tardar horas) sin saber que su confirmación se procesó. | 🟡 medio | Plantilla `horario_confirmado_cliente_v1` — JSON listo en `docs/WHATSAPP_TEMPLATES.md` Backlog J. |
-| H2 | Si 0 técnicos compatibles, cliente ve warning in-app pero no recibe nada por WA — depende de que abra el webview de nuevo. | 🟡 medio | Cubrir con la misma plantilla J en variante "demora". |
+| H1 | ~~Cliente NO recibe WhatsApp de confirmación tras elegir horario~~ | ✅ RESUELTO 2026-07-06 | `horario_confirmado_cliente_v1` cableada en `confirmarHorarioSolicitud` (transiciones.service) — incluye botón "Gestionar servicio" → `/servicio/{cliente_token}`. |
+| H2 | Si 0 técnicos compatibles, cliente ve warning in-app pero no recibe variante específica por WA. | 🟢 mitigado | La plantilla de H1 se envía igual (dice "estamos contactando técnicos", sin prometer inmediatez) + warning in-app + evento admin. Variante "demora" explícita queda opcional. |
 | H3 | Re-notificar tras reagendamiento del cliente en `/servicio/{token}`. Hoy el técnico asignado recibe texto libre, pero los técnicos no-asignados con notif activa ven el horario viejo en su WA (la DB tiene el nuevo). | 🟢 bajo | Idempotente — los técnicos ven el horario actual cuando entran al portal del servicio. |
 
 ## Gaps conocidos — flujo GARANTÍA (re-revisado 2026-05-08)
@@ -752,24 +752,26 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 
 | # | Momento | Hoy | Estado | Fix propuesto |
 |---|---|---|---|---|
-| 1 | `sin_agendar` (timeout 36h) | NADA al cliente | 🔴 mayor | Plantilla `solicitud_expirada_cliente_v1` (Backlog A) |
+| 1 | ~~`sin_agendar` (timeout 36h)~~ | ✅ RESUELTO 2026-07-06 | — | `solicitud_expirada_cliente_v1` cableada en `/api/cron/horario-recordatorio` |
 | 2 | Aceptación: foto perfil + documento del técnico | `image` free-form | 🔴 mayor | Plantilla `tecnico_asignado_cliente_v6` con HEADER IMAGE (Backlog G) — mitigación actual: fotos también en `/servicio/{cliente_token}` |
-| 3 | Cliente aprueba `reparar` en /verificar-paso | texto libre al cliente | 🔴 mayor | `paso_aprobado_cliente_v1` (Backlog B) |
-| 4 | Cliente aprueba `negativa_cliente` | texto libre al cliente | 🔴 mayor | `paso_aprobado_cliente_v1` (B) — mismo template, parámetro distinto |
-| 5 | Cliente RECHAZA siguiente paso | NADA al cliente (solo in-app) | 🔴 mayor | `paso_rechazado_cliente_v1` (Backlog C) |
-| 6 | Cliente decide → técnico se entera | texto libre al técnico | 🟡 medio | `paso_resuelto_tecnico_v1` (Backlog D) |
-| 7 | ~~Admin marca repuesto recibido → técnico~~ | ✅ RESUELTO 2026-05-29 | — | `repuesto_recibido_tecnico_v1` creada + cableada en `notificarTecnicoVisitaReprogramada` (reemplaza el texto libre). ⏳ pendiente subir a Meta |
-| 8 | Cliente confirma satisfacción → técnico | NADA al técnico (solo portal) | 🟢 nice-to-have | `servicio_confirmado_tecnico_v1` (Backlog I) |
-| 9 | Acceso del cliente al portal de gestión | solo via webviews | 🟡 medio | `gestionar_servicio_v1` (Backlog F) — enviar tras confirmar horario |
+| 3 | ~~Cliente aprueba `reparar` en /verificar-paso~~ | ✅ RESUELTO 2026-07-06 | — | `paso_aprobado_cliente_v1` cableada en `/api/verificar-paso` (fallback: texto libre previo) |
+| 4 | ~~Cliente aprueba `negativa_cliente`~~ | ✅ RESUELTO 2026-07-06 | — | `paso_aprobado_cliente_v1` — mismo template, parámetros distintos |
+| 5 | ~~Cliente RECHAZA siguiente paso~~ | ✅ RESUELTO 2026-07-06 | — | `paso_rechazado_cliente_v1` cableada (antes el cliente no recibía nada) |
+| 6 | ~~Cliente decide → técnico se entera~~ | ✅ RESUELTO 2026-07-06 | — | `paso_resuelto_tecnico_v1` cableada, APROBÓ/RECHAZÓ + botón portal (fallback: texto libre previo) |
+| 7 | ~~Admin marca repuesto recibido → técnico~~ | ✅ RESUELTO 2026-05-29 | — | `repuesto_recibido_tecnico_v1` APPROVED en Meta (verificado 2026-07-05) + cableada en `notificarTecnicoVisitaReprogramada` |
+| 8 | ~~Cliente confirma satisfacción → técnico~~ | ✅ RESUELTO 2026-07-06 | — | `servicio_confirmado_tecnico_v1` cableada en `confirmarServicioCliente` con calificación (fallback: texto libre si no hay nota) |
+| 9 | ~~Acceso del cliente al portal de gestión~~ | ✅ RESUELTO 2026-07-06 | — | Cubierto por el botón "Gestionar servicio" de `horario_confirmado_cliente_v1` (gap H1). `gestionar_servicio_v1` quedó aprobada pero sin disparo automático — enviarla además sería redundante |
 
-**JSON listo para subir** de cada plantilla en `docs/WHATSAPP_TEMPLATES.md` sección "Backlog".
+> ✅ **Cerrado 2026-07-06** (probado en vivo contra el número de prueba antes del deploy): gaps 1, 3–6, 8, 9 y H1 resueltos cableando las plantillas del ex-backlog (ya APPROVED). Todos los envíos nuevos son best-effort con fallback al comportamiento previo. Las 3 plantillas subidas el 2026-07-05 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_reagendamiento_v1`) siguen **PENDING** — sus envíos fallan best-effort hasta que aprueben. Ver `docs/WHATSAPP_TEMPLATES.md` § "Estado de cobertura".
 
 ### Gaps que NO requieren plantillas (cambios de código pendientes)
 
 10. **`/api/aprobar-cotizacion` race condition.** Hace dos UPDATEs separados (`cotizacion_aprobada` → `en_proceso`) sin guard atómico. **Fix**: agregar `.eq('estado', 'cotizacion_enviada')` al primer UPDATE o consolidar en uno solo.
 11. **JSONB filter antipattern en `/api/aprobar-cotizacion` y `/cotizacion/[token]`.** Cargan toda la tabla y filtran por `cotizacion.token` en JS. **Fix**: columna generada `cotizacion_token` con índice único (ver `supabase/migrations/README.md` sección "M-NEXT-C").
 12. **No hay reminder pre-visita** entre confirmación de horario y aceptación del técnico. Si la solicitud queda largo tiempo en `notificada`, el cliente puede perder visibilidad.
-13. **Auth de admin API routes.** `/api/cotizacion-precios`, `/api/repuesto-recibido` etc. no validan sesión Supabase Auth — confían en que solo el sidebar admin las invoca.
+13. ~~**Auth de admin API routes.**~~ ✅ RESUELTO — `/api/cotizacion-precios`, `/api/repuesto-recibido` y todos los `/api/admin/*` validan sesión con `verificarAdmin`/`obtenerEmailAdmin` (ver tabla en `docs/SEGURIDAD.md` § 2).
+14. **Escalada cuando el cliente no responde WhatsApp** — la segunda línea de voz IA (llamada automática tras N horas de silencio, por propósito: agendar/cierre/cotización/repuesto) está construida en Fase 0 pero **apagada** (`DAPTA_ENABLED=false`, decisión de proveedor pendiente). Hoy el silencio del cliente solo lo cubre el cron `sin_agendar`. Ver `docs/DAPTA.md`.
+15. **Resumen semanal a supervisores no automatizado** — el PDF semanal (`resumen_semanal_supervisores_v1`) se genera y envía manualmente con `scripts/resumen-semanal-pdf.py` + `scripts/enviar-resumen-supervisores.mjs`; falta un cron/scheduled job.
 
 ---
 

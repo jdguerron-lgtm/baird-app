@@ -12,16 +12,19 @@
 
 ### Propuesta de valor
 
-- **Para clientes**: Diagnóstico IA previo al servicio con estimación de costos y urgencia. El primer técnico que acepta atiende el caso.
-- **Para técnicos**: Reciben ofertas directamente en su WhatsApp con diagnóstico del equipo, dirección exacta y pago. El primero en responder "ACEPTO" gana el servicio.
+- **Para clientes**: El cliente elige el horario de visita primero (customer-first scheduling) y gestiona todo por WhatsApp y webviews con token — sin registro ni contraseña. El triaje IA (Gemini) existe pero está temporalmente deshabilitado.
+- **Para técnicos**: Reciben ofertas directamente en su WhatsApp con los datos del equipo, dirección y pago. El primero en aceptar gana el servicio (asignación atómica).
+- **Para marcas (garantía)**: Supervisores reciben avisos WhatsApp de cambios de estado y un resumen semanal de operaciones en PDF.
 
 ---
 
 ## Dominio de negocio
 
-**Equipos cubiertos:** Lavadora, Nevera, Nevecón, Horno, Estufa, Aire Acondicionado, Secadora, Lavavajillas
+**Equipos cubiertos:** Lavadora, Secadora, Lavadora Secadora (combo 2-en-1), Nevera, Nevecón, Horno, Estufa, Aire Acondicionado, Lavavajillas — fuente de verdad: `TIPOS_EQUIPO` en `src/types/solicitud.ts`
 
-**Tipos de servicio:** Diagnóstico, Reparación, Mantenimiento, Instalación
+**Tipos de servicio:** Diagnóstico, Reparación, Mantenimiento, Cambio de filtro — fuente de verdad: `TIPOS_SOLICITUD` en `src/types/solicitud.ts`
+
+**Dos flujos de servicio:** garantía (paga la marca, tarifa fija) y particular (paga el cliente tras aprobar cotización) — ver `docs/MAQUINA-DE-ESTADOS.md`
 
 **Zona geográfica:** Colombia (validación de teléfonos colombianos, moneda COP)
 

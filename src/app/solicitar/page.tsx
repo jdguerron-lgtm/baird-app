@@ -61,6 +61,9 @@ export default function SolicitarServicio() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
   const [, setSolicitudId] = useState<string | null>(null)
+  // Tras crear una solicitud particular de Diagnóstico/Reparación, mostramos el
+  // CTA para pagar el anticipo ($42.000) en la tienda Shopify (recaudo online).
+  const [mostrarPagoAnticipo, setMostrarPagoAnticipo] = useState(false)
   const [geoLoading, setGeoLoading] = useState(false)
 
   const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()
@@ -128,7 +131,7 @@ export default function SolicitarServicio() {
       const data = await res.json()
 
       if (!res.ok) {
-        setMensaje({ texto: data.error || 'Hubo un error al enviar la solicitud', tipo: 'error' })
+        setMensaje({ texto: data.error || 'Hubo un error al enviar la solicitud. Espera unos segundos e intenta de nuevo — si persiste, escríbenos por WhatsApp.', tipo: 'error' })
         window.scrollTo({ top: 0, behavior: 'smooth' })
         setCargando(false)
         return
@@ -147,7 +150,7 @@ export default function SolicitarServicio() {
       })
     } catch {
       setMensaje({
-        texto: 'Error de conexión. Intenta de nuevo.',
+        texto: 'No pudimos conectar con el servidor. Revisa tu señal (WiFi o datos) e intenta de nuevo — tu información sigue en el formulario.',
         tipo: 'error',
       })
       setCargando(false)

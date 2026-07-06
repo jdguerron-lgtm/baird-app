@@ -4,6 +4,8 @@ import {
   notificarCambioEstado,
   notificarCotizacionAprobada,
   notificarTecnicoVisitaReprogramada,
+  enviarHorarioConfirmadoCliente,
+  enviarServicioConfirmadoTecnico,
   enviarMensajeTexto,
 } from '@/lib/services/whatsapp.service'
 import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
@@ -142,6 +144,16 @@ export async function confirmarHorarioSolicitud(
   // registró la transición — no duplicar en el historial.
   await notificarCambioEstado(sol.id, estadoPrevio, 'notificada', { registrarEvento: !esReagendarVencido })
 
+  // Confirmación por WhatsApp al cliente (gap H1 — antes solo veía la
+  // confirmación in-app) con el link permanente de gestión en el botón.
+  // Best-effort: no bloquea la confirmación si falla.
+  try {
+    const conf = await enviarHorarioConfirmadoCliente(sol.id, horarioElegido)
+    if (!conf.ok) console.error('[confirmar-horario] enviarHorarioConfirmadoCliente falló:', conf.error)
+  } catch (err) {
+    console.error('[confirmar-horario] enviarHorarioConfirmadoCliente error:', err)
+  }
+
   // 3. Notificar técnicos (await — fire-and-forget se cancela en Vercel serverless)
   let notifResult: { notificados: number; matched: number; errors: string[] } | null = null
   try {
@@ -265,10 +277,21 @@ export async function confirmarServicioCliente(
 
     try {
       if (confirmado) {
-        await enviarMensajeTexto(
-          tecnico.whatsapp,
-          `🎉 ¡Hola ${nombreTecnico}! El cliente ${sol.cliente_nombre} ha confirmado que el servicio de ${equipo} fue completado exitosamente.\n\n⭐ ¡Buen trabajo! Sigue así 💪\n\n🔧 Baird Service`
-        )
+        // Plantilla (llega fuera de la ventana 24h) con fallback al texto libre
+        // previo. La calificación viene embebida en el comentario del cliente
+        // ("Calificacion: N/10 ..." — la arma /confirmar/[token]). Si no viene
+        // (p.ej. cierre por la línea de voz), no inventamos nota: texto libre.
+        const calificacion = comentarioTexto?.match(/Calificacion:\s*(\d{1,2})\/10/)?.[1] ?? null
+        const conf = calificacion
+          ? await enviarServicioConfirmadoTecnico(evidencia.solicitud_id, evidencia.tecnico_id, calificacion)
+          : { ok: false as const, error: 'Sin calificación en comentario — se usa texto libre' }
+        if (!conf.ok) {
+          console.error('[confirmar-servicio] enviarServicioConfirmadoTecnico no aplicó, fallback a texto libre:', conf.error)
+          await enviarMensajeTexto(
+            tecnico.whatsapp,
+            `🎉 ¡Hola ${nombreTecnico}! El cliente ${sol.cliente_nombre} ha confirmado que el servicio de ${equipo} fue completado exitosamente.\n\n⭐ ¡Buen trabajo! Sigue así 💪\n\n🔧 Baird Service`
+          )
+        }
       } else {
         await enviarMensajeTexto(
           tecnico.whatsapp,
@@ -348,7 +371,7 @@ export async function procesarAprobacionCotizacion(
     // técnico íntegro) ya quedó fijado en el diagnóstico (/api/diagnostico,
     // rama "reparar") o en el admin gate (/api/cotizacion-precios, rama
     // "esperar_repuesto"). `cot.total` es el PRECIO AL CLIENTE
-    // (costoTecnico × 1.309, con IVA + margen Baird); escribirlo aquí
+    // (costoTecnico × 1.3447, con utilidad Baird + IVA); escribirlo aquí
     // sobrepagaba al técnico. Mismo criterio que /api/admin/actualizar-valor.
     const { error: updateErr } = await supabase
       .from('solicitudes_servicio')

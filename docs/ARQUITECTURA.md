@@ -24,10 +24,14 @@ src/
 │   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view) + calendario de agenda por franja
 │   │   ├── tecnicos/           # Technician management
 │   │   ├── repuestos/          # Pending parts dashboard
+│   │   ├── cotizaciones-pendientes/ # Admin pricing gate (estado pendiente_pricing)
 │   │   ├── gps-alertas/        # Silent flagged services (post-visit GPS within 100m)
+│   │   ├── mapa/               # Mapa Leaflet de servicios geolocalizados
+│   │   ├── errores/            # Panel de connection_errors (observabilidad)
 │   │   ├── carga-masiva/       # Bulk Excel upload for warranty services
 │   │   ├── garantias/          # Warranty dashboard (summary by brand/equipment)
-│   │   └── supervisores/       # CRUD supervisores (WhatsApp on state changes)
+│   │   ├── supervisores/       # CRUD supervisores (WhatsApp on state changes)
+│   │   └── test/               # Página interna de testing/debug (no linkeada)
 │   └── api/                    # API routes
 │       ├── solicitar/              # Service request: insert + WhatsApp confirm + notify techs
 │       ├── confirmar-horario/      # Customer schedule confirmation → notify techs
@@ -45,7 +49,11 @@ src/
 │       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup)
 │       ├── triaje/                 # Gemini AI diagnosis (disabled)
 │       ├── health/                 # Health check
-│       ├── carga-masiva/           # Bulk Excel upload processing
+│       ├── log-error/              # Client connection-error telemetry (fire-and-forget)
+│       ├── test-whatsapp/          # GET: diagnóstico de config WhatsApp (token/phone-id/whitelist)
+│       ├── dapta/webhook/          # Webhook POST-CALL de la 2ª línea de voz (ver docs/DAPTA.md)
+│       ├── carga-masiva/           # Bulk Excel upload processing (POST + DELETE)
+│       ├── admin/                  # Endpoints admin (export, editar/cambiar-estado, notas, supervisores, etc.)
 │       └── whatsapp/               # notify (admin-only), accept, webhook
 ├── components/ui/              # Reusable UI: Button, InputField, PhoneInput, etc.
 ├── hooks/                      # useDebounce, useSolicitudForm, useTriaje
@@ -56,7 +64,11 @@ src/
 │   │   └── estados.ts          # ESTADO_ESTILOS, ESTADO_LABELS (styling + labels per state)
 │   ├── services/
 │   │   ├── whatsapp.service.ts # All WhatsApp logic (notify, accept, quote, confirm)
-│   │   └── solicitud.service.ts
+│   │   ├── solicitud.service.ts
+│   │   ├── agenda.service.ts   # Cupo por franja + validación de horarios agendables
+│   │   ├── transiciones.service.ts # Transiciones de estado compartidas (WhatsApp + voz IA)
+│   │   ├── dapta.service.ts    # 2ª línea de voz IA — iniciarLlamada() con guardas (ver docs/DAPTA.md)
+│   │   └── geocoding.service.ts # Geocoding Google Maps para /admin/mapa
 │   ├── utils/
 │   │   ├── phone.ts            # Phone parsing/formatting utilities
 │   │   ├── format.ts           # formatCOP() and other formatters
@@ -102,6 +114,11 @@ legal/                          # Legal documents (Baird Service SAS)
 | `notificarRegistroTecnico(tecnicoId)` | Plantilla `registro_bienvenida_v3` tras registro del técnico, con link al portal. Disparrada por `/api/notificar-registro`. | N/A |
 | `describirSiguientePaso(siguientePaso, contexto)` | Helper puro: traduce el código de `siguiente_paso` (`reparar`, `esperar_repuesto`, `no_reparable`, `negativa_cliente`) al texto humano que ve el cliente. | N/A |
 | `enviarPlantilla(telefono, nombre, lang, components)` | Primitiva: arma el payload Meta y llama Graph API. Devuelve `{ sent, filtered? }` — `filtered=true` significa que cayó en el `BAIRD_TEST_PHONE_WHITELIST`. **Cualquier llamada que cuente "notificados" debe inspeccionar `sent`, no asumir success por promesa fulfilled.** | N/A |
+| `enviarHorarioConfirmadoCliente(solicitudId, horario)` | Plantilla `horario_confirmado_cliente_v1` tras confirmar horario, con botón "Gestionar servicio" → `/servicio/{cliente_token}` (cierra gaps H1 y 9). Disparada por `confirmarHorarioSolicitud` (transiciones.service). | No |
+| `enviarSolicitudExpiradaCliente(solicitudId)` | Plantilla `solicitud_expirada_cliente_v1` al transicionar a `sin_agendar` (cron horario-recordatorio). Cierra gap 1. | No |
+| `enviarPasoAprobadoCliente(solicitudId, accion, detalle)` / `enviarPasoRechazadoCliente(solicitudId)` | Confirmación al cliente de su decisión en `/verificar-paso` (gaps 3–5). Fallback a texto libre en el caller. | No — garantía (verificar-paso) |
+| `enviarPasoResueltoTecnico(solicitudId, decision, detalle)` | Plantilla `paso_resuelto_tecnico_v1` al técnico con la decisión del cliente (APROBÓ/RECHAZÓ) + botón portal (gap 6). Fallback a texto libre en el caller. | No — garantía (verificar-paso) |
+| `enviarServicioConfirmadoTecnico(solicitudId, tecnicoId, calificacion)` | Plantilla `servicio_confirmado_tecnico_v1` al cerrar con satisfacción (gap 8); la calificación se parsea del comentario. Fallback a texto libre. Disparada por `confirmarServicioCliente`. | No |
 | `enviarMensajeTexto(telefono, texto)` | Send free-form text message (requiere ventana 24h del cliente). | N/A |
 | `verificarFirmaWebhook(payload, signature)` | HMAC verification for Meta webhook | N/A |
 
@@ -151,7 +168,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/gps-ping` | POST | Tech browser sends GPS coords by phase | Both |
 | `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
 | `/api/cron/gps-followup` | GET | Cron 10min: post-visit GPS flagging | N/A |
-| `/api/carga-masiva` | POST | Bulk Excel upload for warranty | Warranty only |
+| `/api/carga-masiva` | POST, DELETE | Bulk Excel upload for warranty (DELETE: borrar solicitudes de una carga) | Warranty only |
 | `/api/admin/export` | POST | Admin: descarga `.xlsx` con resumen completo de solicitudes (cliente, técnico, evidencias, fotos, eventos, GPS, cotización). Body: `{ ids?: string[] }` — sin IDs exporta todas. | Both |
 | `/api/admin/editar-solicitud` | POST | Admin: corrige manualmente `tipo_equipo`, horario, dirección, ciudad, zona. Auditado en `solicitud_eventos` con diff. | Both |
 | `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp al cliente/técnico, pero SÍ notifica supervisores (`notificarCambioEstado`). | Both |
@@ -159,12 +176,15 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/admin/reenviar-ultimo-mensaje` | POST | Admin: re-dispara la plantilla WhatsApp correspondiente al estado actual de la solicitud (útil si el cliente o el técnico borró el mensaje). Incluye `repuesto_recibido` → `repuesto_recibido_cliente_v2`. | Both |
 | `/api/admin/supervisores` | GET/POST/PUT/DELETE | Admin CRUD de la tabla `supervisores` (destinatarios de `notificarCambioEstado`). Auth `verificarAdmin`. En **POST**, si el supervisor queda activo, dispara `enviarBienvenidaSupervisor` (plantilla `supervisor_bienvenida_v1`) y devuelve `whatsapp_bienvenida` en la respuesta. | N/A |
 | `/api/admin/actualizar-valor` | POST | Admin: ajusta `cotizacion.total` (valor al **cliente**) de un servicio particular. Sobreescribe total + limpia desglose (`mano_obra/repuestos→0`), reabre aprobación (`estado→cotizacion_enviada`), audita en `solicitud_eventos`, notifica supervisores y envía `valor_actualizado_cliente_v1` al cliente. **NO toca `pago_tecnico`.** Body `{id, nuevoValor, motivo?}`. Guard concurrencia `.eq(estado)`. | Particular only |
+| `/api/admin/reagendar-solicitud` | POST | Admin: cambia la FECHA del servicio con calendario (fecha + franja). A diferencia de `editar-solicitud` (texto libre, sin aviso): materializa `fecha_visita_at` (aparece en la vista Calendario) y notifica por WhatsApp a cliente, técnico asignado y supervisores. Mínimo "a partir de mañana" y cupo lleno se devuelven como `avisos` NO bloqueantes (el admin puede forzar); estados terminales sí bloquean. Body `{id, fecha:'YYYY-MM-DD', franja, motivo?}`. Auth `obtenerEmailAdmin`. | Both |
 | `/api/admin/pedir-repuesto-supervisores` | POST | Admin (botón **"Pedir repuestos en garantía"** en `/admin/solicitudes/[id]`, solo `es_garantia`): envía el pedido de repuesto a los supervisores con **visibilidad de la marca** (activos, ámbito todos/garantía, marca null o coincidente) vía `supervisor_repuesto_garantia_v1` (SKU, modelo, No. garantía, dirección, diagnóstico). **NO cambia estado.** Llama `notificarRepuestoSupervisores()`. Auditado en `solicitud_eventos` (`payload.origen='pedido_repuesto_supervisores'`). Auth `obtenerEmailAdmin`. Body `{solicitudId}`. | Warranty only |
 | `/api/whatsapp/accept` | GET | Aceptación 1-click del técnico desde la plantilla WhatsApp. Token único por notificación. Llama `procesarAceptacion()` — atomic update primer-técnico-gana. Redirige al portal del técnico tras aceptar. | Both |
 | `/api/whatsapp/notify` | POST | Admin re-notifica técnicos para una solicitud (volver a disparrar el broadcast a técnicos compatibles). Usa `notificarTecnicos()`. | Both |
 | `/api/notificar-registro` | POST | Post-registro del técnico: envía `registro_bienvenida_v3` con link al portal. | N/A |
 | `/api/log-error` | POST | Telemetría fire-and-forget de errores de conexión del cliente. Inserta en `connection_errors` y loguea a stderr con prefijo `[ConnectionError]`. Siempre responde 200. | N/A |
 | `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
+| `/api/test-whatsapp` | GET | Diagnóstico de configuración WhatsApp (presencia/forma de token, phone ID, whitelist) — para descartar env vars rotas en Vercel sin enviar mensajes. Agregado tras el falso "no se envía" del 2026-07-01. | N/A |
+| `/api/dapta/webhook` | POST | Webhook POST-CALL de la segunda línea de voz IA. Firma HMAC (`DAPTA_WEBHOOK_SECRET`) + idempotencia por `dapta_call_id`. Fase 0 — apagada tras `DAPTA_ENABLED`. Ver `docs/DAPTA.md`. | N/A |
 | `/api/triaje` | POST | AI diagnosis (disabled) | N/A |
 | `/api/health` | GET | Health check | N/A |
 
@@ -209,6 +229,7 @@ Todas requieren login Supabase Auth en `/admin/login` y validación server-side 
 | **Cotizaciones pendientes** | `/admin/cotizaciones-pendientes` | **Admin pricing gate** — solicitudes en estado `pendiente_pricing` esperando que el admin fije precios + tiempo de entrega antes de notificar al cliente. UI dispara `/api/cotizacion-precios`. |
 | **Alertas GPS** | `/admin/gps-alertas` | Silent flagged services (post-visit GPS within 100m) |
 | **Errores de conexión** | `/admin/errores` | Observabilidad: panel de `connection_errors` (telemetría enviada por el cliente vía `/api/log-error`). Filtros por rango temporal (1h/24h/7d/30d), tipo de error y actor (técnico/cliente/admin). |
+| **Mapa** | `/admin/mapa` | Servicios geolocalizados en mapa Leaflet + OSM con clusters. Se alimenta de las columnas de geocoding (`direccion_lat/lng`, migración `20260523`); el pipeline geocodifica en `/api/solicitar` y `editar-solicitud` (Google Maps, `GOOGLE_MAPS_API_KEY`). Filtro por día vía `fecha_visita_at`. |
 | Carga Masiva | `/admin/carga-masiva` | BITÁCORA Excel upload |
 | Garantías | `/admin/garantias` | Warranty dashboard by brand/equipment |
 | **Supervisores** | `/admin/supervisores` | CRUD de supervisores que reciben notificaciones WhatsApp en cada cambio de estado. Por cada uno: nombre, WhatsApp, activo, ámbito (todos/garantía/particular), marca (opcional), estados (opcional). UI dispara `/api/admin/supervisores`. |

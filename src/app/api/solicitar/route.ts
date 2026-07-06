@@ -4,7 +4,7 @@ import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
-import { pagoNetoTecnicoTarifaFija } from '@/lib/constants/tarifas/particular'
+import { pagoNetoTecnicoTarifaFija, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
 import crypto from 'crypto'
 
 /**
@@ -37,15 +37,25 @@ export async function POST(req: NextRequest) {
     //
     // IMPORTANTE: `pago_tecnico` guarda el NETO que recibe el técnico, NO el
     // precio de catálogo al cliente. En servicios particulares (reseller) el
-    // cliente paga catálogo y el técnico recibe catálogo ÷ 1.309 (Baird retiene
-    // IVA 19% + margen 10%). El precio al cliente se deriva donde se necesite
-    // vía precioClienteServicio()/calcularPagoTecnico(). Garantía → 0.
+    // cliente paga catálogo y el técnico recibe catálogo ÷ 1.3447 (Baird retiene
+    // utilidad 13% + IVA 19%). Excepción (2026-07-05): la visita de diagnóstico
+    // (Diagnóstico/Reparación) paga el fijo PAGO_TECNICO_DIAGNOSTICO ($35.000)
+    // aunque el cliente sigue pagando TARIFA_DIAGNOSTICO ($84.000); si luego
+    // el cliente aprueba una cotización, /api/diagnostico sobreescribe con el
+    // costo cotizado. El precio al cliente se deriva donde se necesite vía
+    // precioClienteServicio()/calcularPagoTecnico(). Garantía → 0.
     const precioClienteCatalogo = calcularPagoTecnico(
       formData.tipo_equipo,
       formData.tipo_solicitud,
       formData.es_garantia,
     )
-    const pagoTecnicoCalculado = pagoNetoTecnicoTarifaFija(precioClienteCatalogo)
+    const esVisitaDiagnostico =
+      formData.tipo_solicitud === 'Diagnóstico' || formData.tipo_solicitud === 'Reparación'
+    const pagoTecnicoCalculado = formData.es_garantia
+      ? 0
+      : esVisitaDiagnostico
+        ? PAGO_TECNICO_DIAGNOSTICO
+        : pagoNetoTecnicoTarifaFija(precioClienteCatalogo)
 
     const dataToInsert = {
       ...formData,

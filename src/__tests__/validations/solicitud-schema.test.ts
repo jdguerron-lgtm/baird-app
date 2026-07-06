@@ -10,7 +10,7 @@ import {
   calcularBaseSinIva,
   calcularIvaIncluido,
 } from '@/types/solicitud'
-import { pagoNetoTecnicoTarifaFija, MULTIPLICADOR_PARTICULAR } from '@/lib/constants/tarifas/particular'
+import { pagoNetoTecnicoTarifaFija, MULTIPLICADOR_PARTICULAR, PAGO_TECNICO_DIAGNOSTICO, calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 
 const VALID_DATA = {
   cliente_nombre: 'Maria Garcia Lopez',
@@ -127,29 +127,31 @@ describe('calcularPagoTecnico', () => {
   })
 })
 
-describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.309)', () => {
-  // Cifras canónicas de docs/pagos-tecnico.html (lo que recibe el técnico).
-  it('cambio de filtro $180.000 → $137.510 neto', () => {
-    expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBe(137510)
+describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.3447, modelo 2026-07-05)', () => {
+  // Cifras canónicas de public/guia-pagos.html (lo que recibe el técnico).
+  // Diagnóstico/Reparación NO usan la inversa: pagan PAGO_TECNICO_DIAGNOSTICO fijo.
+  it('cambio de filtro $180.000 → $133.859 neto', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBe(133859)
   })
 
-  it('diagnóstico $84.000 → $64.171 neto', () => {
-    expect(pagoNetoTecnicoTarifaFija(TARIFA_DIAGNOSTICO)).toBe(64171)
+  it('diagnóstico paga fijo $35.000 (no la inversa del catálogo)', () => {
+    expect(PAGO_TECNICO_DIAGNOSTICO).toBe(35000)
+    expect(PAGO_TECNICO_DIAGNOSTICO).toBeLessThan(TARIFA_DIAGNOSTICO)
   })
 
-  it('mantenimiento por equipo = catálogo ÷ 1.309', () => {
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Estufa'])).toBe(80214)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Horno'])).toBe(88235)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBe(96257)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Secadora'])).toBe(104278)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Aire Acondicionado'])).toBe(104278)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevera'])).toBe(112299)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavavajillas'])).toBe(112299)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevecón'])).toBe(128342)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora Secadora'])).toBe(144385)
+  it('mantenimiento por equipo = catálogo ÷ 1.3447', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Estufa'])).toBe(78084)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Horno'])).toBe(85893)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBe(93701)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Secadora'])).toBe(101510)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Aire Acondicionado'])).toBe(101510)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevera'])).toBe(109318)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavavajillas'])).toBe(109318)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevecón'])).toBe(124935)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora Secadora'])).toBe(140552)
   })
 
-  it('el neto es siempre menor que el catálogo (Baird retiene IVA + margen)', () => {
+  it('el neto es siempre menor que el catálogo (Baird retiene utilidad + IVA)', () => {
     expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBeLessThan(TARIFA_CAMBIO_FILTRO)
     expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBeLessThan(TARIFAS_MANTENIMIENTO['Lavadora'])
   })
@@ -159,11 +161,33 @@ describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.309)', () => {
     expect(pagoNetoTecnicoTarifaFija(-100)).toBe(0)
   })
 
-  it('reconstruye (±1 por redondeo) el catálogo al multiplicar por 1.309', () => {
+  it('reconstruye (±1 por redondeo) el catálogo al multiplicar por 1.3447', () => {
     for (const precio of [TARIFA_DIAGNOSTICO, TARIFA_CAMBIO_FILTRO, ...Object.values(TARIFAS_MANTENIMIENTO)]) {
       const reconstruido = Math.round(pagoNetoTecnicoTarifaFija(precio) * MULTIPLICADOR_PARTICULAR)
       expect(Math.abs(reconstruido - precio)).toBeLessThanOrEqual(1)
     }
+  })
+})
+
+describe('calcularTarifaParticular (utilidad 13% + IVA 19% sobre la venta)', () => {
+  it('ejemplo canónico $100.000: margen 13.000, base 113.000, IVA 21.470, total 134.470', () => {
+    const t = calcularTarifaParticular({ costoTecnico: 100000 })
+    expect(t.margenBaird).toBe(13000)
+    expect(t.baseVenta).toBe(113000)
+    expect(t.ivaCliente).toBe(21470)
+    expect(t.totalCliente).toBe(134470)
+  })
+
+  it('el técnico recibe íntegro su costo y el total suma base + IVA', () => {
+    const t = calcularTarifaParticular({ costoTecnico: 70000 })
+    expect(t.costoTecnico).toBe(70000)
+    expect(t.baseVenta).toBe(t.costoTecnico + t.margenBaird)
+    expect(t.totalCliente).toBe(t.baseVenta + t.ivaCliente)
+  })
+
+  it('costo 0 o negativo → todo en 0', () => {
+    const t = calcularTarifaParticular({ costoTecnico: -5000 })
+    expect(t.totalCliente).toBe(0)
   })
 })
 
