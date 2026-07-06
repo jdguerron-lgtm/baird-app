@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSolicitudForm } from '@/hooks/useSolicitudForm'
+import { URL_PAGO_ANTICIPO_DIAGNOSTICO } from '@/lib/constants/tienda'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Alert } from '@/components/ui/Alert'
 import { InputField } from '@/components/ui/InputField'
@@ -139,6 +140,10 @@ export default function SolicitarServicio() {
 
       const id = data.id
       setSolicitudId(id)
+      setMostrarPagoAnticipo(
+        !formData.es_garantia &&
+        (formData.tipo_solicitud === 'Diagnóstico' || formData.tipo_solicitud === 'Reparación'),
+      )
 
       const tecnicosMsg = data.notificados > 0
         ? ` ${data.notificados} técnico(s) notificado(s) por WhatsApp.`
@@ -204,6 +209,27 @@ export default function SolicitarServicio() {
               {mensaje && (
                 <div className="mb-6">
                   <Alert type={mensaje.tipo} message={mensaje.texto} onClose={() => setMensaje(null)} />
+                  {/* Recaudo del anticipo vía tienda Shopify (producto "Diagnostico
+                      Linea Blanca (Anticipo)", $42.000 = 50% de TARIFA_DIAGNOSTICO).
+                      Solo particular Diagnóstico/Reparación. */}
+                  {mensaje.tipo === 'success' && mostrarPagoAnticipo && (
+                    <div className="mt-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
+                      <p className="text-sm font-semibold text-emerald-900 mb-1">
+                        💳 Asegura tu visita pagando el anticipo del diagnóstico
+                      </p>
+                      <p className="text-xs text-emerald-800 mb-3">
+                        Son $42.000 COP (el 50% de la tarifa de diagnóstico). Si apruebas la reparación, se abonan al total. Pago seguro en nuestra tienda oficial.
+                      </p>
+                      <a
+                        href={URL_PAGO_ANTICIPO_DIAGNOSTICO}
+                        target="_blank"
+                        rel="noopener"
+                        className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
+                      >
+                        Pagar anticipo $42.000 →
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
 

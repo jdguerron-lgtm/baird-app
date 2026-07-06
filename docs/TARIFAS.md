@@ -324,6 +324,7 @@ Estos puntos requieren validación con el contador antes de que el modelo entre 
    - Ambos parametrizables sin migración.
 
 5. **Pagos al técnico** — hoy no hay pasarela de split-payment integrada. Baird recibe el pago del cliente y manualmente transfiere al técnico. Para escala se necesita ePayco Pagos Divididos o Mercado Pago Marketplace (ver Apéndice B).
+   - 🆕 **Recaudo del anticipo vía tienda Shopify (2026-07-06):** el anticipo de diagnóstico ($42.000) ya se puede cobrar online con el producto ["Diagnostico Linea Blanca (Anticipo)"](https://tienda.bairdservice.com/products/diagnostico-linea-blanca-copia) de tienda.bairdservice.com — CTA en `/solicitar` tras crear la solicitud (constante `URL_PAGO_ANTICIPO_DIAGNOSTICO` en `src/lib/constants/tienda.ts`). ⚠️ El precio del producto Shopify se mantiene a mano; si cambia `TARIFA_DIAGNOSTICO`, actualizar ambos. La conciliación es manual (cruzar pedidos Shopify ↔ solicitudes por nombre/teléfono); para montos variables (saldo de cotización) evaluar **draft orders** de Shopify con invoice link — cubre recaudo, no el split al técnico.
 
 6. **Retenciones** — Baird debe retener Rete-Fuente al técnico al pagarle (típicamente 6–11% según concepto). Esto reduce lo que el técnico recibe en mano y lo declara como impuesto pagado en su renta. Pendiente automatizar la retención y certificado anual.
 
