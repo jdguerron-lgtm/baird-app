@@ -46,22 +46,53 @@ producción necesita su propio token Admin API (Fase 1, único paso manual).
   (conciliación manual por nombre/teléfono). La Fase 4 lo arregla con cart
   permalink + attributes.
 
-## Fase 1 — Token propio de la app (manual, ~15 min de Juan)
+## Fase 1 — App propia (✅ EJECUTADA 2026-07-06, vía navegador con Claude)
 
-1. Shopify admin → **Configuración → Apps y canales de venta → Desarrollar apps**
-   → "Crear una app" → nombre `Baird App Backend`.
-2. Configurar scopes de Admin API: `read_products`, `write_products`,
-   `read_draft_orders`, `write_draft_orders`, `read_orders`.
-3. Instalar la app y copiar el **Admin API access token** (`shpat_…`) — se muestra
-   UNA sola vez.
-4. Env vars (Vercel prod + `.env.local`):
-   ```
-   SHOPIFY_ADMIN_TOKEN=shpat_...
-   SHOPIFY_SHOP_DOMAIN=1rep53-8r.myshopify.com   # endpoint API, NO el dominio público
-   SHOPIFY_API_VERSION=2026-01
-   ```
-5. (Fase 4) En la misma app: webhook `orders/paid` → guardar el secret como
-   `SHOPIFY_WEBHOOK_SECRET`.
+> ⚠️ El flujo real difiere del plan original: el admin de Shopify (Primavera '26)
+> movió las custom apps al **Dev Dashboard** (dev.shopify.com) y el mecanismo ya
+> no es un token estático `shpat_` sino **client credentials grant**.
+
+**Lo que quedó hecho:**
+- App **"Baird App Backend"** creada en Dev Dashboard (org 190861298, app id
+  393925492737), versión `v1-scopes-pagos` **Activa** con scopes:
+  `read_products, write_products, read_draft_orders, write_draft_orders, read_orders`.
+- URL de la app: `https://lineablanca.bairdservice.com` (no embebida).
+- **Instalada en la tienda** (Instalaciones: 1).
+- Client ID: `3ced74ae7939c24d97a1906fa95f039f`. El secreto (`shpss_…`) se ve en
+  Dev Dashboard → Baird App Backend → Configuración → Credenciales (botón copiar;
+  botón **Rotar** para regenerarlo si se filtra).
+
+**Cómo obtiene el backend su token (client credentials grant):**
+```
+POST https://1rep53-8r.myshopify.com/admin/oauth/access_token
+Content-Type: application/json
+{ "grant_type": "client_credentials",
+  "client_id":  SHOPIFY_CLIENT_ID,
+  "client_secret": SHOPIFY_CLIENT_SECRET }
+→ { access_token, expires_in ≈ 86399 }   // cachear ~23h y renovar
+```
+El `access_token` va en el header `X-Shopify-Access-Token` de cada llamada GraphQL.
+`shopify.service.ts` (Fase 2) implementa el cache + renovación.
+
+**Pendiente (Juan, ~3 min):** copiar el secreto del Dev Dashboard y pegar estas
+env vars en `.env.local` Y en Vercel → baird-app → Settings → Environment Variables
+(Production; el secreto como "Sensitive"):
+```
+SHOPIFY_SHOP_DOMAIN=1rep53-8r.myshopify.com
+SHOPIFY_API_VERSION=2026-01
+SHOPIFY_CLIENT_ID=3ced74ae7939c24d97a1906fa95f039f
+SHOPIFY_CLIENT_SECRET=<pegar aquí el shpss_… del Dev Dashboard>
+```
+(El guardrail de Claude Code bloquea, correctamente, que Claude escriba el secreto
+por comando — este paso es humano a propósito.)
+
+**Hallazgo colateral:** la app instalada `baird-price-update` (23 de abril) apunta
+a un webhook.site **expirado** y tiene lectura de pedidos/productos/clientes —
+si nada la usa, desinstalarla.
+
+(Fase 4) Webhook `orders/paid`: se configura como suscripción de la app en el
+Dev Dashboard; la firma HMAC se verifica con el **secreto de cliente** de esta
+misma app.
 
 ## Fase 2 — Link de pago automático por cotización (draft orders)
 
