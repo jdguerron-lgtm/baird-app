@@ -2083,7 +2083,10 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
   if (sol.es_garantia) return { ok: false, error: 'Las cotizaciones solo aplican para servicios particulares' }
   if (!sol.cotizacion) return { ok: false, error: 'No hay cotización registrada' }
 
-  const cot = sol.cotizacion as { diagnostico_tecnico: string; mano_obra: number; repuestos: number; total: number; token: string }
+  const cot = sol.cotizacion as {
+    diagnostico_tecnico: string; mano_obra: number; repuestos: number; total: number; token: string
+    tiempo_entrega?: string | null
+  }
 
   // Get technician name
   const { data: tecnico } = await supabase
@@ -2093,33 +2096,53 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
     .single()
 
   try {
-    // TODO(plantillas 2026-07-05): cuando Meta apruebe `cotizacion_cliente_v3`
-    // (ya está en scripts/upload-templates.mjs), cambiar a:
-    //   enviarPlantilla(..., 'cotizacion_cliente_v3', 'es', [ body con 6 params:
-    //     cliente, tecnico, equipo, diagnostico(200), total,
-    //     (cot.tiempo_entrega || 'inmediato tras tu aprobación') ])
-    // y eliminar los params mano_obra/repuestos — hoy van en 0 y el cliente ve
-    // "Mano de obra: $0 / Repuestos: $0", que genera desconfianza.
-    const result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v2', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: tecnico?.nombre_completo ?? 'Técnico asignado' },
-          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-          { type: 'text', text: cot.diagnostico_tecnico.substring(0, 200) },
-          { type: 'text', text: formatCOP(cot.mano_obra) },
-          { type: 'text', text: formatCOP(cot.repuestos) },
-          { type: 'text', text: formatCOP(cot.total) },
-        ],
-      },
-      {
-        type: 'button',
-        sub_type: 'url',
-        index: '0',
-        parameters: [{ type: 'text', text: cot.token }],
-      },
-    ])
+    // v3 (APPROVED 2026-07-06): diagnóstico + total único con IVA + tiempo de
+    // inicio + botón "Aprobar cotización" → /cotizacion/{token}. Reemplaza a
+    // _v2, que mostraba "Mano de obra: $0 / Repuestos: $0" (desde 2026-05-12
+    // esos campos se persisten en 0) y generaba desconfianza en el cliente.
+    // Fallback a _v2 si Meta rechaza el envío de v3 — nunca dejar al cliente
+    // sin cotización por un problema de plantilla.
+    const botonToken = {
+      type: 'button' as const,
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: cot.token }],
+    }
+
+    let result
+    try {
+      result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v3', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: tecnico?.nombre_completo ?? 'Técnico asignado' },
+            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: cot.diagnostico_tecnico.substring(0, 200) },
+            { type: 'text', text: formatCOP(cot.total) },
+            { type: 'text', text: cot.tiempo_entrega || 'inmediato tras tu aprobación' },
+          ],
+        },
+        botonToken,
+      ])
+    } catch (v3Err) {
+      console.error('[cotizacion] cotizacion_cliente_v3 falló, fallback a v2:', v3Err)
+      result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v2', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: tecnico?.nombre_completo ?? 'Técnico asignado' },
+            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: cot.diagnostico_tecnico.substring(0, 200) },
+            { type: 'text', text: formatCOP(cot.mano_obra) },
+            { type: 'text', text: formatCOP(cot.repuestos) },
+            { type: 'text', text: formatCOP(cot.total) },
+          ],
+        },
+        botonToken,
+      ])
+    }
 
     if (result.filtered) {
       return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
@@ -2213,30 +2236,48 @@ export async function notificarCotizacionAprobada(solicitudId: string): Promise<
   const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
   try {
-    // ⚠️ CLARIDAD DE PAGO (auditoría 2026-07-05): {{4}} de _v2 es el TOTAL AL
-    // CLIENTE (costoTecnico × 1.3447, con utilidad Baird + IVA), rotulado
-    // "Total aprobado" — el técnico lo confunde con su pago y luego recibe
-    // menos. TODO: cuando Meta apruebe `cotizacion_aprobada_tecnico_v3` (ya
-    // está en scripts/upload-templates.mjs), cambiar a _v3 con 5 params:
-    //   nombreTecnico, cliente, equipo, formatCOP(sol.pago_tecnico) (SU pago),
-    //   formatCOP(cot.total) (lo que paga el cliente).
-    const r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v2', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: nombreTecnico },
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-          { type: 'text', text: formatCOP(cot.total) },
-        ],
-      },
-      {
-        type: 'button',
-        sub_type: 'url',
-        index: '0',
-        parameters: [{ type: 'text', text: tecnico.portal_token ?? '' }],
-      },
-    ])
+    // v3 (APPROVED 2026-07-06): separa explícitamente el PAGO NETO al técnico
+    // (pago_tecnico, lo que recibe íntegro) del total que paga el cliente
+    // (con utilidad Baird + IVA). _v2 mostraba solo el total del cliente
+    // rotulado "Total aprobado" y el técnico lo confundía con su pago
+    // (auditoría 2026-07-05). Fallback a _v2 si Meta rechaza el envío de v3.
+    const botonPortal = {
+      type: 'button' as const,
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: tecnico.portal_token ?? '' }],
+    }
+
+    let r
+    try {
+      r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v3', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombreTecnico },
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: formatCOP(sol.pago_tecnico ?? 0) },
+            { type: 'text', text: formatCOP(cot.total) },
+          ],
+        },
+        botonPortal,
+      ])
+    } catch (v3Err) {
+      console.error('[cotizacion] cotizacion_aprobada_tecnico_v3 falló, fallback a v2:', v3Err)
+      r = await enviarPlantilla(tecnico.whatsapp, 'cotizacion_aprobada_tecnico_v2', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombreTecnico },
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+            { type: 'text', text: formatCOP(cot.total) },
+          ],
+        },
+        botonPortal,
+      ])
+    }
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
   } catch (err) {

@@ -531,8 +531,8 @@ const TEMPLATES = [
   //      estimado (backlog H). {{1}}=cliente, {{2}}=técnico, {{3}}=equipo,
   //      {{4}}=diagnóstico (200 chars), {{5}}=total, {{6}}=tiempo estimado
   //      (fallback "inmediato tras tu aprobación" cuando no hay repuesto).
-  //      ⚠️ El código sigue enviando _v2 hasta que Meta apruebe esta versión —
-  //      flip en enviarCotizacionCliente() (whatsapp.service.ts).
+  //      ✅ APPROVED y CABLEADA (2026-07-06): enviarCotizacionCliente() envía
+  //      v3 con fallback a _v2 si Meta rechaza el envío.
   {
     name: 'cotizacion_cliente_v3',
     category: 'UTILITY',
@@ -583,8 +583,8 @@ const TEMPLATES = [
   //      separa explícitamente su pago del total del cliente.
   //      {{1}}=técnico, {{2}}=cliente, {{3}}=equipo, {{4}}=pago NETO al
   //      técnico (pago_tecnico), {{5}}=total que paga el cliente.
-  //      ⚠️ El código sigue enviando _v2 hasta que Meta apruebe esta versión —
-  //      flip en notificarCotizacionAprobada() (whatsapp.service.ts).
+  //      ✅ APPROVED y CABLEADA (2026-07-06): notificarCotizacionAprobada()
+  //      envía v3 con fallback a _v2 si Meta rechaza el envío.
   {
     name: 'cotizacion_aprobada_tecnico_v3',
     category: 'UTILITY',

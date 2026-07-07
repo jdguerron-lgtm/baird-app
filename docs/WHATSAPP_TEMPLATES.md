@@ -180,7 +180,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/verificar-paso/{verificacion_paso_token}` — display "Aprobar paso"
 - **Propósito**: cliente aprueba/rechaza el siguiente paso del técnico (4 opciones: reparar, esperar_repuesto, no_reparable, negativa_cliente).
 
-#### `cotizacion_cliente_v2` **En script** ✅ (backfilled 2026-05-08) — ⚠️ REEMPLAZO EN CURSO por `_v3`
+#### `cotizacion_cliente_v2` **En script** ✅ (backfilled 2026-05-08) — 🔁 REEMPLAZADA por `_v3` (2026-07-06; queda solo como fallback)
 - **Disparo**: `enviarCotizacionCliente(solicitudId)` (particular post-pricing admin)
 - **Destino**: cliente
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `diagnostico`, `mano_obra`, `repuestos`, `total`
@@ -188,8 +188,8 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: cliente aprueba/rechaza la cotización particular.
 - **⚠️ Problema (auditoría 2026-07-05)**: desde 2026-05-12 `mano_obra`/`repuestos` se persisten en 0, así que el cliente ve "Mano de obra: $0 / Repuestos: $0 / Total: $X" — genera desconfianza. Reemplazo: `cotizacion_cliente_v3` (abajo).
 
-#### `cotizacion_cliente_v3` ⏳ pendiente de subir a Meta **En script** ✅ (nueva 2026-07-05)
-- **Disparo**: `enviarCotizacionCliente(solicitudId)` — **flip pendiente** (hoy el código envía `_v2`; TODO marcado en `whatsapp.service.ts`)
+#### `cotizacion_cliente_v3` ✅ APPROVED + **CABLEADA** (flip 2026-07-06)
+- **Disparo**: `enviarCotizacionCliente(solicitudId)` — envía `_v3`; fallback automático a `_v2` si Meta rechaza el envío
 - **Destino**: cliente
 - **Body** (6 params): `cliente`, `tecnico`, `equipo`, `diagnostico(200)`, `total`, `tiempo_estimado` (fallback `"inmediato tras tu aprobación"` cuando no hay espera de repuesto)
 - **Botón URL**: `/cotizacion/{cotizacion.token}` — display "Aprobar cotización"
@@ -197,7 +197,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Post-decisión cliente
 
-#### `cotizacion_aprobada_tecnico_v2` **En script** ✅ (backfilled 2026-05-08) — ⚠️ REEMPLAZO EN CURSO por `_v3`
+#### `cotizacion_aprobada_tecnico_v2` **En script** ✅ (backfilled 2026-05-08) — 🔁 REEMPLAZADA por `_v3` (2026-07-06; queda solo como fallback)
 - **Disparo**: `notificarCotizacionAprobada(solicitudId)`
 - **Destino**: técnico
 - **Body** (4 params): `tecnico`, `cliente`, `equipo`, `total`
@@ -205,8 +205,8 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: avisar al técnico que el cliente aprobó.
 - **⚠️ Problema (auditoría 2026-07-05)**: `{{4}}` es el TOTAL AL CLIENTE (con utilidad Baird + IVA) rotulado "Total aprobado" — el técnico lo confunde con su pago y luego recibe menos. Fuente #1 de confusión de pagos. Reemplazo: `_v3` (abajo).
 
-#### `cotizacion_aprobada_tecnico_v3` ⏳ pendiente de subir a Meta **En script** ✅ (nueva 2026-07-05)
-- **Disparo**: `notificarCotizacionAprobada(solicitudId)` — **flip pendiente** (hoy el código envía `_v2`; TODO marcado en `whatsapp.service.ts`)
+#### `cotizacion_aprobada_tecnico_v3` ✅ APPROVED + **CABLEADA** (flip 2026-07-06)
+- **Disparo**: `notificarCotizacionAprobada(solicitudId)` — envía `_v3`; fallback automático a `_v2` si Meta rechaza el envío
 - **Destino**: técnico
 - **Body** (5 params): `tecnico`, `cliente`, `equipo`, `pago_tecnico` (SU pago neto), `total_cliente`
 - **Botón URL**: `/tecnico/{portal_token}` — display "Abrir portal"
@@ -550,8 +550,8 @@ Ya no está en backlog: se agregó al script y al catálogo (sección "Post-deci
 - Cuando Meta apruebe, deprecar `_v6` y mover invocaciones a `_v7`.
 - **Nota**: el slot `_v6` fue tomado por la migración de dominio del 2026-05-23 (text-only con URL nueva), por eso el siguiente salto es `_v7`.
 
-#### H. `cotizacion_cliente_v3` — ✅ RESUELTO (2026-07-05)
-La `_v3` quedó definida en `upload-templates.mjs` (6 params, sin líneas $0, con tiempo estimado). Ver su entrada en el Catálogo. Pendiente: subir a Meta + flip del código.
+#### H. `cotizacion_cliente_v3` — ✅ CERRADO (2026-07-06)
+La `_v3` fue subida, APPROVED por Meta y cableada en `enviarCotizacionCliente()` con fallback a `_v2`. El cliente ya recibe diagnóstico + total único con IVA + botón "Aprobar cotización". El mismo día se cableó `cotizacion_aprobada_tecnico_v3` (pago neto del técnico separado del total del cliente) en `notificarCotizacionAprobada()`.
 
 #### J. `horario_confirmado_cliente_v1`
 **Gap (H1, H2 en FLOWS.md)**: tras elegir horario en `/horario/{token}`, el cliente solo ve confirmación in-app — no recibe WhatsApp de "horario registrado, buscando técnico". Cierra el webview y queda en suspenso hasta que un técnico acepte (puede tardar horas) o que abra de nuevo la URL.

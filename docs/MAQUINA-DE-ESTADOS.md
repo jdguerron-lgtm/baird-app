@@ -17,7 +17,7 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 | **Customer pays upfront** | Nothing | 50% of diagnostic fee ($40,000 COP) |
 | **Diagnosis result** | Tech proceeds to repair immediately | Quote sent to customer for approval |
 | **Extra step** | None | Customer must approve/reject quote |
-| **WhatsApp templates** | `nueva_solicitud_v4`, `tecnico_asignado_cliente_v6` | `solicitud_particular_*`, `cotizacion_cliente_v2` |
+| **WhatsApp templates** | `nueva_solicitud_v4`, `tecnico_asignado_cliente_v6` | `solicitud_particular_*`, `cotizacion_cliente_v3` |
 
 ### WARRANTY Flow (es_garantia = true) — Customer-first scheduling (v2 2026-04-27)
 
@@ -117,14 +117,14 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → POST /api/diagnostico (non-warranty branch)
                   → Generates cotizacion with unique approval token (UUID)
                   → estado: cotizacion_enviada
-                  → enviarCotizacionCliente() sends cotizacion_cliente_v2 to customer
+                  → enviarCotizacionCliente() sends cotizacion_cliente_v3 to customer
                     (includes cost breakdown + "Aprobar" button linking to /cotizacion/{token})
 
 4. QUOTE          Customer clicks button → /cotizacion/{token}
    APPROVAL       → Sees: diagnosis, evidence photos, cost breakdown
                   → APPROVE: POST /api/aprobar-cotizacion {aprobado: true}
                     → estado: cotizacion_aprobada → en_proceso
-                    → WhatsApp cotizacion_aprobada_tecnico_v2 to tech
+                    → WhatsApp cotizacion_aprobada_tecnico_v3 to tech
                   → REJECT: POST /api/aprobar-cotizacion {aprobado: false, comentario}
                     → estado: cotizacion_rechazada
                     → WhatsApp rejection text to tech

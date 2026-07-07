@@ -68,6 +68,9 @@ export default function DiagnosticoPage() {
   const [exito, setExito] = useState(false)
   const [waSent, setWaSent] = useState<boolean | null>(null)
   const [waError, setWaError] = useState<string | null>(null)
+  // Particular + reparar: total al cliente que devolvió /api/diagnostico
+  // (fuente de verdad server-side) para mostrárselo al técnico al terminar.
+  const [totalClienteApi, setTotalClienteApi] = useState<number | null>(null)
   const [progreso, setProgreso] = useState('')
 
   // Form state
@@ -456,6 +459,9 @@ export default function DiagnosticoPage() {
           setWaError(String(data.whatsapp_error))
         }
       }
+      if (typeof data.totalCliente === 'number' && data.totalCliente > 0) {
+        setTotalClienteApi(data.totalCliente)
+      }
       setExito(true)
     } catch {
       setError('Error de conexion')
@@ -534,9 +540,28 @@ export default function DiagnosticoPage() {
                   ? 'Tu diagnóstico fue registrado. El equipo Baird revisará y fijará el precio final de los repuestos antes de enviar la cotización al cliente.'
                   : 'Tu diagnóstico y la cotización quedaron registrados.'}
             </p>
+            {/* Particular + cotización directa (reparar): el técnico ve el
+                precio final que se le cobrará al cliente YA CALCULADO, junto a
+                su pago neto — claridad total para ambos. */}
+            {!servicio?.es_garantia && totalClienteApi !== null && (
+              <div className="mb-4 rounded-xl bg-purple-50 border-2 border-purple-200 p-4 text-left">
+                <p className="text-xs font-bold text-purple-900 uppercase tracking-wide mb-2">🧾 Cotización generada</p>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-600">Total que pagará el cliente</span>
+                  <span className="font-bold text-purple-900">${formatCOP(totalClienteApi)} COP</span>
+                </div>
+                <p className="text-[11px] text-gray-500 mb-2">Incluye tu pago, utilidad Baird 13% e IVA 19%.</p>
+                {costoTecnicoNum > 0 && (
+                  <div className="flex justify-between text-sm border-t border-purple-200 pt-2">
+                    <span className="text-gray-600">Tu pago si el cliente aprueba</span>
+                    <span className="font-bold text-emerald-700">${formatCOP(costoTecnicoNum)} COP</span>
+                  </div>
+                )}
+              </div>
+            )}
             {waSent === true && (
               <div className="mb-4 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
-                📤 <strong>WhatsApp enviado al cliente</strong> — recibirá la {servicio?.es_garantia ? 'verificación del siguiente paso' : 'cotización'} para aprobar.
+                📤 <strong>WhatsApp enviado al cliente</strong> — recibirá la {servicio?.es_garantia ? 'verificación del siguiente paso' : 'cotización con el diagnóstico y el total'} para aprobar o rechazar.
               </div>
             )}
             {waSent === false && siguientePaso?.paso !== 'esperar_repuesto' && (

@@ -405,7 +405,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │                   token: uuid }                                          │
 │      pago_tecnico=costoTecnico                                           │
 │                                                                           │
-│ 📩 → CLIENTE: cotizacion_cliente_v2                                      │
+│ 📩 → CLIENTE: cotizacion_cliente_v3                                      │
 │   Body: cliente, técnico, equipo, diagnóstico, mano_obra (=0),           │
 │         repuestos (=0), total (=Total_Cliente)                           │
 │   Botón: "Aprobar cotización" → /cotizacion/{cotizacion.token}           │
@@ -595,7 +595,7 @@ Confirmaciones explícitas de que **el cliente recibe la URL y puede aceptar/rec
 ### 3. Aprobación de cotización (PARTICULAR)
 | Aspecto | Detalle |
 |---|---|
-| Plantilla | `cotizacion_cliente_v2` |
+| Plantilla | `cotizacion_cliente_v3` |
 | URL en botón | `/cotizacion/{cotizacion.token}` (token dentro del JSONB) |
 | Página | `src/app/cotizacion/[token]/page.tsx` |
 | API | `POST /api/aprobar-cotizacion` |
@@ -650,8 +650,8 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | Template | Disparo | Destino |
 |---|---|---|
 | `verificar_siguiente_paso_v2` | enviarVerificacionPasoCliente (warranty) | Cliente |
-| `cotizacion_cliente_v2` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
-| `cotizacion_aprobada_tecnico_v2` | notificarCotizacionAprobada | Técnico |
+| `cotizacion_cliente_v3` | enviarCotizacionCliente (particular, post admin pricing) | Cliente |
+| `cotizacion_aprobada_tecnico_v3` | notificarCotizacionAprobada | Técnico |
 | `esperando_repuesto_cliente_v1` | enviarEsperandoRepuestoCliente (post-aprobación cliente) | Cliente |
 | `esperando_repuesto_tecnico_v1` ⏳ | enviarEsperandoRepuestoTecnico (post-aprobación cliente, **solo garantía**: No. garantía + SKU + dirección) | Técnico |
 | `repuesto_recibido_cliente_v2` ⏳ | enviarRepuestoRecibidoCliente (admin marca recibido → repuesto_recibido). Botón → reprogramar | Cliente |
@@ -798,8 +798,8 @@ Workflow recomendado para QA con `BAIRD_TEST_PHONE_WHITELIST=57<tu-celular>`:
 6. Abrir `/servicio/{cliente_token}` desde admin/solicitudes/[id]. Verificar que las fotos del técnico SE MUESTRAN ahí.
 7. (Como técnico) Abrir /tecnico/{portal_token}/diagnostico/{id}. Llenar diagnóstico, agregar productos necesarios + recomendados. Submit.
 8. Verificar que aparece en `/admin/cotizaciones-pendientes`. Fijar precios y tiempo.
-9. Recibir `cotizacion_cliente_v2` con desglose. Click → /cotizacion/{token}.
-10. Aprobar la cotización. Verificar que el técnico recibe `cotizacion_aprobada_tecnico_v2`.
+9. Recibir `cotizacion_cliente_v3` con desglose. Click → /cotizacion/{token}.
+10. Aprobar la cotización. Verificar que el técnico recibe `cotizacion_aprobada_tecnico_v3`.
 11. (Como técnico) Completar servicio en /tecnico/{token}/completar/{id}.
 12. Recibir `confirmar_servicio_v4`. Click → /confirmar/{token}. Calificar 10/10.
 
