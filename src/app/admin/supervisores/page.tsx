@@ -39,6 +39,10 @@ export default function SupervisoresAdmin() {
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null)
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [form, setForm] = useState(FORM_VACIO)
+  const [enviandoAcceso, setEnviandoAcceso] = useState<string | null>(null)
+  const [linkAcceso, setLinkAcceso] = useState<
+    { nombre: string; link: string; whatsappOk: boolean; error?: string } | null
+  >(null)
 
   const authHeaders = useCallback(async (): Promise<HeadersInit> => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -154,6 +158,33 @@ export default function SupervisoresAdmin() {
     cargar()
   }
 
+  const enviarAcceso = async (s: Supervisor) => {
+    setAviso(null)
+    setLinkAcceso(null)
+    setEnviandoAcceso(s.id)
+    const res = await fetch('/api/admin/supervisores/enviar-acceso', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ id: s.id }),
+    })
+    const data = await res.json()
+    setEnviandoAcceso(null)
+    if (!res.ok) {
+      setAviso({ ok: false, texto: data.error ?? 'No se pudo generar el acceso' })
+      return
+    }
+    setLinkAcceso({ nombre: s.nombre, link: data.link, whatsappOk: data.whatsapp_ok, error: data.whatsapp_error })
+  }
+
+  const copiarLink = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link)
+      setAviso({ ok: true, texto: 'Link copiado al portapapeles.' })
+    } catch {
+      setAviso({ ok: false, texto: 'No se pudo copiar automáticamente; copialo manualmente.' })
+    }
+  }
+
   return (
     <div className="p-6 lg:p-8 max-w-5xl">
       <div className="mb-6">
@@ -173,6 +204,44 @@ export default function SupervisoresAdmin() {
           }`}
         >
           {aviso.ok ? '✅ ' : '⚠️ '}{aviso.texto}
+        </div>
+      )}
+
+      {linkAcceso && (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">
+                Acceso de {linkAcceso.nombre}
+              </p>
+              <p className="text-xs mt-0.5">
+                {linkAcceso.whatsappOk ? (
+                  <span className="text-green-700">✅ Enviado por WhatsApp.</span>
+                ) : (
+                  <span className="text-amber-700">
+                    ⚠️ No salió por WhatsApp{linkAcceso.error ? ` (${linkAcceso.error})` : ''}. Copiá el link y mandalo a mano.
+                  </span>
+                )}
+              </p>
+              <code className="block mt-2 text-xs text-slate-600 break-all bg-white border border-gray-200 rounded px-2 py-1.5">
+                {linkAcceso.link}
+              </code>
+            </div>
+            <div className="flex flex-col gap-2 shrink-0">
+              <button
+                onClick={() => copiarLink(linkAcceso.link)}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                Copiar
+              </button>
+              <button
+                onClick={() => setLinkAcceso(null)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-100"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -353,6 +422,14 @@ export default function SupervisoresAdmin() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => enviarAcceso(s)}
+                          disabled={enviandoAcceso === s.id}
+                          className="text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors disabled:text-gray-300"
+                          title="Enviar por WhatsApp el link de acceso al panel de solo lectura (o copiarlo)"
+                        >
+                          {enviandoAcceso === s.id ? 'Enviando…' : '🔗 Acceso'}
+                        </button>
                         <button
                           onClick={() => editar(s)}
                           className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"

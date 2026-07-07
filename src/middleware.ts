@@ -57,9 +57,27 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
 ]
 
 // Token pages: prevent brute-force enumeration
-const TOKEN_PAGE_PREFIXES = ['/aceptar/', '/tecnico/', '/confirmar/']
+const TOKEN_PAGE_PREFIXES = ['/aceptar/', '/tecnico/', '/confirmar/', '/supervisor/']
 const TOKEN_PAGE_LIMIT = 30  // requests per minute per IP
 const TOKEN_PAGE_WINDOW = 60_000
+
+// Rutas que NUNCA deben aparecer en Google: panel admin, API y páginas con
+// token en la URL (privadas por diseño — contienen PII o accesos por link).
+// robots.txt evita que el crawler las visite; X-Robots-Tag es el refuerzo que
+// impide indexar si igual llegan por un link externo.
+const NOINDEX_PREFIXES = [
+  '/admin',
+  '/api',
+  '/aceptar/',
+  '/tecnico/',
+  '/confirmar/',
+  '/horario/',
+  '/cotizacion/',
+  '/servicio/',
+  '/verificar-paso/',
+  '/reprogramar-repuesto/',
+  '/supervisor/',
+]
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
@@ -94,6 +112,11 @@ export function middleware(req: NextRequest) {
   // Security headers on all responses
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(key, value)
+  }
+
+  // Impedir que Google indexe rutas privadas (admin, API, páginas con token)
+  if (NOINDEX_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
 
   return response

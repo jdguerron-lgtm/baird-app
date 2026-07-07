@@ -1621,6 +1621,47 @@ export async function enviarBienvenidaSupervisor(supervisor: {
 }
 
 /**
+ * Envía al supervisor su link mágico de acceso al panel de solo lectura
+ * (plantilla supervisor_acceso_v1). El botón URL dinámico apunta a
+ * /supervisor/{portal_token}. Best-effort: si la plantilla aún no está APPROVED
+ * en Meta, falla y el admin puede copiar el link manualmente (el endpoint lo
+ * devuelve igual).
+ */
+export async function enviarAccesoSupervisor(supervisor: {
+  nombre: string
+  whatsapp: string
+  ambito: string | null
+  marca: string | null
+  estados: string[] | null
+  portal_token: string
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const scope = describirAmbitoSupervisor(supervisor.ambito, supervisor.marca, supervisor.estados)
+    const result = await enviarPlantilla(supervisor.whatsapp, 'supervisor_acceso_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: supervisor.nombre.split(' ')[0] },
+          { type: 'text', text: scope },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: supervisor.portal_token }],
+      },
+    ])
+    if (result.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
  * Notifica al cliente cuando se necesita esperar repuesto (incluye SKU).
  */
 export async function enviarEsperandoRepuestoCliente(

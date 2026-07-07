@@ -8,8 +8,8 @@
 
 ## TL;DR
 
-- **Frontend admin**: protegido por sesión Supabase Auth (`/admin/layout.tsx`). Sin sesión → redirect a `/admin/login`.
-- **API admin**: protegida por `Authorization: Bearer ${session.access_token}` verificado con `verificarAdmin()` del helper compartido `src/lib/auth/admin.ts`.
+- **Frontend admin**: protegido por sesión Supabase Auth **+ allowlist de emails** (`/admin/layout.tsx`). Sin sesión o email fuera de la lista → `signOut()` + redirect a `/admin/login`.
+- **API admin**: protegida por `Authorization: Bearer ${session.access_token}` verificado con `verificarAdmin()` del helper compartido `src/lib/auth/admin.ts`. **`verificarAdmin` exige que el email esté en la allowlist** (`src/lib/auth/adminEmails.ts`), no solo que la sesión sea válida — autenticado ≠ admin (2026-07-06).
 - **API cliente / técnico**: protegida por **tokens UUID opacos** (alta entropía) — `cliente_token`, `horario_token`, `portal_token`, etc.
 - **Cron jobs**: protegidos por header `Authorization: Bearer ${CRON_SECRET}` (env var).
 - **Webhook Meta**: HMAC-SHA256 con `WHATSAPP_WEBHOOK_SECRET`.
@@ -22,7 +22,12 @@
 - `src/app/admin/login/page.tsx` — formulario email+password.
 - Llama `supabase.auth.signInWithPassword({ email, password })`.
 - Supabase devuelve `session` con `access_token` (JWT). Se persiste en cookies/localStorage automáticamente.
-- **Las cuentas admin se crean manualmente desde el dashboard de Supabase** (Auth > Users > Add user). **No hay self-signup**: nadie puede crear una cuenta desde la app.
+- **Las cuentas admin se crean manualmente desde el dashboard de Supabase** (Auth > Users > Add user).
+- ⚠️ **El self-signup de Supabase Auth estaba ABIERTO** (verificado 2026-07-06: `POST /auth/v1/signup` con el anon key devolvía 200 creando un user). La app no expone signup, pero la API de GoTrue sí. Con el gate viejo ("autenticado = admin") eso permitía a cualquiera registrarse con su propio email, confirmarlo y quedar como admin. **Mitigado en código** con la allowlist (`adminEmails.ts`). **Pendiente en el dashboard**: apagar "Allow new users to sign up" (Authentication → Sign In / Providers → Email) para cerrarlo en la fuente.
+
+### Allowlist de emails admin
+- `src/lib/auth/adminEmails.ts` — `esEmailAdmin(email)` es la única fuente de verdad de quién es admin. Se usa en los 3 puntos: login (`/admin/login`), guard del layout (`/admin/layout.tsx`) y gate de API (`verificarAdmin`).
+- Configurable por env var **`ADMIN_EMAILS`** (server, CSV) y **`NEXT_PUBLIC_ADMIN_EMAILS`** (cliente, CSV). Si ninguna está definida, cae a un default hardcodeado (`jdguerron@bairdservice.com`) para no romper prod. Para agregar un admin: crear la cuenta en Supabase **y** añadir el email a ambas env vars en Vercel.
 
 ### Guard de rutas
 - `src/app/admin/layout.tsx` corre `supabase.auth.getSession()` en cada render del layout.
@@ -97,6 +102,30 @@ No usan Supabase Auth — usan tokens opacos UUID v4. Cada token tiene un propó
 | `/api/diagnostico` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/completar-servicio` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/whatsapp/accept` | token de notificación | `notificaciones_whatsapp.token` |
+| `/api/supervisor/solicitudes` | `portal_token` (supervisor) | `supervisores.portal_token` |
+| `/api/supervisor/solicitud` | `portal_token` (supervisor) | `supervisores.portal_token` |
+
+### Portal de supervisores (solo lectura, scope server-side) — 2026-07-06
+
+Un supervisor entra por link mágico `/supervisor/{portal_token}` (UUID v4, mismo
+modelo que `tecnicos.portal_token`) y ve, en **solo lectura**, únicamente las
+solicitudes de su **alcance** (`ambito` + `marca`, mismo predicado que
+`notificarCambioEstado`).
+
+**Clave de seguridad**: el filtro de alcance se aplica **en el servidor**
+(`src/lib/auth/supervisor.ts` + las rutas `/api/supervisor/*`), nunca en el
+cliente. Las páginas admin leen `solicitudes_servicio` con el anon key, que ve
+toda la tabla (RLS off); si el portal filtrara en el browser, el supervisor
+podría pedir la tabla completa con el mismo anon key y saltarse su alcance. Por
+eso el portal **no** consulta Supabase desde el browser: todo pasa por las API
+que resuelven el token y filtran. El detalle (`/api/supervisor/solicitud`)
+verifica que el `id` pedido esté en scope antes de responder (403 si no) y
+**nunca devuelve columnas de token** (lista blanca explícita de columnas).
+
+El link se envía por WhatsApp (`supervisor_acceso_v1`, botón URL dinámico) vía
+`POST /api/admin/supervisores/enviar-acceso` (admin), que además devuelve el link
+para copiar/pegar mientras Meta aprueba la plantilla. Revocar acceso = poner el
+supervisor `activo=false` (el resolver rechaza inactivos).
 
 ⚠️ **Antipatrón conocido**: el token de cotización está dentro de un JSONB → se filtra cargando todas las solicitudes en estado `cotizacion_enviada` y buscando en JS. Backlog: migrar a columna generada con índice único. Detalles en `docs/SUPABASE.md` § "Supabase Architecture" → "Filtros JSONB".
 

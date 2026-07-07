@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { esEmailAdmin } from '@/lib/auth/adminEmails'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -13,8 +14,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [autenticado, setAutenticado] = useState(false)
 
   useEffect(() => {
+    // Una sesión sirve para el shell admin solo si su email está en la allowlist.
+    // Un usuario logueado pero NO admin (p.ej. una cuenta de Supabase creada por
+    // signup) se desloguea y se manda al login — si no, vería el shell y sus
+    // queries client-side (anon key, RLS off) devolverían datos.
+    const esSesionAdmin = (session: { user?: { email?: string } } | null) =>
+      !!session && esEmailAdmin(session.user?.email)
+
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
+
+      if (session && !esSesionAdmin(session)) {
+        await supabase.auth.signOut()
+        if (pathname !== '/admin/login') router.replace('/admin/login')
+        setAutenticado(false)
+        setCargando(false)
+        return
+      }
 
       if (!session && pathname !== '/admin/login') {
         router.replace('/admin/login')
@@ -26,17 +42,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return
       }
 
-      setAutenticado(!!session)
+      setAutenticado(esSesionAdmin(session))
       setCargando(false)
     }
 
     checkAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session && pathname !== '/admin/login') {
+      if (!esSesionAdmin(session) && pathname !== '/admin/login') {
         router.replace('/admin/login')
       }
-      setAutenticado(!!session)
+      setAutenticado(esSesionAdmin(session))
     })
 
     return () => subscription.unsubscribe()

@@ -816,6 +816,45 @@ const TEMPLATES = [
     ],
   },
 
+  // 19b. Acceso al PANEL de supervisor (solo lectura) — link mágico.
+  //      {{1}}=nombre supervisor, {{2}}=alcance (describirAmbitoSupervisor).
+  //      Botón URL dinámico: APP_URL/supervisor/{{1}} donde {{1}} = portal_token.
+  //      Llamado por: enviarAccesoSupervisor()
+  {
+    name: 'supervisor_acceso_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu acceso al panel de supervisión',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋, este es tu acceso privado al panel de Baird Service.\n\n' +
+          'Desde aquí puedes ver, en tiempo real y solo lectura, {{2}}.\n\n' +
+          'Toca el botón para entrar. No compartas este enlace: es personal.',
+        example: {
+          body_text: [['Andrés', 'todos los servicios y marcas']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Entrar al panel',
+            url: `${APP_URL}/supervisor/{{1}}`,
+            example: [`${APP_URL}/supervisor/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
   // 20. Espera de repuesto aprobada — notificar al TÉCNICO (solo GARANTÍA).
   //     v1 (2026-06-12): incluye los datos de gestión del repuesto ante la marca:
   //     No. de garantía (numero_serie_factura), SKU(s) y dirección del cliente

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { esEmailAdmin } from '@/lib/auth/adminEmails'
 import { useRouter } from 'next/navigation'
 
 export default function AdminLogin() {
@@ -16,13 +17,22 @@ export default function AdminLogin() {
     setCargando(true)
     setError('')
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
 
     if (authError) {
       setError('Credenciales incorrectas')
+      setCargando(false)
+      return
+    }
+
+    // Autenticado ≠ autorizado: solo los emails de la allowlist son admin.
+    // Una cuenta de Supabase válida pero fuera de la lista no debe quedar con sesión.
+    if (!esEmailAdmin(data.user?.email)) {
+      await supabase.auth.signOut()
+      setError('Esta cuenta no tiene acceso de administrador')
       setCargando(false)
       return
     }

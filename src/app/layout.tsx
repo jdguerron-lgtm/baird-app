@@ -13,6 +13,9 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://lineablanca.bairdservice.com',
+  ),
   title: 'Baird Service — Técnicos verificados en Colombia',
   description:
     'Conectamos clientes con técnicos certificados de electrodomésticos. Diagnóstico inteligente, coordinación por WhatsApp y pago acordado antes de la visita.',
