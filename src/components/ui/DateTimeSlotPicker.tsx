@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
+import { formatearFechaLargaCO } from '@/lib/utils/fecha-visita'
+import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 
 interface DateTimeSlotPickerProps {
   label: string
@@ -10,32 +13,21 @@ interface DateTimeSlotPickerProps {
   required?: boolean
 }
 
-const SLOTS = [
-  { label: 'Mañana', range: '8:00 AM - 12:00 PM' },
-  { label: 'Tarde', range: '12:00 PM - 4:00 PM' },
-  { label: 'Noche', range: '4:00 PM - 7:00 PM' },
-] as const
-
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
-const SHORT_MONTHS = [
-  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
-]
-const SHORT_DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 function toDateKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function formatOutput(date: Date, slotRange: string) {
-  const dayName = SHORT_DAYS[date.getDay()]
-  const day = date.getDate()
-  const month = SHORT_MONTHS[date.getMonth()]
-  return `${dayName} ${day} ${month}, ${slotRange}`
+// Formato canónico "lunes, 7 de julio · 8am-12pm": el MISMO que emite
+// HorarioSelector en modo custom. parsearFechaVisita lo entiende, así que la
+// opción cuenta contra el cupo por slot (agenda.service) y valida server-side.
+function formatOutput(date: Date, franjaValue: string) {
+  return `${formatearFechaLargaCO(toDateKey(date))} · ${franjaValue}`
 }
 
 export function DateTimeSlotPicker({ label, value, onChange, error, required }: DateTimeSlotPickerProps) {
@@ -48,6 +40,11 @@ export function DateTimeSlotPicker({ label, value, onChange, error, required }: 
   const [currentMonth, setCurrentMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
+
+  // Franjas sin cupo para la fecha elegida: NO se muestran. El guard real es
+  // server-side (validarHorarioAgendable al auto-agendar la opción 1).
+  const franjasLlenas = useFranjasLlenas(selectedDate ? toDateKey(selectedDate) : '')
+  const franjasDisponibles = FRANJAS_HORARIO.filter(f => !franjasLlenas.includes(f.value))
 
   // Min date = tomorrow, max date = today + 30 days
   const minDate = useMemo(() => {
@@ -105,10 +102,11 @@ export function DateTimeSlotPicker({ label, value, onChange, error, required }: 
     setSelectedSlot(null)
   }
 
-  function handleSlotClick(slotRange: string) {
+  function handleSlotClick(franjaValue: string) {
     if (!selectedDate) return
-    setSelectedSlot(slotRange)
-    onChange(formatOutput(selectedDate, slotRange))
+    if (franjasLlenas.includes(franjaValue)) return
+    setSelectedSlot(franjaValue)
+    onChange(formatOutput(selectedDate, franjaValue))
   }
 
   function handleClear() {
@@ -205,33 +203,39 @@ export function DateTimeSlotPicker({ label, value, onChange, error, required }: 
           })}
         </div>
 
-        {/* Time slots */}
+        {/* Time slots — solo franjas con cupo para el día elegido */}
         {selectedDate && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             <p className="text-xs text-gray-500 mb-2">
               Franja horaria para el {selectedDate.getDate()} de {MONTH_NAMES[selectedDate.getMonth()]}:
             </p>
-            <div className="grid grid-cols-3 gap-2">
-              {SLOTS.map((slot) => (
-                <button
-                  key={slot.label}
-                  type="button"
-                  onClick={() => handleSlotClick(slot.range)}
-                  className={`
-                    py-2 px-1 rounded-lg text-xs font-medium border transition-all
-                    ${selectedSlot === slot.range
-                      ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                      : 'border-gray-200 text-gray-700 hover:border-green-300 hover:bg-green-50'
-                    }
-                  `}
-                >
-                  <div className="font-semibold">{slot.label}</div>
-                  <div className={`text-[10px] mt-0.5 ${selectedSlot === slot.range ? 'text-green-100' : 'text-gray-400'}`}>
-                    {slot.range}
-                  </div>
-                </button>
-              ))}
-            </div>
+            {franjasDisponibles.length === 0 ? (
+              <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                Este día ya está lleno. Por favor elige otra fecha.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {franjasDisponibles.map((franja) => (
+                  <button
+                    key={franja.value}
+                    type="button"
+                    onClick={() => handleSlotClick(franja.value)}
+                    className={`
+                      py-2 px-1 rounded-lg text-xs font-medium border transition-all
+                      ${selectedSlot === franja.value
+                        ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                        : 'border-gray-200 text-gray-700 hover:border-green-300 hover:bg-green-50'
+                      }
+                    `}
+                  >
+                    <div className="font-semibold">{franja.icon} {franja.label.split(' (')[0]}</div>
+                    <div className={`text-[10px] mt-0.5 ${selectedSlot === franja.value ? 'text-green-100' : 'text-gray-400'}`}>
+                      {franja.value}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

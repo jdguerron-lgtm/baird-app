@@ -66,6 +66,9 @@ export default function SolicitarServicio() {
   // CTA para pagar el anticipo ($42.000) en la tienda Shopify (recaudo online).
   const [mostrarPagoAnticipo, setMostrarPagoAnticipo] = useState(false)
   const [geoLoading, setGeoLoading] = useState(false)
+  // El auto-agendamiento de la opción 1 salta la página /horario (donde antes
+  // se aceptaban los TyC), así que la aceptación se exige aquí en el formulario.
+  const [aceptaTyc, setAceptaTyc] = useState(false)
 
   const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()
 
@@ -118,6 +121,12 @@ export default function SolicitarServicio() {
       return
     }
 
+    if (!aceptaTyc) {
+      setMensaje({ texto: 'Debes aceptar los Términos y Condiciones para agendar tu visita', tipo: 'error' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
     setCargando(true)
     setMensaje(null)
 
@@ -150,7 +159,11 @@ export default function SolicitarServicio() {
         : ' Registramos tu solicitud y buscaremos técnicos disponibles.'
 
       setMensaje({
-        texto: `✅ Solicitud #${id.slice(0, 8)} enviada.${tecnicosMsg} Te avisaremos cuando un técnico acepte.`,
+        texto: data.agendado
+          // Auto-agendado con la opción 1 (o la 2): la visita ya quedó fijada,
+          // sin paso extra de confirmación por WhatsApp.
+          ? `✅ Solicitud #${id.slice(0, 8)} enviada y visita agendada para ${data.horario}.${tecnicosMsg} Te avisaremos cuando un técnico acepte.`
+          : `✅ Solicitud #${id.slice(0, 8)} enviada. Te enviamos un WhatsApp para confirmar el horario de tu visita.${tecnicosMsg}`,
         tipo: 'success',
       })
     } catch {
@@ -163,6 +176,7 @@ export default function SolicitarServicio() {
     }
 
     resetForm()
+    setAceptaTyc(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setCargando(false)
   }
@@ -569,6 +583,21 @@ export default function SolicitarServicio() {
                     )}
                   </div>
                 </div>
+
+                {/* TyC — requerido: el agendamiento queda confirmado al enviar
+                    (la opción 1 se agenda automáticamente), sin paso posterior
+                    en /horario donde antes se aceptaban. */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aceptaTyc}
+                    onChange={(e) => setAceptaTyc(e.target.checked)}
+                    className="mt-1 h-5 w-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    He leído y acepto los <Link href="/terminos" target="_blank" className="text-green-700 underline">Términos y Condiciones</Link> y la <Link href="/politica-privacidad" target="_blank" className="text-green-700 underline">Política de Privacidad</Link>.
+                  </span>
+                </label>
 
                 {/* Botón de Envío */}
                 <Button

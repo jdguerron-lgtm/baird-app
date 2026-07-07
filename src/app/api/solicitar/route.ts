@@ -2,18 +2,29 @@ import { after, NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
+import { confirmarHorarioSolicitud } from '@/lib/services/transiciones.service'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
 import { pagoNetoTecnicoTarifaFija, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
 import crypto from 'crypto'
+
+// El auto-agendamiento corre notificarTecnicos inline (varios segundos por
+// técnico) — mismo margen que /api/confirmar-horario.
+export const maxDuration = 60
 
 /**
  * POST /api/solicitar
  *
  * Crea una solicitud y arranca el flujo customer-first:
  * 1. Inserta solicitud con estado='pendiente_horario' y horario_token único
- * 2. Envía plantilla cliente_seleccion_horario_v2 con CTA a /horario/{token}
- * 3. NO notifica técnicos todavía — eso ocurre tras /api/confirmar-horario
+ * 2. PARTICULAR: auto-agenda la opción 1 del formulario (fallback opción 2)
+ *    vía confirmarHorarioSolicitud — la solicitud pasa directo a 'notificada'
+ *    sin esperar al cliente en /horario/{token}. El formulario ya exige
+ *    aceptar TyC, y el picker emite el formato canónico parseable, así que
+ *    la validación de cupo por franja aplica de verdad.
+ * 3. Fallback (garantía, o ambas opciones sin cupo por carrera): envía la
+ *    plantilla cliente_seleccion_horario_v2 con CTA a /horario/{token} y la
+ *    solicitud queda en 'pendiente_horario' como antes.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -87,16 +98,45 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Enviar plantilla al cliente para que elija horario
+    // PARTICULAR: auto-agendar la opción 1 (fallback opción 2). La transición
+    // reutiliza confirmarHorarioSolicitud (misma dueña que /api/confirmar-horario):
+    // valida cupo por franja + mínimo mañana, pasa a 'notificada', envía la
+    // confirmación WhatsApp al cliente y notifica técnicos.
+    let agendado = false
+    let horarioAgendado: string | null = null
+    let notificados = 0
     let waEnviado = false
-    try {
-      const result = await enviarSeleccionHorarioCliente(solicitud.id)
-      waEnviado = result.ok
-      if (!result.ok) {
-        console.error('Error enviando selección de horario:', result.error)
+
+    if (!formData.es_garantia) {
+      for (const opcion of [formData.horario_visita_1, formData.horario_visita_2]) {
+        try {
+          const r = await confirmarHorarioSolicitud(horarioToken, opcion)
+          if (r.ok) {
+            agendado = true
+            horarioAgendado = opcion
+            notificados = Number(r.body.notificados ?? 0)
+            waEnviado = true
+            break
+          }
+          console.warn(`[solicitar] auto-agendar "${opcion}" rechazado:`, r.body.error)
+        } catch (err) {
+          console.error('[solicitar] auto-agendar falló:', err)
+        }
       }
-    } catch (waErr) {
-      console.error('Error enviando WhatsApp inicial:', waErr)
+    }
+
+    // Fallback (garantía, o ninguna opción con cupo): plantilla de selección
+    // de horario con CTA a /horario/{token} — flujo customer-first previo.
+    if (!agendado) {
+      try {
+        const result = await enviarSeleccionHorarioCliente(solicitud.id)
+        waEnviado = result.ok
+        if (!result.ok) {
+          console.error('Error enviando selección de horario:', result.error)
+        }
+      } catch (waErr) {
+        console.error('Error enviando WhatsApp inicial:', waErr)
+      }
     }
 
     // Geocoding fire-and-forget — after() corre tras enviar la respuesta al cliente.
@@ -116,6 +156,9 @@ export async function POST(req: NextRequest) {
       horario_token: horarioToken,
       cliente_token: clienteToken,
       whatsapp_enviado: waEnviado,
+      agendado,
+      horario: horarioAgendado,
+      notificados,
     })
   } catch (error) {
     console.error('Error en /api/solicitar:', error)

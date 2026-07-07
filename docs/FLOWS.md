@@ -340,15 +340,26 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ 1. CREACIÓN DE SOLICITUD                                                 │
-│ Idéntico a garantía. Mismo POST /api/solicitar.                          │
-│ DB: estado=pendiente_horario, horario_token, cliente_token               │
+│ 1. CREACIÓN DE SOLICITUD + AUTO-AGENDAMIENTO (v3 2026-07-06)             │
+│ Mismo POST /api/solicitar. El formulario /solicitar:                     │
+│  - Los 2 DateTimeSlotPicker usan FRANJAS_HORARIO canónicas, OCULTAN las  │
+│    franjas sin cupo (GET /api/disponibilidad-horario) y emiten el        │
+│    formato parseable "lunes, 7 de julio · 8am-12pm"                      │
+│  - TyC se aceptan con checkbox en el formulario (antes era en /horario)  │
+│ DB: insert estado=pendiente_horario → confirmarHorarioSolicitud AUTO-    │
+│ confirma la opción 1 (fallback opción 2) → estado=notificada,            │
+│ horario_confirmado, fecha_visita_at, tyc_aceptados_at                    │
 │                                                                           │
-│ 📩 → CLIENTE: cliente_seleccion_horario_v2 (mismo template)              │
+│ 📩 → CLIENTE: horario confirmado (enviarHorarioConfirmadoCliente)        │
+│ 📩 → TÉCNICOS: notificarTecnicos() inline (paso 3, sin espera)           │
+│                                                                           │
+│ SOLO si ambas opciones quedaron sin cupo (carrera):                      │
+│ 📩 → CLIENTE: cliente_seleccion_horario_v2 (flujo previo, /horario/...)  │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
-[Pasos 1b–2 idénticos a garantía: timeout, cliente confirma horario, etc.]
+[Pasos 1b–2 solo aplican en el fallback: timeout, cliente confirma horario.
+ Garantía conserva el flujo customer-first completo (selección vía /horario).]
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────────┐

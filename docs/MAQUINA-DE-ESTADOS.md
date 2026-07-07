@@ -87,15 +87,23 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → Problem → estado: en_disputa
 ```
 
-### NON-WARRANTY (Particular) Flow (es_garantia = false)
+### NON-WARRANTY (Particular) Flow (es_garantia = false) — Auto-agendamiento (v3 2026-07-06)
 
 ```
-1. REQUEST        Customer form
-                  → Supabase insert (estado: pendiente)
-                  → WhatsApp solicitud_particular_cliente_v1 to customer
-                    (includes diagnostic fee: $80,000 COP + 50% advance: $40,000 COP)
-                  → notificarTecnicos() sends solicitud_particular_tecnico_v2 to matching techs
-                  → estado: notificada
+1. REQUEST        Customer form (los 2 DateTimeSlotPicker emiten el formato
+   + AUTO-AGENDA  canónico "lunes, 7 de julio · 8am-12pm" y OCULTAN las franjas
+                  sin cupo vía GET /api/disponibilidad-horario; TyC se aceptan
+                  en el mismo formulario)
+                  → Supabase insert (estado: pendiente_horario, horario_token)
+                  → /api/solicitar AUTO-CONFIRMA la opción 1 vía
+                    confirmarHorarioSolicitud (fallback opción 2): valida cupo
+                    por franja + mínimo mañana, estado → notificada,
+                    horario_confirmado + fecha_visita_at + tyc_aceptados_at,
+                    envía confirmación WhatsApp al cliente y notificarTecnicos()
+                  → Solo si AMBAS opciones quedaron sin cupo (carrera):
+                    fallback al flujo previo — plantilla
+                    cliente_seleccion_horario_v2 (CTA → /horario/{token}) y la
+                    solicitud queda en pendiente_horario
 
 2. ACCEPTANCE     Technician clicks "Aceptar" button in WhatsApp
                   → GET /aceptar/{token} → atomic UPDATE (first wins)
@@ -243,7 +251,9 @@ WARRANTY:
                      │                          ↘ no_show_cliente (terminal)
                      └─→ sin_agendar (timeout 24h+12h, terminal)
 
-NON-WARRANTY (v2 2026-05-10):
+NON-WARRANTY (v3 2026-07-06 — /api/solicitar auto-confirma la opción 1 del
+formulario, así que pendiente_horario dura milisegundos salvo que ambas
+opciones estén sin cupo, donde cae al flujo de link /horario como antes):
   pendiente_horario ─┬─→ notificada → diagnostico_pendiente → diagnóstico técnico
                      │                       │           (incluye costoTecnico)
                      │                       │
