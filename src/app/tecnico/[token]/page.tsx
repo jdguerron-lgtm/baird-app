@@ -101,7 +101,7 @@ export default function PortalTecnicoPage() {
 
         setServicios(sols.map(s => ({
           ...s,
-          estado: s.estado ?? 'pendiente',
+          estado: s.estado ?? 'pendiente_horario',
           pago_tecnico: s.pago_tecnico ?? 0,
           es_garantia: s.es_garantia ?? false,
           horario_confirmado: s.horario_confirmado ?? null,
@@ -145,12 +145,9 @@ export default function PortalTecnicoPage() {
 
   const activos = servicios.filter(s => [
     'asignada',
-    'diagnostico_pendiente',
     'pendiente_pricing',
     'cotizacion_enviada',
-    'cotizacion_aprobada',
     'esperando_repuesto',
-    'reagendamiento_pendiente',
     'aprobacion_paso_pendiente',
     'en_proceso',
   ].includes(s.estado))
@@ -266,17 +263,15 @@ export default function PortalTecnicoPage() {
 }
 
 function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string }) {
-  // El técnico puede iniciar diagnóstico tras aceptar:
-  //  - Garantía → estado 'asignada'
-  //  - Particular → estado 'diagnostico_pendiente'
-  const needsDiagnostic = s.estado === 'asignada' || s.estado === 'diagnostico_pendiente'
-  const canComplete = (s.estado === 'en_proceso' || s.estado === 'cotizacion_aprobada') && !s.tiene_evidencia
+  // El técnico puede iniciar diagnóstico tras aceptar (estado 'asignada',
+  // ambos flujos — fusión 2026-07-09).
+  const needsDiagnostic = s.estado === 'asignada'
+  const canComplete = s.estado === 'en_proceso' && !s.tiene_evidencia
   const esperaInfo: string | null =
     s.estado === 'pendiente_pricing' ? 'Baird está fijando precio y tiempo de entrega'
     : s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
     : s.estado === 'esperando_repuesto' ? 'Esperando llegada del repuesto'
     : s.estado === 'aprobacion_paso_pendiente' ? 'Cliente aprobando siguiente paso'
-    : s.estado === 'reagendamiento_pendiente' ? 'Cliente reagendando'
     : s.estado === 'confirmacion_pendiente' ? 'Esperando confirmación del cliente'
     : null
 

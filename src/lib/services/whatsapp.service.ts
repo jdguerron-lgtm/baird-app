@@ -586,15 +586,9 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     return { ganado: false, mensaje: msg }
   }
 
-  // 2. Fetch solicitud to determine flow type BEFORE atomic update
-  const { data: solPreview } = await supabase
-    .from('solicitudes_servicio')
-    .select('es_garantia')
-    .eq('id', notif.solicitud_id)
-    .single()
-
-  // Non-warranty: goes to diagnostico_pendiente; Warranty: goes to asignada
-  const estadoAsignacion = solPreview?.es_garantia === false ? 'diagnostico_pendiente' : 'asignada'
+  // Ambos flujos van a 'asignada' (fusión 2026-07-09 — antes particular usaba
+  // diagnostico_pendiente; es_garantia ya distingue el camino a seguir).
+  const estadoAsignacion = 'asignada'
 
   // UPDATE atómico — solo asigna si aún no tiene técnico (evita race condition)
   const { data: updated, error: updateErr } = await supabase
@@ -662,7 +656,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   const sol = updated // aliás semántico
 
-  // Avisar a supervisores que un técnico tomó el servicio (asignada / diagnostico_pendiente).
+  // Avisar a supervisores que un técnico tomó el servicio (asignada).
   await notificarCambioEstado(sol.id, 'notificada', estadoAsignacion)
 
   // 4. Notificar al técnico ganador con los datos del cliente
@@ -1264,15 +1258,13 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
   switch (estadoNuevo) {
     case 'pendiente_horario': return 'admin'        // re-notificar tras sin_agendar (/api/whatsapp/notify)
     case 'notificada': return 'cliente'             // confirmó horario (/api/confirmar-horario)
-    case 'asignada':
-    case 'diagnostico_pendiente': return 'tecnico'  // aceptó el servicio (procesarAceptacion)
+    case 'asignada': return 'tecnico'               // aceptó el servicio (procesarAceptacion)
     case 'pendiente_pricing': return 'tecnico'      // diagnóstico con esperar_repuesto (/api/diagnostico)
     case 'aprobacion_paso_pendiente':
     case 'cotizacion_enviada':
       // pendiente_pricing → admin fijó precios (/api/cotizacion-precios);
       // si no, viene del diagnóstico del técnico (/api/diagnostico).
       return estadoPrevio === 'pendiente_pricing' ? 'admin' : 'tecnico'
-    case 'cotizacion_aprobada':
     case 'cotizacion_rechazada': return 'cliente'   // decidió la cotización (/api/aprobar-cotizacion)
     case 'esperando_repuesto': return 'cliente'     // aprobó esperar el repuesto
     case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido)
@@ -2486,11 +2478,8 @@ export interface ReagendamientoResult {
  *   (los técnicos verán el horario actualizado en el portal). Si no hay
  *   notifs activas, regresa a `pendiente_horario` para que el flujo normal
  *   las reenvíe.
- * - Post-aceptación (`asignada`, `diagnostico_pendiente`,
- *   `reagendamiento_pendiente`): conserva técnico, actualiza horario,
- *   notifica al técnico vía texto. Estado pasa a `reagendamiento_pendiente`
- *   transitoriamente y regresa al estado pre-reagendamiento (asignada o
- *   diagnostico_pendiente) inmediatamente — preservando el flujo.
+ * - Post-aceptación (`asignada`): conserva técnico y estado, actualiza
+ *   horario y notifica al técnico vía texto.
  */
 export async function procesarReagendamientoCliente(
   clienteToken: string,
@@ -2532,11 +2521,9 @@ export async function procesarReagendamientoCliente(
 
   // Determinar nuevo estado. Pre-aceptación mantenemos en notificada (si ya
   // notificamos) o pendiente_horario (si todavía no). Post-aceptación
-  // conservamos el estado actual (asignada / diagnostico_pendiente).
+  // conservamos el estado actual (asignada).
   const estadoNuevo = tieneTecnico
-    ? sol.estado === 'reagendamiento_pendiente'
-      ? (sol.es_garantia ? 'asignada' : 'diagnostico_pendiente')
-      : sol.estado
+    ? sol.estado
     : sol.estado === 'pendiente_horario'
       ? 'pendiente_horario'
       : 'notificada'

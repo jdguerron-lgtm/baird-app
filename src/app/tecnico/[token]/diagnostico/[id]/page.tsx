@@ -199,8 +199,8 @@ export default function DiagnosticoPage() {
         return
       }
 
-      // Valid states: 'asignada' (warranty) or 'diagnostico_pendiente' (non-warranty)
-      if (sol.estado !== 'asignada' && sol.estado !== 'diagnostico_pendiente') {
+      // Valid state: 'asignada' (ambos flujos — fusión 2026-07-09)
+      if (sol.estado !== 'asignada') {
         setError('Este servicio ya fue diagnosticado')
         setCargando(false)
         return

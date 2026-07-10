@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
       cumpleTA = horasTranscurridas <= 24
     }
 
-    const validStates = ['asignada', 'diagnostico_pendiente']
+    const validStates = ['asignada']
     if (!validStates.includes(sol.estado ?? '')) {
       return NextResponse.json({ error: 'Este servicio ya fue diagnosticado o no está en estado válido' }, { status: 400 })
     }

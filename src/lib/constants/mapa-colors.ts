@@ -9,19 +9,15 @@
  */
 
 export const COLOR_POR_ESTADO: Record<string, string> = {
-  pendiente:               '#eab308', // yellow-500
   pendiente_horario:       '#eab308', // yellow-500
   sin_agendar:             '#9ca3af', // gray-400
   notificada:              '#3b82f6', // blue-500
   asignada:                '#22c55e', // green-500
-  diagnostico_pendiente:   '#6366f1', // indigo-500
   aprobacion_paso_pendiente:'#8b5cf6',// violet-500
   cotizacion_enviada:      '#06b6d4', // cyan-500
-  cotizacion_aprobada:     '#14b8a6', // teal-500
   cotizacion_rechazada:    '#f43f5e', // rose-500
   esperando_repuesto:      '#d946ef', // fuchsia-500
   pendiente_pricing:       '#f97316', // orange-500
-  reagendamiento_pendiente:'#eab308', // yellow-500
   finalizado_sin_reparacion:'#78716c',// stone-500
   reparacion_rechazada:    '#ef4444', // red-500
   no_show_cliente:         '#78716c', // stone-500

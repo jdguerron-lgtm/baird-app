@@ -37,7 +37,7 @@ const AMBITO_LABEL: Record<string, string> = {
 
 const FILTROS = [
   { value: 'todos', label: 'Todos' },
-  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'pendiente_horario', label: 'Pendiente horario' },
   { value: 'notificada', label: 'Notificada' },
   { value: 'asignada', label: 'Asignada' },
   { value: 'en_proceso', label: 'En proceso' },

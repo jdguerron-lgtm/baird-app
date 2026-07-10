@@ -373,7 +373,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 4. ACEPTACIÓN ATÓMICA                                                    │
 │ Misma lógica atómica que en garantía.                                    │
-│ DB: estado=diagnostico_pendiente (NO 'asignada' como en garantía)        │
+│ DB: estado=asignada (igual que garantía — fusión 2026-07-09)             │
 │                                                                           │
 │ Al ganador:                                                              │
 │ 📩 → TÉCNICO ganador: servicio_asignado_tecnico_v4                       │
@@ -442,13 +442,13 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
                        │                     │
                        ▼                     ▼
    ┌──────────────────────────┐  ┌──────────────────────────────────┐
-   │ DB:                      │  │ DB: estado=cotizacion_rechazada  │
-   │   estado=cotizacion_     │  │     cotizacion.rechazado_at      │
-   │   aprobada               │  │     comentario_rechazo           │
-   │   cotizacion.aprobado_at │  │   (terminal)                     │
-   │                          │  │                                  │
-   │ Inmediatamente:          │  │ 📩 → TÉCNICO texto libre:        │
-   │   estado=en_proceso      │  │   "Cliente rechazó. {motivo}.    │
+   │ DB (un solo UPDATE):     │  │ DB: estado=cotizacion_rechazada  │
+   │   estado=en_proceso (o   │  │     cotizacion.rechazado_at      │
+   │   esperando_repuesto si  │  │     comentario_rechazo           │
+   │   el paso fue esperar_   │  │   (terminal)                     │
+   │   repuesto)              │  │                                  │
+   │   cotizacion.aprobado_at │  │ 📩 → TÉCNICO texto libre:        │
+   │                          │  │   "Cliente rechazó. {motivo}.    │
    │                          │  │    Servicio cerrado."            │
    │ 📩 → TÉCNICO:            │  │                                  │
    │   cotizacion_aprobada_   │  │ ⚠️ Cliente solo ve in-app        │
@@ -499,8 +499,7 @@ DB:                                   DB:
                                         Si pre-aceptación:
                                           estado=notificada (mantiene)
                                         Si post-aceptación:
-                                          estado conserva (asignada o
-                                          diagnostico_pendiente)
+                                          estado conserva (asignada)
                                           tecnico_asignado_id intacto
 
 📩 → CLIENTE texto libre:             📩 → CLIENTE texto libre:
@@ -777,7 +776,7 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 
 ### Gaps que NO requieren plantillas (cambios de código pendientes)
 
-10. **`/api/aprobar-cotizacion` race condition.** Hace dos UPDATEs separados (`cotizacion_aprobada` → `en_proceso`) sin guard atómico. **Fix**: agregar `.eq('estado', 'cotizacion_enviada')` al primer UPDATE o consolidar en uno solo.
+10. ~~**`/api/aprobar-cotizacion` race condition.**~~ ✅ RESUELTO — hoy es un solo UPDATE atómico con guard `.eq('estado', 'cotizacion_enviada')` que salta directo a `en_proceso`/`esperando_repuesto` (el estado intermedio `cotizacion_aprobada` se eliminó 2026-07-09).
 11. **JSONB filter antipattern en `/api/aprobar-cotizacion` y `/cotizacion/[token]`.** Cargan toda la tabla y filtran por `cotizacion.token` en JS. **Fix**: columna generada `cotizacion_token` con índice único (ver `supabase/migrations/README.md` sección "M-NEXT-C").
 12. **No hay reminder pre-visita** entre confirmación de horario y aceptación del técnico. Si la solicitud queda largo tiempo en `notificada`, el cliente puede perder visibilidad.
 13. ~~**Auth de admin API routes.**~~ ✅ RESUELTO — `/api/cotizacion-precios`, `/api/repuesto-recibido` y todos los `/api/admin/*` validan sesión con `verificarAdmin`/`obtenerEmailAdmin` (ver tabla en `docs/SEGURIDAD.md` § 2).

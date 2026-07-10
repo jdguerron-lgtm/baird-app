@@ -130,7 +130,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 
 | Transición | Origen |
 |---|---|
-| `notificada → asignada`/`diagnostico_pendiente` | `procesarAceptacion` (`whatsapp.service.ts`) |
+| `notificada → asignada` (ambos flujos) | `procesarAceptacion` (`whatsapp.service.ts`) |
 | `* → cancelada` | `procesarCancelacionCliente` (`whatsapp.service.ts`) |
 | reagendamiento | `procesarReagendamientoCliente` (`whatsapp.service.ts`) |
 | `pendiente_horario → notificada` | `/api/confirmar-horario` |

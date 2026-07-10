@@ -44,33 +44,34 @@ export interface SolicitudFormData {
 }
 
 // Tipo del registro completo en BD (con ID y metadata del servidor)
-// Estados del flujo de solicitud (customer-first scheduling)
+// Estados del flujo de solicitud (customer-first scheduling) — 18 estados
 // Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → repuesto_recibido → en_proceso → confirmacion_pendiente → completada | en_disputa
 //                                                          | finalizado_sin_reparacion | reparacion_rechazada
 //                                 → sin_agendar (timeout)
-// Non-warranty: pendiente_horario → notificada → diagnostico_pendiente → cotizacion_enviada → cotizacion_aprobada → en_proceso → confirmacion_pendiente → completada
-//                                                                                            → cotizacion_rechazada
+// Non-warranty: pendiente_horario → notificada → asignada → cotizacion_enviada → en_proceso → confirmacion_pendiente → completada
+//                                                                              → cotizacion_rechazada
 // Renombre 2026-07-09 (migraciones 20260709_renombrar_estados_*):
 //   verificacion_pendiente → aprobacion_paso_pendiente
 //   en_verificacion        → confirmacion_pendiente
 //   cancelada_cliente      → reparacion_rechazada
+// Purga/fusión 2026-07-09 (22→18, migración 20260709_purga_estados_contract):
+//   diagnostico_pendiente  → fusionado en asignada (es_garantia distingue el flujo)
+//   pendiente / cotizacion_aprobada / reagendamiento_pendiente → eliminados
+//   (0 filas, ningún writer; cotizacion_aprobada saltaba directo a en_proceso
+//   y reagendamiento_pendiente nunca se escribía — reagendar conserva estado)
 // La historia en solicitud_eventos conserva los nombres viejos (append-only);
 // ESTADO_LABELS/ESTADO_ESTILOS mantienen aliases legacy para renderizarla.
 export type EstadoSolicitud =
-  | 'pendiente'                    // legacy — kept for back-compat with existing rows
   | 'pendiente_horario'            // cliente debe elegir horario antes de notificar técnicos
   | 'sin_agendar'                  // cliente no confirmó horario tras 24h+12h recordatorio (terminal)
   | 'notificada'
-  | 'asignada'
-  | 'diagnostico_pendiente'        // Non-warranty: tech assigned, diagnostic pending
+  | 'asignada'                     // técnico aceptó; visita pendiente (ambos flujos — antes particular usaba diagnostico_pendiente)
   | 'aprobacion_paso_pendiente'    // post-diagnóstico (garantía), cliente debe aprobar el siguiente paso propuesto (antes: verificacion_pendiente)
   | 'cotizacion_enviada'           // Non-warranty: quote sent to customer
-  | 'cotizacion_aprobada'          // Non-warranty: customer approved quote
-  | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote
+  | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote (terminal)
   | 'esperando_repuesto'           // post-diagnóstico, repuesto pendiente
   | 'repuesto_recibido'            // (2026-05-29): repuesto llegó; cliente debe reprogramar fecha (tentativa) antes de en_proceso
   | 'pendiente_pricing'            // (2026-05-07): técnico envió diagnóstico con esperar_repuesto (garantía), admin fija tiempo_entrega
-  | 'reagendamiento_pendiente'     // cliente pidió reagendar después de aceptación; espera nuevo horario
   | 'finalizado_sin_reparacion'    // equipo no reparable (terminal)
   | 'reparacion_rechazada'         // cliente rechazó proceder con reparación tras diagnóstico (terminal) (antes: cancelada_cliente)
   | 'en_proceso'
@@ -138,17 +139,14 @@ export const MAX_REAGENDAMIENTOS_CLIENTE = 2
 
 /** Estados desde los cuales el cliente puede cancelar por sí mismo */
 export const ESTADOS_CANCELABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
-  'pendiente',
   'pendiente_horario',
   'notificada',
   'asignada',
-  'diagnostico_pendiente',
   'aprobacion_paso_pendiente',
   'pendiente_pricing',
   'cotizacion_enviada',
   'esperando_repuesto',
   'repuesto_recibido',
-  'reagendamiento_pendiente',
 ])
 
 // Nota: `repuesto_recibido` NO entra en ESTADOS_REAGENDABLES_POR_CLIENTE.
@@ -161,8 +159,6 @@ export const ESTADOS_REAGENDABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
   'pendiente_horario',
   'notificada',
   'asignada',
-  'diagnostico_pendiente',
-  'reagendamiento_pendiente',
 ])
 
 // Timeouts del flujo de horario — extendidos para no romper enlaces durante la jornada del cliente

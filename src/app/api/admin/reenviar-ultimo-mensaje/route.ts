@@ -30,8 +30,8 @@ export const maxDuration = 30
  * Mapeo estado → plantilla (último mensaje "natural" del flujo):
  *   pendiente_horario, sin_agendar  → cliente_seleccion_horario_v2 (cliente)
  *   notificada                       → re-notificarTecnicos (técnicos)
- *   asignada                         → tecnico_asignado_cliente_v6 (cliente)
- *   diagnostico_pendiente            → tecnico_asignado_particular_v1 (cliente)
+ *   asignada (garantía)              → tecnico_asignado_cliente_v6 (cliente)
+ *   asignada (particular)            → tecnico_asignado_particular_v1 (cliente)
  *   aprobacion_paso_pendiente        → verificar_siguiente_paso_v2 (cliente)
  *   pendiente_pricing                → Solo señal admin (no envío)
  *   cotizacion_enviada               → cotizacion_cliente_v2 (cliente)
@@ -93,8 +93,9 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Tras aceptación: recordatorio al cliente del técnico asignado ──
-      case 'asignada':
-      case 'diagnostico_pendiente': {
+      // (asignada cubre ambos flujos desde la fusión 2026-07-09; adentro
+      // bifurca por es_garantia para elegir la plantilla)
+      case 'asignada': {
         if (!sol.tecnico_asignado_id) {
           return NextResponse.json({ error: 'Estado dice asignada pero sin técnico' }, { status: 500 })
         }

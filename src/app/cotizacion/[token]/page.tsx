@@ -67,7 +67,7 @@ export default function CotizacionPage() {
         supabase
           .from('solicitudes_servicio')
           .select('id, tipo_equipo, marca_equipo, cliente_nombre, novedades_equipo, estado, cotizacion, tecnico_asignado_id, cliente_token')
-          .in('estado', ['cotizacion_enviada', 'cotizacion_aprobada', 'cotizacion_rechazada', 'en_proceso'])
+          .in('estado', ['cotizacion_enviada', 'cotizacion_rechazada', 'en_proceso', 'esperando_repuesto'])
       )
 
       const sol = solicitudes?.find(s => {
@@ -86,8 +86,9 @@ export default function CotizacionPage() {
         return
       }
 
-      // Check if already processed
-      if (sol.estado === 'cotizacion_aprobada' || sol.estado === 'en_proceso') {
+      // Check if already processed (aprobar salta directo a en_proceso o
+      // esperando_repuesto — el estado cotizacion_aprobada se eliminó 2026-07-09)
+      if (sol.estado === 'en_proceso' || sol.estado === 'esperando_repuesto') {
         setEstado('aprobada')
         setCargando(false)
         return

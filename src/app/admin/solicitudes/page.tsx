@@ -29,7 +29,7 @@ interface Solicitud {
 
 const ESTADOS = [
   { value: 'todos', label: 'Todos', color: 'bg-gray-100 text-gray-700' },
-  { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'pendiente_horario', label: 'Pendiente horario', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'notificada', label: 'Notificada', color: 'bg-blue-100 text-blue-800' },
   { value: 'asignada', label: 'Asignada', color: 'bg-green-100 text-green-800' },
   { value: 'completada', label: 'Completada', color: 'bg-emerald-100 text-emerald-800' },

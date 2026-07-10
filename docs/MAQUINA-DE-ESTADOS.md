@@ -107,7 +107,8 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 
 2. ACCEPTANCE     Technician clicks "Aceptar" button in WhatsApp
                   → GET /aceptar/{token} → atomic UPDATE (first wins)
-                  → estado: diagnostico_pendiente    ← DIFFERENT from warranty
+                  → estado: asignada (igual que garantía desde la fusión 2026-07-09;
+                    es_garantia decide el camino y las plantillas)
                   → WhatsApp servicio_asignado_tecnico_v4 to tech
                   → WhatsApp tecnico_asignado_particular_v1 to customer
                     (includes tech info + diagnostic fee + advance payment info)
@@ -123,7 +124,8 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 4. QUOTE          Customer clicks button → /cotizacion/{token}
    APPROVAL       → Sees: diagnosis, evidence photos, cost breakdown
                   → APPROVE: POST /api/aprobar-cotizacion {aprobado: true}
-                    → estado: cotizacion_aprobada → en_proceso
+                    → estado: en_proceso (o esperando_repuesto si el paso fue
+                      esperar_repuesto) — directo, sin estado intermedio
                     → WhatsApp cotizacion_aprobada_tecnico_v3 to tech
                   → REJECT: POST /api/aprobar-cotizacion {aprobado: false, comentario}
                     → estado: cotizacion_rechazada
@@ -213,7 +215,7 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 **Política aplicada:**
 - **Cutoff 4h** antes del horario para "cancelación a tiempo". Pasado ese punto la cancelación es válida pero queda con `cancelado_tarde=true` (impacta liquidación al técnico para garantía y no-reembolso del anticipo para particular).
 - **Token único por solicitud** (no por acción) — más simple para el cliente y para el admin.
-- **Reagendar conserva técnico:** si ya había aceptación, se mantiene `tecnico_asignado_id` y se le notifica el cambio por WhatsApp libre. Si pasamos por `reagendamiento_pendiente` la transición es transitoria y vuelve a `asignada`/`diagnostico_pendiente`.
+- **Reagendar conserva técnico y estado:** si ya había aceptación, se mantiene `tecnico_asignado_id`, el estado no cambia (`asignada`) y se le notifica el cambio por WhatsApp libre.
 - **Máximo 2 reagendamientos por solicitud** (`MAX_REAGENDAMIENTOS_CLIENTE`). Pasado el tope, fall-back a admin.
 - **Audit append-only** en `solicitud_eventos` — cada cancelación/reagendamiento registra `tipo`, `estado_previo/nuevo`, `actor`, `motivo`, `payload` JSONB. No se borra nada.
 
@@ -222,7 +224,7 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 - `/api/confirmar-horario` no se modifica. El reagendamiento usa su propio endpoint que setea `horario_confirmado` directo.
 - La cancelación tardía no se distingue como estado separado; queda como `cancelada` con flag en audit.
 
-## Solicitud State Machine (v6 2026-07-09 — renombre de estados confusos)
+## Solicitud State Machine (v7 2026-07-09 — 18 estados: renombre + purga/fusión)
 
 > **Renombre 2026-07-09** (migraciones `20260709_renombrar_estados_expand.sql` +
 > `20260709_renombrar_estados_contract.sql`): tres estados cambiaron de nombre
@@ -235,6 +237,16 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 > | `verificacion_pendiente` | `aprobacion_paso_pendiente` | Casi idéntico a `en_verificacion` con significado opuesto: este es ANTES del trabajo (cliente aprueba el siguiente paso propuesto en el diagnóstico) |
 > | `en_verificacion` | `confirmacion_pendiente` | DESPUÉS del trabajo: cliente confirma que el servicio quedó bien |
 > | `cancelada_cliente` | `reparacion_rechazada` | Sonaba a cancelación genérica pero significa "cliente se negó a reparar tras diagnóstico" (`negativa_cliente`); chocaba con `cancelada` (self-service). Paralelo a `cotizacion_rechazada` |
+>
+> **Purga y fusión 2026-07-09** (migración `20260709_purga_estados_contract.sql`,
+> 22 → 18 estados):
+>
+> | Estado eliminado | Por qué |
+> |---|---|
+> | `diagnostico_pendiente` | Fusionado en `asignada`: ambos significaban "técnico aceptó, visita pendiente" y `es_garantia` ya distingue el flujo |
+> | `cotizacion_aprobada` | Muerto: `procesarAprobacionCotizacion` salta directo `cotizacion_enviada → en_proceso \| esperando_repuesto`; nunca se persistía |
+> | `reagendamiento_pendiente` | Muerto: reagendar conserva el estado actual; ningún writer lo escribía |
+> | `pendiente` | Legacy pre customer-first scheduling; 0 filas desde hace meses |
 
 ```
 WARRANTY:
@@ -258,7 +270,6 @@ WARRANTY:
                      │                          confirmacion_pendiente → completada | en_disputa
                      │                          ↘ finalizado_sin_reparacion (terminal)
                      │                          ↘ reparacion_rechazada (terminal)
-                     │                          ↘ reagendamiento_pendiente ↻ asignada
                      │                          ↘ cancelada (cliente desde /servicio, terminal)
                      │                          ↘ no_show_cliente (terminal)
                      └─→ sin_agendar (timeout 24h+12h, terminal)
@@ -266,9 +277,9 @@ WARRANTY:
 NON-WARRANTY (v3 2026-07-06 — /api/solicitar auto-confirma la opción 1 del
 formulario, así que pendiente_horario dura milisegundos salvo que ambas
 opciones estén sin cupo, donde cae al flujo de link /horario como antes):
-  pendiente_horario ─┬─→ notificada → diagnostico_pendiente → diagnóstico técnico
-                     │                       │           (incluye costoTecnico)
-                     │                       │
+  pendiente_horario ─┬─→ notificada → asignada → diagnóstico técnico
+                     │                    │   (incluye costoTecnico)
+                     │                    │
                      │      ┌── no_reparable ──→ finalizado_sin_reparacion (terminal)
                      │      │
                      │      ├── negativa_cliente ──→ reparacion_rechazada (terminal)
@@ -277,34 +288,32 @@ opciones estén sin cupo, donde cae al flujo de link /horario como antes):
                      │                                              │
                      │                                              ├─ aprobada → en_proceso (o esperando_repuesto)
                      │                                              └─ rechazada → cotizacion_rechazada (terminal)
-                     │                                              ↘ reagendamiento_pendiente ↻ diagnostico_pendiente
                      │                                              ↘ no_show_cliente (terminal)
                      └─→ sin_agendar
+
+(Reagendar NO cambia el estado: conserva asignada/notificada y solo
+actualiza horario_confirmado + fecha_visita_at.)
 ```
 
 **Estados terminales** (set en `ESTADOS_TERMINALES` en `src/lib/constants/estados.ts`):
 `sin_agendar`, `finalizado_sin_reparacion`, `reparacion_rechazada`, `no_show_cliente`, `cancelada`, `completada`, `cotizacion_rechazada`.
 
-## Glosario de estados — cuándo se activa cada uno
+## Glosario de estados — cuándo se activa cada uno (18 estados)
 
 Referencia rápida. Valor DB = columna `estado` de `solicitudes_servicio`; label = lo que ve el admin (`ESTADO_LABELS`).
 
 | Estado (valor DB) | Se activa cuando… | Flujo | Quién destraba |
 |---|---|---|---|
-| `pendiente` | Legacy — filas anteriores a customer-first scheduling. No se emite hoy | ambos | — |
 | `pendiente_horario` | Se crea la solicitud; el cliente aún no confirma franja (en particular dura ms por el auto-agendamiento) | ambos | cliente |
 | `sin_agendar` | Timeout 24h+12h sin confirmar horario (terminal) | ambos | — |
 | `notificada` | Horario confirmado; técnicos notificados, nadie aceptó aún | ambos | técnico |
-| `asignada` | Un técnico aceptó (garantía) | garantía | técnico (visita) |
-| `diagnostico_pendiente` | Un técnico aceptó (particular) — equivalente a `asignada` | particular | técnico (visita) |
+| `asignada` | Un técnico aceptó; visita pendiente (ambos flujos — `es_garantia` decide el camino) | ambos | técnico (visita) |
 | `aprobacion_paso_pendiente` | Técnico envió diagnóstico; el cliente debe aprobar el siguiente paso propuesto | garantía | cliente |
 | `pendiente_pricing` | Diagnóstico con `esperar_repuesto` (garantía); admin debe fijar `tiempo_entrega` | garantía | admin |
-| `cotizacion_enviada` | Cotización generada y enviada; el cliente decide | particular | cliente |
-| `cotizacion_aprobada` | Cliente aprobó la cotización (transitorio → `en_proceso`) | particular | sistema |
+| `cotizacion_enviada` | Cotización generada y enviada; el cliente decide (aprobar salta directo a `en_proceso`/`esperando_repuesto`) | particular | cliente |
 | `cotizacion_rechazada` | Cliente rechazó la cotización (terminal) | particular | — |
 | `esperando_repuesto` | Reparación aprobada pero falta repuesto (SKU en `repuestos_pendientes`) | ambos | admin (marca llegada) |
 | `repuesto_recibido` | Admin marcó el repuesto recibido; el cliente debe elegir nueva fecha | ambos | cliente |
-| `reagendamiento_pendiente` | Cliente reagendó con técnico ya asignado (transitorio, vuelve a `asignada`/`diagnostico_pendiente`) | ambos | sistema |
 | `en_proceso` | Reparación en curso (misma visita o tras repuesto/aprobación) | ambos | técnico |
 | `confirmacion_pendiente` | Técnico completó el servicio (fotos+checklist+firma); el cliente debe confirmar satisfacción | ambos | cliente |
 | `completada` | Cliente confirmó satisfecho (terminal) | ambos | — |
@@ -314,7 +323,9 @@ Referencia rápida. Valor DB = columna `estado` de `solicitudes_servicio`; label
 | `cancelada` | Cliente canceló desde el portal self-service `/servicio/{token}` (terminal; `cancelado_tarde` si <4h) | ambos | — |
 | `no_show_cliente` | Cliente ausente en la visita, con evidencia del protocolo (terminal) | ambos | — |
 
-**Estado transitorio `reagendamiento_pendiente`** — usado solo si el cliente reagenda mientras el técnico ya estaba asignado; vuelve inmediatamente a `asignada`/`diagnostico_pendiente` con `horario_confirmado` actualizado.
+**Nombres legacy en la historia** — `solicitud_eventos` puede contener `pendiente`, `diagnostico_pendiente`, `cotizacion_aprobada`, `reagendamiento_pendiente`, `verificacion_pendiente`, `en_verificacion` y `cancelada_cliente` (append-only, no se reescriben); `ESTADO_LABELS`/`ESTADO_ESTILOS` mantienen aliases para renderizarlos.
+
+**Reagendar no cambia el estado** — el reagendamiento self-service conserva el estado actual (`asignada` post-aceptación; `notificada`/`pendiente_horario` pre-aceptación) y solo actualiza `horario_confirmado` + `fecha_visita_at`.
 
 **Estados desde los que el cliente puede cancelar/reagendar** están definidos en `src/types/solicitud.ts` como `ESTADOS_CANCELABLES_POR_CLIENTE` y `ESTADOS_REAGENDABLES_POR_CLIENTE`. Tope: `MAX_REAGENDAMIENTOS_CLIENTE = 2` por solicitud.
 
