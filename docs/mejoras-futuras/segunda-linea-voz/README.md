@@ -16,7 +16,7 @@ responde, el flujo se atasca y alguien tiene que llamar a mano (no escala, no qu
 auditado):
 
 - No elige franja → la solicitud expira a `sin_agendar`.
-- No confirma el cierre → queda colgada en `en_verificacion`.
+- No confirma el cierre → queda colgada en `confirmacion_pendiente` (antes `en_verificacion`).
 - No aprueba la cotización (particular).
 - No reprograma tras recibir el repuesto.
 
@@ -28,7 +28,7 @@ WhatsApp no tuvo respuesta tras X horas, para cuatro propósitos:
    confirmando presencia (propósito `presencia`, ligado a `docs/PROTOCOLO-VISITA.md`).
    *(Alcance agregado 2026-06-03 a pedido del usuario.)*
 3. **Verificar etapas** — aprobación de cotización, reprogramación tras llegada de repuesto.
-4. **Cierre + encuesta** — `en_verificacion → completada/en_disputa` + satisfacción.
+4. **Cierre + encuesta** — `confirmacion_pendiente → completada/en_disputa` + satisfacción.
 
 **Diseño POST-CALL:** el proveedor de voz **nunca** toca Supabase. Baird dispara la llamada
 pasándole variables dinámicas (nombre, franjas, total…); el agente conversa; al colgar hace

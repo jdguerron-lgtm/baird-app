@@ -404,7 +404,7 @@ export default function CompletarServicioPage() {
       // 4. Update solicitud estado
       await supabase
         .from('solicitudes_servicio')
-        .update({ estado: 'en_verificacion' })
+        .update({ estado: 'confirmacion_pendiente' })
         .eq('id', servicio.id)
 
       // 5. Trigger WhatsApp confirmation to customer (via API)

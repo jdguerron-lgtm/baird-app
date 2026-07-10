@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const ESTADOS_NO_REENVIABLES = new Set([
       'completada',
       'cancelada',
-      'cancelada_cliente',
+      'reparacion_rechazada',
       'cotizacion_rechazada',
       'finalizado_sin_reparacion',
       'en_disputa',

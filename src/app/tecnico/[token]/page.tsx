@@ -151,14 +151,14 @@ export default function PortalTecnicoPage() {
     'cotizacion_aprobada',
     'esperando_repuesto',
     'reagendamiento_pendiente',
-    'verificacion_pendiente',
+    'aprobacion_paso_pendiente',
     'en_proceso',
   ].includes(s.estado))
-  const enVerificacion = servicios.filter(s => s.estado === 'en_verificacion')
+  const enVerificacion = servicios.filter(s => s.estado === 'confirmacion_pendiente')
   const historial = servicios.filter(s => [
     'completada',
     'cancelada',
-    'cancelada_cliente',
+    'reparacion_rechazada',
     'cotizacion_rechazada',
     'finalizado_sin_reparacion',
     'sin_agendar',
@@ -275,9 +275,9 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
     s.estado === 'pendiente_pricing' ? 'Baird está fijando precio y tiempo de entrega'
     : s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
     : s.estado === 'esperando_repuesto' ? 'Esperando llegada del repuesto'
-    : s.estado === 'verificacion_pendiente' ? 'Cliente verificando siguiente paso'
+    : s.estado === 'aprobacion_paso_pendiente' ? 'Cliente aprobando siguiente paso'
     : s.estado === 'reagendamiento_pendiente' ? 'Cliente reagendando'
-    : s.estado === 'en_verificacion' ? 'Esperando confirmación del cliente'
+    : s.estado === 'confirmacion_pendiente' ? 'Esperando confirmación del cliente'
     : null
 
   // Extract model from novedades if present
@@ -355,7 +355,7 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
  *     el total neto proyectado.
  * Particular:
  *   - Muestra `pago_tecnico`, que es el NETO que recibe el técnico (precio de
- *     catálogo ÷ 1.3447 en tarifa fija, $35.000 fijo en diagnóstico, o el costo cotizado tras diagnóstico).
+ *     catálogo ÷ 1.3447 × 0.8 en tarifa fija, $35.000 fijo en diagnóstico, o el costo cotizado tras diagnóstico).
  */
 function PagoLabel({ servicio }: { servicio: Servicio }) {
   // Reloj leído una sola vez al montar: mantiene el render puro (evita Date.now()

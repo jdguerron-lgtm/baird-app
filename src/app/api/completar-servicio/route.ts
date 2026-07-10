@@ -33,9 +33,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Servicio no encontrado' }, { status: 404 })
     }
 
-    // El técnico ya marcó la solicitud como 'en_verificacion' (update client-side
-    // en la página de completar). Notificar a supervisores configurados.
-    await notificarCambioEstado(sol.id, 'en_proceso', 'en_verificacion')
+    // El técnico ya marcó la solicitud como 'confirmacion_pendiente' (update
+    // client-side en la página de completar). Notificar a supervisores configurados.
+    await notificarCambioEstado(sol.id, 'en_proceso', 'confirmacion_pendiente')
 
     // Get the confirmation token and photos from evidencias
     const { data: evidencia } = await supabase

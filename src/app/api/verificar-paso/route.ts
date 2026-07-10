@@ -45,8 +45,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Esta verificación ya fue resuelta' }, { status: 400 })
     }
 
-    if (sol.estado !== 'verificacion_pendiente') {
-      return NextResponse.json({ error: 'Solicitud no está esperando verificación' }, { status: 400 })
+    if (sol.estado !== 'aprobacion_paso_pendiente') {
+      return NextResponse.json({ error: 'Solicitud no está esperando aprobación del siguiente paso' }, { status: 400 })
     }
 
     if (!sol.siguiente_paso) {
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
       case 'reparar': nuevoEstado = 'en_proceso'; break
       case 'esperar_repuesto': nuevoEstado = 'esperando_repuesto'; break
       case 'no_reparable': nuevoEstado = 'finalizado_sin_reparacion'; break
-      case 'negativa_cliente': nuevoEstado = 'cancelada_cliente'; break
+      case 'negativa_cliente': nuevoEstado = 'reparacion_rechazada'; break
       default: return NextResponse.json({ error: 'siguiente_paso no reconocido' }, { status: 400 })
     }
 

@@ -19,7 +19,7 @@ export const maxDuration = 30
  *
  * Tras esto se transiciona la solicitud:
  *  - Particular  → cotizacion_enviada + envío de cotizacion_cliente_v2
- *  - Garantía    → verificacion_pendiente + envío de verificar_siguiente_paso_v2
+ *  - Garantía    → aprobacion_paso_pendiente + envío de verificar_siguiente_paso_v2
  *
  * Body: {
  *   solicitudId: string,
@@ -167,12 +167,12 @@ export async function POST(req: NextRequest) {
     // Actualizamos repuestos_pendientes y mandamos verificación al cliente.
     const { error: updErr } = await supabase
       .from('solicitudes_servicio')
-      .update({ estado: 'verificacion_pendiente' })
+      .update({ estado: 'aprobacion_paso_pendiente' })
       .eq('id', sol.id)
       .eq('estado', 'pendiente_pricing')
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-    await notificarCambioEstado(sol.id, 'pendiente_pricing', 'verificacion_pendiente')
+    await notificarCambioEstado(sol.id, 'pendiente_pricing', 'aprobacion_paso_pendiente')
 
     await supabase
       .from('repuestos_pendientes')

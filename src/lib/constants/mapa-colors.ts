@@ -15,7 +15,7 @@ export const COLOR_POR_ESTADO: Record<string, string> = {
   notificada:              '#3b82f6', // blue-500
   asignada:                '#22c55e', // green-500
   diagnostico_pendiente:   '#6366f1', // indigo-500
-  verificacion_pendiente:  '#8b5cf6', // violet-500
+  aprobacion_paso_pendiente:'#8b5cf6',// violet-500
   cotizacion_enviada:      '#06b6d4', // cyan-500
   cotizacion_aprobada:     '#14b8a6', // teal-500
   cotizacion_rechazada:    '#f43f5e', // rose-500
@@ -23,10 +23,10 @@ export const COLOR_POR_ESTADO: Record<string, string> = {
   pendiente_pricing:       '#f97316', // orange-500
   reagendamiento_pendiente:'#eab308', // yellow-500
   finalizado_sin_reparacion:'#78716c',// stone-500
-  cancelada_cliente:       '#ef4444', // red-500
+  reparacion_rechazada:    '#ef4444', // red-500
   no_show_cliente:         '#78716c', // stone-500
   en_proceso:              '#a855f7', // purple-500
-  en_verificacion:         '#f59e0b', // amber-500
+  confirmacion_pendiente:  '#f59e0b', // amber-500
   completada:              '#10b981', // emerald-500
   cancelada:               '#ef4444', // red-500
   en_disputa:              '#f97316', // orange-500

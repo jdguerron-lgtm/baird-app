@@ -679,7 +679,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // a tiempo y satisfacción del cliente.
     //
     // Particular: `pago_tecnico` es el NETO que recibe el técnico (catálogo ÷
-    // 1.3447, o $35.000 fijo en diagnóstico); se lo mostramos tal cual.
+    // 1.3447 × 0.8, o $35.000 fijo en diagnóstico); se lo mostramos tal cual.
     const pago = sol.es_garantia
       ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
       : `$${formatCOP(sol.pago_tecnico)} COP`
@@ -1267,7 +1267,7 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
     case 'asignada':
     case 'diagnostico_pendiente': return 'tecnico'  // aceptó el servicio (procesarAceptacion)
     case 'pendiente_pricing': return 'tecnico'      // diagnóstico con esperar_repuesto (/api/diagnostico)
-    case 'verificacion_pendiente':
+    case 'aprobacion_paso_pendiente':
     case 'cotizacion_enviada':
       // pendiente_pricing → admin fijó precios (/api/cotizacion-precios);
       // si no, viene del diagnóstico del técnico (/api/diagnostico).
@@ -1277,13 +1277,13 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
     case 'esperando_repuesto': return 'cliente'     // aprobó esperar el repuesto
     case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido)
     case 'en_proceso': return 'cliente'             // aprobó reparar/cotización o eligió fecha tras repuesto
-    case 'en_verificacion': return 'tecnico'        // completó el servicio (/api/completar-servicio)
+    case 'confirmacion_pendiente': return 'tecnico' // completó el servicio (/api/completar-servicio)
     case 'completada':
     case 'en_disputa': return 'cliente'             // confirmó satisfacción o reportó problema
     case 'finalizado_sin_reparacion':
-    case 'cancelada_cliente':
-      // Vía verificación → decisión del cliente; directo del diagnóstico → técnico.
-      return estadoPrevio === 'verificacion_pendiente' ? 'cliente' : 'tecnico'
+    case 'reparacion_rechazada':
+      // Vía aprobación de paso → decisión del cliente; directo del diagnóstico → técnico.
+      return estadoPrevio === 'aprobacion_paso_pendiente' ? 'cliente' : 'tecnico'
     case 'sin_agendar': return 'sistema'            // cron horario-recordatorio (timeout)
     case 'cancelada': return 'cliente'
     default: return 'sistema'
@@ -2379,8 +2379,8 @@ export interface CancelacionResult {
  *   tuvo interacción reciente). Se marca cancelado_tarde=true para
  *   diferencia de liquidación.
  * - Las notificaciones activas a técnicos se invalidan.
- * - Estado final = 'cancelada' (no se distingue cancelada_cliente que está
- *   reservado para la rama post-diagnóstico actual).
+ * - Estado final = 'cancelada' (no se distingue reparacion_rechazada que está
+ *   reservado para la negativa del cliente post-diagnóstico).
  */
 export async function procesarCancelacionCliente(
   clienteToken: string,

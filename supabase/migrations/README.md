@@ -49,6 +49,9 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | `20260609_tecnicos_ciudades_cobertura.sql` | aplicada vía MCP (2026-06-12) — backfill OK (13 técnicos) | Multi-ciudad por técnico: columna nueva `ciudades_cobertura text[]` (NOT NULL DEFAULT `'{}'`) en `tecnicos` + backfill `ARRAY[ciudad_pueblo]` para técnicos existentes. El matching de `notificarTecnicos` ahora compara la solicitud contra TODAS las ciudades de cobertura (fallback a `ciudad_pueblo`). Editable desde `/admin/tecnicos/[id]`. Idempotente; backfill seguro de re-correr (solo toca filas con cobertura vacía). Ver `docs/SUPABASE.md` |
 | `20260701_reload_cotizacion_schema_cache.sql` | **aplicar vía SQL Editor si reaparece el error** | Recurrencia del error `Could not find the 'cotizacion' column ... in the schema cache` al diagnosticar (no-garantía). La columna YA existe (verificado 2026-07-01); el error es el **schema cache de PostgREST desactualizado** tras correr DDL. Re-asierta la columna `IF NOT EXISTS` + `NOTIFY pgrst, 'reload schema'` para forzar el refresco inmediato. Idempotente, sin backfill. Se autocura solo, pero esta migración lo resuelve al instante |
 | `20260612_evento_cambio_estado.sql` | aplicada vía MCP (2026-06-12) — verificado: queda UN solo CHECK con 11 tipos | Historial de estados: agrega tipo `cambio_estado` al CHECK de `solicitud_eventos.tipo` (lo inserta `notificarCambioEstado()` en cada transición, con actor inferido cliente/tecnico/admin/sistema; lo muestra "Historial de estados" en `/admin/solicitudes/[id]`). **Fix incluido**: dropea el constraint viejo `chk_evento_tipo` (de `20260506`) que `20260510` no reemplazó por usar otro nombre — sin este fix, los tipos de no-show y `cambio_estado` violan el CHECK viejo aunque `20260510` esté aplicada. Idempotente, sin backfill. Si el código se deploya antes de aplicarla, las transiciones NO se rompen (insert best-effort) — solo no se llena el historial |
+| `20260706_supervisor_portal.sql` | aplicada (2026-07-06) | Portal solo-lectura de supervisores: columna `portal_token uuid` en `supervisores` + índice. Link mágico `/supervisor/{portal_token}` con scope server-side |
+| `20260709_renombrar_estados_expand.sql` | **PASO 1/2 — aplicar ANTES del deploy** | Renombre de estados confusos: `verificacion_pendiente → aprobacion_paso_pendiente`, `en_verificacion → confirmacion_pendiente`, `cancelada_cliente → reparacion_rechazada`. Expande el CHECK a viejos+nuevos, renombra filas existentes (3 en `cancelada_cliente` al 2026-07-09) y actualiza el COMMENT de `llamadas.proposito`. `solicitud_eventos` NO se toca (audit append-only; el código mantiene aliases legacy en labels). Ver `docs/MAQUINA-DE-ESTADOS.md` § tabla de renombre |
+| `20260709_renombrar_estados_contract.sql` | **PASO 2/2 — aplicar DESPUÉS de verificar el deploy** | Barre strays escritos por el código viejo durante la ventana de deploy y cierra el CHECK solo a los 22 nombres nuevos. DEBE coincidir con `ESTADOS_VALIDOS` en `src/lib/constants/estados.ts` |
 
 > **Nota 2026-06-12**: al aplicar `20260612` se verificó contra la BD real que los
 > constraints de `20260506` Y `20260510` ya existían (ambos CHECK activos a la vez —
@@ -148,8 +151,9 @@ WHERE e.completado_at IS NOT NULL
   AND e.firma_url IS NULL
   AND (e.fotos IS NULL OR array_length(e.fotos, 1) IS NULL)
   AND s.estado IN ('asignada','diagnostico_pendiente','pendiente_pricing',
-                   'verificacion_pendiente','cotizacion_enviada','cotizacion_aprobada',
+                   'aprobacion_paso_pendiente','cotizacion_enviada','cotizacion_aprobada',
                    'esperando_repuesto','reagendamiento_pendiente','en_proceso');
+-- (nombre pre-renombre 2026-07-09: 'verificacion_pendiente')
 ```
 
 Si alguna fila vuelve `FALTA ❌`, vuelve a ejecutar la migración correspondiente — son idempotentes.

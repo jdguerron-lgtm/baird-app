@@ -209,7 +209,7 @@ export async function confirmarHorarioSolicitud(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// en_verificacion → completada | en_disputa  (confirmar-servicio)
+// confirmacion_pendiente → completada | en_disputa  (confirmar-servicio)
 // ─────────────────────────────────────────────────────────────────
 export async function confirmarServicioCliente(
   confirmacionToken: unknown,
@@ -254,7 +254,7 @@ export async function confirmarServicioCliente(
     .update({ estado: nuevoEstado })
     .eq('id', evidencia.solicitud_id)
 
-  await notificarCambioEstado(evidencia.solicitud_id, 'en_verificacion', nuevoEstado)
+  await notificarCambioEstado(evidencia.solicitud_id, 'confirmacion_pendiente', nuevoEstado)
 
   // Fetch solicitud and technician data to send WhatsApp notifications
   const [{ data: sol }, { data: tecnico }] = await Promise.all([

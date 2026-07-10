@@ -179,7 +179,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
             ▼         ▼           ▼             ▼
    ┌──────────────────────────────────────────────────────────────────────┐
    │ 6. VERIFICACIÓN POR EL CLIENTE                                       │
-   │ DB: estado=verificacion_pendiente                                    │
+   │ DB: estado=aprobacion_paso_pendiente                                 │
    │     verificacion_paso_token=uuid                                     │
    │                                                                       │
    │ 📩 → CLIENTE: verificar_siguiente_paso_v2                            │
@@ -214,7 +214,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
    │    finalizado_sin_       │  │   "Cliente RECHAZÓ. No procedas. │
    │    reparacion (terminal) │  │    Admin contactará."            │
    │  - negativa_cliente →    │  │                                  │
-   │    cancelada_cliente     │  │ Admin debe intervenir manualmente│
+   │    reparacion_rechazada  │  │ Admin debe intervenir manualmente│
    │    (terminal)            │  │ desde /admin/solicitudes/[id].   │
    │                          │  │                                  │
    │ Plus WhatsApps:          │  │                                  │
@@ -303,7 +303,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ Tech sube fotos finales, checklist, firma del cliente, GPS de salida.    │
 │                                                                           │
 │ POST /api/completar-servicio                                             │
-│ DB:  estado=en_verificacion                                              │
+│ DB:  estado=confirmacion_pendiente                                       │
 │                                                                           │
 │ 📩 → CLIENTE: confirmar_servicio_v4                                      │
 │   Body: cliente, técnico, equipo                                         │
@@ -415,7 +415,7 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │                                                                           │
 │ Excepción terminal: si siguiente_paso ∈ { no_reparable, negativa_cliente │
 │ }, no hay cotización; estado pasa directo a finalizado_sin_reparacion    │
-│ o cancelada_cliente.                                                     │
+│ o reparacion_rechazada.                                                  │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼  (cliente abre webview)
@@ -689,7 +689,7 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | `completada` | Cliente confirma satisfecho post-completación | ✅ in-app success page | ✅ |
 | `en_disputa` | Cliente reporta problema o rechaza paso | ✅ in-app success page; admin contacta manualmente | ⚠️ depende de admin |
 | `cancelada` | Cliente cancela desde /servicio | ✅ texto libre best-effort + in-app | ✅ |
-| `cancelada_cliente` | Cliente aprueba "negativa_cliente" en verificar-paso | ✅ texto libre best-effort | ✅ |
+| `reparacion_rechazada` | Cliente aprueba "negativa_cliente" en verificar-paso | ✅ texto libre best-effort | ✅ |
 | `finalizado_sin_reparacion` | Cliente aprueba "no_reparable" en verificar-paso | ✅ `finalizado_sin_reparacion_v1` (plantilla) | ✅ |
 | `cotizacion_rechazada` | Cliente rechaza en /cotizacion | ⚠️ Solo in-app — **NO recibe plantilla final** | gap menor |
 | `sin_agendar` | Timeout 36h sin confirmar horario | ⚠️ NO se envía nada — **gap mayor** | ❌ |

@@ -45,30 +45,36 @@ export interface SolicitudFormData {
 
 // Tipo del registro completo en BD (con ID y metadata del servidor)
 // Estados del flujo de solicitud (customer-first scheduling)
-// Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → repuesto_recibido → en_proceso → en_verificacion → completada | en_disputa
-//                                                          | finalizado_sin_reparacion | cancelada_cliente
+// Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → repuesto_recibido → en_proceso → confirmacion_pendiente → completada | en_disputa
+//                                                          | finalizado_sin_reparacion | reparacion_rechazada
 //                                 → sin_agendar (timeout)
-// Non-warranty: pendiente_horario → notificada → diagnostico_pendiente → cotizacion_enviada → cotizacion_aprobada → en_proceso → en_verificacion → completada
+// Non-warranty: pendiente_horario → notificada → diagnostico_pendiente → cotizacion_enviada → cotizacion_aprobada → en_proceso → confirmacion_pendiente → completada
 //                                                                                            → cotizacion_rechazada
+// Renombre 2026-07-09 (migraciones 20260709_renombrar_estados_*):
+//   verificacion_pendiente → aprobacion_paso_pendiente
+//   en_verificacion        → confirmacion_pendiente
+//   cancelada_cliente      → reparacion_rechazada
+// La historia en solicitud_eventos conserva los nombres viejos (append-only);
+// ESTADO_LABELS/ESTADO_ESTILOS mantienen aliases legacy para renderizarla.
 export type EstadoSolicitud =
   | 'pendiente'                    // legacy — kept for back-compat with existing rows
-  | 'pendiente_horario'            // NEW: cliente debe elegir horario antes de notificar técnicos
-  | 'sin_agendar'                  // NEW: cliente no confirmó horario tras 24h+12h recordatorio (terminal)
+  | 'pendiente_horario'            // cliente debe elegir horario antes de notificar técnicos
+  | 'sin_agendar'                  // cliente no confirmó horario tras 24h+12h recordatorio (terminal)
   | 'notificada'
   | 'asignada'
   | 'diagnostico_pendiente'        // Non-warranty: tech assigned, diagnostic pending
-  | 'verificacion_pendiente'       // NEW: post-diagnóstico (garantía), cliente debe aprobar el siguiente paso propuesto
+  | 'aprobacion_paso_pendiente'    // post-diagnóstico (garantía), cliente debe aprobar el siguiente paso propuesto (antes: verificacion_pendiente)
   | 'cotizacion_enviada'           // Non-warranty: quote sent to customer
   | 'cotizacion_aprobada'          // Non-warranty: customer approved quote
   | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote
-  | 'esperando_repuesto'           // NEW: post-diagnóstico, repuesto pendiente
-  | 'repuesto_recibido'            // NEW (2026-05-29): repuesto llegó; cliente debe reprogramar fecha (tentativa) antes de en_proceso
-  | 'pendiente_pricing'            // NEW (2026-05-07): técnico envió diagnóstico, admin debe fijar precio/tiempo
-  | 'reagendamiento_pendiente'     // NEW: cliente pidió reagendar después de aceptación; espera nuevo horario
-  | 'finalizado_sin_reparacion'    // NEW: equipo no reparable (terminal)
-  | 'cancelada_cliente'            // NEW: cliente rechazó proceder con reparación (terminal)
+  | 'esperando_repuesto'           // post-diagnóstico, repuesto pendiente
+  | 'repuesto_recibido'            // (2026-05-29): repuesto llegó; cliente debe reprogramar fecha (tentativa) antes de en_proceso
+  | 'pendiente_pricing'            // (2026-05-07): técnico envió diagnóstico con esperar_repuesto (garantía), admin fija tiempo_entrega
+  | 'reagendamiento_pendiente'     // cliente pidió reagendar después de aceptación; espera nuevo horario
+  | 'finalizado_sin_reparacion'    // equipo no reparable (terminal)
+  | 'reparacion_rechazada'         // cliente rechazó proceder con reparación tras diagnóstico (terminal) (antes: cancelada_cliente)
   | 'en_proceso'
-  | 'en_verificacion'
+  | 'confirmacion_pendiente'       // servicio completado; cliente debe confirmar satisfacción (antes: en_verificacion)
   | 'completada'
   | 'cancelada'
   | 'en_disputa'
@@ -78,7 +84,7 @@ export type SiguientePasoDiagnostico =
   | 'reparar'             // proceder con la reparación (estado: en_proceso)
   | 'esperar_repuesto'    // requiere repuesto (estado: esperando_repuesto)
   | 'no_reparable'        // imposibilidad de arreglo (estado: finalizado_sin_reparacion)
-  | 'negativa_cliente'    // cliente rechazó reparación (estado: cancelada_cliente)
+  | 'negativa_cliente'    // cliente rechazó reparación (estado: reparacion_rechazada)
 
 // Detalle del repuesto requerido — siempre con SKU
 export interface RepuestoRequerido {
@@ -137,7 +143,7 @@ export const ESTADOS_CANCELABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
   'notificada',
   'asignada',
   'diagnostico_pendiente',
-  'verificacion_pendiente',
+  'aprobacion_paso_pendiente',
   'pendiente_pricing',
   'cotizacion_enviada',
   'esperando_repuesto',
@@ -282,7 +288,7 @@ export const TARIFAS_MANTENIMIENTO: Record<TipoEquipo, number> = {
  *
  * ⚠️ Nombre histórico: devuelve el PRECIO AL CLIENTE, no el pago al técnico.
  * El neto que recibe el técnico se obtiene con `pagoNetoTecnicoTarifaFija()`
- * (= este valor ÷ 1.3447; excepción: diagnóstico paga PAGO_TECNICO_DIAGNOSTICO
+ * (= este valor ÷ 1.3447 × 0.8; excepción: diagnóstico paga PAGO_TECNICO_DIAGNOSTICO
  * fijo, ver tarifas/particular.ts). La columna `pago_tecnico` guarda el NETO; este
  * valor se usa para el desglose IVA del cliente en /solicitar y se deriva
  * donde se necesite vía `precioClienteServicio()`. Ver docs/TARIFAS.md.

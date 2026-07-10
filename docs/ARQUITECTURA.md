@@ -135,13 +135,13 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | reagendamiento | `procesarReagendamientoCliente` (`whatsapp.service.ts`) |
 | `pendiente_horario → notificada` | `/api/confirmar-horario` |
 | diagnóstico (garantía + particular) | `/api/diagnostico` (2 ramas) |
-| `pendiente_pricing → cotizacion_enviada`/`verificacion_pendiente` | `/api/cotizacion-precios` |
+| `pendiente_pricing → cotizacion_enviada`/`aprobacion_paso_pendiente` | `/api/cotizacion-precios` |
 | `cotizacion_enviada → aprobada`/`rechazada` | `/api/aprobar-cotizacion` |
 | `* → en_disputa` y aprobación de paso | `/api/verificar-paso` |
 | `esperando_repuesto → repuesto_recibido` | `/api/repuesto-recibido` |
 | `repuesto_recibido → en_proceso` | `/api/reprogramar-repuesto` |
-| `en_proceso → en_verificacion` | `/api/completar-servicio` |
-| `en_verificacion → completada`/`en_disputa` | `/api/confirmar-servicio` |
+| `en_proceso → confirmacion_pendiente` | `/api/completar-servicio` |
+| `confirmacion_pendiente → completada`/`en_disputa` | `/api/confirmar-servicio` |
 | `pendiente_horario → sin_agendar` | `/api/cron/horario-recordatorio` |
 | `sin_agendar → pendiente_horario` (revival) | `/api/whatsapp/notify` |
 | cualquier cambio manual | `/api/admin/cambiar-estado` |

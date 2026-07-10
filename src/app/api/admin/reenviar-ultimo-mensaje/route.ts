@@ -32,13 +32,13 @@ export const maxDuration = 30
  *   notificada                       → re-notificarTecnicos (técnicos)
  *   asignada                         → tecnico_asignado_cliente_v6 (cliente)
  *   diagnostico_pendiente            → tecnico_asignado_particular_v1 (cliente)
- *   verificacion_pendiente           → verificar_siguiente_paso_v2 (cliente)
+ *   aprobacion_paso_pendiente        → verificar_siguiente_paso_v2 (cliente)
  *   pendiente_pricing                → Solo señal admin (no envío)
  *   cotizacion_enviada               → cotizacion_cliente_v2 (cliente)
  *   esperando_repuesto               → esperando_repuesto_cliente_v1 (cliente)
  *   repuesto_recibido                → repuesto_recibido_cliente_v2 (cliente — elige nueva fecha)
  *   en_proceso                       → sin plantilla específica (cliente ya eligió fecha / aprobó)
- *   en_verificacion                  → confirmar_servicio_v4 (cliente)
+ *   confirmacion_pendiente           → confirmar_servicio_v4 (cliente)
  *   finalizado_sin_reparacion        → finalizado_sin_reparacion_v1 (cliente)
  *   terminales restantes             → 409 (sin sentido reenviar)
  */
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
           mensaje: 'La solicitud espera que admin fije precio/tiempo en /admin/cotizaciones-pendientes. No hay mensaje al cliente todavía.',
         })
 
-      case 'verificacion_pendiente': {
+      case 'aprobacion_paso_pendiente': {
         const r = await enviarVerificacionPasoCliente(solicitudId)
         return NextResponse.json({
           accion: 'verificar_siguiente_paso_v2',
@@ -258,7 +258,7 @@ export async function POST(req: NextRequest) {
           mensaje: 'El servicio está en proceso; el cliente ya fue notificado y no hay plantilla específica para reenviar.',
         })
 
-      case 'en_verificacion': {
+      case 'confirmacion_pendiente': {
         // Reenviar la confirmación final al cliente desde su confirmacion_token
         const { data: ev } = await supabase
           .from('evidencias_servicio')
@@ -326,7 +326,7 @@ export async function POST(req: NextRequest) {
       // Terminales — no aplica
       case 'completada':
       case 'cancelada':
-      case 'cancelada_cliente':
+      case 'reparacion_rechazada':
       case 'cotizacion_rechazada':
       case 'en_disputa':
         return NextResponse.json({

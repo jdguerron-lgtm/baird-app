@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
       // GARANTÍA con esperar_repuesto: pasa por admin (debe fijar tiempo_entrega)
       // antes de notificar al cliente. Otros pasos: directo a verificación.
       const necesitaPricingAdmin = siguientePaso === 'esperar_repuesto'
-      nuevoEstado = necesitaPricingAdmin ? 'pendiente_pricing' : 'verificacion_pendiente'
+      nuevoEstado = necesitaPricingAdmin ? 'pendiente_pricing' : 'aprobacion_paso_pendiente'
       const verificacionToken = crypto.randomUUID()
 
       const { error: updateErr } = await supabase
@@ -289,7 +289,7 @@ export async function POST(req: NextRequest) {
       //                      envía al cliente.
       //
       //   no_reparable     → finalizado_sin_reparacion (terminal).
-      //   negativa_cliente → cancelada_cliente (terminal).
+      //   negativa_cliente → reparacion_rechazada (terminal).
       //
       // Ver docs/TARIFAS.md § "Particular" para detalle de la fórmula
       // (costoTecnico × 1.13 utilidad Baird × 1.19 IVA — ver tarifas/particular.ts).
@@ -366,7 +366,7 @@ export async function POST(req: NextRequest) {
       // Si requiere admin pricing (esperar_repuesto): pendiente_pricing.
       // Else (reparar): cotizacion_enviada — envío directo al cliente.
       const nuevoEstado = cierraSinCotizacion
-        ? (siguientePaso === 'no_reparable' ? 'finalizado_sin_reparacion' : 'cancelada_cliente')
+        ? (siguientePaso === 'no_reparable' ? 'finalizado_sin_reparacion' : 'reparacion_rechazada')
         : necesitaPricingAdmin
           ? 'pendiente_pricing'
           : 'cotizacion_enviada'
