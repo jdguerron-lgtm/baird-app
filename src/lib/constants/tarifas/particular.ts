@@ -39,6 +39,17 @@ export const MULTIPLICADOR_PARTICULAR = (1 + MARGEN_BAIRD_PARTICULAR) * (1 + IVA
  */
 export const PAGO_TECNICO_DIAGNOSTICO = 35000
 
+/**
+ * Factor aplicado al neto del técnico en servicios de TARIFA FIJA del catálogo
+ * (Mantenimiento, Cambio de filtro): recibe el 80% del neto teórico
+ * (catálogo ÷ multiplicador) — ajuste −20% del 2026-07-09.
+ *
+ * NO aplica a: diagnóstico (fijo PAGO_TECNICO_DIAGNOSTICO), cotización libre
+ * (el técnico recibe íntegro lo que cotiza) ni garantía MABE (tarifario propio).
+ * El precio al cliente NO cambia — la diferencia queda para Baird.
+ */
+export const FACTOR_PAGO_TECNICO_TARIFA_FIJA = 0.8
+
 export interface TarifaParticularResultado {
   costoTecnico: number       // lo que ingresa el técnico (lo que va a recibir)
   margenBaird: number        // utilidad Baird = 13% del costoTecnico
@@ -74,15 +85,16 @@ export function calcularTarifaParticular(params: { costoTecnico: number }): Tari
  * (Mantenimiento, Cambio de filtro), a partir del precio de catálogo al
  * cliente (IVA incluido).
  *
- * Es la inversa de `calcularTarifaParticular`: el cliente paga
- *   precioCliente = costoTecnico × MULTIPLICADOR_PARTICULAR (1.13 utilidad × 1.19 IVA),
- * así que el neto del técnico es `precioCliente ÷ MULTIPLICADOR_PARTICULAR`.
- * Reusa la MISMA constante que el cálculo directo para que utilidad + IVA
+ * Parte de la inversa de `calcularTarifaParticular` (el cliente paga
+ *   precioCliente = costoTecnico × MULTIPLICADOR_PARTICULAR, 1.13 utilidad × 1.19 IVA)
+ * y aplica el FACTOR_PAGO_TECNICO_TARIFA_FIJA (80%, ajuste 2026-07-09):
+ *   neto = precioCliente ÷ MULTIPLICADOR_PARTICULAR × 0.8
+ * Reusa las MISMAS constantes que el cálculo directo para que utilidad + IVA
  * queden siempre sincronizados (si cambia uno, ambos sentidos cambian juntos).
  *
  * Ejemplos (catálogo → neto técnico):
- *   $180.000 (cambio de filtro) → $133.859
- *   $126.000 (mant. lavadora)   → $93.701
+ *   $180.000 (cambio de filtro) → $107.087
+ *   $126.000 (mant. lavadora)   → $74.961
  *
  * ⚠️ Diagnóstico/Reparación NO usan esta inversa: el técnico recibe el fijo
  * PAGO_TECNICO_DIAGNOSTICO ($35.000) — ver /api/solicitar.
@@ -92,7 +104,7 @@ export function calcularTarifaParticular(params: { costoTecnico: number }): Tari
  */
 export function pagoNetoTecnicoTarifaFija(precioCliente: number): number {
   if (!Number.isFinite(precioCliente) || precioCliente <= 0) return 0
-  return Math.round(precioCliente / MULTIPLICADOR_PARTICULAR)
+  return Math.round((precioCliente / MULTIPLICADOR_PARTICULAR) * FACTOR_PAGO_TECNICO_TARIFA_FIJA)
 }
 
 /**

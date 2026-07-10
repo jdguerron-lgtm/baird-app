@@ -54,7 +54,7 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
   // y los bonos se conocen después. Mostramos el PAGO MÍNIMO garantizado
   // (Baja sin bonos sin recargo = $32.760) y aclaramos que puede ser mayor.
   // En particular `pago_tecnico` es el NETO que recibe el técnico (precio de
-  // catálogo ÷ 1.3447, $35.000 fijo en diagnóstico, o el costo cotizado); lo mostramos tal cual.
+  // catálogo ÷ 1.3447 × 0.8, $35.000 fijo en diagnóstico, o el costo cotizado); lo mostramos tal cual.
   const pagoFormateado = esGarantia
     ? formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)
     : formatCOP(solicitud.pago_tecnico)

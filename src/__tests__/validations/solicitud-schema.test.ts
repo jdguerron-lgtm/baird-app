@@ -10,7 +10,7 @@ import {
   calcularBaseSinIva,
   calcularIvaIncluido,
 } from '@/types/solicitud'
-import { pagoNetoTecnicoTarifaFija, MULTIPLICADOR_PARTICULAR, PAGO_TECNICO_DIAGNOSTICO, calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
+import { pagoNetoTecnicoTarifaFija, MULTIPLICADOR_PARTICULAR, FACTOR_PAGO_TECNICO_TARIFA_FIJA, PAGO_TECNICO_DIAGNOSTICO, calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 
 const VALID_DATA = {
   cliente_nombre: 'Maria Garcia Lopez',
@@ -127,11 +127,11 @@ describe('calcularPagoTecnico', () => {
   })
 })
 
-describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.3447, modelo 2026-07-05)', () => {
+describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.3447 × 0.8, ajuste 2026-07-09)', () => {
   // Cifras canónicas de public/guia-pagos.html (lo que recibe el técnico).
   // Diagnóstico/Reparación NO usan la inversa: pagan PAGO_TECNICO_DIAGNOSTICO fijo.
-  it('cambio de filtro $180.000 → $133.859 neto', () => {
-    expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBe(133859)
+  it('cambio de filtro $180.000 → $107.087 neto', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFA_CAMBIO_FILTRO)).toBe(107087)
   })
 
   it('diagnóstico paga fijo $35.000 (no la inversa del catálogo)', () => {
@@ -139,16 +139,16 @@ describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.3447, modelo 2026-
     expect(PAGO_TECNICO_DIAGNOSTICO).toBeLessThan(TARIFA_DIAGNOSTICO)
   })
 
-  it('mantenimiento por equipo = catálogo ÷ 1.3447', () => {
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Estufa'])).toBe(78084)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Horno'])).toBe(85893)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBe(93701)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Secadora'])).toBe(101510)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Aire Acondicionado'])).toBe(101510)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevera'])).toBe(109318)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavavajillas'])).toBe(109318)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevecón'])).toBe(124935)
-    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora Secadora'])).toBe(140552)
+  it('mantenimiento por equipo = catálogo ÷ 1.3447 × 0.8', () => {
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Estufa'])).toBe(62467)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Horno'])).toBe(68714)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora'])).toBe(74961)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Secadora'])).toBe(81208)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Aire Acondicionado'])).toBe(81208)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevera'])).toBe(87454)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavavajillas'])).toBe(87454)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Nevecón'])).toBe(99948)
+    expect(pagoNetoTecnicoTarifaFija(TARIFAS_MANTENIMIENTO['Lavadora Secadora'])).toBe(112441)
   })
 
   it('el neto es siempre menor que el catálogo (Baird retiene utilidad + IVA)', () => {
@@ -161,9 +161,11 @@ describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.3447, modelo 2026-
     expect(pagoNetoTecnicoTarifaFija(-100)).toBe(0)
   })
 
-  it('reconstruye (±1 por redondeo) el catálogo al multiplicar por 1.3447', () => {
+  it('reconstruye (±1 por redondeo) el catálogo al deshacer factor 0.8 y multiplicar por 1.3447', () => {
     for (const precio of [TARIFA_DIAGNOSTICO, TARIFA_CAMBIO_FILTRO, ...Object.values(TARIFAS_MANTENIMIENTO)]) {
-      const reconstruido = Math.round(pagoNetoTecnicoTarifaFija(precio) * MULTIPLICADOR_PARTICULAR)
+      const reconstruido = Math.round(
+        (pagoNetoTecnicoTarifaFija(precio) / FACTOR_PAGO_TECNICO_TARIFA_FIJA) * MULTIPLICADOR_PARTICULAR,
+      )
       expect(Math.abs(reconstruido - precio)).toBeLessThanOrEqual(1)
     }
   })

@@ -48,8 +48,9 @@ export async function POST(req: NextRequest) {
     //
     // IMPORTANTE: `pago_tecnico` guarda el NETO que recibe el técnico, NO el
     // precio de catálogo al cliente. En servicios particulares (reseller) el
-    // cliente paga catálogo y el técnico recibe catálogo ÷ 1.3447 (Baird retiene
-    // utilidad 13% + IVA 19%). Excepción (2026-07-05): la visita de diagnóstico
+    // cliente paga catálogo y el técnico recibe catálogo ÷ 1.3447 × 0.8 (Baird
+    // retiene utilidad 13% + IVA 19% + el ajuste −20% del 2026-07-09).
+    // Excepción (2026-07-05): la visita de diagnóstico
     // (Diagnóstico/Reparación) paga el fijo PAGO_TECNICO_DIAGNOSTICO ($35.000)
     // aunque el cliente sigue pagando TARIFA_DIAGNOSTICO ($84.000); si luego
     // el cliente aprueba una cotización, /api/diagnostico sobreescribe con el
