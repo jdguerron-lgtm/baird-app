@@ -182,8 +182,24 @@ Orden de menor a mayor riesgo, una migración por tabla, en horario valle:
     `seguridad/rls-fase1`): `GET /api/health` → `healthy` (select real sobre `tecnicos` con
     service_role) y `GET /api/disponibilidad-horario?fecha=2026-07-14` → `agendable:true`
     (read vía `agenda.service`). Dos code paths service_role confirmados contra la BD prod.
-  - **Pendiente:** merge del PR → deploy a prod → re-verificar `/api/health` en prod.
-    (PR lo abre el usuario: no se toca `main` directo; `gh` no instalado.)
+  - Mergeada a `main` (a32fdd3, pedido explícito del usuario) → deploy prod READY →
+    `/api/health` prod = `healthy` con service_role ✅.
+- **2026-07-11 — Fase 4.1 ✅ APLICADA EN PROD** (migración `20260711_rls_fase4_1_cierre_tablas_server.sql`,
+  aplicada vía MCP tras verificar prod en Fase 1 y `service_role.rolbypassrls=true`):
+  - `supervisores` y `llamadas`: anon perdió TODO (incl. el SELECT que exponía `portal_token`).
+  - `gps_pings`, `solicitud_eventos`: fuera INSERT público (auditoría ya no falsificable);
+    eventos SELECT pasó a authenticated (admin timeline).
+  - `notificaciones_whatsapp`, `repuestos_pendientes`: fuera writes anon; SELECT conservado
+    (los usan /aceptar y /verificar-paso client-side hasta Fase 3).
+  - `connection_errors`: INSERT/SELECT anon fuera; SELECT authenticated (/admin/errores).
+  - `scripts/enviar-resumen-supervisores.mjs` ahora prefiere `SUPABASE_SERVICE_ROLE_KEY`
+    (⚠️ agregarla a `.env.local` antes del próximo resumen semanal).
+  - **Verificado post-migración:** rol anon simulado en SQL ve 0 filas en las 4 tablas
+    cerradas y recibe `42501` al escribir; sigue leyendo notificaciones (141) y repuestos (8);
+    authenticated lee eventos (146); advisors bajaron ~29→17 (quedan solo los de Fases 2–5);
+    `/api/health` prod healthy y `/supervisor` carga OK.
+  - Quedan para Fases 2–4.2: `tecnicos`, `evidencias_servicio` (writes client-side),
+    `solicitudes_servicio` + `especialidades_tecnico` (RLS off, lecturas/escrituras browser).
 
 ## 4. Lo que necesito de ti (bloqueantes)
 
