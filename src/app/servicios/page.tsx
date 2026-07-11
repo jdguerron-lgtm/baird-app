@@ -5,16 +5,20 @@ import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
 
 // Índice público de las landing pages SEO /servicios/[slug].
 
+// Dominio canónico fijo (ver nota en robots.ts): el canonical NUNCA debe
+// apuntar al alias baird-app.vercel.app, y NEXT_PUBLIC_APP_URL puede serlo.
+const BASE_URL = 'https://lineablanca.bairdservice.com'
+
 export const metadata: Metadata = {
   title: 'Reparación de Electrodomésticos a Domicilio en Bogotá | Baird Service',
   description:
     'Reparación a domicilio de neveras, lavadoras, secadoras, estufas, hornos, lavavajillas y aires acondicionados en Bogotá y la Sabana. Técnicos verificados.',
-  alternates: { canonical: '/servicios' },
+  alternates: { canonical: `${BASE_URL}/servicios` },
   openGraph: {
     title: 'Reparación de Electrodomésticos a Domicilio en Bogotá | Baird Service',
     description:
       'Reparación a domicilio de neveras, lavadoras, secadoras, estufas, hornos, lavavajillas y aires acondicionados en Bogotá y la Sabana. Técnicos verificados.',
-    url: '/servicios',
+    url: `${BASE_URL}/servicios`,
     siteName: 'Baird Service',
     locale: 'es_CO',
     type: 'website',

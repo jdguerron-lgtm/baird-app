@@ -14,6 +14,10 @@ import { formatCOP } from '@/lib/utils/format'
 // Landing pages SEO estáticas (una por electrodoméstico). Contenido en
 // src/lib/constants/servicios-seo.ts; precios leídos del catálogo canónico.
 
+// Dominio canónico fijo (ver nota en robots.ts): el canonical NUNCA debe
+// apuntar al alias baird-app.vercel.app, y NEXT_PUBLIC_APP_URL puede serlo.
+const BASE_URL = 'https://lineablanca.bairdservice.com'
+
 export function generateStaticParams() {
   return SERVICIOS_SEO.map(({ slug }) => ({ slug }))
 }
@@ -31,11 +35,11 @@ export async function generateMetadata({
   return {
     title: servicio.metaTitle,
     description: servicio.metaDescription,
-    alternates: { canonical: `/servicios/${servicio.slug}` },
+    alternates: { canonical: `${BASE_URL}/servicios/${servicio.slug}` },
     openGraph: {
       title: servicio.metaTitle,
       description: servicio.metaDescription,
-      url: `/servicios/${servicio.slug}`,
+      url: `${BASE_URL}/servicios/${servicio.slug}`,
       siteName: 'Baird Service',
       locale: 'es_CO',
       type: 'website',
