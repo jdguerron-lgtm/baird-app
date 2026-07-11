@@ -178,7 +178,12 @@ Orden de menor a mayor riesgo, una migración por tabla, en horario valle:
   - Excluidos a propósito: `src/lib/auth/admin.ts` (anon para `auth.getUser`), `supabase-admin.ts`.
   - Verificado: `tsc --noEmit` (0 errores), `lint` (0 errores, 6 warnings preexistentes),
     `build` (exit 0 — compila client+server, incl. `verificar-paso/[token]` que jala whatsapp.service).
-  - **Pendiente:** verificación en runtime del service_role (deploy preview o `.env.local`) + smoke E2E.
+  - **Runtime verificado en preview** (deploy `dpl_Gd2jPGyy8mdnBAKWWX4no8PNyKWL`, rama
+    `seguridad/rls-fase1`): `GET /api/health` → `healthy` (select real sobre `tecnicos` con
+    service_role) y `GET /api/disponibilidad-horario?fecha=2026-07-14` → `agendable:true`
+    (read vía `agenda.service`). Dos code paths service_role confirmados contra la BD prod.
+  - **Pendiente:** merge del PR → deploy a prod → re-verificar `/api/health` en prod.
+    (PR lo abre el usuario: no se toca `main` directo; `gh` no instalado.)
 
 ## 4. Lo que necesito de ti (bloqueantes)
 
