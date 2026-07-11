@@ -45,7 +45,7 @@ Las plantillas viven en uno de estos lugares (en orden de canonicidad):
 | `docs/FLOWS.md` | Plantillas en contexto del flujo. |
 | `CLAUDE.md` | Resumen para agentes de IA. |
 
-**Estado de cobertura del script (actualizado 2026-07-06, cierre):** **todas las plantillas que invoca el código desplegado están APPROVED en Meta** (verificado en vivo con `--check`) — incluidas las 3 subidas el 2026-07-05 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_reagendamiento_v1`, aprobadas el mismo día: sus avisos ya operan) y las `cotizacion_*_v3` del modelo de tarifas. Única PENDING: `supervisor_acceso_v1` (subida 2026-07-06) — pertenece al portal de supervisores aún sin deployar, no bloquea nada en vivo.
+**Estado de cobertura del script (actualizado 2026-07-09):** **todas las plantillas que invoca el código desplegado están APPROVED en Meta** (verificado en vivo con `--check`) — incluidas las 3 subidas el 2026-07-05 (`esperando_repuesto_tecnico_v1`, `repuesto_llegado_tecnico_v1`, `supervisor_reagendamiento_v1`), las `cotizacion_*_v3` del modelo de tarifas, `supervisor_acceso_v1` (aprobada tras subirse 2026-07-06; el portal ya está en prod) y `supervisor_codigo_v1` (AUTHENTICATION, aprobación instantánea 2026-07-09 — OTP de la entrada `/supervisor`). Cero PENDING.
 - ⚠️ 4 plantillas del ex-backlog llevan botones con URL `baird-app.vercel.app` (pre-migración de dominio) — **funcionan** porque ese dominio sigue vivo como alias del mismo deployment; al re-subirlas algún día, bumpear a `_v2` con `lineablanca`.
 
 (10 plantillas fueron bumpeadas de versión el 2026-05-23 por la migración de dominio — ver banda informativa al inicio de este doc.)
@@ -326,6 +326,14 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Sin botón** (informativo)
 - **Propósito**: dar visibilidad al supervisor de que la fecha del servicio se movió, sin abrir el panel. Es la única vía para avisar a supervisores fuera de la ventana 24h; cliente y técnico se notifican por **texto libre** (ver tabla de texto libre). El BODY abre con "Hola {{1}}," y cierra con "…no necesitas hacer nada." (regla Meta 2388299).
 - **Nota**: `notificarReagendamientoSupervisores` nunca lanza — si la plantilla aún no está APPROVED, el envío falla, se loguea y la reprogramación NO se rompe (la fecha ya quedó guardada y cliente/técnico igual reciben su texto libre).
+
+#### `supervisor_codigo_v1` ✅ APPROVED (subida 2026-07-09, aprobación instantánea) + **CABLEADA**
+- **En script** ✅ (nueva 2026-07-09) — id Meta `1336778301874920`
+- **Categoría**: **AUTHENTICATION** (primera del proyecto) — Meta fija el copy del body/footer; solo se configuran `add_security_recommendation`, `code_expiration_minutes: 10` y el botón `OTP` tipo `COPY_CODE`. Las plantillas AUTHENTICATION se aprueban automáticamente.
+- **Disparo**: `enviarCodigoSupervisor(whatsapp, codigo)` desde `POST /api/supervisor/enviar-codigo` — entrada de autoservicio `/supervisor` (el supervisor pone su número, se verifica que exista un supervisor activo y se le envía el OTP).
+- **Destino**: el supervisor (`supervisores.whatsapp`)
+- **Params**: el código de 6 dígitos va **dos veces** (exigencia de Meta para auth): como parámetro del body Y como parámetro del botón COPY_CODE.
+- **Propósito**: OTP de acceso al portal de solo lectura. Al verificarse (`POST /api/supervisor/verificar-codigo`) el server responde con la URL `/supervisor/{portal_token}`. Controles: hash sha256 en BD (nunca el código en claro), 10 min de vida, un solo uso, 5 intentos, cooldown de reenvío 60s, rate limit por IP. Ver `docs/SEGURIDAD.md` § "Entrada de autoservicio con OTP".
 
 #### `valor_actualizado_cliente_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30, status PENDING)
 - **En script** ✅ (nueva 2026-05-30) — id Meta `965589726530805`

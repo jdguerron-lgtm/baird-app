@@ -855,6 +855,26 @@ const TEMPLATES = [
     ],
   },
 
+  // 19c. Código OTP de acceso al panel de supervisor (entrada de autoservicio
+  //      /supervisor: número de WhatsApp → código de 6 dígitos → link al panel).
+  //      Categoría AUTHENTICATION: Meta fija el copy del body/footer — solo se
+  //      configuran security_recommendation, expiración y el botón COPY_CODE.
+  //      Al enviar: body param {{1}} = código y button url param = código.
+  //      Llamado por: enviarCodigoSupervisor() (whatsapp.service.ts)
+  {
+    name: 'supervisor_codigo_v1',
+    category: 'AUTHENTICATION',
+    language: 'es',
+    components: [
+      { type: 'BODY', add_security_recommendation: true },
+      { type: 'FOOTER', code_expiration_minutes: 10 },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: 'Copiar código' }],
+      },
+    ],
+  },
+
   // 20. Espera de repuesto aprobada — notificar al TÉCNICO (solo GARANTÍA).
   //     v1 (2026-06-12): incluye los datos de gestión del repuesto ante la marca:
   //     No. de garantía (numero_serie_factura), SKU(s) y dirección del cliente

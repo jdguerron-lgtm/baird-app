@@ -54,6 +54,12 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
   // Telemetría fire-and-forget: tolera ráfagas de reintentos en redes flaky;
   // throttlearla solo descarta telemetría, no afecta UX.
   { path: '/api/log-error', limit: 30, windowMs: 60_000 },
+  // Entrada OTP de supervisores: enviar-codigo dispara un WhatsApp (costo) y
+  // revela si el número pertenece a un supervisor → límite estricto contra
+  // enumeración. verificar-codigo ya tiene tope de 5 intentos por código;
+  // el límite por IP frena el brute-force entre reenvíos.
+  { path: '/api/supervisor/enviar-codigo', limit: 5, windowMs: 60_000 },
+  { path: '/api/supervisor/verificar-codigo', limit: 10, windowMs: 60_000 },
 ]
 
 // Token pages: prevent brute-force enumeration
@@ -76,7 +82,9 @@ const NOINDEX_PREFIXES = [
   '/servicio/',
   '/verificar-paso/',
   '/reprogramar-repuesto/',
-  '/supervisor/',
+  // Sin slash final: cubre también la página pública de acceso OTP
+  // (/supervisor) además de los portales con token (/supervisor/{token}).
+  '/supervisor',
 ]
 
 export function middleware(req: NextRequest) {

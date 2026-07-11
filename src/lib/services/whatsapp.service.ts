@@ -1654,6 +1654,38 @@ export async function enviarAccesoSupervisor(supervisor: {
 }
 
 /**
+ * Envía al supervisor el código OTP de 6 dígitos para entrar por /supervisor
+ * (plantilla supervisor_codigo_v1, categoría AUTHENTICATION — APPROVED
+ * 2026-07-09). En las plantillas de autenticación Meta exige el código dos
+ * veces: como parámetro del body Y como parámetro del botón COPY_CODE.
+ */
+export async function enviarCodigoSupervisor(
+  whatsapp: string,
+  codigo: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const result = await enviarPlantilla(whatsapp, 'supervisor_codigo_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: codigo }],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: codigo }],
+      },
+    ])
+    if (result.filtered) {
+      return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
  * Notifica al cliente cuando se necesita esperar repuesto (incluye SKU).
  */
 export async function enviarEsperandoRepuestoCliente(

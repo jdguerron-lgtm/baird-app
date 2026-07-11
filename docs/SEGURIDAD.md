@@ -127,6 +127,28 @@ El link se envía por WhatsApp (`supervisor_acceso_v1`, botón URL dinámico) v�
 para copiar/pegar mientras Meta aprueba la plantilla. Revocar acceso = poner el
 supervisor `activo=false` (el resolver rechaza inactivos).
 
+#### Entrada de autoservicio con OTP — 2026-07-09
+
+Además del link mágico enviado por el admin, el supervisor puede entrar solo
+por **`/supervisor`**: ingresa su número de WhatsApp → `POST
+/api/supervisor/enviar-codigo` verifica que exista un supervisor **activo** con
+ese número (dígitos normalizados, mismos del trigger BD) y le envía un OTP de 6
+dígitos (`supervisor_codigo_v1`, categoría AUTHENTICATION — APPROVED al
+instante) → `POST /api/supervisor/verificar-codigo` valida y devuelve la URL
+`/supervisor/{portal_token}`. El `portal_token` sigue siendo la credencial.
+
+Controles (migración `20260709_supervisor_codigo_acceso.sql`):
+- Solo se persiste **sha256(supervisor_id + ":" + código)** — nunca el código
+  en claro (el anon key puede leer `supervisores`; un OTP legible sería filtrable).
+- Expira a los **10 min**; **un solo uso** (se invalida al verificar); máximo
+  **5 intentos** por código (al agotarse se invalida); comparación en
+  **tiempo constante** (`crypto.timingSafeEqual`).
+- **Cooldown de reenvío 60s** por supervisor + **rate limit por IP** en
+  middleware (enviar-codigo 5/min, verificar-codigo 10/min).
+- El endpoint **revela** si un número pertenece a un supervisor (mensaje "este
+  número no está asociado…") — decisión de producto explícita; la enumeración
+  queda acotada por el rate limit.
+
 ⚠️ **Antipatrón conocido**: el token de cotización está dentro de un JSONB → se filtra cargando todas las solicitudes en estado `cotizacion_enviada` y buscando en JS. Backlog: migrar a columna generada con índice único. Detalles en `docs/SUPABASE.md` § "Supabase Architecture" → "Filtros JSONB".
 
 ### Cron (env var `CRON_SECRET`)

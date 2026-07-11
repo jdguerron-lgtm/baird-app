@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { supabase } from '@/lib/supabase'
 import { normalizeForMatch } from '@/lib/utils/format'
 
@@ -78,4 +79,27 @@ export function filtroEsGarantia(sup: SupervisorPortal): boolean | null {
   if (sup.ambito === 'garantia') return true
   if (sup.ambito === 'particular') return false
   return null
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Entrada de autoservicio /supervisor — OTP por WhatsApp
+// (migración 20260709_supervisor_codigo_acceso.sql)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Hash del OTP que se persiste en supervisores.codigo_acceso_hash. Nunca se
+ * guarda el código en claro: el anon key puede leer la tabla (policies laxas),
+ * así que un código legible sería filtrable. Se sala con el id del supervisor
+ * para que dos supervisores con el mismo código no compartan hash.
+ */
+export function hashCodigoSupervisor(supervisorId: string, codigo: string): string {
+  return crypto.createHash('sha256').update(`${supervisorId}:${codigo}`).digest('hex')
+}
+
+/** Comparación en tiempo constante de dos hashes hex (evita timing attacks). */
+export function compararHashCodigo(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'hex')
+  const bufB = Buffer.from(b, 'hex')
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
 }
