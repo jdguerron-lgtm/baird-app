@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Guía del Supervisor — Baird Service</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8fafc; color: #1e293b; line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 1.25rem 4rem; }
+
+  /* ── Portada ── */
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    color: #fff; padding: 3rem 1.25rem 2.5rem; text-align: center;
+  }
+  .hero .logo { font-size: 1rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: .8; margin-bottom: .75rem; }
+  .hero h1 { font-size: 2rem; line-height: 1.2; margin-bottom: .5rem; }
+  .hero p { max-width: 560px; margin: 0 auto; opacity: .85; font-size: 1.05rem; }
+  .hero .fecha { margin-top: 1.25rem; font-size: .8rem; opacity: .6; }
+
+  h2 {
+    font-size: 1.45rem; margin: 3rem 0 1rem; padding-bottom: .5rem;
+    border-bottom: 3px solid #10b981; color: #0f172a;
+  }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2rem; height: 2rem; border-radius: 50%; background: #10b981; color: #fff;
+    font-size: 1rem; margin-right: .6rem; vertical-align: middle;
+  }
+  h3 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; color: #0f172a; }
+  p + p { margin-top: .75rem; }
+
+  .card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 1.25rem 1.4rem; margin: 1rem 0;
+  }
+  .card.nota { border-left: 5px solid #f59e0b; background: #fffbeb; }
+  .card.ok   { border-left: 5px solid #10b981; background: #ecfdf5; }
+  .card.info { border-left: 5px solid #3b82f6; background: #eff6ff; }
+
+  ul, ol { padding-left: 1.4rem; margin: .5rem 0; }
+  li { margin: .35rem 0; }
+  strong { color: #0f172a; }
+
+  /* ── Badges de estado (mismos colores que el panel) ── */
+  .badge {
+    display: inline-block; padding: .2rem .65rem; border-radius: 9999px;
+    font-size: .8rem; font-weight: 700; white-space: nowrap;
+  }
+  .b-yellow  { background: #fef9c3; color: #854d0e; }
+  .b-gray    { background: #e5e7eb; color: #374151; }
+  .b-blue    { background: #dbeafe; color: #1e40af; }
+  .b-green   { background: #dcfce7; color: #166534; }
+  .b-violet  { background: #ede9fe; color: #5b21b6; }
+  .b-orange  { background: #ffedd5; color: #9a3412; }
+  .b-cyan    { background: #cffafe; color: #155e75; }
+  .b-rose    { background: #ffe4e6; color: #9f1239; }
+  .b-fuchsia { background: #fae8ff; color: #86198f; }
+  .b-lime    { background: #ecfccb; color: #3f6212; }
+  .b-purple  { background: #f3e8ff; color: #6b21a8; }
+  .b-amber   { background: #fef3c7; color: #92400e; }
+  .b-emerald { background: #d1fae5; color: #065f46; }
+  .b-red     { background: #fee2e2; color: #991b1b; }
+  .b-stone   { background: #e7e5e4; color: #44403c; }
+
+  /* ── Diagrama de flujo ── */
+  .flow { margin: 1.25rem 0; }
+  .step {
+    display: flex; gap: .9rem; align-items: flex-start;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: .9rem 1.1rem; margin-bottom: .35rem;
+  }
+  .step .n {
+    flex-shrink: 0; width: 1.9rem; height: 1.9rem; border-radius: 50%;
+    background: #0f172a; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: .9rem; margin-top: .1rem;
+  }
+  .step .txt { flex: 1; }
+  .step .txt .t { font-weight: 700; color: #0f172a; }
+  .step .txt .d { font-size: .92rem; color: #475569; margin-top: .15rem; }
+  .flecha { text-align: center; color: #94a3b8; font-size: 1rem; line-height: 1; margin: .1rem 0 .45rem; }
+
+  /* ── Tarjetas del diccionario ── */
+  .estado {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 1.1rem 1.3rem; margin: .8rem 0;
+    page-break-inside: avoid;
+  }
+  .estado .head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+  .estado .flujo-tag {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    padding: .15rem .5rem; border-radius: 6px; background: #f1f5f9; color: #64748b;
+  }
+  .estado .quien {
+    margin-left: auto; font-size: .8rem; font-weight: 600; color: #0f172a;
+    background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: .2rem .6rem;
+  }
+  .estado p { font-size: .95rem; color: #334155; }
+  .estado .sigue { font-size: .85rem; color: #64748b; margin-top: .4rem; }
+  .estado .sigue b { color: #475569; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; background: #fff; border-radius: 12px; overflow: hidden; font-size: .93rem; }
+  th, td { text-align: left; padding: .65rem .8rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  th { background: #0f172a; color: #fff; font-size: .85rem; }
+  tr:last-child td { border-bottom: none; }
+
+  .kbd {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85em;
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: .1rem .4rem;
+  }
+
+  .dos-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 640px) { .dos-col { grid-template-columns: 1fr; } }
+
+  footer { text-align: center; color: #94a3b8; font-size: .8rem; margin-top: 3.5rem; }
+
+  /* ── Impresión / PDF ── */
+  @media print {
+    body { background: #fff; font-size: 12px; }
+    .hero { background: #0f172a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .badge, th, .step .n, h2 .num { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    h2 { page-break-after: avoid; }
+    .estado, .step, .card { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="logo">Baird Service</div>
+  <h1>Guía del Supervisor</h1>
+  <p>Todo lo que necesitás para entender el portal, las etapas de cada servicio y qué significa cada etiqueta que ves.</p>
+  <div class="fecha">Versión julio 2026 · Máquina de estados v7</div>
+</div>
+
+<div class="wrap">
+
+  <!-- ══════════════ 1. TU ROL ══════════════ -->
+  <h2><span class="num">1</span>Tu rol como supervisor</h2>
+
+  <p>Como supervisor tenés <strong>visibilidad total y en tiempo real</strong> de los servicios que están bajo tu alcance, sin depender de que alguien te pase un reporte. Tu acceso es de <strong>solo lectura</strong>: podés ver todo, pero las acciones (cambiar estados, reagendar, ajustar valores) las ejecuta el equipo administrador de Baird.</p>
+
+  <div class="card info">
+    <strong>Tu alcance está configurado a tu medida.</strong> Según tu perfil, ves:
+    <ul>
+      <li><strong>Ámbito</strong>: solo garantía, solo particular, o ambos.</li>
+      <li><strong>Marca</strong>: una marca específica (p. ej. MABE) o todas.</li>
+    </ul>
+    Si un servicio no aparece en tu portal, es porque está fuera de tu alcance — no es un error.
+  </div>
+
+  <h3>Las 3 vías por las que te llega información</h3>
+  <ol>
+    <li><strong>Portal web</strong> — tu link personal <span class="kbd">lineablanca.bairdservice.com/supervisor/…</span> te llega por WhatsApp. Abrilo desde cualquier celular o computador; no necesita contraseña. <strong>No lo compartas</strong>: el link es tu llave de acceso.</li>
+    <li><strong>Avisos por WhatsApp</strong> — cada vez que un servicio de tu alcance cambia de etapa, recibís un mensaje automático con el detalle.</li>
+    <li><strong>Resumen semanal en PDF</strong> — un consolidado de la semana con los indicadores clave.</li>
+  </ol>
+
+  <!-- ══════════════ 2. DOS TIPOS DE SERVICIO ══════════════ -->
+  <h2><span class="num">2</span>Los dos tipos de servicio</h2>
+
+  <p>Todo servicio en Baird pertenece a uno de dos mundos. Entender esta división es la clave para leer cualquier pantalla del portal:</p>
+
+  <div class="dos-col">
+    <div class="card">
+      <h3>🛡️ Garantía</h3>
+      <ul>
+        <li><strong>Quién paga:</strong> la marca (p. ej. MABE) le paga a Baird.</li>
+        <li><strong>El cliente no paga nada.</strong></li>
+        <li>El técnico diagnostica y <strong>propone un siguiente paso</strong> que el cliente aprueba.</li>
+        <li>Tarifa fija según complejidad — no hay cotización.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>🔧 Particular</h3>
+      <ul>
+        <li><strong>Quién paga:</strong> el cliente le paga a Baird (nunca directo al técnico).</li>
+        <li>Paga un anticipo del diagnóstico antes de la visita.</li>
+        <li>Tras el diagnóstico recibe una <strong>cotización</strong> que debe aprobar o rechazar.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════ 3. EL VIAJE ══════════════ -->
+  <h2><span class="num">3</span>El viaje de un servicio, paso a paso</h2>
+
+  <p>El camino feliz — cuando todo sale bien — se ve así. Las etiquetas entre paréntesis son las que vas a ver en el portal:</p>
+
+  <h3>🛡️ Flujo de garantía</h3>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><div class="txt">
+      <div class="t">El cliente solicita y elige horario <span class="badge b-yellow">Pendiente horario</span></div>
+      <div class="d">Se crea el servicio; el cliente elige entre 2 franjas de visita.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">2</div><div class="txt">
+      <div class="t">Se avisa a los técnicos <span class="badge b-blue">Notificada</span></div>
+      <div class="d">Los técnicos verificados de la zona reciben la oferta por WhatsApp. El primero que acepta, gana.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">3</div><div class="txt">
+      <div class="t">Un técnico aceptó <span class="badge b-green">Asignada</span></div>
+      <div class="d">Cliente y técnico quedan conectados. Sigue la visita de diagnóstico.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">4</div><div class="txt">
+      <div class="t">Diagnóstico hecho — el cliente decide <span class="badge b-violet">Cliente debe aprobar siguiente paso</span></div>
+      <div class="d">El técnico propone qué hacer (reparar, pedir repuesto, etc.) y el cliente lo aprueba desde su celular.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">5</div><div class="txt">
+      <div class="t">Reparación en curso <span class="badge b-purple">En proceso</span></div>
+      <div class="d">Si necesitó repuesto, antes pasa por <span class="badge b-fuchsia">Esperando repuesto</span> y <span class="badge b-lime">Repuesto recibido</span>.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">6</div><div class="txt">
+      <div class="t">Trabajo terminado — falta el visto bueno <span class="badge b-amber">Cliente debe confirmar servicio</span></div>
+      <div class="d">El técnico subió fotos, checklist y firma. El cliente confirma que quedó bien.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">7</div><div class="txt">
+      <div class="t">Cierre <span class="badge b-emerald">Completada</span></div>
+      <div class="d">El cliente confirmó satisfecho. Servicio cerrado. 🎉</div>
+    </div></div>
+  </div>
+
+  <h3>🔧 Flujo particular — las diferencias</h3>
+  <p>Los pasos 1–3 y 6–7 son iguales. La diferencia está en el medio: en vez de "aprobar un paso", el cliente <strong>aprueba una cotización con precio</strong>:</p>
+  <div class="flow">
+    <div class="step"><div class="n">4</div><div class="txt">
+      <div class="t">Diagnóstico + cotización <span class="badge b-cyan">Cotización enviada</span></div>
+      <div class="d">El técnico diagnostica y cotiza. El cliente recibe por WhatsApp el total (IVA incluido) con botón para aprobar.</div>
+    </div></div>
+    <div class="flecha">▼</div>
+    <div class="step"><div class="n">5</div><div class="txt">
+      <div class="t">El cliente decide</div>
+      <div class="d">✅ Aprueba → pasa directo a <span class="badge b-purple">En proceso</span> (o <span class="badge b-fuchsia">Esperando repuesto</span> si falta una pieza).<br>
+      ❌ Rechaza → <span class="badge b-rose">Cotización rechazada</span> y el servicio se cierra.</div>
+    </div></div>
+  </div>
+
+  <div class="card ok">
+    <strong>Regla de oro para leer el portal:</strong> cada etiqueta te dice <strong>quién tiene la pelota</strong>. Si un servicio lleva días sin moverse, mirá la etiqueta: te dice exactamente quién está frenando (cliente, técnico o admin) y por qué.
+  </div>
+
+  <!-- ══════════════ 4. DICCIONARIO ══════════════ -->
+  <h2><span class="num">4</span>Diccionario de etiquetas — las 18 etapas</h2>
+
+  <p>Cada tarjeta muestra la etiqueta tal cual la ves en el portal, qué significa y quién debe actuar para que avance.</p>
+
+  <h3>Agendamiento</h3>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-yellow">Pendiente horario</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: cliente</span></div>
+    <p>El servicio acaba de crearse y el cliente todavía no confirma la franja de visita. En particular casi nunca la vas a ver: el sistema agenda automáticamente la primera opción del formulario.</p>
+    <div class="sigue"><b>Sigue:</b> Notificada (cliente confirma) · Sin agendar (si nunca responde)</div>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-blue">Notificada</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: técnico</span></div>
+    <p>El horario ya está confirmado y los técnicos de la zona fueron notificados por WhatsApp. Nadie ha aceptado todavía. Si pasa mucho tiempo aquí, puede faltar cobertura de técnicos en esa zona.</p>
+    <div class="sigue"><b>Sigue:</b> Asignada (cuando un técnico acepta)</div>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-green">Asignada</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: técnico (la visita)</span></div>
+    <p>Un técnico aceptó el servicio y tiene la visita agendada. El cliente ya recibió el nombre, foto y teléfono del técnico.</p>
+    <div class="sigue"><b>Sigue:</b> tras la visita de diagnóstico → "Cliente debe aprobar siguiente paso" (garantía) o "Cotización enviada" (particular)</div>
+  </div>
+
+  <h3>Después del diagnóstico</h3>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-violet">Cliente debe aprobar siguiente paso</span> <span class="flujo-tag">Garantía</span> <span class="quien">🕐 Espera al: cliente</span></div>
+    <p>El técnico ya diagnosticó y propuso qué hacer (reparar de una vez, pedir un repuesto, o declarar el equipo no reparable). El cliente tiene un link para aprobar o rechazar esa propuesta.</p>
+    <div class="sigue"><b>Sigue:</b> En proceso · Esperando repuesto · Finalizado sin reparación · En disputa (si rechaza)</div>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-orange">Pendiente tiempo entrega (admin)</span> <span class="flujo-tag">Garantía</span> <span class="quien">🕐 Espera al: equipo Baird</span></div>
+    <p>El diagnóstico requiere un repuesto y el equipo administrador está confirmando el tiempo de entrega de la pieza antes de avisarle al cliente. El precio no se toca — en garantía lo cubre la marca.</p>
+    <div class="sigue"><b>Sigue:</b> Cliente debe aprobar siguiente paso</div>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-cyan">Cotización enviada</span> <span class="flujo-tag">Particular</span> <span class="quien">🕐 Espera al: cliente</span></div>
+    <p>El cliente ya tiene en su WhatsApp la cotización con el total (IVA incluido) y un botón para aprobar. Si aprueba, el servicio arranca de inmediato; no hay etapa intermedia.</p>
+    <div class="sigue"><b>Sigue:</b> En proceso o Esperando repuesto (aprueba) · Cotización rechazada (rechaza)</div>
+  </div>
+
+  <h3>Repuestos</h3>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-fuchsia">Esperando repuesto</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: equipo Baird / marca</span></div>
+    <p>La reparación está aprobada pero falta que llegue una pieza (queda registrado el SKU exacto). En garantía la gestiona la marca; en particular, Baird.</p>
+    <div class="sigue"><b>Sigue:</b> Repuesto recibido (cuando la pieza llega a bodega)</div>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-lime">Repuesto recibido</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: cliente</span></div>
+    <p>¡La pieza llegó! Como entre el diagnóstico y la llegada pueden pasar semanas, el cliente recibe un link para elegir una <strong>nueva fecha</strong> de visita.</p>
+    <div class="sigue"><b>Sigue:</b> En proceso (cliente elige la fecha)</div>
+  </div>
+
+  <h3>Ejecución y cierre</h3>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-purple">En proceso</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: técnico</span></div>
+    <p>La reparación está en marcha — ya sea en la misma visita del diagnóstico o en la segunda visita con el repuesto.</p>
+    <div class="sigue"><b>Sigue:</b> Cliente debe confirmar servicio (cuando el técnico termina)</div>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-amber">Cliente debe confirmar servicio</span> <span class="flujo-tag">Ambos flujos</span> <span class="quien">🕐 Espera al: cliente</span></div>
+    <p>El técnico terminó y subió la evidencia: fotos del trabajo, checklist de pruebas y firma. Solo falta que el cliente confirme desde su celular que todo quedó bien.</p>
+    <div class="sigue"><b>Sigue:</b> Completada (satisfecho) · En disputa (reporta un problema)</div>
+  </div>
+
+  <h3>Estados finales — así puede terminar un servicio</h3>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-emerald">Completada</span> <span class="flujo-tag">Final ✔</span></div>
+    <p>El cliente confirmó satisfecho. Es el único final 100% feliz.</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-orange">En disputa</span> <span class="flujo-tag">Requiere gestión</span> <span class="quien">🕐 Espera al: equipo Baird</span></div>
+    <p>El cliente reportó un problema al confirmar el cierre, o rechazó el paso propuesto tras el diagnóstico. El equipo Baird revisa la evidencia y media entre las partes. <strong>No es un estado final</strong> — siempre termina resolviéndose.</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-stone">Finalizado sin reparación</span> <span class="flujo-tag">Final</span></div>
+    <p>El diagnóstico concluyó que el equipo <strong>no tiene arreglo</strong>. El cliente lo aprobó y el caso se cierra documentado.</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-red">Reparación rechazada por cliente</span> <span class="flujo-tag">Final</span></div>
+    <p>Tras conocer el diagnóstico, el cliente decidió <strong>no reparar</strong>. La visita de diagnóstico sí se realizó (y en particular, se cobra).</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-rose">Cotización rechazada</span> <span class="flujo-tag">Final · Particular</span></div>
+    <p>El cliente no aprobó el precio cotizado. El servicio se cierra; el anticipo del diagnóstico cubre la visita realizada.</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-red">Cancelada</span> <span class="flujo-tag">Final</span></div>
+    <p>El cliente canceló por su cuenta desde su portal de autoservicio, <strong>antes o después</strong> de tener técnico asignado. Si canceló con menos de 4 horas de anticipación, queda marcada como cancelación tardía (afecta la liquidación).</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-stone">No-show del cliente</span> <span class="flujo-tag">Final</span></div>
+    <p>El técnico llegó a la cita y el cliente no estaba. Se cierra con evidencia obligatoria (foto en el sitio, GPS, intentos de contacto) según el protocolo de visita.</p>
+  </div>
+
+  <div class="estado">
+    <div class="head"><span class="badge b-gray">Sin agendar</span> <span class="flujo-tag">Final</span></div>
+    <p>El cliente nunca confirmó el horario: pasadas 24 horas se le envía un recordatorio y, 12 horas después, el servicio expira automáticamente. El equipo Baird puede revivirlo si el cliente reaparece.</p>
+  </div>
+
+  <!-- ══════════════ 5. TABLA RESUMEN ══════════════ -->
+  <h2><span class="num">5</span>Tabla resumen — para tener a mano</h2>
+
+  <table>
+    <thead><tr><th>Etiqueta</th><th>Significa</th><th>¿Quién actúa?</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge b-yellow">Pendiente horario</span></td><td>Cliente debe elegir franja de visita</td><td>Cliente</td></tr>
+      <tr><td><span class="badge b-blue">Notificada</span></td><td>Buscando técnico que acepte</td><td>Técnico</td></tr>
+      <tr><td><span class="badge b-green">Asignada</span></td><td>Técnico confirmado, visita agendada</td><td>Técnico</td></tr>
+      <tr><td><span class="badge b-violet">Cliente debe aprobar siguiente paso</span></td><td>Diagnóstico listo, cliente decide (garantía)</td><td>Cliente</td></tr>
+      <tr><td><span class="badge b-orange">Pendiente tiempo entrega (admin)</span></td><td>Baird confirma tiempo del repuesto (garantía)</td><td>Baird</td></tr>
+      <tr><td><span class="badge b-cyan">Cotización enviada</span></td><td>Cliente decide sobre el precio (particular)</td><td>Cliente</td></tr>
+      <tr><td><span class="badge b-fuchsia">Esperando repuesto</span></td><td>Falta que llegue la pieza</td><td>Baird / marca</td></tr>
+      <tr><td><span class="badge b-lime">Repuesto recibido</span></td><td>Pieza lista; cliente elige nueva fecha</td><td>Cliente</td></tr>
+      <tr><td><span class="badge b-purple">En proceso</span></td><td>Reparación en marcha</td><td>Técnico</td></tr>
+      <tr><td><span class="badge b-amber">Cliente debe confirmar servicio</span></td><td>Trabajo terminado, falta visto bueno</td><td>Cliente</td></tr>
+      <tr><td><span class="badge b-emerald">Completada</span></td><td>Cerrado con cliente satisfecho ✔</td><td>—</td></tr>
+      <tr><td><span class="badge b-orange">En disputa</span></td><td>Problema reportado, Baird media</td><td>Baird</td></tr>
+      <tr><td><span class="badge b-stone">Finalizado sin reparación</span></td><td>Equipo sin arreglo, cierre documentado</td><td>—</td></tr>
+      <tr><td><span class="badge b-red">Reparación rechazada por cliente</span></td><td>Cliente decidió no reparar tras diagnóstico</td><td>—</td></tr>
+      <tr><td><span class="badge b-rose">Cotización rechazada</span></td><td>Cliente no aprobó el precio (particular)</td><td>—</td></tr>
+      <tr><td><span class="badge b-red">Cancelada</span></td><td>Cliente canceló desde su portal</td><td>—</td></tr>
+      <tr><td><span class="badge b-stone">No-show del cliente</span></td><td>Cliente ausente en la cita (con evidencia)</td><td>—</td></tr>
+      <tr><td><span class="badge b-gray">Sin agendar</span></td><td>Expiró sin que el cliente eligiera horario</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card nota">
+    <strong>📜 Nota sobre el historial:</strong> en servicios antiguos podés encontrar etiquetas que ya no existen (p. ej. "Diagnóstico pendiente", "Cotización aprobada" o "Reagendamiento pendiente"). En julio 2026 simplificamos y renombramos varias etapas para hacerlas más claras — el historial conserva los nombres de su época, pero todo servicio activo usa las 18 etiquetas de esta guía.
+  </div>
+
+  <!-- ══════════════ 6. FAQ ══════════════ -->
+  <h2><span class="num">6</span>Preguntas frecuentes</h2>
+
+  <div class="card">
+    <h3>¿Puedo cambiar algo desde mi portal?</h3>
+    <p>No — tu acceso es de solo lectura. Si detectás algo que requiere acción (un servicio estancado, un dato errado), reportalo al equipo administrador de Baird por WhatsApp.</p>
+  </div>
+
+  <div class="card">
+    <h3>Un servicio lleva días en la misma etiqueta. ¿Qué hago?</h3>
+    <p>Primero mirá <strong>quién tiene la pelota</strong> (columna "¿Quién actúa?" de la tabla). Si espera al cliente, el sistema ya le envió recordatorios automáticos. Si te parece excesivo el tiempo, avisale al equipo Baird con el número del servicio.</p>
+  </div>
+
+  <div class="card">
+    <h3>¿Por qué no veo un servicio que sé que existe?</h3>
+    <p>Tu portal filtra por tu ámbito (garantía/particular) y tu marca. Un servicio fuera de ese alcance no aparece. Si creés que deberías verlo, pedí al equipo Baird que revise tu configuración.</p>
+  </div>
+
+  <div class="card">
+    <h3>Perdí mi link de acceso. ¿Cómo lo recupero?</h3>
+    <p>Pedilo al equipo administrador — te lo reenvían por WhatsApp en un minuto. Si sospechás que alguien más lo tiene, avisá de inmediato: se puede revocar y generar uno nuevo.</p>
+  </div>
+
+  <div class="card">
+    <h3>¿El cliente le paga al técnico?</h3>
+    <p><strong>Nunca.</strong> Todos los pagos pasan por Baird Service. En garantía paga la marca; en particular el cliente le paga a Baird. Si un cliente reporta que un técnico le pidió pago directo, es una alerta grave — repórtala de inmediato.</p>
+  </div>
+
+  <footer>
+    Baird Service SAS · Guía del Supervisor · Julio 2026<br>
+    Documento interno — para imprimir en PDF: Ctrl+P → "Guardar como PDF"
+  </footer>
+
+</div>
+</body>
+</html>
