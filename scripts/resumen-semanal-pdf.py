@@ -281,10 +281,18 @@ story.append(Paragraph("<b>Limitacion del informe:</b> los mensajes a clientes (
                        "cotizacion, aviso de repuesto) no dejan registro de entrega ni de fallo. Para medir "
                        "fallos reales de contacto a cliente habria que persistir el resultado de cada envio.", P_NOTE))
 
+# ── Recursos (seccion fija — conservar al regenerar el informe cada semana) ──
+story.append(Spacer(1, 0.45 * cm))
+story.append(Paragraph("<b>Recursos para supervisores:</b> la Guia del Supervisor explica cada etapa del "
+                       "servicio y que significa cada etiqueta del panel. Consultala o compartila: "
+                       "<link href='https://lineablanca.bairdservice.com/guia-supervisores.html' color='blue'>"
+                       "lineablanca.bairdservice.com/guia-supervisores.html</link>", P_NOTE))
+
 def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 7); canvas.setFillColor(GRAY)
     canvas.drawString(1.4 * cm, 0.9 * cm, "BORRADOR - Baird Service - " + FECHA_CORTE)
+    canvas.drawCentredString(A4[0] / 2, 0.9 * cm, "Guia del Supervisor: lineablanca.bairdservice.com/guia-supervisores.html")
     canvas.drawRightString(A4[0] - 1.4 * cm, 0.9 * cm, "Pag. %d" % doc.page)
     canvas.setStrokeColor(LINE); canvas.line(1.4 * cm, 1.15 * cm, A4[0] - 1.4 * cm, 1.15 * cm)
     canvas.restoreState()

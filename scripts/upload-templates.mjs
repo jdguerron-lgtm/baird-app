@@ -875,6 +875,49 @@ const TEMPLATES = [
     ],
   },
 
+  // 19d. Novedades / actualizaciones de la plataforma — para SUPERVISORES.
+  //      Canal recurrente de mejoras: {{1}}=nombre supervisor, {{2}}=lista de
+  //      novedades EN UNA SOLA LÍNEA separadas por " • " (los parámetros de
+  //      Meta no aceptan saltos de línea). Botón URL fijo a la Guía del
+  //      Supervisor (pública, sin token — compartible).
+  //      Llamado por: scripts/enviar-actualizacion-supervisores.mjs
+  {
+    name: 'supervisor_actualizaciones_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Novedades de Baird Service',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋, te contamos las mejoras recientes de la plataforma:\n\n' +
+          '{{2}}\n\n' +
+          'En la Guía del Supervisor está el detalle de cada etapa y etiqueta. Cualquier duda, escríbenos por este chat.',
+        example: {
+          body_text: [[
+            'Andrés',
+            'Panel de supervisión en tiempo real • Etiquetas de estado más claras • Nueva Guía del Supervisor',
+          ]],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver la guía',
+            url: `${APP_URL}/guia-supervisores.html`,
+          },
+        ],
+      },
+    ],
+  },
+
   // 20. Espera de repuesto aprobada — notificar al TÉCNICO (solo GARANTÍA).
   //     v1 (2026-06-12): incluye los datos de gestión del repuesto ante la marca:
   //     No. de garantía (numero_serie_factura), SKU(s) y dirección del cliente

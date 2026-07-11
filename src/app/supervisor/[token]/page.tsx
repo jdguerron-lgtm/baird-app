@@ -35,6 +35,10 @@ const AMBITO_LABEL: Record<string, string> = {
   particular: 'Solo particular',
 }
 
+// Guía pública de capacitación (servida desde /public, con noindex).
+// Es compartible: no contiene tokens ni datos de servicios.
+const GUIA_SUPERVISOR_URL = 'https://lineablanca.bairdservice.com/guia-supervisores.html'
+
 const FILTROS = [
   { value: 'todos', label: 'Todos' },
   { value: 'pendiente_horario', label: 'Pendiente horario' },
@@ -105,22 +109,43 @@ export default function SupervisorSolicitudes() {
   return (
     <div>
       {/* Encabezado con alcance */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">
-          {supervisor ? `Hola, ${supervisor.nombre.split(' ')[0]}` : 'Solicitudes'}
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {cargando
-            ? 'Cargando…'
-            : `${solicitudes.length} solicitud${solicitudes.length !== 1 ? 'es' : ''} en tu alcance`}
-          {supervisor && (
-            <span className="text-gray-400">
-              {' · '}
-              {AMBITO_LABEL[supervisor.ambito] ?? supervisor.ambito}
-              {supervisor.marca ? ` · ${supervisor.marca}` : ''}
-            </span>
-          )}
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {supervisor ? `Hola, ${supervisor.nombre.split(' ')[0]}` : 'Solicitudes'}
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {cargando
+              ? 'Cargando…'
+              : `${solicitudes.length} solicitud${solicitudes.length !== 1 ? 'es' : ''} en tu alcance`}
+            {supervisor && (
+              <span className="text-gray-400">
+                {' · '}
+                {AMBITO_LABEL[supervisor.ambito] ?? supervisor.ambito}
+                {supervisor.marca ? ` · ${supervisor.marca}` : ''}
+              </span>
+            )}
+          </p>
+        </div>
+        {/* Guías — consulta y compartir (link público, sin token) */}
+        <div className="flex items-center gap-2">
+          <a
+            href={GUIA_SUPERVISOR_URL}
+            target="_blank"
+            rel="noopener"
+            className="text-xs font-semibold text-blue-700 border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 hover:bg-blue-100"
+          >
+            📖 Guía del supervisor
+          </a>
+          <a
+            href={`https://wa.me/?text=${encodeURIComponent(`📖 Guía del Supervisor de Baird Service — las etapas de cada servicio y qué significa cada etiqueta:\n${GUIA_SUPERVISOR_URL}`)}`}
+            target="_blank"
+            rel="noopener"
+            className="text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg px-3 py-2 hover:bg-emerald-100"
+          >
+            Compartir
+          </a>
+        </div>
       </div>
 
       {/* Filtros */}

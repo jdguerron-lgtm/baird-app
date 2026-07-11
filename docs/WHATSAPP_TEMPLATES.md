@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-06-24 (plantilla de documento para el resumen semanal a supervisores).
+> Última actualización: 2026-07-11 (nueva `supervisor_actualizaciones_v1` — canal de novedades a supervisores con botón a la Guía del Supervisor).
 
 > 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
 
@@ -334,6 +334,16 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Destino**: el supervisor (`supervisores.whatsapp`)
 - **Params**: el código de 6 dígitos va **dos veces** (exigencia de Meta para auth): como parámetro del body Y como parámetro del botón COPY_CODE.
 - **Propósito**: OTP de acceso al portal de solo lectura. Al verificarse (`POST /api/supervisor/verificar-codigo`) el server responde con la URL `/supervisor/{portal_token}`. Controles: hash sha256 en BD (nunca el código en claro), 10 min de vida, un solo uso, 5 intentos, cooldown de reenvío 60s, rate limit por IP. Ver `docs/SEGURIDAD.md` § "Entrada de autoservicio con OTP".
+
+#### `supervisor_actualizaciones_v1` ⏳ subida a Meta 2026-07-11
+- **En script** ✅ (nueva 2026-07-11)
+- **Disparo**: manual — `node --env-file=.env.local scripts/enviar-actualizacion-supervisores.mjs` (canal recurrente de novedades; editar la constante `NOVEDADES` del script en cada envío). Flags `--dry` / `--force`.
+- **Destino**: cada supervisor **activo** (`supervisores.whatsapp`)
+- **Header**: TEXT — "Novedades de Baird Service"
+- **Body** (2 params): `supervisor_nombre` (primer nombre), `novedades` — ⚠️ **una sola línea** con las mejoras separadas por `" • "` (los parámetros de Meta no aceptan saltos de línea; el script lo valida).
+- **Botón**: URL fija → `${APP_URL}/guia-supervisores.html` ("Ver la guía") — la Guía del Supervisor es pública (noindex) y no contiene tokens, así que es compartible.
+- **Propósito**: contarles a los supervisores las mejoras de la plataforma (nuevas funciones, cambios de etiquetas, guías) sin depender de la ventana 24h. Primera edición 2026-07-11: portal de supervisión, renombre de etiquetas de estado, Guía del Supervisor, link a la guía en el informe semanal.
+- **Nota**: el BODY no empieza ni termina en variable (regla Meta 2388299) — abre con "Hola {{1}}," y cierra con "…escríbenos por este chat."
 
 #### `valor_actualizado_cliente_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30, status PENDING)
 - **En script** ✅ (nueva 2026-05-30) — id Meta `965589726530805`

@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
 
 // ── Unsplash image URLs (free, no attribution required) ─────────────────────
 const IMAGES = {
@@ -637,6 +638,21 @@ export default function Home() {
       {/* ── FOOTER ──────────────────────────────────────────────────── */}
       <footer className="bg-slate-950 border-t border-white/5 py-12 px-4">
         <div className="max-w-5xl mx-auto">
+          {/* Links SEO a las landing pages por servicio (/servicios/[slug]) */}
+          <div className="mb-10 pb-8 border-b border-white/5">
+            <p className="text-white/40 text-sm font-semibold mb-3">Servicios en Bogotá y la Sabana:</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/40">
+              {SERVICIOS_SEO.map((s) => (
+                <Link key={s.slug} href={`/servicios/${s.slug}`} className="hover:text-white/70 transition-colors">
+                  Reparación de {s.plural}
+                </Link>
+              ))}
+              <Link href="/servicios" className="text-green-400/60 hover:text-green-400 transition-colors">
+                Ver todos →
+              </Link>
+            </div>
+          </div>
+
           <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-8">
             {/* Logo */}
             <div className="flex flex-col items-center md:items-start gap-3">

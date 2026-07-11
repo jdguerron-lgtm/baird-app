@@ -12,6 +12,24 @@ interface Stats {
   solicitudesActivas: number
 }
 
+// Guías públicas servidas desde /public — consultables y compartibles.
+// Si agregás una guía nueva, sumala acá y en la sección Guías del portal
+// de supervisores (src/app/supervisor/[token]/page.tsx).
+const GUIAS = [
+  {
+    titulo: 'Guía del Supervisor',
+    descripcion: 'Intro y capacitación: etapas del servicio y qué significa cada etiqueta',
+    url: 'https://lineablanca.bairdservice.com/guia-supervisores.html',
+    mensajeCompartir: '📖 Guía del Supervisor de Baird Service — las etapas de cada servicio y qué significa cada etiqueta:',
+  },
+  {
+    titulo: 'Guía de pagos al técnico',
+    descripcion: 'Cómo se calcula el pago del técnico en garantía y particular',
+    url: 'https://lineablanca.bairdservice.com/guia-pagos.html',
+    mensajeCompartir: '💰 Guía de pagos de Baird Service — cómo se calcula tu pago como técnico:',
+  },
+]
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [recientes, setRecientes] = useState<{
@@ -29,7 +47,7 @@ export default function AdminDashboard() {
         supabase.from('tecnicos').select('id', { count: 'exact', head: true }).eq('estado_verificacion', 'verificado'),
         supabase.from('tecnicos').select('id', { count: 'exact', head: true }).eq('estado_verificacion', 'rechazado'),
         supabase.from('solicitudes_servicio').select('id', { count: 'exact', head: true }),
-        supabase.from('solicitudes_servicio').select('id', { count: 'exact', head: true }).in('estado', ['pendiente', 'notificada', 'asignada']),
+        supabase.from('solicitudes_servicio').select('id', { count: 'exact', head: true }).in('estado', ['pendiente_horario', 'notificada', 'asignada']),
         supabase.from('tecnicos').select('id, nombre_completo, ciudad_pueblo, estado_verificacion, created_at').order('created_at', { ascending: false }).limit(5),
       ])
 
@@ -98,6 +116,42 @@ export default function AdminDashboard() {
           ))}
         </div>
       )}
+
+      {/* Guías — consultables y compartibles (admin + supervisores + técnicos) */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-8">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="font-semibold text-slate-900 text-sm">📚 Guías</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Consultalas o compartilas por WhatsApp con un clic</p>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {GUIAS.map((g) => (
+            <div key={g.url} className="flex items-center justify-between gap-3 px-5 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">{g.titulo}</p>
+                <p className="text-xs text-gray-400 truncate">{g.descripcion}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={g.url}
+                  target="_blank"
+                  rel="noopener"
+                  className="text-xs font-semibold text-blue-600 border border-blue-200 bg-blue-50 rounded-lg px-3 py-1.5 hover:bg-blue-100"
+                >
+                  Abrir
+                </a>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`${g.mensajeCompartir}\n${g.url}`)}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg px-3 py-1.5 hover:bg-emerald-100"
+                >
+                  Compartir
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Recent technicians */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
