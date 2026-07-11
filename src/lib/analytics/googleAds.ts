@@ -17,19 +17,24 @@ export const GOOGLE_ADS_ID = 'AW-18163777075'
  * Label de la acción de conversión de TIPO SITIO WEB para el envío del
  * formulario de /solicitar.
  *
- * Se inyecta por env (`NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL`) para configurarla sin
- * redeploy de código. Acepta el label completo (`AW-18163777075/AbCdEfg123`) o
- * solo el segmento tras la barra (`AbCdEfg123`).
+ * Corresponde a la acción "Solicitud de servicio (formulario web)" creada en
+ * Google Ads (cuenta 262-918-6921) el 2026-07-11: categoría "Envío de
+ * formulario para clientes potenciales", fuente Evento sobre el Google tag
+ * AW-18163777075, conteo "Una", acción principal. Su fragmento de evento es
+ * `gtag('event','conversion',{send_to:'AW-18163777075/8Gx0CJye7s4cELP8lNVD'})`.
  *
- * Mientras esté vacío, `trackLeadConversion()` es no-op (no rompe nada).
+ * El label es PÚBLICO (viaja en el JS del cliente), igual que GOOGLE_ADS_ID, así
+ * que va hardcodeado como default. Se puede sobreescribir por env
+ * (`NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL`) sin tocar código; acepta el label
+ * completo (`AW-18163777075/xxxx`) o solo el segmento tras la barra.
  *
- * ⚠️ Este label debe salir de una acción de conversión de SITIO WEB creada en
- * Google Ads. NO reutilizar:
+ * ⚠️ NO reutilizar otras conversiones de la cuenta:
  *   - "Formulario de contacto - Enviar" → fuente "En páginas alojadas en Google"
  *     (lead form del anuncio, no del sitio).
  *   - Compra / Inclusión en el carrito / Tramitación → son de la tienda Shopify.
  */
-const LEAD_CONVERSION_LABEL = process.env.NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL ?? ''
+const LEAD_CONVERSION_LABEL =
+  process.env.NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL ?? '8Gx0CJye7s4cELP8lNVD'
 
 type GtagFn = (...args: unknown[]) => void
 
