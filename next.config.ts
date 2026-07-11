@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Security headers are set in src/middleware.ts (single source of truth)
+  // Security headers are set in src/proxy.ts (single source of truth)
 };
 
 export default nextConfig;

@@ -17,7 +17,7 @@ import { enviarCodigoSupervisor } from '@/lib/services/whatsapp.service'
  * Solo se persiste el hash del código — ver hashCodigoSupervisor.
  *
  * Anti-abuso: cooldown de 60s por supervisor (codigo_acceso_enviado_at) +
- * rate limit por IP en middleware. El endpoint REVELA si el número pertenece
+ * rate limit por IP en el proxy (src/proxy.ts). El endpoint REVELA si el número pertenece
  * o no a un supervisor — decisión de producto explícita (el mensaje "este
  * número no está asociado a ningún supervisor" es requisito de UX); el rate
  * limit acota la enumeración.

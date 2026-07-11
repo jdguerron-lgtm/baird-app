@@ -10,7 +10,7 @@ Trampas conocidas. Léelo antes de tocar código sensible.
 - **Phone format (actualizado 2026-05-13):** el formato pipe (`57|3134951164`) es historia. Desde la migración `20260513_normalizar_telefonos.sql`, un trigger BD `normalizar_telefono_co()` normaliza `tecnicos.whatsapp` y `solicitudes_servicio.cliente_telefono` a dígitos puros con prefijo `57`. Para enviar a Meta usar siempre `phoneToDigits()` (alias `formatearTelefono`) de `src/lib/utils/phone.ts`. `parsePhone()` sigue tolerando pipe solo por datos históricos. Si cambias el algoritmo de normalización, sincroniza el TS con la función SQL.
 - **Atomic acceptance:** `procesarAceptacion()` uses `UPDATE ... WHERE tecnico_asignado_id IS NULL` to prevent race conditions. Don't change this pattern.
 - **ILIKE injection:** Always use `escapeLikePattern()` before interpolating user input into `.ilike()` queries.
-- **Security headers:** Define in ONE place only (middleware.ts or next.config.ts), not both.
+- **Security headers:** Define in ONE place only (src/proxy.ts or next.config.ts), not both.
 - **Portal token:** Each technician gets a `portal_token` UUID on first acceptance. Used for passwordless access to `/tecnico/{token}`. Never expose technician IDs in URLs.
 - **Evidence storage:** Photos and signatures stored in Supabase Storage bucket `evidencias-servicio` (public). Path pattern: `{solicitud_id}/{timestamp}_{index}.{ext}`.
 - **Excel mapping:** `excel-mapping.ts` parses the specific Mabe/GE BITÁCORA format. Column indices are hardcoded to match that format — different Excel layouts will need a new mapper.

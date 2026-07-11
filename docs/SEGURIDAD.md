@@ -144,7 +144,7 @@ Controles (migración `20260709_supervisor_codigo_acceso.sql`):
   **5 intentos** por código (al agotarse se invalida); comparación en
   **tiempo constante** (`crypto.timingSafeEqual`).
 - **Cooldown de reenvío 60s** por supervisor + **rate limit por IP** en
-  middleware (enviar-codigo 5/min, verificar-codigo 10/min).
+  el proxy (`src/proxy.ts`; enviar-codigo 5/min, verificar-codigo 10/min).
 - El endpoint **revela** si un número pertenece a un supervisor (mensaje "este
   número no está asociado…") — decisión de producto explícita; la enumeración
   queda acotada por el rate limit.

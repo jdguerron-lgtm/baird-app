@@ -6,7 +6,7 @@ const BASE_URL = 'https://lineablanca.bairdservice.com'
 
 /**
  * Sitemap solo con páginas PÚBLICAS e indexables. No incluir rutas admin, API
- * ni páginas con token (privadas — ver robots.ts y el noindex del middleware).
+ * ni páginas con token (privadas — ver robots.ts y el noindex del proxy).
  */
 export default function sitemap(): MetadataRoute.Sitemap {
   const rutas = [

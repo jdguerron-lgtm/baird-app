@@ -15,7 +15,7 @@ import { hashCodigoSupervisor, compararHashCodigo } from '@/lib/auth/supervisor'
  * mismo modelo que el link mágico que envía el admin).
  *
  * Controles: expiración 10 min, máximo MAX_INTENTOS intentos por código (al
- * agotarse se invalida), rate limit por IP en middleware.
+ * agotarse se invalida), rate limit por IP en el proxy (src/proxy.ts).
  */
 const MAX_INTENTOS = 5
 

@@ -76,7 +76,7 @@ src/
 │   └── validations/            # Zod schemas (solicitud.schema.ts)
 ├── types/
 │   └── solicitud.ts            # Domain types, state machine, constants
-└── middleware.ts               # Rate limiting + security headers
+└── proxy.ts                    # Rate limiting + security headers (ex middleware.ts, renombrado por Next.js 16)
 
 legal/                          # Legal documents (Baird Service SAS)
 ├── 01-terminos-y-condiciones.docx

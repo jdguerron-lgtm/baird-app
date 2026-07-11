@@ -9,7 +9,7 @@ const BASE_URL = 'https://lineablanca.bairdservice.com'
  * robots.txt generado por Next. Permite indexar el sitio público de marketing,
  * pero excluye explícitamente el panel admin, la API y todas las páginas privadas
  * con token en la URL (contienen PII / accesos por link, no deben salir en Google).
- * El refuerzo por header `X-Robots-Tag: noindex` vive en src/middleware.ts.
+ * El refuerzo por header `X-Robots-Tag: noindex` vive en src/proxy.ts.
  */
 export default function robots(): MetadataRoute.Robots {
   return {
