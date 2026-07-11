@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { enviarRecordatorioHorario, enviarSolicitudExpiradaCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import { HORARIO_TIMEOUT_HORAS, HORARIO_FINAL_TIMEOUT_HORAS } from '@/types/solicitud'
 

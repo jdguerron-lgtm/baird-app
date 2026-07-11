@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { CODIGOS_FALLA, type CodigoFalla } from '@/lib/constants/codigos-falla'
 import { precioClienteServicio } from '@/types/solicitud'

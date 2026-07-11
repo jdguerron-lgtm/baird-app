@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { distanceMeters, FLAG_DISTANCE_METERS, POST_VISIT_DELAY_MINUTES } from '@/lib/utils/geo'
 
 export const dynamic = 'force-dynamic'

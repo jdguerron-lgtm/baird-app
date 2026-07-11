@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA } from '@/lib/constants/franjas'
 import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias } from '@/lib/utils/fecha-visita'

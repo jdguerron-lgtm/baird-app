@@ -162,6 +162,24 @@ Orden de menor a mayor riesgo, una migración por tabla, en horario valle:
 | Vercel | ✅ conectado | proyecto `baird-app`, deployments, logs de build/runtime. **No expone env vars** (para eso: CLI `vercel env`, no instalado — `npm i -g vercel`) |
 | Chrome | ✅ conectado | 1 navegador local (Windows) disponible para coordinar dashboards |
 
+## 3bis. Bitácora de ejecución
+
+- **2026-07-11 — Fase 0 ✅ hecha.**
+  - Guard anti-fuga: ya existía en `src/lib/supabase-admin.ts` (throw en browser, key sin
+    `NEXT_PUBLIC`, init perezoso). No requirió cambios.
+  - Snapshot de rollback: `supabase/rls-rollback-snapshot-2026-07-11.sql`.
+  - `SUPABASE_SERVICE_ROLE_KEY` puesta en Vercel (Production + Preview) por el usuario.
+  - Auth (opciones gratuitas): **self-signup APAGADO** ✅. Leaked-password protection
+    **DIFERIDO** — requiere plan Pro; se activa cuando se cambie de plan. MFA idem.
+- **2026-07-11 — Fase 1 (código) ✅ hecha, verificación local ✅.**
+  - Rama `seguridad/rls-fase1`. 35 archivos server-side (28 rutas API + 7 services/auth)
+    cambiaron `import { supabase } from '@/lib/supabase'` →
+    `import { supabaseAdmin as supabase } from '@/lib/supabase-admin'`.
+  - Excluidos a propósito: `src/lib/auth/admin.ts` (anon para `auth.getUser`), `supabase-admin.ts`.
+  - Verificado: `tsc --noEmit` (0 errores), `lint` (0 errores, 6 warnings preexistentes),
+    `build` (exit 0 — compila client+server, incl. `verificar-paso/[token]` que jala whatsapp.service).
+  - **Pendiente:** verificación en runtime del service_role (deploy preview o `.env.local`) + smoke E2E.
+
 ## 4. Lo que necesito de ti (bloqueantes)
 
 1. **`SUPABASE_SERVICE_ROLE_KEY` en Vercel** (Production + Preview). La copias del

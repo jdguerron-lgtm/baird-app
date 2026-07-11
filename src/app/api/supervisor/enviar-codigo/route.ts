@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { phoneToDigits, isValidPhone } from '@/lib/utils/phone'
 import { hashCodigoSupervisor } from '@/lib/auth/supervisor'
 import { enviarCodigoSupervisor } from '@/lib/services/whatsapp.service'

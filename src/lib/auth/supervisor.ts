@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { normalizeForMatch } from '@/lib/utils/format'
 
 /**

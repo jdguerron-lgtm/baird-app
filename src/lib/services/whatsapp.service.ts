@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
