@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { isPhoneAllowed } from '@/lib/services/whatsapp.service'
 import { phoneToDigits } from '@/lib/utils/phone'
 

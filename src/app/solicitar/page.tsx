@@ -35,6 +35,7 @@ import {
   calcularIvaIncluido,
 } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
+import { trackLeadConversion } from '@/lib/analytics/googleAds'
 
 // ──────────────────────────────────────────────────────────
 // TRIAJE IA: deshabilitado temporalmente para priorizar
@@ -149,6 +150,12 @@ export default function SolicitarServicio() {
 
       const id = data.id
       setSolicitudId(id)
+
+      // Conversión Google Ads: el formulario se envió con éxito = lead.
+      // Dispara SOLO el label del formulario del sitio (no toca la tienda).
+      // No-op si gtag o el label no están configurados. Ver lib/analytics/googleAds.
+      trackLeadConversion()
+
       setMostrarPagoAnticipo(
         !formData.es_garantia &&
         (formData.tipo_solicitud === 'Diagnóstico' || formData.tipo_solicitud === 'Reparación'),

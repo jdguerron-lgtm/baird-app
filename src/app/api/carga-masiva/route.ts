@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import crypto from 'crypto'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { parseExcelData, type MappedSolicitud } from '@/lib/utils/excel-mapping'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'

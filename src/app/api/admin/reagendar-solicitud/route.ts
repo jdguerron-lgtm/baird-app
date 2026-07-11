@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import { procesarReagendamientoAdmin } from '@/lib/services/whatsapp.service'
 import { materializarFechaVisita, franjasLlenasParaFecha } from '@/lib/services/agenda.service'

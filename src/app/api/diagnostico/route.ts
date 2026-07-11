@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { enviarVerificacionPasoCliente, enviarCotizacionCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico } from '@/types/solicitud'

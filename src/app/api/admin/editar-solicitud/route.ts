@@ -1,5 +1,5 @@
 import { after, NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { TIPOS_EQUIPO } from '@/types/solicitud'

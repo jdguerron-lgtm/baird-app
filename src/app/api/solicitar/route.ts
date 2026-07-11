@@ -1,5 +1,5 @@
 import { after, NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 import { confirmarHorarioSolicitud } from '@/lib/services/transiciones.service'

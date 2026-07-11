@@ -20,7 +20,12 @@ const TOKEN = process.env.WHATSAPP_API_TOKEN
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID
 const WABA_ID = process.env.WABA_ID || '2354953275016882'
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// service_role preferido: desde el cierre RLS (docs/PLAN-RLS.md) el anon key ya no
+// puede leer `supervisores`. El anon queda de fallback solo para --dry sin la key.
+const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('⚠️  Sin SUPABASE_SERVICE_ROLE_KEY en el env: la lectura de supervisores fallará con RLS cerrado. Agregala a .env.local.')
+}
 
 const TEMPLATE = 'resumen_semanal_supervisores_v1'
 const SEMANA = 'la semana del 15 al 21 de junio de 2026'   // {{2}} — actualizar cada semana

@@ -3,8 +3,7 @@ import { Inter } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
-
-const GOOGLE_ADS_ID = 'AW-18163777075'
+import { GOOGLE_ADS_ID } from '@/lib/analytics/googleAds'
 
 const inter = Inter({
   subsets: ['latin'],

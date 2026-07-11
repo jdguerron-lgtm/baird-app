@@ -18,7 +18,7 @@
  * recientemente para no quemar quota).
  */
 
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 
 const GOOGLE_API_BASE = 'https://maps.googleapis.com/maps/api/geocode/json'
 const REQUEST_TIMEOUT_MS = 5_000
