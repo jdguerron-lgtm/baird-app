@@ -196,7 +196,7 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 - [ ] **Sistema de reseñas** — calificación con estrellas al confirmar servicio
 - [ ] **Integración de pagos** — PSE / tarjeta (ver apéndice de pasarelas en `docs/TARIFAS.md`)
 - [x] **Términos y condiciones** — página `/terminos` publicada
-- [ ] **Analytics** — gtag de conversiones ya integrado (2026-07-03); falta dashboard con patrones de fallas más comunes
+- [ ] **Analytics** — gtag de conversiones ya integrado (2026-07-03); GA4 `G-DXSC4J9RGF` en todas las páginas + evento `generate_lead` en /solicitar (2026-07-17, `src/lib/analytics/googleAnalytics.ts`); falta dashboard con patrones de fallas más comunes
 - [ ] **SEO** — Open Graph, sitemap, meta tags completos
 
 ---

@@ -4,6 +4,7 @@ import Script from 'next/script'
 import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
 import { GOOGLE_ADS_ID } from '@/lib/analytics/googleAds'
+import { GA_MEASUREMENT_ID } from '@/lib/analytics/googleAnalytics'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -40,17 +41,21 @@ export default function RootLayout({
         {children}
         <BotonWhatsAppFlotante />
 
-        {/* Google tag (gtag.js) — Google Ads conversion tracking */}
+        {/* Google tag (gtag.js) — un solo loader para Google Ads (conversiones)
+            y Google Analytics 4 (tráfico + eventos). Ambos config comparten
+            window.gtag; el loader se carga con el ID de Ads pero sirve igual
+            para los dos destinos. */}
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_ID}`}
           strategy="afterInteractive"
         />
-        <Script id="google-ads-gtag" strategy="afterInteractive">
+        <Script id="google-gtag" strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
             gtag('config', '${GOOGLE_ADS_ID}');
+            gtag('config', '${GA_MEASUREMENT_ID}');
           `}
         </Script>
       </body>

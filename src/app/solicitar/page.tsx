@@ -36,6 +36,7 @@ import {
 } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
 import { trackLeadConversion } from '@/lib/analytics/googleAds'
+import { trackGaLead } from '@/lib/analytics/googleAnalytics'
 
 // ──────────────────────────────────────────────────────────
 // TRIAJE IA: deshabilitado temporalmente para priorizar
@@ -155,6 +156,11 @@ export default function SolicitarServicio() {
       // Dispara SOLO el label del formulario del sitio (no toca la tienda).
       // No-op si gtag o el label no están configurados. Ver lib/analytics/googleAds.
       trackLeadConversion()
+      // Mismo lead hacia GA4 como evento clave `generate_lead`.
+      trackGaLead({
+        es_garantia: formData.es_garantia,
+        tipo_solicitud: formData.tipo_solicitud,
+      })
 
       setMostrarPagoAnticipo(
         !formData.es_garantia &&
