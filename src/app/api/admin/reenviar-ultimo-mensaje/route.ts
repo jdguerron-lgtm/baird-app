@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const { data: sol, error } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, es_garantia, cliente_telefono, cliente_nombre, tipo_equipo, tipo_solicitud, marca_equipo, tecnico_asignado_id, horario_confirmado, pago_tecnico, cotizacion, tyc_aceptados_at, siguiente_paso, siguiente_paso_detalle')
+      .select('id, estado, es_garantia, cliente_telefono, cliente_nombre, tipo_equipo, tipo_solicitud, marca_equipo, tecnico_asignado_id, horario_confirmado, pago_tecnico, cotizacion, tyc_aceptados_at, siguiente_paso, siguiente_paso_detalle, recargo_weekend_aplicado')
       .eq('id', solicitudId)
       .single()
 
@@ -137,6 +137,7 @@ export async function POST(req: NextRequest) {
               sol.tipo_solicitud,
               sol.es_garantia,
               sol.cotizacion as { total?: number | null } | null,
+              sol.recargo_weekend_aplicado as number | null,
             )
             const tarifa = formatCOP(precioCliente)
             const anticipo = formatCOP(Math.round(precioCliente * 0.5))

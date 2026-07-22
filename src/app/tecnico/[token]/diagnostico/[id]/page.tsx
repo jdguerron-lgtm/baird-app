@@ -71,6 +71,9 @@ export default function DiagnosticoPage() {
   // Particular + reparar: total al cliente que devolvió /api/diagnostico
   // (fuente de verdad server-side) para mostrárselo al técnico al terminar.
   const [totalClienteApi, setTotalClienteApi] = useState<number | null>(null)
+  // Neto al técnico devuelto por la API (incluye 90% del recargo finde/festivo
+  // si la visita cayó en sábado/domingo/festivo — cambio 2026-07-21).
+  const [pagoTecnicoApi, setPagoTecnicoApi] = useState<number | null>(null)
   const [progreso, setProgreso] = useState('')
 
   // Form state
@@ -462,6 +465,9 @@ export default function DiagnosticoPage() {
       if (typeof data.totalCliente === 'number' && data.totalCliente > 0) {
         setTotalClienteApi(data.totalCliente)
       }
+      if (typeof data.pagoTecnico === 'number' && data.pagoTecnico > 0) {
+        setPagoTecnicoApi(data.pagoTecnico)
+      }
       setExito(true)
     } catch {
       setError('Error de conexion')
@@ -551,10 +557,11 @@ export default function DiagnosticoPage() {
                   <span className="font-bold text-purple-900">${formatCOP(totalClienteApi)} COP</span>
                 </div>
                 <p className="text-[11px] text-gray-500 mb-2">Incluye tu pago, utilidad Baird 13% e IVA 19%.</p>
-                {costoTecnicoNum > 0 && (
+                {(pagoTecnicoApi ?? costoTecnicoNum) > 0 && (
                   <div className="flex justify-between text-sm border-t border-purple-200 pt-2">
                     <span className="text-gray-600">Tu pago si el cliente aprueba</span>
-                    <span className="font-bold text-emerald-700">${formatCOP(costoTecnicoNum)} COP</span>
+                    {/* pagoTecnicoApi incluye el recargo finde/festivo si aplicó */}
+                    <span className="font-bold text-emerald-700">${formatCOP(pagoTecnicoApi ?? costoTecnicoNum)} COP</span>
                   </div>
                 )}
               </div>

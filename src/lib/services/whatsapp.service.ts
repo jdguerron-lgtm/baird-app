@@ -6,6 +6,7 @@ import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/for
 import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { validarHorarioAgendable } from '@/lib/services/agenda.service'
+import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
@@ -557,6 +558,8 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 | 2 | string): Promise<{
   ganado: boolean
   mensaje: string
+  /** true → el técnico puede corregir el horario elegido y volver a intentar (no perdió el servicio) */
+  reintentar?: boolean
 }> {
   // 1. Validar token
   const { data: notif } = await supabase
@@ -590,12 +593,67 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   // diagnostico_pendiente; es_garantia ya distingue el camino a seguir).
   const estadoAsignacion = 'asignada'
 
+  // Elección de horario del técnico (2026-07-21): al aceptar puede escoger
+  // entre los horarios PROPUESTOS POR EL CLIENTE (horario_visita_1/2 o el ya
+  // confirmado) — nunca texto arbitrario: un valor fuera de ese conjunto se
+  // ignora y queda el horario ya confirmado. Si elige uno distinto al
+  // confirmado, se revalida agenda (cupo por franja + mínimo mañana); si la
+  // franja no sirve se aborta SIN asignar (reintentar: true) para que escoja
+  // el otro horario — asignar callado un horario que el técnico no eligió es
+  // riesgo de no-show.
+  let horarioUpdate: {
+    horario_confirmado: string
+    horario_confirmado_at: string
+    fecha_visita_at: string | null
+  } | null = null
+  let horarioPrevio: string | null = null
+
+  if (horarioSeleccionado !== undefined) {
+    const { data: solPrevia } = await supabase
+      .from('solicitudes_servicio')
+      .select('id, horario_visita_1, horario_visita_2, horario_confirmado')
+      .eq('id', notif.solicitud_id)
+      .single()
+
+    if (solPrevia) {
+      const elegido = (
+        horarioSeleccionado === 1 ? solPrevia.horario_visita_1
+        : horarioSeleccionado === 2 ? solPrevia.horario_visita_2
+        : horarioSeleccionado
+      )?.trim()
+      const confirmadoActual = solPrevia.horario_confirmado?.trim() || null
+      const opcionesCliente = [
+        confirmadoActual,
+        solPrevia.horario_visita_1?.trim(),
+        solPrevia.horario_visita_2?.trim(),
+      ].filter(Boolean)
+
+      if (elegido && opcionesCliente.includes(elegido) && elegido !== confirmadoActual) {
+        const agenda = await validarHorarioAgendable(elegido, solPrevia.id)
+        if (!agenda.ok) {
+          return {
+            ganado: false,
+            reintentar: true,
+            mensaje: `No pudimos agendar ese horario: ${agenda.error} Elige el otro horario propuesto por el cliente.`,
+          }
+        }
+        horarioPrevio = confirmadoActual
+        horarioUpdate = {
+          horario_confirmado: elegido,
+          horario_confirmado_at: new Date().toISOString(),
+          fecha_visita_at: agenda.fechaVisitaAt,
+        }
+      }
+    }
+  }
+
   // UPDATE atómico — solo asigna si aún no tiene técnico (evita race condition)
   const { data: updated, error: updateErr } = await supabase
     .from('solicitudes_servicio')
     .update({
       tecnico_asignado_id: notif.tecnico_id,
       estado: estadoAsignacion,
+      ...horarioUpdate,
     })
     .eq('id', notif.solicitud_id)
     .is('tecnico_asignado_id', null)  // ← clave anti race-condition
@@ -632,6 +690,21 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     return { ganado: false, mensaje: 'Este servicio ya fue tomado por otro técnico' }
   }
 
+  // Recargo finde/festivo particular (2026-07-21): si el técnico eligió un
+  // horario distinto al confirmado, la fecha de visita cambió — resincronizar
+  // el recargo antes de armar los mensajes (para que muestren el pago vigente).
+  if (horarioUpdate) {
+    try {
+      const sync = await sincronizarRecargoFinDeSemana(updated.id)
+      if (sync.actualizado && sync.pagoTecnico !== null) {
+        updated.pago_tecnico = sync.pagoTecnico
+        updated.recargo_weekend_aplicado = sync.recargoBruto
+      }
+    } catch (err) {
+      console.error('[procesarAceptacion] sincronizarRecargoFinDeSemana falló:', err)
+    }
+  }
+
   // 3. ¡Ganó! Obtener datos completos del técnico (incluyendo portal_token)
   const { data: tecnico } = await supabase
     .from('tecnicos')
@@ -655,6 +728,28 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   }
 
   const sol = updated // aliás semántico
+
+  // Auditoría append-only del cambio de horario elegido por el técnico.
+  // Best-effort: no bloquea la asignación si falla.
+  if (horarioUpdate) {
+    try {
+      await supabase.from('solicitud_eventos').insert({
+        solicitud_id: sol.id,
+        tipo: 'reagendamiento',
+        estado_previo: 'notificada',
+        estado_nuevo: estadoAsignacion,
+        actor: 'tecnico',
+        motivo: 'Técnico eligió el otro horario propuesto por el cliente al aceptar el servicio',
+        payload: {
+          horario_previo: horarioPrevio,
+          horario_confirmado: horarioUpdate.horario_confirmado,
+          tecnico_id: notif.tecnico_id,
+        },
+      })
+    } catch (err) {
+      console.error('[procesarAceptacion] No se pudo registrar evento de cambio de horario:', err)
+    }
+  }
 
   // Avisar a supervisores que un técnico tomó el servicio (asignada).
   await notificarCambioEstado(sol.id, 'notificada', estadoAsignacion)
@@ -734,6 +829,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       sol.tipo_solicitud,
       sol.es_garantia,
       sol.cotizacion as { total?: number | null } | null,
+      sol.recargo_weekend_aplicado as number | null,
     )
     const tarifaDiagnostico = formatCOP(precioCliente)
     const anticipo = formatCOP(Math.round(precioCliente * 0.5))
@@ -755,6 +851,29 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       ]),
       'procesarAceptacion → tecnico_asignado_particular_v1',
     )
+
+    // Link de recaudo del anticipo (tienda Shopify) — gap cerrado 2026-07-21:
+    // la plantilla de arriba anuncia el monto del anticipo pero el link de
+    // pago solo existía en la pantalla de éxito de /solicitar (fácil de
+    // cerrar sin pagar). Solo Diagnóstico/Reparación: el producto de la
+    // tienda es el anticipo FIJO de $42.000 (50% de TARIFA_DIAGNOSTICO); en
+    // Mantenimiento/Cambio de filtro la tarifa es otra y no hay producto.
+    // El botón de la plantilla apunta a URL_PAGO_ANTICIPO_DIAGNOSTICO
+    // (URL fija en la plantilla — ver scripts/upload-templates.mjs).
+    if (sol.tipo_solicitud === 'Diagnóstico' || sol.tipo_solicitud === 'Reparación') {
+      await logEnvio(
+        enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v1', 'es', [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: sol.cliente_nombre },
+              { type: 'text', text: anticipo },
+            ],
+          },
+        ]),
+        'procesarAceptacion → pago_anticipo_cliente_v1',
+      )
+    }
   }
 
   // 6. Enviar foto de perfil y documento del técnico al cliente.
@@ -2578,6 +2697,14 @@ export async function procesarReagendamientoCliente(
     return { ok: false, estado_previo: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
   }
 
+  // Recargo finde/festivo particular: la fecha de visita cambió (entre semana ↔
+  // finde/festivo) — resincronizar recargo y pago del técnico. Best-effort.
+  try {
+    await sincronizarRecargoFinDeSemana(sol.id)
+  } catch (err) {
+    console.error('[procesarReagendamientoCliente] sincronizarRecargoFinDeSemana falló:', err)
+  }
+
   // Notificar a supervisores configurados (short-circuit si estadoNuevo === sol.estado).
   // registrarEvento:false — abajo se inserta el evento dedicado 'reagendamiento'.
   await notificarCambioEstado(sol.id, sol.estado, estadoNuevo, { registrarEvento: false })
@@ -2773,6 +2900,14 @@ export async function procesarReagendamientoAdmin(
 
   if (updErr) {
     return { ok: false, estado: sol.estado, error: `Error actualizando solicitud: ${updErr.message}` }
+  }
+
+  // Recargo finde/festivo particular: el admin movió la fecha — resincronizar
+  // recargo y pago del técnico (solo estados pre-cotización). Best-effort.
+  try {
+    await sincronizarRecargoFinDeSemana(sol.id)
+  } catch (err) {
+    console.error('[procesarReagendamientoAdmin] sincronizarRecargoFinDeSemana falló:', err)
   }
 
   const equipo = equipoConGarantia(sol)

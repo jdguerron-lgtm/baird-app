@@ -10,6 +10,7 @@ import {
 } from '@/lib/services/whatsapp.service'
 import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
 import { validarHorarioAgendable } from '@/lib/services/agenda.service'
+import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import { TYC_VERSION } from '@/types/solicitud'
 
 /**
@@ -120,6 +121,15 @@ export async function confirmarHorarioSolicitud(
 
   if (updateErr || !updated) {
     return { ok: false, httpStatus: 500, body: { error: 'No se pudo confirmar el horario' } }
+  }
+
+  // Recargo finde/festivo particular (2026-07-21): la fecha quedó fijada —
+  // sincronizar ANTES de notificar técnicos para que el WhatsApp ya muestre
+  // el pago con recargo. Best-effort: un fallo no revierte la confirmación.
+  try {
+    await sincronizarRecargoFinDeSemana(sol.id)
+  } catch (err) {
+    console.error('[confirmar-horario] sincronizarRecargoFinDeSemana falló:', err)
   }
 
   // Auditoría del reagendamiento por vencimiento (append-only). No bloquea.

@@ -1,10 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { compressImageIfNeeded, inferExtension } from '@/lib/utils/media'
+import { formatCOP } from '@/lib/utils/format'
 import type { ProductoNecesario } from '@/types/solicitud'
+
+/** Producto de la tienda Baird tal como lo devuelve GET /api/tienda/buscar. */
+interface ProductoTienda {
+  titulo: string
+  sku: string | null
+  precio: number | null
+  disponible: boolean
+  url: string
+  imagen: string | null
+}
 
 interface Props {
   productos: ProductoNecesario[]
@@ -33,6 +44,66 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
   const [subiendo, setSubiendo] = useState<Record<number, boolean>>({})
   const [errorImg, setErrorImg] = useState<Record<number, string>>({})
 
+  // Búsqueda en la tienda Baird por fila: al escribir SKU/descripción
+  // (p.ej. "2611") mostramos los productos que matchean con su PRECIO y el
+  // link a la página (GET /api/tienda/buscar → suggest.json de Shopify).
+  const [sugerencias, setSugerencias] = useState<Record<number, ProductoTienda[]>>({})
+  const [buscando, setBuscando] = useState<Record<number, boolean>>({})
+  const timersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const ultimaQueryRef = useRef<Record<number, string>>({})
+
+  const buscarTienda = (idx: number, query: string) => {
+    const q = query.trim()
+    clearTimeout(timersRef.current[idx])
+    ultimaQueryRef.current[idx] = q
+    if (q.length < 3) {
+      setSugerencias(prev => ({ ...prev, [idx]: [] }))
+      setBuscando(prev => ({ ...prev, [idx]: false }))
+      return
+    }
+    timersRef.current[idx] = setTimeout(async () => {
+      setBuscando(prev => ({ ...prev, [idx]: true }))
+      try {
+        const res = await fetch(`/api/tienda/buscar?q=${encodeURIComponent(q)}`)
+        const data = await res.json()
+        // Guard contra respuestas fuera de orden: solo aplica el resultado
+        // de la última query escrita en esta fila.
+        if (ultimaQueryRef.current[idx] === q) {
+          setSugerencias(prev => ({ ...prev, [idx]: data.productos ?? [] }))
+        }
+      } catch {
+        if (ultimaQueryRef.current[idx] === q) {
+          setSugerencias(prev => ({ ...prev, [idx]: [] }))
+        }
+      } finally {
+        if (ultimaQueryRef.current[idx] === q) {
+          setBuscando(prev => ({ ...prev, [idx]: false }))
+        }
+      }
+    }, 450)
+  }
+
+  // El técnico toca una coincidencia y la fila se llena sola (SKU real de la
+  // tienda, descripción = título del producto, foto del catálogo si no subió
+  // una) — sin re-proceso de buscar el producto aparte en la tienda.
+  const usarProductoTienda = (idx: number, s: ProductoTienda) => {
+    const fila = productos[idx]
+    onChange(productos.map((p, i) => (
+      i === idx
+        ? {
+            ...p,
+            sku: (s.sku ?? fila?.sku ?? p.sku).toUpperCase(),
+            descripcion: s.titulo,
+            imagen_url: p.imagen_url ?? s.imagen ?? undefined,
+          }
+        : p
+    )))
+    clearTimeout(timersRef.current[idx])
+    ultimaQueryRef.current[idx] = ''
+    setSugerencias(prev => ({ ...prev, [idx]: [] }))
+    setBuscando(prev => ({ ...prev, [idx]: false }))
+  }
+
   const agregar = () => {
     onChange([...productos, { sku: '', descripcion: '', cantidad: 1 }])
   }
@@ -43,6 +114,13 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
 
   const eliminar = (idx: number) => {
     onChange(productos.filter((_, i) => i !== idx))
+    // Los índices se corren tras eliminar — resetear el estado de búsqueda
+    // evita que una fila herede las sugerencias de otra.
+    Object.values(timersRef.current).forEach(clearTimeout)
+    timersRef.current = {}
+    ultimaQueryRef.current = {}
+    setSugerencias({})
+    setBuscando({})
   }
 
   const subirImagen = async (idx: number, file: File) => {
@@ -128,7 +206,10 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
             <input
               type="text"
               value={p.sku}
-              onChange={(e) => actualizar(idx, { sku: e.target.value.toUpperCase() })}
+              onChange={(e) => {
+                actualizar(idx, { sku: e.target.value.toUpperCase() })
+                buscarTienda(idx, e.target.value)
+              }}
               placeholder="Ej: WM-PCB-7421"
               className="w-full border border-gray-200 rounded-lg py-2 px-3 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
             />
@@ -139,11 +220,71 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
             <input
               type="text"
               value={p.descripcion}
-              onChange={(e) => actualizar(idx, { descripcion: e.target.value })}
+              onChange={(e) => {
+                actualizar(idx, { descripcion: e.target.value })
+                buscarTienda(idx, e.target.value)
+              }}
               placeholder="Ej: Tarjeta electrónica de control"
               className="w-full border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"
             />
           </div>
+
+          {/* Coincidencias en la tienda Baird — precio + link a la página */}
+          {(buscando[idx] || (sugerencias[idx]?.length ?? 0) > 0) && (
+            <div className="bg-white border border-fuchsia-200 rounded-lg p-2">
+              <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">
+                🛒 En la tienda Baird
+              </p>
+              {buscando[idx] && (
+                <p className="text-xs text-gray-400 px-1 py-1">Buscando en tienda.bairdservice.com…</p>
+              )}
+              {!buscando[idx] && sugerencias[idx]?.map(s => (
+                <div
+                  key={s.url}
+                  className="flex items-center gap-2 rounded-lg px-1 py-1.5 hover:bg-fuchsia-50 transition-colors"
+                >
+                  {/* Tocar el producto = usarlo (llena SKU/descripción/foto) */}
+                  <button
+                    type="button"
+                    onClick={() => usarProductoTienda(idx, s)}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                  >
+                    {s.imagen && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={s.imagen}
+                        alt=""
+                        className="w-9 h-9 rounded object-cover border border-gray-200 shrink-0"
+                      />
+                    )}
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-semibold text-slate-900 truncate">{s.titulo}</span>
+                      <span className="text-[11px] font-bold text-emerald-700">
+                        {s.precio != null ? `$${formatCOP(s.precio)} COP` : 'Precio en la tienda'}
+                        {!s.disponible && <span className="text-red-600 font-semibold"> · Agotado</span>}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => usarProductoTienda(idx, s)}
+                    className="text-xs font-bold text-white bg-fuchsia-600 hover:bg-fuchsia-700 rounded-lg px-3 py-1.5 shrink-0"
+                  >
+                    Usar
+                  </button>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-fuchsia-700 font-semibold shrink-0 px-1"
+                    title="Ver la página del producto en la tienda"
+                  >
+                    ↗
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div>
             <label className="block text-[10px] font-semibold text-gray-600 uppercase mb-1">Cantidad *</label>

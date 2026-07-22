@@ -62,9 +62,12 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
   { path: '/api/supervisor/verificar-codigo', limit: 10, windowMs: 60_000 },
 ]
 
-// Token pages: prevent brute-force enumeration
+// Token pages: prevent brute-force enumeration.
+// 120/min por IP y por portal: una lista de ~50 solicitudes navegada rápido
+// genera decenas de requests legítimos por minuto; un atacante enumerando
+// UUIDs (122 bits) necesita órdenes de magnitud más que cualquier límite.
 const TOKEN_PAGE_PREFIXES = ['/aceptar/', '/tecnico/', '/confirmar/', '/supervisor/']
-const TOKEN_PAGE_LIMIT = 30  // requests per minute per IP
+const TOKEN_PAGE_LIMIT = 120  // requests per minute per IP per prefix
 const TOKEN_PAGE_WINDOW = 60_000
 
 // Rutas que NUNCA deben aparecer en Google: panel admin, API y páginas con
@@ -107,9 +110,20 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  // Rate limiting on token-based pages (prevent enumeration)
-  if (TOKEN_PAGE_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
-    const key = `${ip}:token-pages`
+  // Rate limiting on token-based pages (prevent enumeration).
+  // Los prefetch nativos del browser (purpose/sec-purpose) no cuentan. OJO:
+  // los prefetch de <Link> del App Router NO son detectables acá — Next 16
+  // despoja los headers internos (rsc, next-router-prefetch) antes del
+  // middleware (verificado 2026-07-17) — por eso el límite está dimensionado
+  // para absorberlos y las listas grandes usan prefetch={false}.
+  const esPrefetch =
+    req.headers.get('purpose') === 'prefetch' ||
+    req.headers.get('sec-purpose')?.includes('prefetch')
+  const tokenPrefix = TOKEN_PAGE_PREFIXES.find(prefix => pathname.startsWith(prefix))
+  if (tokenPrefix && !esPrefetch) {
+    // Balde por portal: un técnico navegando su agenda ya no consume el
+    // presupuesto de un cliente confirmando servicio desde la misma IP.
+    const key = `${ip}:token-page:${tokenPrefix}`
     if (isRateLimited(key, TOKEN_PAGE_LIMIT, TOKEN_PAGE_WINDOW)) {
       return new NextResponse('Too many requests', { status: 429, headers: { 'Retry-After': '60' } })
     }

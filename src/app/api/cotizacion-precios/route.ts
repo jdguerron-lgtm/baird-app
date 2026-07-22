@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     const { data: sol, error: solErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, es_garantia, cotizacion, siguiente_paso')
+      .select('id, estado, es_garantia, cotizacion, siguiente_paso, recargo_weekend_aplicado')
       .eq('id', solicitudId)
       .single()
 
@@ -98,8 +98,11 @@ export async function POST(req: NextRequest) {
       //   totalCliente = costoTecnico × 1.13 (utilidad Baird) × 1.19 (IVA)
       // El IVA se aplica sobre la venta completa (costo + utilidad) para que
       // la factura DIAN cuadre. Ver src/lib/constants/tarifas/particular.ts.
+      // Recargo finde/festivo (2026-07-21): persistido al confirmar horario —
+      // la cotización lo incorpora (cliente paga recargo + IVA; técnico 90%).
+      const recargoBruto = sol.recargo_weekend_aplicado ?? 0
       const costoTecnico = manoObra + repuestosTotal
-      const tarifa = calcularTarifaParticular({ costoTecnico })
+      const tarifa = calcularTarifaParticular({ costoTecnico, recargoBruto })
 
       const cotizacionData: CotizacionReparacion = {
         ...(cotPrev as CotizacionReparacion),
@@ -121,6 +124,7 @@ export async function POST(req: NextRequest) {
         base_venta: tarifa.baseVenta,
         iva_venta: tarifa.ivaCliente,
         margen_baird: tarifa.margenBaird,
+        recargo_weekend: recargoBruto,
         tiempo_entrega: tiempoEntrega,
         pendiente_precio: false,
         pricing_set_at: new Date().toISOString(),
@@ -131,7 +135,8 @@ export async function POST(req: NextRequest) {
         .update({
           cotizacion: cotizacionData,
           estado: 'cotizacion_enviada',
-          pago_tecnico: costoTecnico, // lo que recibe el técnico (sin IVA ni margen)
+          // Neto al técnico: su costo íntegro + 90% del recargo finde/festivo.
+          pago_tecnico: tarifa.pagoTecnicoTotal,
         })
         .eq('id', sol.id)
         .eq('estado', 'pendiente_pricing')

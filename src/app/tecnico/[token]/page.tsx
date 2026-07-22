@@ -10,6 +10,7 @@ import { trackError } from '@/lib/utils/track-error'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
+import QrPagosBaird from '@/components/ui/QrPagosBaird'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
 interface Tecnico {
@@ -191,6 +192,10 @@ export default function PortalTecnicoPage() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* QR de pagos Baird (Bre-B) — a la mano para cobrar en sitio.
+            Se oculta solo si public/qr-pagos-baird.png no existe aún. */}
+        <QrPagosBaird />
+
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 mb-6">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">

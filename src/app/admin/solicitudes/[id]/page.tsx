@@ -945,6 +945,7 @@ export default function SolicitudDetalle() {
                           solicitud.tipo_solicitud,
                           solicitud.es_garantia,
                           (solicitud as unknown as { cotizacion?: { total?: number | null } | null }).cotizacion,
+                          (solicitud as unknown as { recargo_weekend_aplicado?: number | null }).recargo_weekend_aplicado,
                         ))} COP
                         {/* Neto que recibe el técnico (catálogo ÷ 1.3447 × 0.8, $35k fijo diagnóstico, o costo cotizado). */}
                         <span className="block text-xs font-normal text-gray-500 mt-0.5">

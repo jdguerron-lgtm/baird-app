@@ -55,7 +55,7 @@ export default function SolicitudesAdmin() {
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado')
           .order('created_at', { ascending: false })
 
         if (filtro !== 'todos') {
@@ -96,7 +96,7 @@ export default function SolicitudesAdmin() {
           ...s,
           estado: s.estado ?? 'pendiente',
           pago_tecnico: s.pago_tecnico ?? 0,
-          precio_cliente: precioClienteServicio(s.tipo_equipo, s.tipo_solicitud, s.es_garantia, s.cotizacion),
+          precio_cliente: precioClienteServicio(s.tipo_equipo, s.tipo_solicitud, s.es_garantia, s.cotizacion, s.recargo_weekend_aplicado),
           tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) : undefined,
         }))
 

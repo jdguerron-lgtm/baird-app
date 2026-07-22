@@ -87,15 +87,17 @@ Si el técnico no cumple TA, **no hay bono** (cualquier fila).
 
 **Días de solución** se cuentan desde `created_at` hasta el momento en que la solicitud entra a `completada`, **pausando el contador mientras el estado es `esperando_repuesto`** (porque depende de Baird/MABE, no del técnico).
 
-### Recargo fin de semana
+### Recargo fin de semana y festivos
 
-Se aplica si el `horario_confirmado` por el cliente cae **sábado o domingo**. Es predecible para el técnico desde que el cliente confirma horario.
+Se aplica si el `horario_confirmado` por el cliente cae **sábado, domingo o festivo colombiano** (cambio 2026-07-22: antes solo sáb/dom; los festivos se computan con la Ley Emiliani en `src/lib/utils/festivos.ts`). Es predecible para el técnico desde que el cliente confirma horario.
 
 | Complejidad | Recargo |
 |---|---|
 | Baja | $5,000 |
 | Media | $6,000 |
 | Alta | $7,000 |
+
+> **Fix 2026-07-22:** `esFinDeSemana()` recibía el texto español de `horario_confirmado` ("sábado, 25 de julio · 8am-12pm") y `new Date(texto)` daba Invalid Date → el recargo **nunca** se detectaba en las pantallas del técnico. Ahora `fechaDeHorario()` (mabe.ts) acepta ISO/Date y cae a `parsearFechaVisita` para el texto canónico, y evalúa el día calendario en TZ America/Bogota.
 
 ### Reparto Baird ↔ Técnico (2026-05-12)
 
@@ -200,11 +202,29 @@ Internamente la base + IVA se calcula con `calcularBaseSinIva()` y `calcularIvaI
 
 Entre 2026-05-07 y 2026-05-10 el flujo particular obligaba al admin a fijar `mano_obra` y `precio_unitario` por SKU antes de notificar al cliente. **Con el modelo nuevo el técnico ingresa su `costo_total` y el sistema calcula automáticamente** el total al cliente con IVA + margen. El gate admin se mantiene **solo para garantía con `esperar_repuesto`** (ahí el admin debe fijar `tiempo_entrega` porque MABE no lo computa).
 
+### Recargo de fin de semana y festivos — particular (2026-07-22)
+
+Si el horario confirmado de un servicio **particular** cae **sábado, domingo o festivo colombiano**, aplica un recargo con el **mismo reparto que garantía** (Baird 10%, técnico 90%), usando la tarifa **media** del tarifario MABE porque particular no tiene complejidad. A diferencia de garantía (paga MABE), aquí **lo paga el cliente** — avisado desde `/solicitar` con copy amable al elegir un horario de finde ("también lo cubrimos, tiene un pequeño recargo") y el slot sigue seleccionable.
+
+```
+Recargo bruto              = $6.000  (= RECARGO_FIN_DE_SEMANA.media de garantía)
+Cliente paga               = $6.000 × 1.19 = $7.140   (entra a la base gravable DIAN)
+Técnico recibe             = $6.000 × 0.90 = $5.400
+Baird captura              = $600
+```
+
+- **Aplica una vez por solicitud, a todo servicio particular**: tarifa fija (mantenimiento/filtro), visita de diagnóstico y reparación cotizada.
+- **Persistencia:** `solicitudes_servicio.recargo_weekend_aplicado` guarda el bruto aplicado (0 o 6000) — libro mayor para que reagendar no duplique ni deje recargo fantasma. `pago_tecnico` ya incluye los $5.400.
+- **Sincronización:** `sincronizarRecargoFinDeSemana()` (`src/lib/services/recargo.service.ts`) corre tras cada cambio de fecha de visita (confirmar horario, técnico elige horario al aceptar, reagendamiento cliente/admin), **solo en estados pre-cotización** (`pendiente_horario`/`notificada`/`asignada`) — después de cotizar, el total comunicado al cliente no se mueve retroactivamente.
+- **Cotización:** `/api/diagnostico` y `/api/cotizacion-precios` leen `recargo_weekend_aplicado` y lo pasan a `calcularTarifaParticular({ costoTecnico, recargoBruto })` — el total al cliente sube $7.140 y el JSONB `cotizacion` audita `recargo_weekend`.
+- **Precio derivado:** `precioClienteServicio(..., recargoWeekendAplicado)` suma $7.140 en la rama catálogo (la rama cotización ya lo trae en `total`).
+- **Festivos:** `src/lib/utils/festivos.ts` computa el calendario colombiano (Ley Emiliani + Pascua) — el mismo módulo que ahora usa garantía.
+
 ### Implementación
 
 - Constantes y cálculo: `src/lib/constants/tarifas/particular.ts`
-- Función principal: `calcularTarifaParticular({ costoTecnico })` → `{ costoTecnico, margenBaird, baseVenta, ivaCliente, totalCliente }`
-- Constantes: `IVA_TARIFA = 0.19` (`src/types/solicitud.ts`), `MARGEN_BAIRD_PARTICULAR = 0.13`, `MULTIPLICADOR_PARTICULAR = 1.3447`, `PAGO_TECNICO_DIAGNOSTICO = 35000`, `FACTOR_PAGO_TECNICO_TARIFA_FIJA = 0.8` (solo tarifa fija de catálogo)
+- Función principal: `calcularTarifaParticular({ costoTecnico, recargoBruto? })` → `{ costoTecnico, margenBaird, recargoBruto, recargoTecnico, pagoTecnicoTotal, baseVenta, ivaCliente, totalCliente }`
+- Constantes: `IVA_TARIFA = 0.19` (`src/types/solicitud.ts`), `MARGEN_BAIRD_PARTICULAR = 0.13`, `MULTIPLICADOR_PARTICULAR = 1.3447`, `PAGO_TECNICO_DIAGNOSTICO = 35000`, `FACTOR_PAGO_TECNICO_TARIFA_FIJA = 0.8` (solo tarifa fija de catálogo), `RECARGO_FIN_DE_SEMANA_PARTICULAR = 6000` (técnico $5.400 / cliente $7.140)
 
 ### Ajuste manual del valor al cliente (admin, 2026-05-30)
 
@@ -243,7 +263,7 @@ Detalle en [public/guia-pagos.html](../public/guia-pagos.html) (guía del técni
 
 **Dos conceptos, dos lecturas:**
 - **Pago al técnico (neto):** se lee directo de `pago_tecnico`. Lo usan el portal del técnico (`/tecnico/[token]`, `/aceptar/[token]`, completar), las plantillas WhatsApp al técnico y la columna "Pago técnico neto" del export. Consistente en todos los flujos particulares (tarifa fija o cotización libre).
-- **Precio al cliente:** se **deriva** con `precioClienteServicio(tipo_equipo, tipo_solicitud, es_garantia, cotizacion)` — devuelve `cotizacion.total` si existe (Reparación cotizada o ajuste de admin) o el catálogo si no (tarifa fija). Lo usan la tarjeta de `/solicitar`, las plantillas/`tecnico_asignado_particular_v1` al cliente, `/confirmar/[token]`, las vistas admin y la columna "Valor al cliente" del export. **No se persiste una columna aparte** — siempre es derivable (catálogo es función pura de equipo×tipo, y cotización ya guarda el total al cliente).
+- **Precio al cliente:** se **deriva** con `precioClienteServicio(tipo_equipo, tipo_solicitud, es_garantia, cotizacion, recargo_weekend_aplicado)` — devuelve `cotizacion.total` si existe (Reparación cotizada o ajuste de admin; ya incluye el recargo finde) o el catálogo + recargo finde con IVA si no (tarifa fija). Lo usan la tarjeta de `/solicitar`, las plantillas/`tecnico_asignado_particular_v1` al cliente, `/confirmar/[token]`, las vistas admin y la columna "Valor al cliente" del export. **No se persiste una columna aparte** — siempre es derivable (catálogo es función pura de equipo×tipo, y cotización ya guarda el total al cliente).
 
 **Cambio de filtro** (agregado 2026-05-29): precio fijo todo-incluido de **$180.000 COP** al cliente — cubre el **filtro (repuesto)**, la mano de obra y el IVA 19% (base $151.261 + IVA $28.739). El técnico recibe **$107.087 neto** desde 2026-07-09 (de ahí sale el filtro; entre 2026-07-05 y 2026-07-09 era $133.859). Solo aplica en flujo particular (`es_garantia=false`); en garantía siempre es 0. La tarjeta de precio en `/solicitar` lo muestra como "Filtro incluido" con desglose de IVA para facturación DIAN.
 

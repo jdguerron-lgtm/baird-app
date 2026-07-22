@@ -71,7 +71,7 @@ export default function ConfirmarServicioPage() {
         querySupabase(() =>
           supabase
             .from('solicitudes_servicio')
-            .select('id, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, es_garantia, cotizacion')
+            .select('id, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, es_garantia, cotizacion, recargo_weekend_aplicado')
             .eq('id', evidencia.solicitud_id)
             .single()
         ),
@@ -109,6 +109,7 @@ export default function ConfirmarServicioPage() {
             sol.tipo_solicitud,
             sol.es_garantia,
             sol.cotizacion,
+            sol.recargo_weekend_aplicado,
           ),
         },
         tecnico: tec,

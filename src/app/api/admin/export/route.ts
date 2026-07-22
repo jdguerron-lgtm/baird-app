@@ -226,6 +226,7 @@ export async function POST(req: NextRequest) {
               String(s.tipo_solicitud ?? ''),
               Boolean(s.es_garantia),
               cotizacion,
+              (s.recargo_weekend_aplicado as number | null) ?? null,
             ),
         'Horario sugerido 1': s.horario_visita_1,
         'Horario sugerido 2': s.horario_visita_2,

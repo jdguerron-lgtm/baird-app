@@ -35,6 +35,8 @@ import {
   calcularIvaIncluido,
 } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
+import { esFinDeSemana } from '@/lib/constants/tarifas/mabe'
+import { RECARGO_FIN_DE_SEMANA_PARTICULAR_CLIENTE } from '@/lib/constants/tarifas/particular'
 import { trackLeadConversion } from '@/lib/analytics/googleAds'
 import { trackGaLead } from '@/lib/analytics/googleAnalytics'
 
@@ -73,6 +75,14 @@ export default function SolicitarServicio() {
   const [aceptaTyc, setAceptaTyc] = useState(false)
 
   const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()
+
+  // Recargo finde/festivo particular (2026-07-21): la opción 1 es la que se
+  // auto-agenda al enviar (fallback opción 2). Si cae sábado, domingo o
+  // festivo, el total al cliente sube RECARGO_FIN_DE_SEMANA_PARTICULAR_CLIENTE
+  // ($6.000 + IVA). esFinDeSemana parsea el formato del picker e incluye
+  // festivos colombianos. Garantía nunca paga recargo (cubre la marca).
+  const recargoFinde = !formData.es_garantia && esFinDeSemana(formData.horario_visita_1)
+  const recargoCliente = recargoFinde ? RECARGO_FIN_DE_SEMANA_PARTICULAR_CLIENTE : 0
 
   const handleUseLocation = async () => {
     if (!navigator.geolocation) {
@@ -455,6 +465,28 @@ export default function SolicitarServicio() {
                       />
                     </div>
 
+                    {/* ── Aviso de recargo finde/festivo (solo particular) ── */}
+                    {!formData.es_garantia && (
+                      recargoFinde ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2.5">
+                          <span className="text-lg leading-none mt-0.5">📅</span>
+                          <p className="text-xs text-amber-800">
+                            Elegiste un horario de <strong>fin de semana o festivo</strong> — ¡también lo
+                            cubrimos! Perfecto si prefieres estar en casa. Solo tiene un pequeño recargo de{' '}
+                            <strong>${formatCOP(RECARGO_FIN_DE_SEMANA_PARTICULAR_CLIENTE)} COP</strong> (IVA
+                            incluido), que ya sumamos al total de abajo.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 px-1">
+                          💡 ¿Prefieres tu servicio un <strong>sábado, domingo o festivo</strong> para estar en
+                          casa? También los cubrimos — solo tienen un pequeño recargo de{' '}
+                          ${formatCOP(RECARGO_FIN_DE_SEMANA_PARTICULAR_CLIENTE)} COP (IVA incluido) cuando tu
+                          visita queda agendada en uno de esos días.
+                        </p>
+                      )
+                    )}
+
                     {/* ── Tarjeta de precio (calculado automáticamente) ── */}
                     {formData.es_garantia ? (
                       <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
@@ -481,7 +513,7 @@ export default function SolicitarServicio() {
                                 Mantenimiento {formData.tipo_equipo}
                               </p>
                               <p className="text-2xl font-bold text-green-700 mt-0.5">
-                                ${formatCOP(formData.pago_tecnico)} <span className="text-sm font-medium text-green-600">COP</span>
+                                ${formatCOP(formData.pago_tecnico + recargoCliente)} <span className="text-sm font-medium text-green-600">COP</span>
                               </p>
                             </div>
                           </div>
@@ -500,9 +532,15 @@ export default function SolicitarServicio() {
                             <span>IVA ({Math.round(IVA_TARIFA * 100)}%)</span>
                             <span className="font-medium tabular-nums">${formatCOP(calcularIvaIncluido(formData.pago_tecnico))}</span>
                           </div>
+                          {recargoFinde && (
+                            <div className="flex justify-between text-amber-700">
+                              <span>Recargo fin de semana/festivo (IVA incl.)</span>
+                              <span className="font-medium tabular-nums">${formatCOP(recargoCliente)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between border-t border-green-200 pt-1 mt-1 text-green-800 font-semibold">
                             <span>Total a pagar</span>
-                            <span className="tabular-nums">${formatCOP(formData.pago_tecnico)}</span>
+                            <span className="tabular-nums">${formatCOP(formData.pago_tecnico + recargoCliente)}</span>
                           </div>
                         </div>
 
@@ -521,7 +559,7 @@ export default function SolicitarServicio() {
                                 Cambio de filtro {formData.tipo_equipo}
                               </p>
                               <p className="text-2xl font-bold text-teal-700 mt-0.5">
-                                ${formatCOP(formData.pago_tecnico)} <span className="text-sm font-medium text-teal-600">COP</span>
+                                ${formatCOP(formData.pago_tecnico + recargoCliente)} <span className="text-sm font-medium text-teal-600">COP</span>
                               </p>
                             </div>
                           </div>
@@ -540,9 +578,15 @@ export default function SolicitarServicio() {
                             <span>IVA ({Math.round(IVA_TARIFA * 100)}%)</span>
                             <span className="font-medium tabular-nums">${formatCOP(calcularIvaIncluido(formData.pago_tecnico))}</span>
                           </div>
+                          {recargoFinde && (
+                            <div className="flex justify-between text-amber-700">
+                              <span>Recargo fin de semana/festivo (IVA incl.)</span>
+                              <span className="font-medium tabular-nums">${formatCOP(recargoCliente)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between border-t border-teal-200 pt-1 mt-1 text-teal-800 font-semibold">
                             <span>Total a pagar</span>
-                            <span className="tabular-nums">${formatCOP(formData.pago_tecnico)}</span>
+                            <span className="tabular-nums">${formatCOP(formData.pago_tecnico + recargoCliente)}</span>
                           </div>
                         </div>
 
@@ -562,7 +606,7 @@ export default function SolicitarServicio() {
                                 {formData.tipo_solicitud} — visita técnica
                               </p>
                               <p className="text-2xl font-bold text-blue-700 mt-0.5">
-                                ${formatCOP(TARIFA_DIAGNOSTICO)} <span className="text-sm font-medium text-blue-600">COP</span>
+                                ${formatCOP(TARIFA_DIAGNOSTICO + recargoCliente)} <span className="text-sm font-medium text-blue-600">COP</span>
                               </p>
                             </div>
                           </div>
@@ -581,9 +625,15 @@ export default function SolicitarServicio() {
                             <span>IVA ({Math.round(IVA_TARIFA * 100)}%)</span>
                             <span className="font-medium tabular-nums">${formatCOP(calcularIvaIncluido(TARIFA_DIAGNOSTICO))}</span>
                           </div>
+                          {recargoFinde && (
+                            <div className="flex justify-between text-amber-700">
+                              <span>Recargo fin de semana/festivo (IVA incl.)</span>
+                              <span className="font-medium tabular-nums">${formatCOP(recargoCliente)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between border-t border-blue-200 pt-1 mt-1 text-blue-800 font-semibold">
                             <span>Total visita</span>
-                            <span className="tabular-nums">${formatCOP(TARIFA_DIAGNOSTICO)}</span>
+                            <span className="tabular-nums">${formatCOP(TARIFA_DIAGNOSTICO + recargoCliente)}</span>
                           </div>
                         </div>
 

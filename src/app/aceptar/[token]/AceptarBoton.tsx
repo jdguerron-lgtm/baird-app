@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { formatCOP } from '@/lib/utils/format'
+import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
 
 interface SolicitudInfo {
   tipo_equipo: string
@@ -31,20 +32,58 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
   const [estado, setEstado] = useState<'idle' | 'procesando' | 'ganado' | 'tomado'>(
     yaAsignada ? 'tomado' : 'idle'
   )
+  const [errorHorario, setErrorHorario] = useState<string | null>(null)
 
-  // El cliente ya eligió el horario; el técnico solo lo acepta.
-  const horarioCliente = solicitud.horario_confirmado || solicitud.horario_visita_1 || 'Por coordinar'
+  const horarioConfirmadoCliente = solicitud.horario_confirmado?.trim() || null
+
+  // Horarios entre los que el técnico puede escoger: el ya confirmado por el
+  // cliente + las opciones que propuso en el formulario (horario_visita_1/2),
+  // sin duplicados. Opciones cuya fecha ya no es agendable (hoy o antes, TZ
+  // Colombia) se descartan; texto libre no parseable se conserva (el server
+  // también lo admite). Lazy init: el filtro lee el reloj una sola vez.
+  const [opcionesHorario] = useState<string[]>(() => {
+    const manana = fechaColombiaMasDias(1)
+    const candidatos = [
+      horarioConfirmadoCliente,
+      solicitud.horario_visita_1?.trim(),
+      solicitud.horario_visita_2?.trim(),
+    ].filter((h): h is string => !!h)
+    return [...new Set(candidatos)].filter(h => {
+      if (h === horarioConfirmadoCliente) return true
+      const fecha = parsearFechaVisita(h)
+      if (!fecha) return true
+      return fechaColombiaYMD(new Date(fecha)) >= manana
+    })
+  })
+  const [horarioElegido, setHorarioElegido] = useState<string>(
+    () => horarioConfirmadoCliente ?? opcionesHorario[0] ?? ''
+  )
+
+  const horarioCliente = horarioConfirmadoCliente || solicitud.horario_visita_1 || 'Por coordinar'
 
   const aceptar = async () => {
     setEstado('procesando')
+    setErrorHorario(null)
     try {
       const res = await fetch('/api/whatsapp/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({
+          token,
+          ...(horarioElegido ? { horarioSeleccionado: horarioElegido } : {}),
+        }),
       })
       const result = await res.json()
-      setEstado(result.ganado ? 'ganado' : 'tomado')
+      if (result.ganado) {
+        setEstado('ganado')
+      } else if (result.reintentar) {
+        // El horario elegido no pasó la validación de agenda — el servicio
+        // sigue disponible: volver a idle para que escoja el otro horario.
+        setErrorHorario(result.mensaje ?? 'Ese horario ya no está disponible. Elige el otro horario.')
+        setEstado('idle')
+      } else {
+        setEstado('tomado')
+      }
     } catch {
       setEstado('tomado')
     }
@@ -120,12 +159,56 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
               </div>
             </div>
 
-            {/* Schedule chosen by the customer — read-only */}
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
-              <p className="text-xs text-blue-700 uppercase tracking-wide mb-1 font-semibold">📅 Horario confirmado por el cliente</p>
-              <p className="text-base font-bold text-blue-900">{horarioCliente}</p>
-              <p className="text-xs text-blue-700 mt-1">El cliente ya seleccionó este horario. Si no puedes cumplirlo, no aceptes.</p>
-            </div>
+            {/* Schedule — selectable between the client's proposed options
+                (2026-07-21). Read-only when only one option exists. */}
+            {opcionesHorario.length > 1 && estado !== 'ganado' && estado !== 'tomado' ? (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                <p className="text-xs text-blue-700 uppercase tracking-wide mb-1 font-semibold">📅 Elige el horario de la visita</p>
+                <p className="text-xs text-blue-700 mb-3">El cliente propuso estos horarios. Escoge el que puedas cumplir.</p>
+                <div className="space-y-2">
+                  {opcionesHorario.map(opcion => {
+                    const seleccionado = opcion === horarioElegido
+                    return (
+                      <button
+                        key={opcion}
+                        type="button"
+                        onClick={() => { setHorarioElegido(opcion); setErrorHorario(null) }}
+                        className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-colors ${
+                          seleccionado
+                            ? 'border-blue-600 bg-white'
+                            : 'border-blue-200 bg-blue-100/50 hover:border-blue-400'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className={`h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                            seleccionado ? 'border-blue-600' : 'border-blue-300'
+                          }`}>
+                            {seleccionado && <span className="h-2 w-2 rounded-full bg-blue-600" />}
+                          </span>
+                          <span className="flex-1">
+                            <span className={`block text-sm font-bold ${seleccionado ? 'text-blue-900' : 'text-blue-800'}`}>
+                              {opcion}
+                            </span>
+                            {opcion === horarioConfirmadoCliente && (
+                              <span className="text-[10px] font-semibold text-blue-600">Preferido por el cliente</span>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-blue-700 mt-2">Si no puedes cumplir ninguno, no aceptes.</p>
+              </div>
+            ) : (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                <p className="text-xs text-blue-700 uppercase tracking-wide mb-1 font-semibold">📅 Horario confirmado por el cliente</p>
+                <p className="text-base font-bold text-blue-900">{estado === 'ganado' ? (horarioElegido || horarioCliente) : horarioCliente}</p>
+                {estado === 'idle' && (
+                  <p className="text-xs text-blue-700 mt-1">El cliente ya seleccionó este horario. Si no puedes cumplirlo, no aceptes.</p>
+                )}
+              </div>
+            )}
 
             {/* Payment highlight */}
             <div className="bg-green-50 border-2 border-green-200 rounded-xl p-5 text-center">
@@ -156,12 +239,19 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
 
           {/* Action states */}
           {estado === 'idle' && (
-            <button
-              onClick={aceptar}
-              className="w-full font-bold py-4 px-6 rounded-xl text-base transition-all shadow-sm bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white"
-            >
-              Aceptar este servicio
-            </button>
+            <>
+              {errorHorario && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
+                  <p className="text-sm text-amber-800 font-medium">⚠️ {errorHorario}</p>
+                </div>
+              )}
+              <button
+                onClick={aceptar}
+                className="w-full font-bold py-4 px-6 rounded-xl text-base transition-all shadow-sm bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white"
+              >
+                Aceptar este servicio
+              </button>
+            </>
           )}
 
           {estado === 'procesando' && (
@@ -178,6 +268,11 @@ export default function AceptarBoton({ token, solicitud, tecnicoNombre, yaAsigna
             <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
               <div className="text-5xl mb-3">🎉</div>
               <p className="text-xl font-bold text-green-700">¡Servicio asignado!</p>
+              {(horarioElegido || horarioCliente) && (
+                <p className="text-sm font-semibold text-slate-800 mt-2">
+                  📅 Visita: {horarioElegido || horarioCliente}
+                </p>
+              )}
               <p className="text-gray-500 text-sm mt-2">
                 Recibirás los datos completos del cliente por WhatsApp ahora mismo.
               </p>

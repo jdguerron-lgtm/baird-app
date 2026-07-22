@@ -155,6 +155,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/solicitar` | POST | Create request + send schedule selection | Both |
 | `/api/confirmar-horario` | POST | Customer confirms schedule, triggers tech notification. Valida agenda (`validarHorarioAgendable`): mínimo mañana + cupo `MAX_RESERVAS_POR_FRANJA` (2) por slot día+franja | Both |
 | `/api/disponibilidad-horario` | GET | Público (`?fecha=YYYY-MM-DD`): franjas llenas del día para que los selectores del cliente las desactiven. Solo agregados, sin PII. El guard real es server-side en la confirmación (`agenda.service`) | Both |
+| `/api/tienda/buscar` | GET | Público (`?q=2611`): proxy de la búsqueda predictiva de la tienda Shopify (`suggest.json` + SKU real vía `/products/{handle}.js`) — devuelve `{productos:[{titulo,sku,precio,disponible,url,imagen}]}`. Usado por `ProductosNecesariosForm`: el técnico toca "Usar" y la fila se llena sola (SKU, descripción, foto del catálogo). Fail-open (`{productos:[]}`), cache 5 min por query | Both |
 | `/api/diagnostico` | POST | Save diagnosis + oath + siguiente_paso (4 options) | Both |
 | `/api/aprobar-cotizacion` | POST | Customer approves/rejects quote | Non-warranty only |
 | `/api/completar-servicio` | POST | Tech marks service complete | Both |

@@ -170,6 +170,14 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `horario`, `telefono_tecnico`, `tarifa_diagnostico`, `anticipo`
 - **Propósito**: avisar al cliente + recordar tarifa diagnóstico + anticipo.
 
+#### `pago_anticipo_cliente_v1` (nueva 2026-07-21 — subida a Meta, pendiente APPROVED)
+- **Disparo**: `procesarAceptacion()` cuando `es_garantia=false` y `tipo_solicitud` es `Diagnóstico` o `Reparación`, justo después de `tecnico_asignado_particular_v1`
+- **Destino**: cliente
+- **Body** (2 params): `cliente`, `anticipo`
+- **Botón URL FIJA**: `https://tienda.bairdservice.com/products/diagnostico-linea-blanca-copia` — display "Pagar anticipo" (producto Shopify "Diagnostico Linea Blanca (Anticipo)", $42.000)
+- **Propósito**: cerrar el gap de recaudo — `tecnico_asignado_particular_v1` anuncia el monto del anticipo pero el link de pago solo existía en la pantalla de éxito de `/solicitar`. No se envía en Mantenimiento/Cambio de filtro porque el producto de la tienda es el anticipo fijo de $42.000 (50% de `TARIFA_DIAGNOSTICO`).
+- **Nota**: hasta que Meta la apruebe, el envío falla y queda en el log (`procesarAceptacion → pago_anticipo_cliente_v1`) — es best-effort y no bloquea la asignación.
+
 ### Post-diagnóstico (cliente decide)
 
 #### `verificar_siguiente_paso_v2`

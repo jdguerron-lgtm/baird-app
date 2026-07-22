@@ -248,6 +248,10 @@ export default function SupervisorSolicitudes() {
                     <td className="px-5 py-3">
                       <Link
                         href={`/supervisor/${token}/${s.id}`}
+                        // Sin prefetch: con N filas visibles Next.js dispararía N
+                        // requests al detalle que cuentan contra el rate limit
+                        // del middleware (429 visto en prod 2026-07-17).
+                        prefetch={false}
                         className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
                       >
                         Ver detalle →

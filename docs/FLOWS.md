@@ -115,10 +115,21 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
                                   ▼  (un técnico hace click)
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 4. ACEPTACIÓN ATÓMICA                                                    │
-│ procesarAceptacion(token) en whatsapp.service.ts:380-660                 │
+│ procesarAceptacion(token, horarioSeleccionado?) en whatsapp.service.ts   │
+│                                                                           │
+│ 2026-07-21: en /aceptar el técnico puede ESCOGER entre los horarios      │
+│ propuestos por el cliente (horario_visita_1/2 + el ya confirmado; se     │
+│ ocultan opciones con fecha pasada). Solo se admite un valor de ese       │
+│ conjunto — nunca texto arbitrario. Si elige uno ≠ al confirmado:         │
+│   - validarHorarioAgendable (cupo franja + mínimo mañana); si falla →    │
+│     { ganado:false, reintentar:true } SIN asignar (la UI vuelve a idle   │
+│     para escoger el otro horario)                                        │
+│   - si pasa → el mismo UPDATE atómico también setea horario_confirmado,  │
+│     horario_confirmado_at y fecha_visita_at + evento 'reagendamiento'    │
+│     (actor tecnico) en solicitud_eventos                                 │
 │                                                                           │
 │ UPDATE solicitudes_servicio                                              │
-│   SET tecnico_asignado_id=X, estado='asignada'                           │
+│   SET tecnico_asignado_id=X, estado='asignada' [, horario_confirmado…]   │
 │   WHERE id=Y AND tecnico_asignado_id IS NULL  ← guard atómico            │
 │                                                                           │
 │ Solo el primer técnico gana. Los demás reciben:                          │
@@ -380,6 +391,10 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │ Al cliente:                                                              │
 │ 📩 → CLIENTE: tecnico_asignado_particular_v1                             │
 │   Body: cliente, técnico, equipo, horario, tel, tarifa, anticipo         │
+│ 📩 → CLIENTE: pago_anticipo_cliente_v1 (2026-07-21, solo Diagnóstico/    │
+│   Reparación) — botón "Pagar anticipo" a la tienda Shopify ($42.000).    │
+│   Cierra el gap: antes el link de pago solo vivía en la pantalla de      │
+│   éxito de /solicitar.                                                   │
 │ 📷🪪 → CLIENTE: fotos del técnico (mismo caveat 24h)                     │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
@@ -642,6 +657,7 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | `servicio_asignado_tecnico_v4` | procesarAceptacion — ganador | Técnico ganador |
 | `tecnico_asignado_cliente_v6` | procesarAceptacion (warranty) | Cliente |
 | `tecnico_asignado_particular_v1` | procesarAceptacion (particular) | Cliente |
+| `pago_anticipo_cliente_v1` ⏳ | procesarAceptacion (particular, Diagnóstico/Reparación) — botón a la tienda | Cliente |
 | `solicitud_particular_cliente_v1` | (legacy — verificar uso) | Cliente |
 | `registro_bienvenida_v3` | notificarRegistroTecnico | Técnico recién registrado |
 

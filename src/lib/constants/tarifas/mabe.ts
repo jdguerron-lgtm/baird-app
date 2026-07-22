@@ -14,6 +14,9 @@
  * de soporte, dispute resolution y capital de trabajo (MABE paga NET-30/60).
  */
 
+import { parsearFechaVisita, fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { esFestivoColombiaYMD } from '@/lib/utils/festivos'
+
 export type ComplejidadServicio = 'baja' | 'media' | 'alta'
 
 /**
@@ -252,16 +255,41 @@ export function calcularTarifaMABE(params: {
 }
 
 /**
- * Helper: verifica si un horario confirmado cae en sábado o domingo.
- * `horarioConfirmado` puede ser un ISO string o cualquier formato
- * parseable por `new Date()`. Usa la fecha local del servidor (Bogotá).
+ * Helper: resuelve un horario confirmado a Date.
+ *
+ * Acepta:
+ *   - Date / ISO string (`fecha_visita_at`)
+ *   - Texto canónico español de `horario_confirmado` ("sábado, 25 de julio ·
+ *     8am-12pm") vía `parsearFechaVisita` — FIX 2026-07-21: antes
+ *     `new Date(texto)` daba Invalid Date y el recargo de fin de semana
+ *     nunca se aplicaba cuando el caller pasaba el texto en vez del ISO.
+ */
+export function fechaDeHorario(horario: string | Date | null | undefined): Date | null {
+  if (!horario) return null
+  if (horario instanceof Date) {
+    return Number.isNaN(horario.getTime()) ? null : horario
+  }
+  const directo = new Date(horario)
+  if (!Number.isNaN(directo.getTime())) return directo
+  const parseado = parsearFechaVisita(horario)
+  return parseado ? new Date(parseado) : null
+}
+
+/**
+ * Helper: verifica si un horario confirmado cae en sábado, domingo o festivo
+ * colombiano (día calendario en TZ America/Bogota). Es la condición del
+ * recargo de fin de semana — garantía y particular.
+ *
+ * Cambio 2026-07-21: incluye festivos (Ley Emiliani) — antes solo sáb/dom.
  */
 export function esFinDeSemana(horarioConfirmado: string | Date | null | undefined): boolean {
-  if (!horarioConfirmado) return false
-  const fecha = horarioConfirmado instanceof Date ? horarioConfirmado : new Date(horarioConfirmado)
-  if (Number.isNaN(fecha.getTime())) return false
-  const dia = fecha.getDay() // 0 = Sunday, 6 = Saturday
-  return dia === 0 || dia === 6
+  const fecha = fechaDeHorario(horarioConfirmado)
+  if (!fecha) return false
+  // Día de la semana sobre el día calendario CO (no la TZ del runtime).
+  const ymd = fechaColombiaYMD(fecha)
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dia = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = domingo, 6 = sábado
+  return dia === 0 || dia === 6 || esFestivoColombiaYMD(ymd)
 }
 
 /**

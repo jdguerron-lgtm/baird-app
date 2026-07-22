@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useParams } from 'next/navigation'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
+import type { ChecklistServicio } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -31,6 +33,7 @@ interface Solicitud {
   siguiente_paso: string | null
   siguiente_paso_detalle: string | null
   cotizacion: Record<string, unknown> | null
+  triaje_resultado: Record<string, unknown> | null
   diagnosticado_at: string | null
   fecha_visita_at: string | null
   repuesto_recibido_at: string | null
@@ -51,6 +54,21 @@ interface Evento {
   actor: string | null
   motivo: string | null
   ocurrido_at: string | null
+}
+
+interface Evidencia {
+  id: string
+  fotos: string[]
+  checklist: ChecklistServicio
+  firma_url: string | null
+  gps_lat: number | null
+  gps_lng: number | null
+  completado_at: string
+  confirmado: boolean | null
+  confirmado_at: string | null
+  cliente_comentario: string | null
+  oath_firma: string | null
+  oath_firmado_at: string | null
 }
 
 function fechaHora(iso: string | null): string {
@@ -83,6 +101,7 @@ export default function SupervisorDetalle() {
   const [sol, setSol] = useState<Solicitud | null>(null)
   const [tecnico, setTecnico] = useState<Tecnico | null>(null)
   const [eventos, setEventos] = useState<Evento[]>([])
+  const [evidencia, setEvidencia] = useState<Evidencia | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -108,6 +127,7 @@ export default function SupervisorDetalle() {
         setSol(data.solicitud)
         setTecnico(data.tecnico)
         setEventos(data.eventos ?? [])
+        setEvidencia(data.evidencia ?? null)
       } catch {
         setError('No se pudo cargar la solicitud.')
       }
@@ -230,6 +250,149 @@ export default function SupervisorDetalle() {
           )}
         </Seccion>
       </div>
+
+      {/* Galería completa — fotos de diagnóstico (triaje/cotización) +
+          fotos de completación + firmas, igual que en el detalle admin. */}
+      {(() => {
+        const diagFotosTriaje = (sol.triaje_resultado?.evidencias_diagnostico as string[] | undefined) ?? []
+        const diagFotosCot = (sol.cotizacion?.evidencias_diagnostico as string[] | undefined) ?? []
+        const diagFotos = Array.from(new Set([...diagFotosTriaje, ...diagFotosCot]))
+        const compFotos = evidencia?.fotos ?? []
+        const total = diagFotos.length + compFotos.length + (evidencia?.oath_firma ? 1 : 0) + (evidencia?.firma_url ? 1 : 0)
+        if (total === 0) return null
+
+        return (
+          <div className="mt-4">
+            <Seccion titulo={`Galería del servicio (${total})`}>
+              {diagFotos.length > 0 && (
+                <div className="mb-5">
+                  <h3 className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1.5">
+                    <span>🔍 Diagnóstico</span>
+                    <span className="text-gray-400 font-normal">({diagFotos.length})</span>
+                  </h3>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                    {diagFotos.map((url, i) => (
+                      <a key={`diag-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-purple-400 transition-all">
+                        <Image src={url} alt={`Diagnóstico ${i + 1}`} fill className="object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {compFotos.length > 0 && (
+                <div className="mb-5">
+                  <h3 className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-1.5">
+                    <span>✅ Completación</span>
+                    <span className="text-gray-400 font-normal">({compFotos.length})</span>
+                  </h3>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                    {compFotos.map((url, i) => (
+                      <a key={`comp-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-green-400 transition-all">
+                        <Image src={url} alt={`Completación ${i + 1}`} fill className="object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(evidencia?.oath_firma || evidencia?.firma_url) && (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-500 mb-2">Firmas</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {evidencia?.oath_firma && (
+                      <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                        <p className="text-[10px] text-purple-700 font-semibold uppercase tracking-wide mb-1">Oath técnico</p>
+                        <div className="relative h-20 bg-white rounded">
+                          <Image src={evidencia.oath_firma} alt="Oath técnico" fill className="object-contain" />
+                        </div>
+                        {evidencia.oath_firmado_at && (
+                          <p className="text-[10px] text-gray-400 mt-1">{fechaHora(evidencia.oath_firmado_at)}</p>
+                        )}
+                      </div>
+                    )}
+                    {evidencia?.firma_url && (
+                      <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                        <p className="text-[10px] text-green-700 font-semibold uppercase tracking-wide mb-1">Firma cliente</p>
+                        <div className="relative h-20 bg-white rounded">
+                          <Image src={evidencia.firma_url} alt="Firma cliente" fill className="object-contain" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Seccion>
+          </div>
+        )
+      })()}
+
+      {/* Evidencia del servicio completado (checklist + confirmación del cliente) */}
+      {evidencia && (
+        <div className="mt-4">
+          <Seccion titulo="Evidencia del servicio">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 mb-2">Checklist</h3>
+                <div className="space-y-1.5">
+                  {([
+                    { key: 'diagnostico_realizado', label: 'Diagnóstico realizado' },
+                    { key: 'pieza_reemplazada', label: 'Pieza reemplazada' },
+                    { key: 'prueba_encendido', label: 'Prueba de encendido' },
+                    { key: 'prueba_ciclo_completo', label: 'Prueba de ciclo completo' },
+                    { key: 'limpieza_area', label: 'Limpieza del área' },
+                    { key: 'explicacion_cliente', label: 'Explicación al cliente' },
+                  ] as const).map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-2 text-xs">
+                      <span>{evidencia.checklist[key] ? '✅' : '⬜'}</span>
+                      <span className={evidencia.checklist[key] ? 'text-gray-700' : 'text-gray-400'}>{label}</span>
+                    </div>
+                  ))}
+                  {evidencia.checklist.pieza_detalle && (
+                    <p className="text-xs text-gray-500 ml-6">Pieza: {evidencia.checklist.pieza_detalle}</p>
+                  )}
+                  {evidencia.checklist.notas_tecnico && (
+                    <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded-lg p-2">
+                      <span className="font-semibold">Notas:</span> {evidencia.checklist.notas_tecnico}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="text-xs text-gray-400 space-y-1">
+                  <p>Completado: {fechaHora(evidencia.completado_at)}</p>
+                  {evidencia.gps_lat && evidencia.gps_lng && (
+                    <p>GPS: {evidencia.gps_lat.toFixed(5)}, {evidencia.gps_lng.toFixed(5)}</p>
+                  )}
+                </div>
+
+                <div className={`rounded-lg p-3 ${
+                  evidencia.confirmado === true ? 'bg-green-50 border border-green-200' :
+                  evidencia.confirmado === false ? 'bg-orange-50 border border-orange-200' :
+                  'bg-yellow-50 border border-yellow-200'
+                }`}>
+                  <p className={`text-sm font-semibold ${
+                    evidencia.confirmado === true ? 'text-green-800' :
+                    evidencia.confirmado === false ? 'text-orange-800' :
+                    'text-yellow-800'
+                  }`}>
+                    {evidencia.confirmado === true ? '✅ Cliente confirmó satisfacción' :
+                     evidencia.confirmado === false ? '⚠️ Cliente reportó un problema' :
+                     '⏳ Esperando confirmación del cliente'}
+                  </p>
+                  {evidencia.confirmado_at && (
+                    <p className="text-xs text-gray-500 mt-1">{fechaHora(evidencia.confirmado_at)}</p>
+                  )}
+                  {evidencia.cliente_comentario && (
+                    <p className="text-xs mt-2 bg-white rounded p-2 text-gray-700">{evidencia.cliente_comentario}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Seccion>
+        </div>
+      )}
 
       {sol.cancelado_at && (
         <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">

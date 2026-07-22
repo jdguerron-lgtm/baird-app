@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { enviarVerificacionPasoCliente, enviarCotizacionCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico } from '@/types/solicitud'
-import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
+import { calcularTarifaParticular, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
 
 /**
  * POST /api/diagnostico
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
     // Verify assignment
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
-      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, horario_confirmado_at')
+      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, horario_confirmado_at, recargo_weekend_aplicado')
       .eq('id', solicitudId)
       .eq('tecnico_asignado_id', tecnico.id)
       .single()
@@ -308,11 +308,17 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      // Recargo finde/festivo (2026-07-21): si la visita confirmada cayó en
+      // sábado/domingo/festivo, `recargo_weekend_aplicado` ya fue persistido al
+      // confirmar horario (recargo.service). La cotización lo incorpora: el
+      // cliente paga recargo + IVA y el técnico recibe el 90%.
+      const recargoBruto = sol.recargo_weekend_aplicado ?? 0
+
       // En reparar: ya podemos calcular el total al cliente. En esperar_repuesto:
       // el cálculo final se hace tras admin pricing (precio_unitario por SKU
       // + tiempo_entrega), ahí se invoca calcularTarifaParticular con la suma.
       const tarifa = !necesitaPricingAdmin && costoTecnicoNum > 0
-        ? calcularTarifaParticular({ costoTecnico: costoTecnicoNum })
+        ? calcularTarifaParticular({ costoTecnico: costoTecnicoNum, recargoBruto })
         : null
 
       // Construir cotizacion JSONB. Mantenemos la forma legacy (mano_obra, repuestos,
@@ -327,6 +333,7 @@ export async function POST(req: NextRequest) {
         base_venta: tarifa?.baseVenta ?? 0,
         iva_venta: tarifa?.ivaCliente ?? 0,
         margen_baird: tarifa?.margenBaird ?? 0,
+        recargo_weekend: recargoBruto,
         // Compat con la página de cotización (cliente ve solo total)
         mano_obra: 0,
         repuestos: 0,
@@ -377,7 +384,12 @@ export async function POST(req: NextRequest) {
           triaje_resultado: diagnosticoData,
           cotizacion: cierraSinCotizacion ? null : cotizacionData,
           estado: nuevoEstado,
-          pago_tecnico: costoTecnicoNum, // lo que el técnico recibe íntegro
+          // El técnico recibe íntegro su costo + 90% del recargo finde/festivo
+          // (si la visita cayó en finde). En cierre sin cotización se conserva
+          // el comportamiento previo (no aplica recargo sobre un cierre).
+          pago_tecnico: cierraSinCotizacion
+            ? costoTecnicoNum
+            : costoTecnicoNum + recargoTecnicoDesdeBruto(recargoBruto),
           siguiente_paso: siguientePaso,
           siguiente_paso_detalle: siguientePasoDetalle,
           siguiente_paso_at: diagnosticadoAt.toISOString(),
@@ -435,6 +447,10 @@ export async function POST(req: NextRequest) {
         estado: nuevoEstado,
         cotizacionToken: cierraSinCotizacion ? null : cotizacionToken,
         totalCliente: tarifa?.totalCliente ?? 0,
+        // Neto al técnico (costo + 90% del recargo finde/festivo si aplicó) —
+        // la pantalla de éxito lo muestra tal cual, sin recalcular en cliente.
+        pagoTecnico: tarifa?.pagoTecnicoTotal ?? 0,
+        recargoWeekend: recargoBruto,
         pendiente_pricing: necesitaPricingAdmin,
         // whatsapp_sent: solo true si efectivamente se envió (no en
         // pendiente_pricing, donde esperamos admin).

@@ -191,7 +191,8 @@ export interface CotizacionReparacion {
   costo_tecnico?: number         // lo que recibe el técnico (su input)
   base_venta?: number            // costo_tecnico + margen_baird — base gravable DIAN (desde 2026-07-05)
   iva_venta?: number             // 19% sobre base_venta (desde 2026-07-05)
-  margen_baird?: number          // utilidad Baird (13% del costo_tecnico desde 2026-07-05; antes 10% del subtotal con IVA)
+  margen_baird?: number          // utilidad Baird (13% del costo_tecnico desde 2026-07-05; antes 10% del subtotal con IVA) + 10% del recargo finde
+  recargo_weekend?: number       // recargo finde/festivo BRUTO incorporado al total (0 si no aplica; desde 2026-07-21)
   mano_obra_admin?: number       // mano de obra fijada por admin (flujo esperar_repuesto)
   repuestos_total_admin?: number // suma de subtotales fijados por admin
   subtotal_con_iva?: number      // LEGACY (modelo pre-2026-07-05: costo × 1.19) — solo en cotizaciones viejas
@@ -316,9 +317,13 @@ export function calcularPagoTecnico(
  * Distinto de `pago_tecnico` (lo que recibe el técnico, NETO de IVA + margen).
  *
  * - Si hay cotización con `total > 0` (Reparación tras diagnóstico, o ajuste
- *   manual de admin) → ese total, que ya es `costoTecnico × 1.3447` (utilidad + IVA).
+ *   manual de admin) → ese total, que ya es `costoTecnico × 1.3447` (utilidad + IVA)
+ *   e YA INCLUYE el recargo finde/festivo si aplicó (se incorpora al cotizar).
  * - Si no (tarifa fija: Mantenimiento, Cambio de filtro, o el anticipo de
- *   Diagnóstico/Reparación antes de cotizar) → el precio de catálogo.
+ *   Diagnóstico/Reparación antes de cotizar) → el precio de catálogo
+ *   + recargo finde/festivo con IVA si la visita confirmada cayó en
+ *   sábado/domingo/festivo (`recargoWeekendAplicado` — bruto persistido en
+ *   `solicitudes_servicio.recargo_weekend_aplicado`, cambio 2026-07-21).
  *
  * Ver docs/TARIFAS.md § "Particular".
  */
@@ -330,11 +335,17 @@ export function precioClienteServicio(
   tipoSolicitud: string,
   esGarantia: boolean,
   cotizacion?: { total?: unknown } | null,
+  recargoWeekendAplicado?: number | null,
 ): number {
   const totalCotizacion = cotizacion?.total
   if (typeof totalCotizacion === 'number' && totalCotizacion > 0) return totalCotizacion
   const catalogo = calcularPagoTecnico(tipoEquipo as TipoEquipo, tipoSolicitud as TipoSolicitud, esGarantia)
-  return Number.isFinite(catalogo) ? catalogo : 0
+  if (!Number.isFinite(catalogo) || catalogo <= 0) return 0
+  const recargoBruto = recargoWeekendAplicado ?? 0
+  const recargoCliente = !esGarantia && recargoBruto > 0
+    ? Math.round(recargoBruto * (1 + IVA_TARIFA))
+    : 0
+  return catalogo + recargoCliente
 }
 
 export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico'> {

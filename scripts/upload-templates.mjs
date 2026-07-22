@@ -448,6 +448,46 @@ const TEMPLATES = [
     ],
   },
 
+  // 11b. Link de pago del anticipo de diagnóstico (particular)
+  // Llamado por: procesarAceptacion() justo después de
+  // tecnico_asignado_particular_v1 — solo tipo_solicitud Diagnóstico/
+  // Reparación (el producto Shopify es el anticipo fijo de $42.000 = 50% de
+  // TARIFA_DIAGNOSTICO). URL fija a la tienda (no lleva parámetro).
+  {
+    name: 'pago_anticipo_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Asegura tu visita pagando el anticipo',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, para asegurar tu visita de diagnóstico paga el anticipo de {{2}} COP (50% de la tarifa de diagnóstico).\n\n' +
+          '✅ Si apruebas la reparación, el anticipo se abona al total.\n' +
+          '🔒 Pago seguro en nuestra tienda oficial.\n\n' +
+          'Recuerda: nunca pagues en efectivo directamente al técnico — todo se factura vía Baird Service.',
+        example: {
+          body_text: [['Juan', '42.000']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Pagar anticipo',
+            url: 'https://tienda.bairdservice.com/products/diagnostico-linea-blanca-copia',
+          },
+        ],
+      },
+    ],
+  },
+
   // 12. Cotización al cliente para aprobar (particular)
   // Llamado por: enviarCotizacionCliente() — POST admin pricing
   {

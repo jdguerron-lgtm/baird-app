@@ -42,12 +42,14 @@ const COLUMNAS_SEGURAS = [
   'siguiente_paso_detalle',
   'siguiente_paso_at',
   'cotizacion',
+  'triaje_resultado',
   'diagnosticado_at',
   'fecha_visita_at',
   'repuesto_recibido_at',
   'cancelado_at',
   'motivo_cancelacion',
   'reagendamientos_count',
+  'recargo_weekend_aplicado',
 ].join(', ')
 
 export async function GET(req: NextRequest) {
@@ -99,16 +101,28 @@ export async function GET(req: NextRequest) {
     .eq('solicitud_id', id)
     .order('ocurrido_at', { ascending: false })
 
+  // Evidencia del servicio completado (fotos, checklist, firmas). Lista
+  // explícita de columnas: NUNCA incluir confirmacion_token.
+  const { data: evidencia } = await supabase
+    .from('evidencias_servicio')
+    .select('id, fotos, checklist, firma_url, gps_lat, gps_lng, completado_at, confirmado, confirmado_at, cliente_comentario, oath_firma, oath_firmado_at')
+    .eq('solicitud_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   const precio_cliente = precioClienteServicio(
     sol.tipo_equipo as string,
     sol.tipo_solicitud as string,
     sol.es_garantia as boolean,
     sol.cotizacion as Record<string, unknown> | null,
+    sol.recargo_weekend_aplicado as number | null,
   )
 
   return NextResponse.json({
     solicitud: { ...sol, precio_cliente },
     tecnico,
     eventos: eventos ?? [],
+    evidencia: evidencia ?? null,
   })
 }
