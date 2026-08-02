@@ -179,6 +179,70 @@ const TEMPLATES = [
     ],
   },
 
+  // 5b. Repuesto EN CAMINO (2026-08-02) — el supervisor subió la guía de envío.
+  //     El cliente agenda la visita de finalización (mismo link de
+  //     /reprogramar-repuesto que la v2 de arriba). Mientras Meta no la
+  //     apruebe, enviarRepuestoEnCaminoCliente cae a repuesto_recibido_cliente_v2.
+  //     Llamado por: enviarRepuestoEnCaminoCliente()
+  {
+    name: 'repuesto_en_camino_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          '¡Buenas noticias {{1}}! 📦\n\n' +
+          'El repuesto para tu {{2}} ya fue despachado y va en camino.\n' +
+          '🚚 Guía de envío: {{3}}\n\n' +
+          'Para finalizar la reparación, agenda desde ya la visita del técnico {{4}}.\n\n' +
+          '🗓️ La fecha que elijas es *tentativa*: el técnico la confirmará según su ' +
+          'disponibilidad y coordinará contigo.',
+        example: {
+          body_text: [['María', 'Lavadora Mabe', 'COORD-123456789', 'Pedro Gómez']],
+        },
+      },
+      { type: 'FOOTER', text: 'Toca el botón para agendar la visita' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Agendar visita',
+            url: `${APP_URL}/reprogramar-repuesto/{{1}}`,
+            example: [`${APP_URL}/reprogramar-repuesto/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 5c. Repuesto EN CAMINO — aviso al técnico (2026-08-02). Informativo: la
+  //     fecha de la visita de finalización le llega después vía
+  //     repuesto_recibido_tecnico_v1 cuando el cliente la elige.
+  //     Fallback mientras no esté APPROVED: repuesto_llegado_tecnico_v1.
+  //     Llamado por: enviarRepuestoEnCaminoTecnico()
+  {
+    name: 'repuesto_en_camino_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋\n\n' +
+          '📦 El repuesto para el servicio de {{2}} del cliente {{3}} ya fue despachado y va en camino.\n' +
+          '🚚 Guía de envío: {{4}}\n\n' +
+          'El cliente está agendando la visita de finalización — te avisaremos por aquí ' +
+          'cuando elija la fecha para que la confirmes.',
+        example: {
+          body_text: [['Pedro', 'Lavadora Mabe', 'María Rodríguez', 'COORD-123456789']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
   // 7. Verificación del siguiente paso por el cliente (post-diagnóstico, garantía)
   {
     name: 'verificar_siguiente_paso_v1',

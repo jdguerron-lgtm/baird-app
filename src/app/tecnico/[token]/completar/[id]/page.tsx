@@ -71,6 +71,13 @@ export default function CompletarServicioPage() {
   const cameraVideoInputRef = useRef<HTMLInputElement>(null)
   const galeriaInputRef = useRef<HTMLInputElement>(null)
 
+  // Foto de la placa del producto — OBLIGATORIA también al completar
+  // (2026-08-02): deja constancia del modelo exacto del equipo intervenido.
+  // Entrada propia del formulario, igual que en el diagnóstico.
+  const [fotoPlaca, setFotoPlaca] = useState<File | null>(null)
+  const [fotoPlacaPreview, setFotoPlacaPreview] = useState<string | null>(null)
+  const placaInputRef = useRef<HTMLInputElement>(null)
+
   // Checklist
   const [checklist, setChecklist] = useState<ChecklistServicio>({
     diagnostico_realizado: false,
@@ -211,6 +218,14 @@ export default function CompletarServicioPage() {
     setError(advice) // null si todos pasaron; guía si rechazamos un video grande
   }
 
+  const handlePlacaSelect = (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+    if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
+    setFotoPlaca(file)
+    setFotoPlacaPreview(URL.createObjectURL(file))
+  }
+
   const removePhoto = (idx: number) => {
     const url = fotoPreviews[idx]
     if (url && url !== 'video') URL.revokeObjectURL(url)
@@ -273,6 +288,10 @@ export default function CompletarServicioPage() {
       setError('Sube al menos una foto o video del servicio completado')
       return
     }
+    if (!fotoPlaca) {
+      setError('Toma la foto de la placa del producto (etiqueta con el modelo)')
+      return
+    }
     const checklistItems = [
       checklist.diagnostico_realizado,
       checklist.prueba_encendido,
@@ -333,6 +352,21 @@ export default function CompletarServicioPage() {
           ? `Error subiendo archivos: ${uploadErrors.join(', ')}`
           : 'No se pudo subir ningún archivo. Verifica tu conexión.'
         throw new Error(errMsg)
+      }
+
+      // 1b. Foto de la placa (obligatoria): mismo pipeline, path con prefijo
+      // placa_completado_. Se antepone al array `fotos` para que aparezca en
+      // todas las galerías (admin/supervisor) sin cambios de schema.
+      {
+        const placaFile = await compressImageIfNeeded(fotoPlaca!, { maxDimension: 2560, quality: 0.9 })
+        const placaPath = `${servicio.id}/placa_completado_${stamp}_${rand}.${inferExtension(placaFile)}`
+        const { error: placaErr } = await supabase.storage
+          .from('evidencias-servicio')
+          .upload(placaPath, placaFile, { contentType: placaFile.type || undefined, cacheControl: '3600', upsert: false })
+        if (placaErr) throw new Error(`No se pudo subir la foto de la placa: ${placaErr.message}`)
+        const { data: placaUrlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(placaPath)
+        if (!placaUrlData?.publicUrl) throw new Error('No se pudo obtener la URL de la foto de la placa')
+        fotoUrls.unshift(placaUrlData.publicUrl)
       }
 
       // 2. Upload signature if present
@@ -562,11 +596,52 @@ export default function CompletarServicioPage() {
           </div>
         )}
 
+        {/* 0. Foto de la placa del producto — entrada propia, obligatoria */}
+        <div className="bg-white rounded-xl border-2 border-amber-300 p-4">
+          <h3 className="text-sm font-bold text-slate-900 mb-1">🏷️ Foto de la placa del producto *</h3>
+          <p className="text-xs text-gray-400 mb-3">
+            La etiqueta del fabricante donde se vea claramente el <strong>modelo</strong> del
+            equipo intervenido. Obligatoria para cerrar el servicio.
+          </p>
+          {fotoPlacaPreview ? (
+            <div className="relative w-32 aspect-square rounded-lg overflow-hidden bg-gray-100 border border-amber-200">
+              <Image src={fotoPlacaPreview} alt="Placa del producto" fill className="object-cover" unoptimized />
+              <button
+                onClick={() => {
+                  if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
+                  setFotoPlaca(null)
+                  setFotoPlacaPreview(null)
+                }}
+                className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full text-xs flex items-center justify-center"
+              >
+                X
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => placaInputRef.current?.click()}
+              className="w-full rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 py-4 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
+            >
+              <span className="text-xl mb-0.5">📷</span>
+              <span className="text-[11px] font-semibold text-amber-800">Tomar foto de la placa</span>
+            </button>
+          )}
+          <input
+            ref={placaInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => handlePlacaSelect(e.target.files)}
+          />
+        </div>
+
         {/* 1. Evidencia del servicio (fotos + video opcional) */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="text-sm font-bold text-slate-900 mb-1">Evidencia del servicio</h3>
           <p className="text-xs text-gray-400 mb-3">
-            Equipo funcionando, placa de serie, repuesto, antes/después (máx 6).
+            Equipo funcionando, repuesto, antes/después (máx 6).
             Puedes tomar fotos, grabar un video corto o subir desde la galería.
           </p>
 
@@ -764,6 +839,7 @@ export default function CompletarServicioPage() {
             checklist.explicacion_cliente,
           ].filter(Boolean).length
           const faltantes: string[] = []
+          if (!fotoPlaca) faltantes.push('Toma la foto de la placa del producto (etiqueta con el modelo)')
           if (fotos.length === 0) faltantes.push('Sube al menos una foto o video del servicio completado')
           if (itemsChecklist < 3) faltantes.push(`Marca al menos 3 items del checklist (tienes ${itemsChecklist}/4 obligatorios)`)
           const faltaFirma = !hasFirma
@@ -786,7 +862,7 @@ export default function CompletarServicioPage() {
         {/* Submit */}
         <button
           onClick={handleSubmit}
-          disabled={enviando || fotos.length === 0}
+          disabled={enviando || fotos.length === 0 || !fotoPlaca}
           className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
         >
           {enviando ? (

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { enviarVerificacionPasoCliente, enviarCotizacionCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
+import {
+  enviarVerificacionPasoCliente,
+  enviarCotizacionCliente,
+  enviarEsperandoRepuestoCliente,
+  enviarEsperandoRepuestoTecnico,
+  notificarCambioEstado,
+} from '@/lib/services/whatsapp.service'
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico } from '@/types/solicitud'
 import { calcularTarifaParticular, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
@@ -44,6 +50,9 @@ export async function POST(req: NextRequest) {
       // Precio y tiempo de entrega los fija el equipo Baird desde admin.
       productosNecesarios,
       productosRecomendados,
+      // Foto de la placa del producto (2026-08-02): OBLIGATORIA en ambos
+      // flujos (garantía y particular) — se valida más abajo.
+      fotoPlacaUrl,
     } = body
 
     if (!solicitudId || !portalToken || !diagnostico || !complejidad) {
@@ -87,6 +96,18 @@ export async function POST(req: NextRequest) {
           }))
           .filter((p: ProductoRecomendado) => p.nombre)
       : []
+
+    // Foto de la placa: obligatoria en TODOS los flujos (garantía y
+    // particular). Sin el modelo exacto del equipo no se pueden validar
+    // repuestos ni la garantía. El formulario del técnico ya la exige; este
+    // guard cubre requests directos o clientes desactualizados.
+    const fotoPlaca = esUrlEvidenciaValida(fotoPlacaUrl) ? fotoPlacaUrl : null
+    if (!fotoPlaca) {
+      return NextResponse.json(
+        { error: 'Falta la foto de la placa del producto (etiqueta del fabricante con el modelo). Recarga la página e inténtalo de nuevo.' },
+        { status: 400 },
+      )
+    }
 
     if (siguientePaso === 'esperar_repuesto' && necesarios.length === 0) {
       return NextResponse.json(
@@ -194,6 +215,7 @@ export async function POST(req: NextRequest) {
         productos_necesarios: necesarios,
         productos_recomendados: recomendados,
         evidencias_diagnostico: evidenciaUrls,
+        foto_placa_url: fotoPlaca,
         diagnosticado_at: new Date().toISOString(),
         dias_transcurridos: diasTranscurridos,
       }
@@ -207,10 +229,14 @@ export async function POST(req: NextRequest) {
         diagnosticoData.complejidad_falla = codigoFalla.complejidad
       }
 
-      // GARANTÍA con esperar_repuesto: pasa por admin (debe fijar tiempo_entrega)
-      // antes de notificar al cliente. Otros pasos: directo a verificación.
-      const necesitaPricingAdmin = siguientePaso === 'esperar_repuesto'
-      nuevoEstado = necesitaPricingAdmin ? 'pendiente_pricing' : 'aprobacion_paso_pendiente'
+      // GARANTÍA con esperar_repuesto (2026-08-02): pasa DIRECTO a
+      // esperando_repuesto — se eliminó el gate de admin (pendiente_pricing /
+      // tiempo de entrega) y la aprobación previa del cliente. El supervisor
+      // recibe el requerimiento exacto del repuesto vía notificarCambioEstado
+      // (supervisor_repuesto_garantia_v1) y luego sube la guía de envío desde
+      // su portal (→ repuesto_en_camino). Otros pasos: directo a verificación.
+      const esperaRepuesto = siguientePaso === 'esperar_repuesto'
+      nuevoEstado = esperaRepuesto ? 'esperando_repuesto' : 'aprobacion_paso_pendiente'
       const verificacionToken = crypto.randomUUID()
 
       const { error: updateErr } = await supabase
@@ -236,26 +262,46 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message + hint }, { status: 500 })
       }
 
-      await notificarCambioEstado(sol.id, sol.estado, nuevoEstado)
-
-      // Insertar repuestos pendientes (sin costo ni tiempo — admin los fija)
-      if (siguientePaso === 'esperar_repuesto' && necesarios.length > 0) {
+      // Insertar repuestos pendientes ANTES de notificar: el aviso al
+      // supervisor (supervisor_repuesto_garantia_v1) lee esta tabla para armar
+      // el requerimiento exacto (SKU + descripción + cantidad).
+      if (esperaRepuesto && necesarios.length > 0) {
         const { error: repErr } = await supabase.from('repuestos_pendientes').insert(
           necesarios.map(p => ({
             solicitud_id: sol.id,
             sku: p.sku,
             descripcion: p.descripcion,
+            cantidad: p.cantidad,
             costo: 0,
-            tiempo_estimado: null, // admin lo fija
+            tiempo_estimado: null,
           })),
         )
         if (repErr) console.error('[diagnostico] Error insertando repuestos:', repErr)
       }
 
-      // Solo enviar verificación si NO necesita pricing admin
+      await notificarCambioEstado(sol.id, sol.estado, nuevoEstado)
+
+      // WhatsApp: en esperar_repuesto se avisa YA a cliente y técnico (antes
+      // esperaba pricing admin + aprobación); en el resto va la verificación
+      // del siguiente paso como siempre.
       let waOk = true
       let waError: string | null = null
-      if (!necesitaPricingAdmin) {
+      if (esperaRepuesto) {
+        const rep = necesarios[0]
+        const waResult = await enviarEsperandoRepuestoCliente(
+          sol.id,
+          rep?.sku ?? '—',
+          rep?.descripcion ?? 'Repuesto requerido',
+          'Por confirmar — te avisaremos cuando esté en camino',
+        )
+        waOk = waResult.ok
+        if (!waResult.ok) {
+          waError = waResult.error ?? 'Error desconocido'
+          console.error('[diagnostico] enviarEsperandoRepuestoCliente falló:', waError)
+        }
+        const tecRep = await enviarEsperandoRepuestoTecnico(sol.id)
+        if (!tecRep.ok) console.error('[diagnostico] enviarEsperandoRepuestoTecnico falló:', tecRep.error)
+      } else {
         const waResult = await enviarVerificacionPasoCliente(sol.id)
         waOk = waResult.ok
         if (!waResult.ok) {
@@ -269,8 +315,8 @@ export async function POST(req: NextRequest) {
         flow: 'garantia',
         estado: nuevoEstado,
         verificacion_paso_token: verificacionToken,
-        pendiente_pricing: necesitaPricingAdmin,
-        whatsapp_sent: !necesitaPricingAdmin && waOk,
+        pendiente_pricing: false,
+        whatsapp_sent: waOk,
         whatsapp_error: waError,
       })
     } else {
@@ -348,6 +394,7 @@ export async function POST(req: NextRequest) {
         productos_necesarios: necesarios,
         productos_recomendados: recomendados,
         evidencias_diagnostico: evidenciaUrls,
+        foto_placa_url: fotoPlaca,
         diagnosticado_at: new Date().toISOString(),
         costo_tecnico: costoTecnicoNum,
       }
@@ -419,6 +466,7 @@ export async function POST(req: NextRequest) {
             solicitud_id: sol.id,
             sku: p.sku,
             descripcion: p.descripcion,
+            cantidad: p.cantidad,
             costo: 0,
             tiempo_estimado: null,
           })),

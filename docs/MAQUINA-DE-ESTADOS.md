@@ -24,11 +24,18 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 ```
 1. REQUEST        Customer form (or bulk Excel upload)
                   → Supabase insert (estado: pendiente_horario, horario_token: uuid)
-                  → WhatsApp cliente_seleccion_horario_v2 (CTA → /horario/{token})
-                  → NO tech notification yet
+                  → Desde /solicitar (2026-08-02): AUTO-AGENDA la opción 1 del
+                    formulario (fallback opción 2) vía confirmarHorarioSolicitud —
+                    mismo mecanismo que particular. El formulario ya recogió
+                    fechas + TyC; NO se re-piden por WhatsApp. Salta directo a
+                    'notificada' + horario_confirmado_cliente_v1 + notificarTecnicos.
+                  → Solo carga masiva (Excel sin fechas) o fallback (ambas
+                    opciones sin cupo): WhatsApp cliente_seleccion_horario_v2
+                    (CTA → /horario/{token}), NO tech notification yet ↓
 
-2. SCHEDULE       Customer opens /horario/{token}, picks 1 of 2 horarios
-   CONFIRMATION   → Reads T&C + signs acceptance checkbox
+2. SCHEDULE       (solo camino customer-first: carga masiva / fallback)
+   CONFIRMATION   Customer opens /horario/{token}, picks 1 of 2 horarios
+                  → Reads T&C + signs acceptance checkbox
                   → POST /api/confirmar-horario { token, opcion: 1|2 }
                   → estado: notificada, tyc_aceptados_at, tyc_version, horario_confirmado
                   → notificarTecnicos() sends nueva_solicitud_v4 to matching techs
@@ -47,15 +54,35 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → Picks SIGUIENTE PASO (4 options):
                     a. reparar              → estado: en_proceso (text "trabajando en reparación")
                     b. esperar_repuesto     → estado: esperando_repuesto + SKU obligatorio
-                                              + plantilla esperando_repuesto_cliente_v1
-                                              + insert in repuestos_pendientes
+                                              (DIRECTO desde 2026-08-02: sin pendiente_pricing
+                                              ni aprobación previa del cliente)
+                                              + insert in repuestos_pendientes (sku, desc, cantidad)
+                                              + plantilla esperando_repuesto_cliente_v1 (cliente)
+                                              + esperando_repuesto_tecnico_v1 (técnico, solo garantía)
+                                              + supervisor_repuesto_garantia_v1 (supervisores:
+                                                requerimiento EXACTO — SKU x cant + descripción)
                     c. no_reparable         → estado: finalizado_sin_reparacion (terminal)
                                               + plantilla finalizado_sin_reparacion_v1
                     d. negativa_cliente     → estado: reparacion_rechazada (terminal)
                   → POST /api/diagnostico (incluye oath + siguiente_paso)
                   → GPS ping (fase: 'diagnostico')
 
+4a. GUÍA ENVÍO    Supervisor sube la guía de envío en /supervisor/{token}/{id}
+    (2026-08-02)  → POST /api/supervisor/guia-envio (multipart: archivo + n° guía)
+                  → estado: esperando_repuesto → repuesto_en_camino (atómico)
+                    + guia_envio_url/numero/at/por + reprogramacion_token
+                  → WhatsApp repuesto_en_camino_cliente_v1 al cliente
+                    (botón → /reprogramar-repuesto/{token}: AGENDA la visita de
+                    finalización; fallback repuesto_recibido_cliente_v2)
+                  → WhatsApp repuesto_en_camino_tecnico_v1 al técnico
+                    (fallback repuesto_llegado_tecnico_v1)
+                  → supervisores vía notificarCambioEstado
+                  El agendamiento del cliente pasa por el MISMO mecanismo del
+                  agendamiento inicial (validarHorarioAgendable: franja + cupo)
+                  y queda registrado en horario_confirmado + fecha_visita_at.
+
 4b. PARTS RCV     Admin marks parts as received in /admin/repuestos
+                  (camino alterno si no hubo guía del supervisor)
                   → POST /api/repuesto-recibido
                   → If all parts received: estado → repuesto_recibido
                                            + repuesto_recibido_at = now()
@@ -67,8 +94,9 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 
 4c. REPROGRAM     Customer clicks botón → /reprogramar-repuesto/{reprogramacion_token}
                   → Elige NUEVA fecha (tentativa) + franja
-                  → POST /api/reprogramar-repuesto (UPDATE atómico WHERE estado=repuesto_recibido)
-                  → estado: repuesto_recibido → en_proceso
+                  → POST /api/reprogramar-repuesto (UPDATE atómico WHERE estado
+                    IN (repuesto_en_camino, repuesto_recibido))
+                  → estado: repuesto_en_camino | repuesto_recibido → en_proceso
                   → notificarTecnicoVisitaReprogramada → plantilla repuesto_recibido_tecnico_v1
                     (la fecha es TENTATIVA: el técnico la confirma según disponibilidad)
 
@@ -143,15 +171,13 @@ All payments go through Baird Service. The customer NEVER pays the technician di
 
 **Non-warranty:** The customer pays Baird the quoted total. The diagnostic fee ($84,000 COP — `TARIFA_DIAGNOSTICO`) with 50% advance ($42,000 COP — `ANTICIPO_PORCENTAJE`) is collected before the technician visits; the technician receives a fixed $35,000 for the diagnostic visit (`PAGO_TECNICO_DIAGNOSTICO`, 2026-07-05). Constants in `src/types/solicitud.ts` and `src/lib/constants/tarifas/particular.ts`.
 
-## Admin Pricing Gate (v2 2026-05-10) — solo Garantía + esperar_repuesto
+## Admin Pricing Gate — ELIMINADO para garantía (2026-08-02)
 
-A partir del 2026-05-10, el admin pricing gate aplica **solo** a un caso:
+**Garantía + `esperar_repuesto` ya NO pasa por `pendiente_pricing`** ni por la aprobación previa del cliente: `/api/diagnostico` transiciona DIRECTO a `esperando_repuesto`, notifica al cliente ("tiempo estimado: por confirmar"), al técnico y a los supervisores con el requerimiento exacto del repuesto. El "tiempo de entrega" que antes tipeaba el admin desaparece del flujo — lo reemplaza la **guía de envío del supervisor** (`repuesto_en_camino`). La página `/admin/cotizaciones-pendientes` y `/api/cotizacion-precios` (rama garantía) quedan sin writers nuevos para garantía.
 
-- **Garantía + `esperar_repuesto`**: el admin fija `tiempo_entrega` antes de notificar al cliente. El precio MABE ya está fijo por tarifario (Tipo D, ver `docs/TARIFAS.md`).
+**Particular (v2)** no pasa por admin gate en `reparar`. El técnico ingresa su `costoTecnico` (lo que quiere ganar: mano de obra + repuestos) en el formulario de diagnóstico, y `/api/diagnostico` calcula automáticamente el total al cliente con la fórmula `costoTecnico × 1.13 utilidad Baird × 1.19 IVA` (= × 1.3447, desde 2026-07-05). La cotización se envía al cliente inmediatamente. Ver `docs/TARIFAS.md` § "Particular".
 
-**Particular (v2)** ya **NO** pasa por admin gate. El técnico ingresa su `costoTecnico` (lo que quiere ganar: mano de obra + repuestos) en el formulario de diagnóstico, y `/api/diagnostico` calcula automáticamente el total al cliente con la fórmula `costoTecnico × 1.13 utilidad Baird × 1.19 IVA` (= × 1.3447, desde 2026-07-05). La cotización se envía al cliente inmediatamente. Ver `docs/TARIFAS.md` § "Particular".
-
-**Estado `pendiente_pricing`** — solo se usa hoy para garantía con `esperar_repuesto`. Para particular el flujo va directo a `cotizacion_enviada`.
+**Estado `pendiente_pricing`** — hoy solo se usa en **particular + `esperar_repuesto`** (admin fija precio de repuestos antes de enviar la cotización). Se mantiene en el CHECK por las filas históricas.
 
 **Flujo (v2 2026-05-10):**
 ```
@@ -168,22 +194,16 @@ Diagnóstico técnico
        └── GARANTÍA: solo SKUs + descripción ─→ /api/diagnostico
                               │
                               ├── reparar/no_reparable/negativa → aprobacion_paso_pendiente
-                              └── esperar_repuesto → pendiente_pricing
-                                                           │
-                                                           ▼
-                                          /admin/cotizaciones-pendientes
-                                          (admin fija solo tiempo_entrega)
-                                                           │
-                                                           ▼
-                                                  aprobacion_paso_pendiente
-                                                  → cliente aprueba paso
+                              └── esperar_repuesto → esperando_repuesto (DIRECTO, 2026-08-02)
+                                                     supervisor recibe requerimiento exacto
+                                                     y sube guía → repuesto_en_camino
 ```
 
 **Componentes UI:**
 - `src/components/ui/ProductosNecesariosForm.tsx` — lista de SKUs (link a Serviplus visible para Mabe/GE).
 - `src/components/ui/ProductosRecomendadosForm.tsx` — lista informativa sin precio.
 - `src/app/tecnico/[token]/diagnostico/[id]/page.tsx` — particular: campo "Tu costo total" → muestra desglose IVA + margen + total cliente al técnico (no al cliente).
-- `src/app/admin/cotizaciones-pendientes/page.tsx` — admin fija tiempo_entrega para garantía + esperar_repuesto. Particular ya no pasa por aquí.
+- `src/app/admin/cotizaciones-pendientes/page.tsx` — desde 2026-08-02 solo aplica a particular + esperar_repuesto (garantía ya no pasa por aquí).
 - `src/app/cotizacion/[token]/page.tsx` — cliente ve solo "Total: $X (incluye IVA)" sin desglose.
 
 **Estructura JSONB `cotizacion`** (v2 2026-05-10, con back-compat):
@@ -224,7 +244,7 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 - `/api/confirmar-horario` no se modifica. El reagendamiento usa su propio endpoint que setea `horario_confirmado` directo.
 - La cancelación tardía no se distingue como estado separado; queda como `cancelada` con flag en audit.
 
-## Solicitud State Machine (v7 2026-07-09 — 18 estados: renombre + purga/fusión)
+## Solicitud State Machine (v8 2026-08-02 — 19 estados: + repuesto_en_camino, repuesto directo en garantía)
 
 > **Renombre 2026-07-09** (migraciones `20260709_renombrar_estados_expand.sql` +
 > `20260709_renombrar_estados_contract.sql`): tres estados cambiaron de nombre
@@ -253,20 +273,21 @@ WARRANTY:
   pendiente_horario ─┬─→ notificada → asignada → diagnóstico
                      │                              │
                      │      ┌── reparar/no_reparable/negativa ──→ aprobacion_paso_pendiente
+                     │      │                                          │ cliente aprueba
+                     │      │                                          ▼
+                     │      │                                     en_proceso
                      │      │
-                     │      └── esperar_repuesto ──→ pendiente_pricing → admin fija tiempo
+                     │      └── esperar_repuesto ──→ esperando_repuesto (DIRECTO 2026-08-02)
                      │                                     │
-                     │                                     ▼
-                     │                              aprobacion_paso_pendiente
-                     │                                     │
-                     │              cliente aprueba ──┬────┘
+                     │                 ┌───────────────────┼──────────────────┐
+                     │                 ▼ supervisor sube guía                 ▼ admin marca recibido
+                     │           repuesto_en_camino                    repuesto_recibido
+                     │                 │ cliente agenda visita final          │ cliente elige fecha
+                     │                 └───────────────┬──────────────────────┘
+                     │                                 ▼ /api/reprogramar-repuesto
+                     │                            en_proceso
+                     │                                 │
                      │                                 ▼
-                     │                          en_proceso o esperando_repuesto
-                     │                                 │           │
-                     │                                 │           ▼ admin marca repuesto recibido
-                     │                                 │      repuesto_recibido
-                     │                                 │           │ cliente elige nueva fecha (tentativa)
-                     │                                 ▼◄──────────┘ /api/reprogramar-repuesto
                      │                          confirmacion_pendiente → completada | en_disputa
                      │                          ↘ finalizado_sin_reparacion (terminal)
                      │                          ↘ reparacion_rechazada (terminal)
@@ -298,7 +319,7 @@ actualiza horario_confirmado + fecha_visita_at.)
 **Estados terminales** (set en `ESTADOS_TERMINALES` en `src/lib/constants/estados.ts`):
 `sin_agendar`, `finalizado_sin_reparacion`, `reparacion_rechazada`, `no_show_cliente`, `cancelada`, `completada`, `cotizacion_rechazada`.
 
-## Glosario de estados — cuándo se activa cada uno (18 estados)
+## Glosario de estados — cuándo se activa cada uno (19 estados)
 
 Referencia rápida. Valor DB = columna `estado` de `solicitudes_servicio`; label = lo que ve el admin (`ESTADO_LABELS`).
 
@@ -309,10 +330,11 @@ Referencia rápida. Valor DB = columna `estado` de `solicitudes_servicio`; label
 | `notificada` | Horario confirmado; técnicos notificados, nadie aceptó aún | ambos | técnico |
 | `asignada` | Un técnico aceptó; visita pendiente (ambos flujos — `es_garantia` decide el camino) | ambos | técnico (visita) |
 | `aprobacion_paso_pendiente` | Técnico envió diagnóstico; el cliente debe aprobar el siguiente paso propuesto | garantía | cliente |
-| `pendiente_pricing` | Diagnóstico con `esperar_repuesto` (garantía); admin debe fijar `tiempo_entrega` | garantía | admin |
+| `pendiente_pricing` | Diagnóstico con `esperar_repuesto` (solo particular desde 2026-08-02); admin fija precio de repuestos | particular | admin |
 | `cotizacion_enviada` | Cotización generada y enviada; el cliente decide (aprobar salta directo a `en_proceso`/`esperando_repuesto`) | particular | cliente |
 | `cotizacion_rechazada` | Cliente rechazó la cotización (terminal) | particular | — |
-| `esperando_repuesto` | Reparación aprobada pero falta repuesto (SKU en `repuestos_pendientes`) | ambos | admin (marca llegada) |
+| `esperando_repuesto` | Falta repuesto (SKU en `repuestos_pendientes`). Garantía: DIRECTO desde el diagnóstico (2026-08-02); particular: tras aprobar cotización | ambos | supervisor (sube guía) o admin (marca llegada) |
+| `repuesto_en_camino` | Supervisor subió la guía de envío (`/api/supervisor/guia-envio`); cliente debe agendar la visita de finalización | ambos (en la práctica garantía) | cliente |
 | `repuesto_recibido` | Admin marcó el repuesto recibido; el cliente debe elegir nueva fecha | ambos | cliente |
 | `en_proceso` | Reparación en curso (misma visita o tras repuesto/aprobación) | ambos | técnico |
 | `confirmacion_pendiente` | Técnico completó el servicio (fotos+checklist+firma); el cliente debe confirmar satisfacción | ambos | cliente |

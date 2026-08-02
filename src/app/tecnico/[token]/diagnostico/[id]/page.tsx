@@ -59,6 +59,8 @@ export default function DiagnosticoPage() {
   const fotoInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
   const galeriaInputRef = useRef<HTMLInputElement>(null)
+  // Input dedicado para la foto de la placa del producto (obligatoria 2026-08-02)
+  const placaInputRef = useRef<HTMLInputElement>(null)
 
   const [tecnico, setTecnico] = useState<{ id: string; nombre_completo: string } | null>(null)
   const [servicio, setServicio] = useState<Servicio | null>(null)
@@ -81,6 +83,11 @@ export default function DiagnosticoPage() {
   const [complejidad, setComplejidad] = useState<ComplejidadServicio | null>(null)
   const [evidencias, setEvidencias] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
+  // Foto de la placa del producto (etiqueta del fabricante con el modelo) —
+  // OBLIGATORIA desde 2026-08-02: sin ella no se pueden validar repuestos ni
+  // la garantía. Antes era solo un recordatorio dentro de las evidencias.
+  const [fotoPlaca, setFotoPlaca] = useState<File | null>(null)
+  const [fotoPlacaPreview, setFotoPlacaPreview] = useState<string | null>(null)
 
   // Fault code (warranty only)
   const [codigoFalla, setCodigoFalla] = useState<CodigoFalla | null>(null)
@@ -248,6 +255,14 @@ export default function DiagnosticoPage() {
     setError(advice) // null si todos los archivos pasaron; mensaje guía si rechazamos un video grande
   }
 
+  const handlePlacaSelect = (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+    if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
+    setFotoPlaca(file)
+    setFotoPlacaPreview(URL.createObjectURL(file))
+  }
+
   const removeEvidencia = (idx: number) => {
     setEvidencias(prev => prev.filter((_, i) => i !== idx))
     setPreviews(prev => {
@@ -262,6 +277,10 @@ export default function DiagnosticoPage() {
     if (!servicio || !tecnico) return
     if (evidencias.length === 0) {
       setError('Debes adjuntar al menos una foto o video del fallo')
+      return
+    }
+    if (!fotoPlaca) {
+      setError('Debes tomar la foto de la placa del producto (etiqueta con el modelo)')
       return
     }
     if (!oathFirma) {
@@ -347,8 +366,25 @@ export default function DiagnosticoPage() {
         return urlData?.publicUrl ?? null
       })
 
+      // Foto de la placa: mismo pipeline de compresión/subida, path con
+      // prefijo placa_ para distinguirla en Storage y en las galerías.
+      const placaUploadPromise = (async () => {
+        const file = await compressImageIfNeeded(fotoPlaca!, { maxDimension: 2560, quality: 0.9 })
+        const ext = inferExtension(file)
+        const path = `${servicio.id}/placa_${stamp}_${rand}.${ext}`
+        const { error: uploadErr } = await supabase.storage
+          .from('evidencias-servicio')
+          .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || undefined })
+        if (uploadErr) {
+          console.error('[diagnostico] upload foto placa falló:', uploadErr)
+          return null
+        }
+        const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
+        return urlData?.publicUrl ?? null
+      })()
+
       setProgreso('Subiendo evidencias...')
-      const results = await Promise.all(uploadPromises)
+      const [results, fotoPlacaUrl] = await Promise.all([Promise.all(uploadPromises), placaUploadPromise])
       const evidenciaUrls = results.filter((u): u is string => !!u)
 
       if (evidenciaUrls.length === 0) {
@@ -357,6 +393,14 @@ export default function DiagnosticoPage() {
         setProgreso('')
         return
       }
+      if (!fotoPlacaUrl) {
+        setError('Error al subir la foto de la placa. Intenta de nuevo.')
+        setEnviando(false)
+        setProgreso('')
+        return
+      }
+      // La placa también entra a la galería de evidencias del diagnóstico.
+      evidenciaUrls.unshift(fotoPlacaUrl)
 
       // 2. Build request body based on flow type
       setProgreso('Guardando diagnostico...')
@@ -399,6 +443,7 @@ export default function DiagnosticoPage() {
           bonoIncentivo: calculo.bono,
           totalServicio: calculo.total,
           evidenciaUrls,
+          fotoPlacaUrl,
           diasTranscurridos,
           codigoFalla: codigoFalla ? {
             codigo: codigoFalla.codigo,
@@ -422,6 +467,7 @@ export default function DiagnosticoPage() {
           diagnostico: diagnosticoTexto.trim(),
           complejidad,
           evidenciaUrls,
+          fotoPlacaUrl,
           // Si el siguiente paso es no_reparable o negativa_cliente, costoTecnico
           // puede ser 0; la API lo maneja correctamente (no genera cotización).
           costoTecnico: costoTecnicoNum,
@@ -495,7 +541,7 @@ export default function DiagnosticoPage() {
   const costoParticularListo = !requiereCostoParticular || costoTecnicoNum > 0
 
   const canSubmit = complejidad && diagnosticoTexto.length >= 10 && evidencias.length > 0
-    && oathFirma && siguientePasoListo && productosCompletos && recomendadosCompletos
+    && fotoPlaca && oathFirma && siguientePasoListo && productosCompletos && recomendadosCompletos
     && costoParticularListo
 
   if (cargando) {
@@ -541,7 +587,9 @@ export default function DiagnosticoPage() {
             <h1 className="text-2xl font-bold text-green-700 mb-2">Diagnostico registrado</h1>
             <p className="text-gray-500 text-sm mb-4">
               {servicio?.es_garantia
-                ? 'Tu diagnóstico fue registrado. El equipo Baird coordina con el cliente la aprobación del siguiente paso (incluyendo tiempo de entrega si requiere repuesto).'
+                ? siguientePaso?.paso === 'esperar_repuesto'
+                  ? 'Tu diagnóstico fue registrado y el repuesto quedó solicitado al supervisor de la marca. El servicio queda en "Esperando repuesto": te avisaremos por WhatsApp cuando el repuesto vaya en camino y el cliente agende la visita de finalización.'
+                  : 'Tu diagnóstico fue registrado. El equipo Baird coordina con el cliente la aprobación del siguiente paso.'
                 : siguientePaso?.paso === 'esperar_repuesto'
                   ? 'Tu diagnóstico fue registrado. El equipo Baird revisará y fijará el precio final de los repuestos antes de enviar la cotización al cliente.'
                   : 'Tu diagnóstico y la cotización quedaron registrados.'}
@@ -568,7 +616,11 @@ export default function DiagnosticoPage() {
             )}
             {waSent === true && (
               <div className="mb-4 rounded-xl bg-green-50 border border-green-200 p-3 text-xs text-green-900 text-left">
-                📤 <strong>WhatsApp enviado al cliente</strong> — recibirá la {servicio?.es_garantia ? 'verificación del siguiente paso' : 'cotización con el diagnóstico y el total'} para aprobar o rechazar.
+                📤 <strong>WhatsApp enviado al cliente</strong> — {servicio?.es_garantia
+                  ? siguientePaso?.paso === 'esperar_repuesto'
+                    ? 'recibió el aviso de que su repuesto quedó solicitado (le avisaremos cuando vaya en camino).'
+                    : 'recibirá la verificación del siguiente paso para aprobar o rechazar.'
+                  : 'recibirá la cotización con el diagnóstico y el total para aprobar o rechazar.'}
               </div>
             )}
             {waSent === false && siguientePaso?.paso !== 'esperar_repuesto' && (
@@ -779,24 +831,56 @@ export default function DiagnosticoPage() {
           </div>
         )}
 
+        {/* Foto de la placa del producto — SECCIÓN PROPIA del formulario,
+            obligatoria en todos los flujos (2026-08-02). La placa (etiqueta
+            del fabricante) trae el modelo exacto del equipo — sin ella no se
+            pueden validar repuestos ni la tarifa de garantía. */}
+        <div className="bg-white rounded-2xl shadow-sm border-2 border-amber-300 p-5 mb-4">
+          <h2 className="text-lg font-bold text-slate-900 mb-1">🏷️ Foto de la placa del producto *</h2>
+          <p className="text-xs text-gray-400 mb-3">
+            La etiqueta del fabricante donde se vea claramente el <strong>modelo</strong> del
+            equipo. Obligatoria para validar repuestos y la garantía.
+          </p>
+          {fotoPlacaPreview ? (
+            <div className="relative w-36 aspect-square rounded-xl overflow-hidden bg-gray-100 border border-amber-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={fotoPlacaPreview} alt="Placa del producto" className="w-full h-full object-cover" />
+              <button
+                onClick={() => {
+                  if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
+                  setFotoPlaca(null)
+                  setFotoPlacaPreview(null)
+                }}
+                className="absolute top-1.5 right-1.5 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg hover:bg-red-600"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => placaInputRef.current?.click()}
+              className="w-full rounded-xl border-2 border-dashed border-amber-400 bg-amber-50 py-5 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
+            >
+              <span className="text-2xl mb-1">📷</span>
+              <span className="text-xs font-semibold text-amber-800">Tomar foto de la placa</span>
+            </button>
+          )}
+          <input
+            ref={placaInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => handlePlacaSelect(e.target.files)}
+          />
+        </div>
+
         {/* Evidence upload */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-1">Evidencia del fallo *</h2>
           <p className="text-xs text-gray-400 mb-3">
             Toma fotos del problema con la cámara o súbelas desde la galería. También puedes adjuntar un video.
           </p>
-
-          {/* Recordatorio: foto de la placa con el modelo. La placa (etiqueta
-              del fabricante) trae el modelo exacto del equipo — sin ella el
-              admin no puede validar repuestos ni la tarifa de garantía. */}
-          <div className="flex gap-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-            <span className="text-base leading-none mt-0.5">🏷️</span>
-            <p className="text-xs text-amber-900 leading-relaxed">
-              <strong>Incluye siempre una foto de la placa del equipo</strong> —
-              la etiqueta del fabricante donde se vea claramente el modelo. Es
-              clave para validar repuestos y la garantía.
-            </p>
-          </div>
 
           {/* File grid */}
           <div className="grid grid-cols-2 gap-3 mb-3">
@@ -1003,6 +1087,8 @@ export default function DiagnosticoPage() {
                 ? 'Selecciona el nivel de complejidad'
                 : evidencias.length === 0
                   ? 'Adjunta al menos una foto o video del fallo'
+                  : !fotoPlaca
+                  ? 'Toma la foto de la placa del producto (etiqueta con el modelo)'
                   : !oathFirma
                     ? 'Firma la declaración bajo juramento (botón al inicio)'
                     : !siguientePaso

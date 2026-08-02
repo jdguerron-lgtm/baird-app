@@ -6,6 +6,7 @@ import {
   enviarVerificacionPasoCliente,
   enviarCotizacionCliente,
   enviarEsperandoRepuestoCliente,
+  enviarRepuestoEnCaminoCliente,
   enviarRepuestoRecibidoCliente,
   enviarFinalizadoSinReparacion,
   notificarTecnicos,
@@ -36,6 +37,7 @@ export const maxDuration = 30
  *   pendiente_pricing                → Solo señal admin (no envío)
  *   cotizacion_enviada               → cotizacion_cliente_v2 (cliente)
  *   esperando_repuesto               → esperando_repuesto_cliente_v1 (cliente)
+ *   repuesto_en_camino               → repuesto_en_camino_cliente_v1 (cliente — agenda visita de finalización)
  *   repuesto_recibido                → repuesto_recibido_cliente_v2 (cliente — elige nueva fecha)
  *   en_proceso                       → sin plantilla específica (cliente ya eligió fecha / aprobó)
  *   confirmacion_pendiente           → confirmar_servicio_v4 (cliente)
@@ -232,6 +234,20 @@ export async function POST(req: NextRequest) {
           ok: r.ok,
           error: r.error,
           mensaje: r.ok ? 'Plantilla re-enviada' : `Falló: ${r.error}`,
+        })
+      }
+
+      // ── Repuesto en camino: el cliente debe agendar la visita de finalización ──
+      case 'repuesto_en_camino': {
+        const r = await enviarRepuestoEnCaminoCliente(solicitudId)
+        return NextResponse.json({
+          accion: 'repuesto_en_camino_cliente_v1',
+          destinatario: 'cliente',
+          ok: r.ok,
+          error: r.error,
+          mensaje: r.ok
+            ? 'Plantilla re-enviada — el cliente puede agendar la visita de finalización'
+            : `Falló: ${r.error}`,
         })
       }
 

@@ -37,8 +37,18 @@ interface Solicitud {
   diagnosticado_at: string | null
   fecha_visita_at: string | null
   repuesto_recibido_at: string | null
+  guia_envio_url: string | null
+  guia_envio_numero: string | null
+  guia_envio_at: string | null
+  guia_envio_por: string | null
   cancelado_at: string | null
   motivo_cancelacion: string | null
+}
+
+interface RepuestoSolicitado {
+  sku: string
+  descripcion: string
+  cantidad?: number
 }
 
 interface Tecnico {
@@ -104,6 +114,20 @@ export default function SupervisorDetalle() {
   const [evidencia, setEvidencia] = useState<Evidencia | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [generandoPdf, setGenerandoPdf] = useState(false)
+
+  // Ficha completa en PDF (jsPDF con dynamic import, igual que en el listado).
+  const descargarPdf = async () => {
+    if (!sol || generandoPdf) return
+    setGenerandoPdf(true)
+    try {
+      const { generarPdfDetalleSolicitud } = await import('@/lib/pdf/supervisorPdf')
+      generarPdfDetalleSolicitud(sol, tecnico, eventos, evidencia)
+    } catch {
+      alert('No se pudo generar el PDF. Intenta de nuevo.')
+    }
+    setGenerandoPdf(false)
+  }
 
   useEffect(() => {
     const cargar = async () => {
@@ -172,9 +196,18 @@ export default function SupervisorDetalle() {
         >
           ← Volver
         </Link>
-        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${ESTADO_ESTILOS[sol.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-          {ESTADO_LABELS[sol.estado] ?? sol.estado}
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={descargarPdf}
+            disabled={generandoPdf}
+            className="text-xs font-semibold text-slate-700 border border-slate-200 bg-slate-50 rounded-lg px-3 py-1.5 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {generandoPdf ? 'Generando…' : '⬇️ Descargar PDF'}
+          </button>
+          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${ESTADO_ESTILOS[sol.estado] ?? 'bg-gray-100 text-gray-600'}`}>
+            {ESTADO_LABELS[sol.estado] ?? sol.estado}
+          </span>
+        </div>
       </div>
 
       <h1 className="text-2xl font-bold text-slate-900 mb-1">
@@ -250,6 +283,12 @@ export default function SupervisorDetalle() {
           )}
         </Seccion>
       </div>
+
+      {/* Repuesto requerido + guía de envío. La subida de la guía es la ÚNICA
+          acción de escritura del portal (2026-08-02): dispara la transición
+          esperando_repuesto → repuesto_en_camino y avisa a cliente y técnico
+          para agendar la visita de finalización. */}
+      <GuiaEnvioSeccion sol={sol} token={token} />
 
       {/* Galería completa — fotos de diagnóstico (triaje/cotización) +
           fotos de completación + firmas, igual que en el detalle admin. */}
@@ -435,6 +474,151 @@ export default function SupervisorDetalle() {
           )}
         </Seccion>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Repuesto requerido + guía de envío.
+ *
+ * - Muestra el requerimiento exacto (SKU, descripción, cantidad) desde
+ *   triaje_resultado/cotizacion.productos_necesarios.
+ * - Si el estado es `esperando_repuesto`, habilita subir la guía de envío
+ *   (foto o PDF + número opcional) → POST /api/supervisor/guia-envio. El
+ *   servidor valida token + alcance, transiciona a `repuesto_en_camino` y
+ *   notifica a cliente (agendar visita de finalización) y técnico.
+ * - Si la guía ya fue subida, muestra número, fecha, quién y link al archivo.
+ */
+function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [numeroGuia, setNumeroGuia] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+
+  const repuestos: RepuestoSolicitado[] = (() => {
+    const deTriaje = (sol.triaje_resultado?.productos_necesarios as RepuestoSolicitado[] | undefined) ?? []
+    const deCotizacion = (sol.cotizacion?.productos_necesarios as RepuestoSolicitado[] | undefined) ?? []
+    const lista = deTriaje.length > 0 ? deTriaje : deCotizacion
+    return lista.filter(p => p && p.sku)
+  })()
+
+  const puedeSubir = sol.estado === 'esperando_repuesto'
+  const guiaSubida = !!sol.guia_envio_url || !!sol.guia_envio_at
+
+  if (!puedeSubir && !guiaSubida && repuestos.length === 0) return null
+
+  const subir = async () => {
+    if (!archivo || enviando) return
+    setEnviando(true)
+    setMsg(null)
+    try {
+      const form = new FormData()
+      form.append('token', token)
+      form.append('id', sol.id)
+      form.append('archivo', archivo)
+      if (numeroGuia.trim()) form.append('numeroGuia', numeroGuia.trim())
+      const res = await fetch('/api/supervisor/guia-envio', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) {
+        setMsg({ tipo: 'error', texto: data.error ?? 'No se pudo subir la guía.' })
+        setEnviando(false)
+        return
+      }
+      setMsg({
+        tipo: 'ok',
+        texto: `Guía subida. Cliente ${data.cliente_notificado ? 'notificado para agendar la visita de finalización' : 'NO notificado (revisar en admin)'} · técnico ${data.tecnico_notificado ? 'notificado' : 'NO notificado'}.`,
+      })
+      // Refrescar el detalle para reflejar el nuevo estado (repuesto_en_camino).
+      setTimeout(() => window.location.reload(), 2500)
+    } catch {
+      setMsg({ tipo: 'error', texto: 'Error de conexión. Intenta de nuevo.' })
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="mt-4">
+      <Seccion titulo="📦 Repuesto y guía de envío">
+        {repuestos.length > 0 && (
+          <div className="mb-4">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Repuesto(s) requerido(s)
+            </p>
+            <div className="space-y-1.5">
+              {repuestos.map((p, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <span className="font-mono text-xs font-bold text-slate-800">{p.sku}</span>
+                  <span className="text-gray-600 flex-1 truncate">{p.descripcion}</span>
+                  <span className="text-xs text-gray-500 shrink-0">x{p.cantidad ?? 1}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {guiaSubida && (
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 mb-2">
+            <p className="text-sm font-semibold text-sky-900">🚚 Guía de envío subida</p>
+            <p className="text-xs text-sky-800 mt-1">
+              {sol.guia_envio_numero ? `N° ${sol.guia_envio_numero} · ` : ''}
+              {fechaHora(sol.guia_envio_at)}
+              {sol.guia_envio_por ? ` · por ${sol.guia_envio_por}` : ''}
+            </p>
+            {sol.guia_envio_url && (
+              <a
+                href={sol.guia_envio_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-xs font-semibold text-sky-700 underline hover:text-sky-900"
+              >
+                Ver guía adjunta
+              </a>
+            )}
+          </div>
+        )}
+
+        {puedeSubir && (
+          <div className="border-2 border-dashed border-sky-300 bg-sky-50/50 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-1">Subir guía de envío del repuesto</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Al subirla se notifica al cliente (para agendar la visita de finalización) y al
+              técnico de que el producto va en camino.
+            </p>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={e => setArchivo(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-gray-600 mb-2 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-sky-700"
+            />
+            <input
+              type="text"
+              value={numeroGuia}
+              onChange={e => setNumeroGuia(e.target.value)}
+              placeholder="N° de guía / transportadora (opcional)"
+              maxLength={120}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+            {msg && (
+              <p
+                className={`text-xs rounded-lg px-3 py-2 mb-3 ${
+                  msg.tipo === 'ok'
+                    ? 'bg-green-50 border border-green-200 text-green-800'
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}
+              >
+                {msg.texto}
+              </p>
+            )}
+            <button
+              onClick={subir}
+              disabled={!archivo || enviando}
+              className="w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {enviando ? 'Subiendo…' : '🚚 Subir guía y notificar'}
+            </button>
+          </div>
+        )}
+      </Seccion>
     </div>
   )
 }

@@ -35,7 +35,7 @@
 ## Principios del diseño
 
 1. **Customer-first scheduling.** Toda solicitud (garantía o particular) arranca con el cliente proponiendo y confirmando el horario antes de notificar técnicos. No hay diferencia entre los dos flujos en este paso.
-2. **Admin pricing gate solo para garantía + esperar_repuesto** (v2 2026-05-10). En garantía con `esperar_repuesto`, el admin debe fijar `tiempo_entrega` antes de notificar al cliente (precio MABE ya está fijo por tarifario). En particular el técnico ingresa su costo y el sistema calcula con IVA + margen Baird automáticamente — sin gate admin. Ver [docs/TARIFAS.md](./TARIFAS.md).
+2. **Sin admin pricing gate en garantía (2026-08-02)**. Garantía + `esperar_repuesto` pasa DIRECTO del diagnóstico a `esperando_repuesto` — sin `pendiente_pricing` (tiempo de entrega) ni aprobación previa del cliente. El supervisor recibe el requerimiento exacto (SKU + descripción + cantidad) y sube la **guía de envío** desde su portal → `repuesto_en_camino` → el cliente agenda la visita de finalización. En particular el técnico ingresa su costo y el sistema calcula con IVA + margen Baird automáticamente; `pendiente_pricing` queda solo para particular + esperar_repuesto. Ver [docs/TARIFAS.md](./TARIFAS.md) y [docs/MAQUINA-DE-ESTADOS.md](./MAQUINA-DE-ESTADOS.md).
 3. **Cliente siempre tiene la última palabra.** En ambos flujos hay un paso de aprobación explícito tras el diagnóstico (verificar paso para garantía, aprobar cotización para particular).
 4. **Self-service durante todo el ciclo.** El cliente puede cancelar o reagendar desde `/servicio/{cliente_token}` mientras el estado lo permita.
 5. **Audit append-only.** Cancelaciones, reagendamientos y cambios admin escriben en `solicitud_eventos` sin borrado.
@@ -57,13 +57,21 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │      horario_token=uuid (acción específica)                              │
 │      cliente_token=uuid (durable, para /servicio portal)                 │
 │                                                                           │
+│ /solicitar (2026-08-02): AUTO-AGENDA la opción 1 del formulario          │
+│ (fallback opción 2) vía confirmarHorarioSolicitud — mismo mecanismo que  │
+│ particular (v3 2026-07-06). El cliente ya dio fechas + TyC en el         │
+│ formulario; NO se le vuelven a pedir por WhatsApp. Salta directo al      │
+│ paso 2 con 📩 horario_confirmado_cliente_v1 + notificarTecnicos inline.  │
+│                                                                           │
+│ Solo carga masiva (Excel sin fechas) y el fallback (ambas opciones sin   │
+│ cupo) siguen el camino customer-first:                                   │
 │ 📩 → CLIENTE: cliente_seleccion_horario_v2                               │
 │   Header: "Solicitud recibida en Baird Service"                          │
 │   Body: cliente, equipo, horario_1, horario_2                            │
 │   Botón: "Confirmar horario" → /horario/{horario_token}                  │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
-                                  ▼  (cliente abre webview)
+                                  ▼  (cliente abre webview — solo camino customer-first)
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 1b. (TIMEOUT — opcional) Si pasan 24h sin confirmar                      │
 │ Cron /api/cron/horario-recordatorio ejecuta cada 1h                      │
@@ -176,18 +184,23 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
        reparar   esperar_repuesto  no_reparable  negativa_cliente
             │         │           │             │
             │         ▼           │             │
-            │  ┌──────────────┐   │             │
-            │  │ pendiente_   │   │             │
-            │  │ pricing      │   │             │
-            │  │ (admin fija  │   │             │
-            │  │  tiempo)     │   │             │
-            │  └──────────────┘   │             │
-            │         │           │             │
-            │         ▼           │             │
-            │  POST /api/         │             │
-            │  cotizacion-precios │             │
-            │         │           │             │
-            ▼         ▼           ▼             ▼
+            │  ┌────────────────────────────┐   │
+            │  │ esperando_repuesto DIRECTO │   │
+            │  │ (2026-08-02: sin pendiente_│   │
+            │  │  pricing ni aprobación     │   │
+            │  │  previa del cliente)       │   │
+            │  │ 📩 CLIENTE esperando_      │   │
+            │  │   repuesto_cliente_v1      │   │
+            │  │ 📩 TÉCNICO esperando_      │   │
+            │  │   repuesto_tecnico_v1      │   │
+            │  │ 📩 SUPERVISORES supervisor_│   │
+            │  │   repuesto_garantia_v1     │   │
+            │  │   (SKU x cant + descripción│   │
+            │  │    + dirección + diagnóst.)│   │
+            │  │ → sigue en 6a (guía envío) │   │
+            │  └────────────────────────────┘   │
+            │                     │             │
+            ▼                     ▼             ▼
    ┌──────────────────────────────────────────────────────────────────────┐
    │ 6. VERIFICACIÓN POR EL CLIENTE                                       │
    │ DB: estado=aprobacion_paso_pendiente                                 │
@@ -221,6 +234,10 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
    │    en_proceso            │  │ verificacion_paso_decision=      │
    │  - esperar_repuesto →    │  │   'rechazado'                    │
    │    esperando_repuesto    │  │                                  │
+   │    (LEGACY 2026-08-02:   │  │                                  │
+   │     ya no llega aquí —   │  │                                  │
+   │     va directo desde el  │  │                                  │
+   │     diagnóstico)         │  │                                  │
    │  - no_reparable →        │  │ 📩 → TÉCNICO: texto libre        │
    │    finalizado_sin_       │  │   "Cliente RECHAZÓ. No procedas. │
    │    reparacion (terminal) │  │    Admin contactará."            │
@@ -262,9 +279,30 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
    │     "Decisión registrada"│  │                                  │
    └──────────────────────────┘  └──────────────────────────────────┘
                        │
-                       ▼  (rama "reparar" → en_proceso | "esperar_repuesto" → esperando_repuesto)
+                       ▼  (rama "reparar" → en_proceso)
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ 6b. (Si esperar_repuesto) ADMIN MARCA REPUESTO RECIBIDO                  │
+│ 6a. (Si esperar_repuesto) SUPERVISOR SUBE GUÍA DE ENVÍO (2026-08-02)     │
+│ Página /supervisor/{portal_token}/{id} → sección "Repuesto y guía"       │
+│ POST /api/supervisor/guia-envio (multipart: token, id, archivo, n° guía) │
+│                                                                           │
+│ DB:  estado=esperando_repuesto → repuesto_en_camino (UPDATE atómico)     │
+│      + guia_envio_url/numero/at/por + reprogramacion_token (uuid)        │
+│                                                                           │
+│ 📩 → CLIENTE: repuesto_en_camino_cliente_v1 ⏳ (fallback                 │
+│   repuesto_recibido_cliente_v2)                                          │
+│   Body: cliente, equipo, n° guía, técnico                                │
+│   Botón: "Agendar visita" → /reprogramar-repuesto/{token} — agenda la    │
+│   VISITA DE FINALIZACIÓN (mismo mecanismo del agendamiento inicial:      │
+│   franja + cupo + fecha_visita_at)                                       │
+│ 📩 → TÉCNICO: repuesto_en_camino_tecnico_v1 ⏳ (fallback                 │
+│   repuesto_llegado_tecnico_v1) — el servicio sigue en su portal          │
+│ 📩 → SUPERVISORES: supervisor_repuesto_garantia_v1 (novedad "Repuesto    │
+│   en camino")                                                            │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼  (cliente agenda → 6c; o camino alterno admin ↓)
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 6b. (Camino alterno sin guía) ADMIN MARCA REPUESTO RECIBIDO              │
 │ Página /admin/repuestos                                                  │
 │ POST /api/repuesto-recibido { repuestoId }                               │
 │                                                                           │
@@ -288,11 +326,12 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
                                   │
                                   ▼  (cliente abre el link del botón)
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ 6c. (Si esperar_repuesto) CLIENTE ELIGE NUEVA FECHA                      │
+│ 6c. (Si esperar_repuesto) CLIENTE AGENDA LA VISITA DE FINALIZACIÓN       │
 │ Página /reprogramar-repuesto/{reprogramacion_token}                      │
 │ POST /api/reprogramar-repuesto { token, horario }                        │
 │                                                                           │
-│ DB:  estado=repuesto_recibido → en_proceso (UPDATE atómico)              │
+│ DB:  estado=repuesto_en_camino | repuesto_recibido → en_proceso          │
+│      (UPDATE atómico) + fecha_visita_at (registrada en agenda/calendario)│
 │      + horario_confirmado = horario | reprogramacion_token = null        │
 │                                                                           │
 │ 📩 → TÉCNICO: repuesto_recibido_tecnico_v1                               │
@@ -370,7 +409,9 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
                                   │
                                   ▼
 [Pasos 1b–2 solo aplican en el fallback: timeout, cliente confirma horario.
- Garantía conserva el flujo customer-first completo (selección vía /horario).]
+ Desde 2026-08-02 garantía desde /solicitar también auto-agenda (ver flujo
+ GARANTÍA §1); el customer-first vía /horario queda para carga masiva y
+ fallback sin cupo.]
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────────┐

@@ -24,6 +24,18 @@ export const solicitudFormSchema = z.object({
     .min(5, 'La direccion debe ser mas especifica')
     .max(200, 'La direccion no puede exceder 200 caracteres'),
 
+  // Opcionales, solo particular — el servidor los anexa a `direccion` al
+  // insertar (no son columnas propias en BD).
+  edificio_conjunto: z.string()
+    .trim()
+    .max(100, 'El nombre del edificio o conjunto no puede exceder 100 caracteres')
+    .optional(),
+
+  apto_casa: z.string()
+    .trim()
+    .max(50, 'El apartamento o casa no puede exceder 50 caracteres')
+    .optional(),
+
   ciudad_pueblo: nonEmptyString('La ciudad', true)
     .max(100, 'La ciudad no puede exceder 100 caracteres'),
 

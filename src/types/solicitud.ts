@@ -29,6 +29,11 @@ export interface SolicitudFormData {
   cliente_nombre: string
   cliente_telefono: string
   direccion: string
+  // Solo particular (opcionales). No son columnas en BD: el servidor los
+  // anexa a `direccion` al insertar, así llegan a todo consumidor
+  // (WhatsApp técnico, admin, supervisor, export) sin migración.
+  edificio_conjunto: string
+  apto_casa: string
   ciudad_pueblo: string
   zona_servicio: string
   marca_equipo: string
@@ -44,8 +49,8 @@ export interface SolicitudFormData {
 }
 
 // Tipo del registro completo en BD (con ID y metadata del servidor)
-// Estados del flujo de solicitud (customer-first scheduling) — 18 estados
-// Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → repuesto_recibido → en_proceso → confirmacion_pendiente → completada | en_disputa
+// Estados del flujo de solicitud (customer-first scheduling) — 19 estados
+// Warranty:     pendiente_horario → notificada → asignada → en_proceso | esperando_repuesto → repuesto_en_camino | repuesto_recibido → en_proceso → confirmacion_pendiente → completada | en_disputa
 //                                                          | finalizado_sin_reparacion | reparacion_rechazada
 //                                 → sin_agendar (timeout)
 // Non-warranty: pendiente_horario → notificada → asignada → cotizacion_enviada → en_proceso → confirmacion_pendiente → completada
@@ -69,7 +74,8 @@ export type EstadoSolicitud =
   | 'aprobacion_paso_pendiente'    // post-diagnóstico (garantía), cliente debe aprobar el siguiente paso propuesto (antes: verificacion_pendiente)
   | 'cotizacion_enviada'           // Non-warranty: quote sent to customer
   | 'cotizacion_rechazada'         // Non-warranty: customer rejected quote (terminal)
-  | 'esperando_repuesto'           // post-diagnóstico, repuesto pendiente
+  | 'esperando_repuesto'           // post-diagnóstico, repuesto pendiente (garantía entra DIRECTO desde el diagnóstico — 2026-08-02)
+  | 'repuesto_en_camino'           // (2026-08-02): supervisor subió la guía de envío; cliente agenda la visita de finalización
   | 'repuesto_recibido'            // (2026-05-29): repuesto llegó; cliente debe reprogramar fecha (tentativa) antes de en_proceso
   | 'pendiente_pricing'            // (2026-05-07): técnico envió diagnóstico con esperar_repuesto (garantía), admin fija tiempo_entrega
   | 'finalizado_sin_reparacion'    // equipo no reparable (terminal)
@@ -146,10 +152,11 @@ export const ESTADOS_CANCELABLES_POR_CLIENTE: ReadonlySet<string> = new Set([
   'pendiente_pricing',
   'cotizacion_enviada',
   'esperando_repuesto',
+  'repuesto_en_camino',
   'repuesto_recibido',
 ])
 
-// Nota: `repuesto_recibido` NO entra en ESTADOS_REAGENDABLES_POR_CLIENTE.
+// Nota: `repuesto_recibido` y `repuesto_en_camino` NO entran en ESTADOS_REAGENDABLES_POR_CLIENTE.
 // La reprogramación tras llegada de repuesto usa su propio flujo dedicado
 // (/reprogramar-repuesto/[token] + /api/reprogramar-repuesto), no el botón
 // genérico de reagendar (procesarReagendamientoCliente). Mantener un solo

@@ -367,6 +367,28 @@ export default function SolicitarServicio() {
                         {geoLoading ? 'Obteniendo ubicacion...' : 'Usar mi ubicacion actual'}
                       </button>
                     </div>
+                    {/* Solo particular: detalle de acceso opcional. El servidor lo
+                        anexa a la dirección para que le llegue al técnico. */}
+                    {!formData.es_garantia && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <InputField
+                          label="Edificio o Conjunto (opcional)"
+                          name="edificio_conjunto"
+                          value={formData.edificio_conjunto}
+                          onChange={handleChange}
+                          placeholder="Conjunto Los Álamos, Edificio Central..."
+                          error={errors.edificio_conjunto}
+                        />
+                        <InputField
+                          label="Apto o Casa (opcional)"
+                          name="apto_casa"
+                          value={formData.apto_casa}
+                          onChange={handleChange}
+                          placeholder="Torre 2 Apto 501, Casa 12..."
+                          error={errors.apto_casa}
+                        />
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <InputField
                         label="Ciudad o Pueblo"

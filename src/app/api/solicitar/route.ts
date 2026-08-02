@@ -15,16 +15,22 @@ export const maxDuration = 60
 /**
  * POST /api/solicitar
  *
- * Crea una solicitud y arranca el flujo customer-first:
+ * Crea una solicitud y arranca el flujo:
  * 1. Inserta solicitud con estado='pendiente_horario' y horario_token único
- * 2. PARTICULAR: auto-agenda la opción 1 del formulario (fallback opción 2)
- *    vía confirmarHorarioSolicitud — la solicitud pasa directo a 'notificada'
+ * 2. Auto-agenda la opción 1 del formulario (fallback opción 2) vía
+ *    confirmarHorarioSolicitud — la solicitud pasa directo a 'notificada'
  *    sin esperar al cliente en /horario/{token}. El formulario ya exige
  *    aceptar TyC, y el picker emite el formato canónico parseable, así que
- *    la validación de cupo por franja aplica de verdad.
- * 3. Fallback (garantía, o ambas opciones sin cupo por carrera): envía la
- *    plantilla cliente_seleccion_horario_v2 con CTA a /horario/{token} y la
- *    solicitud queda en 'pendiente_horario' como antes.
+ *    la validación de cupo por franja aplica de verdad. Desde 2026-08-02
+ *    aplica TAMBIÉN a garantía: el formulario ya recogió las 2 fechas y
+ *    re-pedirlas por WhatsApp era redundante (confirmarHorarioSolicitud es
+ *    agnóstica al flujo: recargo finde es no-op en garantía y
+ *    notificarTecnicos usa la plantilla de garantía). El flujo customer-first
+ *    vía /horario/{token} sigue vivo para carga masiva (Excel MABE sin
+ *    fechas) y como fallback.
+ * 3. Fallback (ambas opciones sin cupo o inválidas): envía la plantilla
+ *    cliente_seleccion_horario_v2 con CTA a /horario/{token} y la solicitud
+ *    queda en 'pendiente_horario' como antes.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -69,12 +75,22 @@ export async function POST(req: NextRequest) {
         ? PAGO_TECNICO_DIAGNOSTICO
         : pagoNetoTecnicoTarifaFija(precioClienteCatalogo)
 
+    // edificio_conjunto / apto_casa NO son columnas en BD: se anexan a
+    // `direccion` (solo particular) para que lleguen a técnicos, admin y
+    // supervisores por los caminos existentes sin migración ni cambios de
+    // plantilla. Se excluyen del insert para no romperlo.
+    const { edificio_conjunto, apto_casa, ...datosSolicitud } = formData
+    const direccionCompleta = [
+      formData.direccion.trim(),
+      ...(formData.es_garantia ? [] : [edificio_conjunto?.trim(), apto_casa?.trim()]),
+    ].filter(Boolean).join(', ')
+
     const dataToInsert = {
-      ...formData,
+      ...datosSolicitud,
       pago_tecnico: pagoTecnicoCalculado,
       ciudad_pueblo: formData.ciudad_pueblo.trim(),
       zona_servicio: formData.zona_servicio.trim(),
-      direccion: formData.direccion.trim(),
+      direccion: direccionCompleta,
       cliente_nombre: formData.cliente_nombre.trim(),
       numero_serie_factura: formData.es_garantia ? formData.numero_serie_factura : null,
       estado: 'pendiente_horario' as const,
@@ -99,8 +115,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // PARTICULAR: auto-agendar la opción 1 (fallback opción 2). La transición
-    // reutiliza confirmarHorarioSolicitud (misma dueña que /api/confirmar-horario):
+    // Auto-agendar la opción 1 (fallback opción 2) — particular Y garantía
+    // (2026-08-02: el formulario ya recogió las fechas; re-pedirlas por
+    // WhatsApp era redundante). La transición reutiliza
+    // confirmarHorarioSolicitud (misma dueña que /api/confirmar-horario):
     // valida cupo por franja + mínimo mañana, pasa a 'notificada', envía la
     // confirmación WhatsApp al cliente y notifica técnicos.
     let agendado = false
@@ -108,26 +126,26 @@ export async function POST(req: NextRequest) {
     let notificados = 0
     let waEnviado = false
 
-    if (!formData.es_garantia) {
-      for (const opcion of [formData.horario_visita_1, formData.horario_visita_2]) {
-        try {
-          const r = await confirmarHorarioSolicitud(horarioToken, opcion)
-          if (r.ok) {
-            agendado = true
-            horarioAgendado = opcion
-            notificados = Number(r.body.notificados ?? 0)
-            waEnviado = true
-            break
-          }
-          console.warn(`[solicitar] auto-agendar "${opcion}" rechazado:`, r.body.error)
-        } catch (err) {
-          console.error('[solicitar] auto-agendar falló:', err)
+    for (const opcion of [formData.horario_visita_1, formData.horario_visita_2]) {
+      try {
+        const r = await confirmarHorarioSolicitud(horarioToken, opcion)
+        if (r.ok) {
+          agendado = true
+          horarioAgendado = opcion
+          notificados = Number(r.body.notificados ?? 0)
+          waEnviado = true
+          break
         }
+        console.warn(`[solicitar] auto-agendar "${opcion}" rechazado:`, r.body.error)
+      } catch (err) {
+        console.error('[solicitar] auto-agendar falló:', err)
       }
     }
 
-    // Fallback (garantía, o ninguna opción con cupo): plantilla de selección
+    // Fallback (ninguna opción con cupo o válida): plantilla de selección
     // de horario con CTA a /horario/{token} — flujo customer-first previo.
+    // Carga masiva (Excel MABE, sin fechas) no pasa por acá: usa su propio
+    // route que envía esta misma plantilla directamente.
     if (!agendado) {
       try {
         const result = await enviarSeleccionHorarioCliente(solicitud.id)

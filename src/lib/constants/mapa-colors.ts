@@ -17,6 +17,8 @@ export const COLOR_POR_ESTADO: Record<string, string> = {
   cotizacion_enviada:      '#06b6d4', // cyan-500
   cotizacion_rechazada:    '#f43f5e', // rose-500
   esperando_repuesto:      '#d946ef', // fuchsia-500
+  repuesto_en_camino:      '#0ea5e9', // sky-500
+  repuesto_recibido:       '#84cc16', // lime-500
   pendiente_pricing:       '#f97316', // orange-500
   finalizado_sin_reparacion:'#78716c',// stone-500
   reparacion_rechazada:    '#ef4444', // red-500

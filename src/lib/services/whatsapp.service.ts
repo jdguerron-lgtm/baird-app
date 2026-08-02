@@ -1293,19 +1293,29 @@ export async function notificarTecnicoVisitaReprogramada(
 }
 
 /**
- * SKUs de los repuestos registrados para una solicitud (excluye cancelados),
- * en una sola línea "SKU1, SKU2" — apto como parámetro de plantilla Meta
- * (los parámetros no admiten saltos de línea). '—' si no hay registros.
+ * Requerimiento exacto de los repuestos de una solicitud (excluye cancelados),
+ * en una sola línea "SKU x2 (descripción), SKU2 x1 (…)" — apto como parámetro
+ * de plantilla Meta (los parámetros no admiten saltos de línea). '—' si no hay
+ * registros. Desde 2026-08-02 incluye descripción y cantidad para que el
+ * supervisor reciba el pedido completo sin entrar al portal.
  */
 async function listarSkusSolicitud(solicitudId: string): Promise<string> {
   const { data } = await supabase
     .from('repuestos_pendientes')
-    .select('sku')
+    .select('sku, descripcion, cantidad')
     .eq('solicitud_id', solicitudId)
     .neq('estado', 'cancelado')
     .order('solicitado_at', { ascending: true })
-  const skus = (data ?? []).map(r => r.sku).filter(Boolean)
-  return skus.length > 0 ? skus.join(', ') : '—'
+  const items = (data ?? [])
+    .filter(r => r.sku)
+    .map(r => {
+      const cant = Number(r.cantidad) > 1 ? ` x${r.cantidad}` : ''
+      const desc = (r.descripcion ?? '').replace(/\s+/g, ' ').trim()
+      return desc ? `${r.sku}${cant} (${desc.substring(0, 60)})` : `${r.sku}${cant}`
+    })
+  const linea = items.join(', ')
+  // Tope defensivo: los params de Meta rechazan textos muy largos.
+  return linea ? linea.substring(0, 500) : '—'
 }
 
 /** Dirección completa del cliente en una línea (dirección, zona, ciudad). */
@@ -1385,7 +1395,11 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
       // si no, viene del diagnóstico del técnico (/api/diagnostico).
       return estadoPrevio === 'pendiente_pricing' ? 'admin' : 'tecnico'
     case 'cotizacion_rechazada': return 'cliente'   // decidió la cotización (/api/aprobar-cotizacion)
-    case 'esperando_repuesto': return 'cliente'     // aprobó esperar el repuesto
+    case 'esperando_repuesto':
+      // Garantía (2026-08-02): el diagnóstico del técnico pasa directo a
+      // esperando_repuesto. Particular: el cliente aprueba la cotización.
+      return estadoPrevio === 'asignada' ? 'tecnico' : 'cliente'
+    case 'repuesto_en_camino': return 'supervisor'  // subió la guía de envío (/api/supervisor/guia-envio)
     case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido)
     case 'en_proceso': return 'cliente'             // aprobó reparar/cotización o eligió fecha tras repuesto
     case 'confirmacion_pendiente': return 'tecnico' // completó el servicio (/api/completar-servicio)
@@ -1482,10 +1496,16 @@ export async function notificarCambioEstado(
 
     // Evento de repuesto en garantía → plantilla con datos de gestión del repuesto.
     const esEventoRepuestoGarantia =
-      sol.es_garantia && (estadoNuevo === 'esperando_repuesto' || estadoNuevo === 'repuesto_recibido')
+      sol.es_garantia &&
+      (estadoNuevo === 'esperando_repuesto' || estadoNuevo === 'repuesto_en_camino' || estadoNuevo === 'repuesto_recibido')
     const detalleRepuesto = esEventoRepuestoGarantia
       ? {
-          novedad: estadoNuevo === 'esperando_repuesto' ? 'Repuesto requerido' : 'Repuesto entregado al cliente',
+          novedad:
+            estadoNuevo === 'esperando_repuesto'
+              ? 'Repuesto requerido'
+              : estadoNuevo === 'repuesto_en_camino'
+                ? 'Repuesto en camino (guía de envío cargada)'
+                : 'Repuesto entregado al cliente',
           garantia: sol.numero_serie_factura ?? '—',
           skus: await listarSkusSolicitud(solicitudId),
           direccion: direccionUnaLinea(sol),
@@ -1940,6 +1960,170 @@ export async function enviarRepuestoLlegadoTecnico(solicitudId: string): Promise
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al CLIENTE que el repuesto ya va en camino (el supervisor subió la
+ * guía de envío) y debe agendar la visita de finalización — botón URL a
+ * /reprogramar-repuesto/{reprogramacion_token} (mismo flujo de agenda que el
+ * agendamiento inicial: franja + cupo + fecha_visita_at).
+ *
+ * Plantilla `repuesto_en_camino_cliente_v1`. Mientras Meta no la apruebe, cae
+ * a `repuesto_recibido_cliente_v2` (APPROVED, mismo botón/URL) para no dejar
+ * al cliente sin el link de agendamiento.
+ *
+ * Self-heal del token: si la fila no trae reprogramacion_token, se genera —
+ * mismo patrón que enviarRepuestoRecibidoCliente.
+ */
+export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, reprogramacion_token, es_garantia, numero_serie_factura, guia_envio_numero')
+    .eq('id', solicitudId)
+    .single()
+
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+
+  let reprogToken = sol.reprogramacion_token as string | null
+  if (!reprogToken) {
+    const nuevoToken = crypto.randomUUID()
+    const { data: updated } = await supabase
+      .from('solicitudes_servicio')
+      .update({ reprogramacion_token: nuevoToken })
+      .eq('id', solicitudId)
+      .is('reprogramacion_token', null)
+      .select('reprogramacion_token')
+      .single()
+    if (updated?.reprogramacion_token) {
+      reprogToken = updated.reprogramacion_token
+    } else {
+      const { data: refetch } = await supabase
+        .from('solicitudes_servicio')
+        .select('reprogramacion_token')
+        .eq('id', solicitudId)
+        .single()
+      reprogToken = refetch?.reprogramacion_token ?? null
+    }
+    if (!reprogToken) return { ok: false, error: 'No se pudo generar reprogramacion_token' }
+  }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+
+  const equipo = equipoConGarantia(sol)
+  const cliente = sol.cliente_nombre.split(' ')[0]
+  const tecnico = tec?.nombre_completo ?? 'Técnico asignado'
+  const guia = (sol.guia_envio_numero ?? '').replace(/\s+/g, ' ').trim() || 'Ver guía adjunta en el sistema'
+
+  const botonReprogramar = {
+    type: 'button',
+    sub_type: 'url',
+    index: '0',
+    parameters: [{ type: 'text', text: reprogToken }],
+  }
+
+  try {
+    try {
+      const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_en_camino_cliente_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: cliente },
+            { type: 'text', text: equipo },
+            { type: 'text', text: guia },
+            { type: 'text', text: tecnico },
+          ],
+        },
+        botonReprogramar,
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      return { ok: true }
+    } catch (err) {
+      // Fallback mientras repuesto_en_camino_cliente_v1 no esté APPROVED en
+      // Meta: el cliente recibe al menos el link de agendamiento con la
+      // plantilla aprobada de repuesto (el copy dice "llegó" en vez de
+      // "va en camino", pero el flujo no se corta).
+      console.error('[enviarRepuestoEnCaminoCliente] v1 falló, fallback a repuesto_recibido_cliente_v2:', err)
+      const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v2', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: cliente },
+            { type: 'text', text: equipo },
+            { type: 'text', text: tecnico },
+          ],
+        },
+        botonReprogramar,
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      return { ok: true }
+    }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Notifica al TÉCNICO que el repuesto de su servicio ya va en camino (guía de
+ * envío subida por el supervisor). El servicio sigue visible en su portal
+ * (tab activos); la fecha de la visita de finalización le llega cuando el
+ * cliente la elija (repuesto_recibido_tecnico_v1 vía reprogramarRepuesto).
+ *
+ * Plantilla `repuesto_en_camino_tecnico_v1`; fallback a la aprobada
+ * `repuesto_llegado_tecnico_v1` mientras Meta no apruebe la nueva.
+ */
+export async function enviarRepuestoEnCaminoTecnico(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id, es_garantia, numero_serie_factura, guia_envio_numero')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos').select('nombre_completo, whatsapp').eq('id', sol.tecnico_asignado_id).single()
+  if (!tec?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  const nombreTec = tec.nombre_completo.split(' ')[0]
+  const equipo = equipoConGarantia(sol)
+  const guia = (sol.guia_envio_numero ?? '').replace(/\s+/g, ' ').trim() || '—'
+
+  try {
+    try {
+      const r = await enviarPlantilla(tec.whatsapp, 'repuesto_en_camino_tecnico_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombreTec },
+            { type: 'text', text: equipo },
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: guia },
+          ],
+        },
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      return { ok: true }
+    } catch (err) {
+      // Fallback mientras repuesto_en_camino_tecnico_v1 no esté APPROVED.
+      console.error('[enviarRepuestoEnCaminoTecnico] v1 falló, fallback a repuesto_llegado_tecnico_v1:', err)
+      const r = await enviarPlantilla(tec.whatsapp, 'repuesto_llegado_tecnico_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombreTec },
+            { type: 'text', text: equipo },
+            { type: 'text', text: sol.cliente_nombre },
+          ],
+        },
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      return { ok: true }
+    }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
   }

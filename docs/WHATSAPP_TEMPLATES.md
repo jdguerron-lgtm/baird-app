@@ -222,7 +222,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 #### `esperando_repuesto_cliente_v1`
 - **En script** ✅
-- **Disparo**: `enviarEsperandoRepuestoCliente(...)` tras aprobación cliente del paso esperar_repuesto
+- **Disparo**: `enviarEsperandoRepuestoCliente(...)`. Desde 2026-08-02 en **garantía** se dispara DIRECTO desde `/api/diagnostico` (el paso `esperar_repuesto` ya no pasa por `pendiente_pricing` ni por aprobación del cliente); `tiempo_estimado` va como "Por confirmar — te avisaremos cuando esté en camino". En particular sigue saliendo tras la aprobación de la cotización (`/api/verificar-paso` quedó solo para los otros pasos de garantía).
 - **Destino**: cliente
 - **Body** (6 params): `cliente`, `tecnico`, `equipo`, `sku`, `descripcion_repuesto`, `tiempo_estimado`
 - **Sin botón**
@@ -253,6 +253,24 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/reprogramar-repuesto/{reprogramacion_token}` — display "Elegir nueva fecha"
 - **Propósito**: el repuesto llegó; el cliente elige una **nueva fecha tentativa** (semanas pueden haber pasado desde el diagnóstico). El copy aclara que la fecha se confirma según disponibilidad del técnico. Al elegir, `/api/reprogramar-repuesto` pasa la solicitud a `en_proceso`.
 - **⚠️ Cambio vs `_v1`**: `_v1` (sin botón) solo avisaba "el técnico se contactará". `_v2` agrega el botón para que el cliente reagende. `_v1` queda deprecated en Meta (cooldown 4 semanas).
+
+#### `repuesto_en_camino_cliente_v1` ⏳ PENDING en Meta (subida 2026-08-02, id 1367504061637039)
+- **En script** ✅ (nueva 2026-08-02)
+- **Disparo**: `enviarRepuestoEnCaminoCliente(solicitudId)` desde `POST /api/supervisor/guia-envio`, cuando el **supervisor** sube la guía de envío del repuesto (estado pasa a `repuesto_en_camino`).
+- **Destino**: cliente
+- **Body** (4 params): `cliente`, `equipo`, `numero_guia`, `tecnico`
+- **Botón URL**: `/reprogramar-repuesto/{reprogramacion_token}` — display "Agendar visita"
+- **Propósito**: el repuesto va en camino; el cliente **agenda la visita de finalización** (misma página/validación de agenda que el flujo de repuesto recibido: franja + cupo + `fecha_visita_at`). Al elegir, la solicitud pasa a `en_proceso`.
+- **Fallback mientras no esté APPROVED**: `repuesto_recibido_cliente_v2` (mismo botón/URL) — el flujo no se corta, solo cambia el copy ("llegó" en vez de "va en camino").
+
+#### `repuesto_en_camino_tecnico_v1` ⏳ PENDING en Meta (subida 2026-08-02, id 1400519398659010)
+- **En script** ✅ (nueva 2026-08-02)
+- **Disparo**: `enviarRepuestoEnCaminoTecnico(solicitudId)` desde `POST /api/supervisor/guia-envio`, junto al aviso al cliente.
+- **Destino**: técnico asignado
+- **Body** (4 params): `nombre_tecnico`, `equipo`, `cliente`, `numero_guia`
+- **Sin botón** (informativo)
+- **Propósito**: el técnico sabe que el repuesto de su servicio ya fue despachado; la fecha de la visita de finalización le llega después vía `repuesto_recibido_tecnico_v1` cuando el cliente la elige.
+- **Fallback mientras no esté APPROVED**: `repuesto_llegado_tecnico_v1`.
 
 #### `repuesto_recibido_tecnico_v1` ⏳ pendiente de subir a Meta
 - **En script** ✅ (nueva 2026-05-29)
@@ -303,14 +321,14 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Sin botón** (informativo)
 - **Propósito**: dar visibilidad a supervisores (p.ej. uno general que ve todo, otro que solo ve garantías MABE) sobre cualquier cambio de estado. La plantilla funciona fuera de la ventana 24h (los supervisores no chatean con el número del negocio).
 - **Nota**: `notificarCambioEstado` nunca lanza — si el envío falla, loguea y no rompe la transición que lo disparó.
-- **Excepción (2026-06-12)**: para transiciones a `esperando_repuesto` / `repuesto_recibido` de servicios en **garantía**, `notificarCambioEstado` envía `supervisor_repuesto_garantia_v1` (con datos del repuesto) en lugar de esta genérica — con fallback a esta si aquella falla (p.ej. aún no aprobada en Meta).
+- **Excepción (2026-06-12, ampliada 2026-08-02)**: para transiciones a `esperando_repuesto` / `repuesto_en_camino` / `repuesto_recibido` de servicios en **garantía**, `notificarCambioEstado` envía `supervisor_repuesto_garantia_v1` (con datos del repuesto) en lugar de esta genérica — con fallback a esta si aquella falla (p.ej. aún no aprobada en Meta).
 
 #### `supervisor_repuesto_garantia_v1` ⏳ pendiente de subir a Meta
 - **En script** ✅ (nueva 2026-06-12; ampliada a 9 params 2026-06-16)
-- **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` cuando `es_garantia=true` y `estadoNuevo` ∈ {`esperando_repuesto`, `repuesto_recibido`} — cubre `/api/verificar-paso`, `/api/repuesto-recibido` y cambios manuales de admin. Mismo filtrado por supervisor (`ambito`/`marca`/`estados`) que la genérica.
+- **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` cuando `es_garantia=true` y `estadoNuevo` ∈ {`esperando_repuesto`, `repuesto_en_camino`, `repuesto_recibido`} — desde 2026-08-02 `esperando_repuesto` sale DIRECTO de `/api/diagnostico` (el técnico solicita la parte → el supervisor recibe el requerimiento exacto al instante) y `repuesto_en_camino` de `/api/supervisor/guia-envio`. Mismo filtrado por supervisor (`ambito`/`marca`/`estados`) que la genérica.
 - **Destino**: cada supervisor activo cuyo filtro matchea
 - **Header**: TEXT — "Actualización de repuesto"
-- **Body** (9 params): `supervisor_nombre`, `novedad` ("Repuesto requerido" | "Repuesto entregado al cliente"), `cliente`, `equipo`, `modelo` (prefijo `[Modelo: X]` de `novedades_equipo`; '—' si no viene), `numero_garantia` (= `numero_serie_factura`), `sku` (lista de `repuestos_pendientes`, excluye cancelados), `direccion` (dirección + zona + ciudad), `diagnostico` (`triaje_resultado.diagnostico_tecnico`, saneado a una línea, tope 200; 'Diagnóstico realizado' si no hay)
+- **Body** (9 params): `supervisor_nombre`, `novedad` ("Repuesto requerido" | "Repuesto en camino (guía de envío cargada)" | "Repuesto entregado al cliente"), `cliente`, `equipo`, `modelo` (prefijo `[Modelo: X]` de `novedades_equipo`; '—' si no viene), `numero_garantia` (= `numero_serie_factura`), `sku` (lista de `repuestos_pendientes`, excluye cancelados; desde 2026-08-02 incluye descripción y cantidad: `"SKU x2 (descripción)"`), `direccion` (dirección + zona + ciudad), `diagnostico` (`triaje_resultado.diagnostico_tecnico`, saneado a una línea, tope 200; 'Diagnóstico realizado' si no hay)
 - **Sin botón** (informativo)
 - **Propósito**: que el supervisor tenga los datos con los que se gestiona el repuesto ante la marca (modelo del equipo, No. de garantía, SKU, dirección de despacho y el diagnóstico del técnico) sin abrir el panel. En **particular** los eventos de repuesto siguen llegando con la genérica `supervisor_cambio_estado_v1` (se mantiene como estaba).
 - **Nota**: mientras Meta no la apruebe, `notificarCambioEstado` cae automáticamente a la genérica — no se pierde el aviso.

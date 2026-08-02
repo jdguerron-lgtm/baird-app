@@ -22,6 +22,8 @@ interface Props {
   solicitud: SolicitudData
   tecnicoNombre: string
   yaReprogramado: boolean
+  /** true si el repuesto va en camino (guía subida por el supervisor) y aún no llega */
+  enCamino?: boolean
 }
 
 function formatFechaLarga(iso: string): string {
@@ -41,7 +43,7 @@ function fechaMaxima(): string {
   return fechaColombiaMasDias(14)
 }
 
-export default function ReprogramarSelector({ token, solicitud, tecnicoNombre, yaReprogramado }: Props) {
+export default function ReprogramarSelector({ token, solicitud, tecnicoNombre, yaReprogramado, enCamino }: Props) {
   const [fecha, setFecha] = useState('')
   const [franja, setFranja] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -137,9 +139,13 @@ export default function ReprogramarSelector({ token, solicitud, tecnicoNombre, y
     <main className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="mx-auto max-w-lg">
         <div className="rounded-2xl bg-white p-6 shadow-lg mb-4">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">¡Tu repuesto llegó, {cliente}! 🎉</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            {enCamino ? `¡Tu repuesto va en camino, ${cliente}! 📦` : `¡Tu repuesto llegó, ${cliente}! 🎉`}
+          </h1>
           <p className="text-gray-600 mb-1">
-            Ya podemos retomar la reparación de tu equipo. Elige una nueva fecha para la visita:
+            {enCamino
+              ? 'El repuesto ya fue despachado. Agenda la visita para finalizar la reparación de tu equipo:'
+              : 'Ya podemos retomar la reparación de tu equipo. Elige una nueva fecha para la visita:'}
           </p>
           <p className="text-lg font-semibold text-gray-900">🔧 {equipo}</p>
           <p className="text-sm text-gray-500">{solicitud.zona_servicio}, {solicitud.ciudad_pueblo}</p>

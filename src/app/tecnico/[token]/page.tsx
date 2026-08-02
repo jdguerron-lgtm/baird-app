@@ -149,6 +149,8 @@ export default function PortalTecnicoPage() {
     'pendiente_pricing',
     'cotizacion_enviada',
     'esperando_repuesto',
+    'repuesto_en_camino',
+    'repuesto_recibido',
     'aprobacion_paso_pendiente',
     'en_proceso',
   ].includes(s.estado))
@@ -276,6 +278,8 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
     s.estado === 'pendiente_pricing' ? 'Baird está fijando precio y tiempo de entrega'
     : s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
     : s.estado === 'esperando_repuesto' ? 'Esperando llegada del repuesto'
+    : s.estado === 'repuesto_en_camino' ? 'Repuesto en camino — el cliente está agendando la visita'
+    : s.estado === 'repuesto_recibido' ? 'Repuesto entregado — el cliente elige nueva fecha'
     : s.estado === 'aprobacion_paso_pendiente' ? 'Cliente aprobando siguiente paso'
     : s.estado === 'confirmacion_pendiente' ? 'Esperando confirmación del cliente'
     : null

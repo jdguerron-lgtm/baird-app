@@ -463,8 +463,14 @@ export async function procesarAprobacionCotizacion(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// repuesto_recibido → en_proceso  (reprogramar-repuesto)
+// repuesto_en_camino | repuesto_recibido → en_proceso  (reprogramar-repuesto)
+// El cliente agenda la visita de finalización: tras la guía de envío del
+// supervisor (repuesto_en_camino, 2026-08-02) o tras la llegada marcada por
+// admin (repuesto_recibido). Registra horario_confirmado + fecha_visita_at
+// igual que el agendamiento inicial (validarHorarioAgendable: cupo + franja).
 // ─────────────────────────────────────────────────────────────────
+const ESTADOS_REPROGRAMABLES_REPUESTO = ['repuesto_en_camino', 'repuesto_recibido'] as const
+
 export async function reprogramarRepuestoSolicitud(
   token: unknown,
   horario: unknown,
@@ -486,9 +492,10 @@ export async function reprogramarRepuestoSolicitud(
     return { ok: false, httpStatus: 404, body: { error: 'Enlace inválido o expirado' } }
   }
 
-  if (sol.estado !== 'repuesto_recibido') {
+  if (!ESTADOS_REPROGRAMABLES_REPUESTO.includes(sol.estado as (typeof ESTADOS_REPROGRAMABLES_REPUESTO)[number])) {
     return { ok: false, httpStatus: 400, body: { error: 'Esta reprogramación ya no está disponible' } }
   }
+  const estadoPrevio = sol.estado as string
 
   // Validación de agenda: mínimo mañana + cupo por slot (día + franja).
   // Devuelve además la fecha estructurada que alimenta el mapa admin.
@@ -498,8 +505,8 @@ export async function reprogramarRepuestoSolicitud(
   }
   const fechaVisitaAt = agenda.fechaVisitaAt
 
-  // 2. UPDATE atómico — solo si sigue en repuesto_recibido. Limpia el token
-  //    para que el enlace no se pueda reusar.
+  // 2. UPDATE atómico — solo si sigue en el estado reprogramable leído.
+  //    Limpia el token para que el enlace no se pueda reusar.
   const { data: updated, error: updateErr } = await supabase
     .from('solicitudes_servicio')
     .update({
@@ -510,7 +517,7 @@ export async function reprogramarRepuestoSolicitud(
       reprogramacion_token: null,
     })
     .eq('id', sol.id)
-    .eq('estado', 'repuesto_recibido')
+    .eq('estado', estadoPrevio)
     .select('id')
     .single()
 
@@ -523,10 +530,13 @@ export async function reprogramarRepuestoSolicitud(
     await supabase.from('solicitud_eventos').insert({
       solicitud_id: sol.id,
       tipo: 'reagendamiento_confirmado',
-      estado_previo: 'repuesto_recibido',
+      estado_previo: estadoPrevio,
       estado_nuevo: 'en_proceso',
       actor: 'cliente',
-      motivo: 'Cliente eligió nueva fecha tras llegada de repuesto',
+      motivo:
+        estadoPrevio === 'repuesto_en_camino'
+          ? 'Cliente agendó la visita de finalización (repuesto en camino)'
+          : 'Cliente eligió nueva fecha tras llegada de repuesto',
       payload: { horario_confirmado: horarioElegido, tentativo: true },
     })
   } catch (err) {
@@ -545,7 +555,7 @@ export async function reprogramarRepuestoSolicitud(
 
   // 5. Notificar a supervisores configurados (no bloquea ni revierte si falla).
   // registrarEvento:false — arriba se insertó el evento dedicado 'reagendamiento_confirmado'.
-  await notificarCambioEstado(sol.id, 'repuesto_recibido', 'en_proceso', { registrarEvento: false })
+  await notificarCambioEstado(sol.id, estadoPrevio, 'en_proceso', { registrarEvento: false })
 
   return {
     ok: true,

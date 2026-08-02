@@ -8,10 +8,12 @@ interface Props {
 }
 
 /**
- * Página de reprogramación tras llegada del repuesto.
- * El cliente recibe el link /reprogramar-repuesto/{token} por WhatsApp cuando
- * el admin marca el repuesto como recibido (estado repuesto_recibido) y elige
- * una nueva fecha (tentativa) para la visita. Al confirmar, pasa a en_proceso.
+ * Página de agendamiento de la visita de finalización tras el repuesto.
+ * El cliente recibe el link /reprogramar-repuesto/{token} por WhatsApp cuando:
+ *   - el SUPERVISOR sube la guía de envío (estado repuesto_en_camino, 2026-08-02), o
+ *   - el admin marca el repuesto como recibido (estado repuesto_recibido).
+ * Elige una fecha (tentativa) para la visita; al confirmar pasa a en_proceso y
+ * queda registrada en fecha_visita_at (mismo mecanismo del agendamiento inicial).
  */
 export default async function ReprogramarRepuestoPage({ params }: Props) {
   const { token } = await params
@@ -50,7 +52,7 @@ export default async function ReprogramarRepuestoPage({ params }: Props) {
     if (tec?.nombre_completo) tecnicoNombre = tec.nombre_completo.split(' ')[0]
   }
 
-  const yaReprogramado = sol.estado !== 'repuesto_recibido'
+  const yaReprogramado = sol.estado !== 'repuesto_recibido' && sol.estado !== 'repuesto_en_camino'
 
   return (
     <ReprogramarSelector
@@ -58,6 +60,7 @@ export default async function ReprogramarRepuestoPage({ params }: Props) {
       solicitud={sol}
       tecnicoNombre={tecnicoNombre}
       yaReprogramado={yaReprogramado}
+      enCamino={sol.estado === 'repuesto_en_camino'}
     />
   )
 }

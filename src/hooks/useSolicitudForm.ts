@@ -7,6 +7,8 @@ const initialFormData: SolicitudFormData = {
   cliente_nombre: '',
   cliente_telefono: '',
   direccion: '',
+  edificio_conjunto: '',
+  apto_casa: '',
   ciudad_pueblo: '',
   zona_servicio: '',
   marca_equipo: '',

@@ -7,6 +7,7 @@ export const ESTADO_ESTILOS: Record<string, string> = {
   cotizacion_enviada: 'bg-cyan-100 text-cyan-800',
   cotizacion_rechazada: 'bg-rose-100 text-rose-800',
   esperando_repuesto: 'bg-fuchsia-100 text-fuchsia-800',
+  repuesto_en_camino: 'bg-sky-100 text-sky-800',
   repuesto_recibido: 'bg-lime-100 text-lime-800',
   pendiente_pricing: 'bg-orange-100 text-orange-800',
   finalizado_sin_reparacion: 'bg-stone-200 text-stone-700',
@@ -38,6 +39,7 @@ export const ESTADO_LABELS: Record<string, string> = {
   cotizacion_enviada: 'Cotización enviada',
   cotizacion_rechazada: 'Cotización rechazada',
   esperando_repuesto: 'Esperando repuesto',
+  repuesto_en_camino: 'Repuesto en camino',
   repuesto_recibido: 'Repuesto recibido',
   pendiente_pricing: 'Pendiente tiempo entrega (admin)',
   finalizado_sin_reparacion: 'Finalizado sin reparación',
@@ -58,9 +60,9 @@ export const ESTADO_LABELS: Record<string, string> = {
   pendiente: 'Pendiente',
 }
 
-// Lista canónica de estados válidos de `solicitudes_servicio` (18 estados).
+// Lista canónica de estados válidos de `solicitudes_servicio` (19 estados).
 // DEBE coincidir con el CHECK constraint `solicitudes_servicio_estado_check`
-// (ver supabase/migrations/20260709_purga_estados_contract.sql). Si añades
+// (ver supabase/migrations/20260802_repuesto_en_camino_guia.sql). Si añades
 // un estado, actualizá la migración, este array y `EstadoSolicitud` en
 // src/types/solicitud.ts. Usado por el dropdown de cambio manual de estado en
 // el admin y por /api/admin/cambiar-estado para validar el destino.
@@ -79,6 +81,7 @@ export const ESTADOS_VALIDOS = [
   'cotizacion_enviada',
   'cotizacion_rechazada',
   'esperando_repuesto',
+  'repuesto_en_camino',
   'repuesto_recibido',
   'finalizado_sin_reparacion',
   'reparacion_rechazada',
