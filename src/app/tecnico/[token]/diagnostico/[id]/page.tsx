@@ -797,10 +797,15 @@ export default function DiagnosticoPage() {
             </div>
           </div>
 
-          {/* Nota: el precio y tiempo de entrega de repuestos los fija el equipo Baird tras revisar el diagnóstico */}
+          {/* Nota del flujo de repuestos (actualizada 2026-08-02): en garantía el
+              pedido va directo al supervisor de la marca; en particular el
+              equipo Baird revisa el precio de los repuestos antes de cotizar. */}
           <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-3">
             <p className="text-xs text-amber-900">
-              💡 <strong>Nuevo flujo:</strong> tú indicas qué repuestos se necesitan; el equipo Baird fija precio y tiempo de entrega antes de enviar la cotización al cliente.
+              💡 <strong>Repuestos:</strong> tú indicas qué repuestos se necesitan (con SKU).{' '}
+              {servicio!.es_garantia
+                ? 'El pedido le llega de inmediato al supervisor de la marca, quien coordina el envío — te avisaremos cuando vaya en camino.'
+                : 'El equipo Baird fija el precio de los repuestos antes de enviar la cotización al cliente.'}
             </p>
           </div>
         </div>

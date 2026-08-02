@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Actualización Agosto 2026 — Baird Service</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8fafc; color: #1e293b; line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 1.25rem 4rem; }
+
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    color: #fff; padding: 3rem 1.25rem 2.5rem; text-align: center;
+  }
+  .hero .logo { font-size: 1rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: .8; margin-bottom: .75rem; }
+  .hero h1 { font-size: 2rem; line-height: 1.2; margin-bottom: .5rem; }
+  .hero p { max-width: 620px; margin: 0 auto; opacity: .85; font-size: 1.05rem; }
+  .hero .fecha { margin-top: 1.25rem; font-size: .8rem; opacity: .6; }
+
+  h2 {
+    font-size: 1.45rem; margin: 3rem 0 1rem; padding-bottom: .5rem;
+    border-bottom: 3px solid #10b981; color: #0f172a;
+  }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2rem; height: 2rem; border-radius: 50%; background: #10b981; color: #fff;
+    font-size: 1rem; margin-right: .6rem; vertical-align: middle;
+  }
+  h3 { font-size: 1.1rem; margin: 1.75rem 0 .5rem; color: #0f172a; }
+  p + p { margin-top: .75rem; }
+
+  .card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 1.25rem 1.4rem; margin: 1rem 0;
+  }
+  .card.nota { border-left: 5px solid #f59e0b; background: #fffbeb; }
+  .card.ok   { border-left: 5px solid #10b981; background: #ecfdf5; }
+  .card.info { border-left: 5px solid #3b82f6; background: #eff6ff; }
+
+  ul, ol { padding-left: 1.4rem; margin: .5rem 0; }
+  li { margin: .35rem 0; }
+  strong { color: #0f172a; }
+
+  .badge {
+    display: inline-block; padding: .2rem .65rem; border-radius: 9999px;
+    font-size: .8rem; font-weight: 700; white-space: nowrap;
+  }
+  .b-fuchsia { background: #fae8ff; color: #86198f; }
+  .b-sky     { background: #e0f2fe; color: #075985; }
+  .b-lime    { background: #ecfccb; color: #3f6212; }
+  .b-purple  { background: #f3e8ff; color: #6b21a8; }
+
+  /* ── Comparativas antes / después ── */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0 1.75rem; }
+  @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+  figure {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  figure img { width: 100%; height: auto; display: block; }
+  figcaption {
+    padding: .55rem .9rem; font-size: .8rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  figure.antes   figcaption { background: #fef2f2; color: #b91c1c; }
+  figure.despues figcaption { background: #ecfdf5; color: #047857; }
+  .img-scroll { max-height: 560px; overflow-y: auto; }
+  .pie { font-size: .85rem; color: #64748b; margin-top: -1rem; margin-bottom: 1.5rem; }
+
+  .flujo {
+    background: #0f172a; color: #e2e8f0; border-radius: 14px;
+    padding: 1.1rem 1.3rem; font-size: .9rem; margin: 1rem 0;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .flujo b { color: #34d399; }
+  footer { text-align: center; margin-top: 4rem; font-size: .8rem; color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="logo">Baird Service</div>
+  <h1>📦 Actualización de la plataforma</h1>
+  <p>Nuevo flujo de repuestos en garantía, guía de envío desde el portal del supervisor y foto de placa obligatoria. Esto es lo que cambió para ti.</p>
+  <div class="fecha">Agosto 2026 · lineablanca.bairdservice.com</div>
+</div>
+
+<div class="wrap">
+
+  <h2><span class="num">1</span>Resumen — qué cambió</h2>
+  <div class="card ok">
+    <ul>
+      <li><strong>El pedido de repuesto en garantía ya no espera aprobaciones:</strong> al registrar el diagnóstico, el servicio queda de inmediato en <span class="badge b-fuchsia">Esperando repuesto</span> y el supervisor de la marca recibe el requerimiento exacto (SKU, descripción y cantidad) al instante. Se eliminó el paso de "tiempo de entrega".</li>
+      <li><strong>Nuevo estado <span class="badge b-sky">Repuesto en camino</span>:</strong> el supervisor sube la <strong>guía de envío</strong> desde su portal y el sistema avisa automáticamente al cliente (para que agende la visita de finalización) y al técnico.</li>
+      <li><strong>El agendamiento de la visita de finalización queda registrado</strong> en el sistema (agenda y calendario), igual que el agendamiento inicial del diagnóstico.</li>
+      <li><strong>Foto de la placa del producto obligatoria:</strong> ahora es una entrada propia del formulario, tanto en el diagnóstico como al completar el servicio.</li>
+      <li><strong>Portal del supervisor con PDF:</strong> el listado y la ficha de cada servicio se pueden descargar en PDF.</li>
+    </ul>
+  </div>
+
+  <div class="flujo">
+    Diagnóstico con repuesto → <b>Esperando repuesto</b> (aviso inmediato al supervisor) → supervisor sube guía → <b>Repuesto en camino</b> (aviso a cliente y técnico) → cliente agenda visita de finalización → <b>En proceso</b> → completar
+  </div>
+
+  <h2><span class="num">2</span>Para TÉCNICOS 🔧</h2>
+
+  <h3>🏷️ Foto de la placa del producto — ahora obligatoria y con su propia sección</h3>
+  <p>Antes la placa era solo un recordatorio dentro de las evidencias. Ahora el formulario de diagnóstico tiene una <strong>sección propia "Foto de la placa del producto"</strong> y no podrás enviar el diagnóstico sin ella. La placa (etiqueta del fabricante con el modelo) es la que permite validar repuestos y la garantía.</p>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ Antes</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/diagnostico_antes.png" alt="Formulario de diagnóstico antes: la placa era solo un recordatorio"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Después</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/diagnostico_despues.png" alt="Formulario de diagnóstico después: sección propia y obligatoria para la foto de la placa"></div>
+    </figure>
+  </div>
+  <p class="pie">Formulario de diagnóstico: a la derecha, la nueva sección obligatoria "🏷️ Foto de la placa del producto *".</p>
+
+  <p>Lo mismo aplica al <strong>completar el servicio</strong>: hay una entrada dedicada para la placa del equipo intervenido antes de poder cerrar.</p>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ Antes</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/completar_antes.png" alt="Formulario de completar antes"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Después</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/completar_despues.png" alt="Formulario de completar después: con sección de foto de placa obligatoria"></div>
+    </figure>
+  </div>
+
+  <h3>📦 Repuestos en garantía: más rápido y sin pasos intermedios</h3>
+  <div class="card info">
+    <ul>
+      <li>Al registrar tu diagnóstico con <strong>"Esperar repuesto"</strong> (SKU obligatorio, igual que siempre), el servicio pasa <strong>directo</strong> a <span class="badge b-fuchsia">Esperando repuesto</span>. Ya no hay espera de "tiempo de entrega" ni aprobación previa del cliente.</li>
+      <li>Recibes de una vez por WhatsApp los datos de gestión (No. de garantía, SKU y dirección del cliente).</li>
+      <li>Cuando el supervisor de la marca despache el repuesto, te llega el aviso <strong>"repuesto en camino"</strong> con el número de guía.</li>
+      <li>El cliente agenda la visita de finalización y te llega la fecha tentativa para que la confirmes — como siempre, la confirmas según tu disponibilidad.</li>
+      <li><strong>El servicio nunca desaparece de tu portal:</strong> lo verás en "En proceso" con los estados <span class="badge b-fuchsia">Esperando repuesto</span>, <span class="badge b-sky">Repuesto en camino</span> o <span class="badge b-lime">Repuesto recibido</span> según avance.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">3</span>Para SUPERVISORES 🛡️</h2>
+
+  <h3>📩 Requerimiento del repuesto exacto, al instante</h3>
+  <p>En cuanto el técnico registra el diagnóstico con repuesto, recibes por WhatsApp el requerimiento completo: <strong>SKU × cantidad (descripción)</strong>, modelo del equipo, No. de garantía, dirección de despacho y el diagnóstico del técnico. Sin esperas ni pasos intermedios del equipo Baird.</p>
+
+  <h3>🚚 Nuevo en tu portal: subir la guía de envío</h3>
+  <p>Cuando despaches el repuesto, entra al servicio en tu portal y usa la nueva sección <strong>"📦 Repuesto y guía de envío"</strong>: adjunta la guía (foto o PDF) y el número de guía. Al subirla, el sistema hace todo lo demás:</p>
+  <ul>
+    <li>El servicio pasa a <span class="badge b-sky">Repuesto en camino</span>.</li>
+    <li>El <strong>cliente</strong> recibe el aviso con botón para <strong>agendar la visita de finalización</strong> (queda registrada en el sistema).</li>
+    <li>El <strong>técnico</strong> recibe el aviso de que el producto va en camino.</li>
+  </ul>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ Antes</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/supervisor_antes.png" alt="Portal supervisor antes: sin sección de guía de envío"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Después</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/supervisor_despues.png" alt="Portal supervisor después: sección de repuesto requerido y subida de guía de envío"></div>
+    </figure>
+  </div>
+  <p class="pie">Detalle de un servicio esperando repuesto en el portal del supervisor: a la derecha, el requerimiento del repuesto y el cargue de la guía.</p>
+
+  <h3>⬇️ Descarga en PDF</h3>
+  <p>El listado de servicios y la ficha de cada servicio ahora tienen botón <strong>"Descargar PDF"</strong> — útil para reportar a la marca o archivar.</p>
+
+  <div class="card nota">
+    <strong>Recuerda tu acceso:</strong> entra con tu link personal o desde <strong>lineablanca.bairdservice.com/supervisor</strong> con tu número de WhatsApp (te llega un código de 6 dígitos).
+  </div>
+
+  <h2><span class="num">4</span>Qué NO cambió</h2>
+  <div class="card">
+    <ul>
+      <li>El flujo particular (sin garantía) sigue igual: cotización al cliente y aprobación antes de proceder.</li>
+      <li>Los pagos, tarifas y bonos no cambian con esta actualización.</li>
+      <li>El agendamiento inicial del diagnóstico y el protocolo de visita siguen igual.</li>
+      <li>El camino alterno donde el equipo Baird marca el repuesto como recibido sigue disponible.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Baird Service · Actualización de plataforma · Agosto 2026<br>
+    ¿Dudas? Escríbenos por WhatsApp al canal de siempre.
+  </footer>
+</div>
+
+</body>
+</html>
