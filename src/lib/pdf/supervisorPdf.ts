@@ -299,6 +299,20 @@ export function construirPdfDetalleSolicitud(
   if (sol.ai_pre_diagnostico) equipo.push(['Pre-diagnóstico', sol.ai_pre_diagnostico])
   y = seccionCampos(doc, 'Equipo y servicio', equipo, y)
 
+  // Diagnóstico del técnico (código de falla + texto), si ya existe.
+  const triaje = sol.triaje_resultado
+  if (triaje?.codigo_falla || triaje?.diagnostico_tecnico) {
+    const diag: Array<[string, string]> = []
+    if (triaje.codigo_falla) {
+      const partes = [triaje.descripcion_falla, triaje.familia_falla, triaje.sistema_falla, triaje.componente_falla, triaje.complejidad_falla]
+        .filter(Boolean)
+        .map(String)
+      diag.push(['Código de falla', `${String(triaje.codigo_falla)}${partes.length ? ` — ${partes.join(' · ')}` : ''}`])
+    }
+    if (triaje.diagnostico_tecnico) diag.push(['Diagnóstico', String(triaje.diagnostico_tecnico)])
+    y = seccionCampos(doc, 'Diagnóstico del técnico', diag, y)
+  }
+
   const cotizacionTotal =
     sol.cotizacion && typeof sol.cotizacion.total === 'number' ? (sol.cotizacion.total as number) : null
   const agenda: Array<[string, string]> = [

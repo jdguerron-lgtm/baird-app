@@ -284,6 +284,50 @@ export default function SupervisorDetalle() {
         </Seccion>
       </div>
 
+      {/* Diagnóstico del técnico: código de falla reportado + texto del
+          diagnóstico. Mismo dato que ve el admin (triaje_resultado). */}
+      {(() => {
+        const triaje = sol.triaje_resultado
+        if (!triaje?.codigo_falla && !triaje?.diagnostico_tecnico) return null
+        return (
+          <div className="mt-4">
+            <Seccion titulo="🔧 Diagnóstico del técnico">
+              {!!triaje.codigo_falla && (
+                <div className="flex items-center gap-4 mb-4 bg-purple-50 rounded-xl p-4 border border-purple-100">
+                  <div className="w-14 h-14 rounded-xl bg-purple-600 text-white flex flex-col items-center justify-center shrink-0">
+                    <span className="text-[8px] uppercase font-semibold opacity-80">Falla</span>
+                    <span className="text-lg font-extrabold leading-none">{String(triaje.codigo_falla)}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{String(triaje.descripcion_falla ?? '')}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {!!triaje.familia_falla && (
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{String(triaje.familia_falla)}</span>
+                      )}
+                      {!!triaje.sistema_falla && (
+                        <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{String(triaje.sistema_falla)}</span>
+                      )}
+                      {!!triaje.componente_falla && (
+                        <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{String(triaje.componente_falla)}</span>
+                      )}
+                      {!!triaje.complejidad_falla && (
+                        <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">{String(triaje.complejidad_falla)}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {!!triaje.diagnostico_tecnico && (
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Diagnóstico</p>
+                  <p className="text-sm text-slate-800 mt-0.5 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">{String(triaje.diagnostico_tecnico)}</p>
+                </div>
+              )}
+            </Seccion>
+          </div>
+        )
+      })()}
+
       {/* Repuesto requerido + guía de envío. La subida de la guía es la ÚNICA
           acción de escritura del portal (2026-08-02): dispara la transición
           esperando_repuesto → repuesto_en_camino y avisa a cliente y técnico
