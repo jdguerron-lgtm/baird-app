@@ -22,11 +22,17 @@ const TEMPLATE = 'supervisor_actualizaciones_v1'
 
 // ── EDITAR EN CADA ENVÍO ─────────────────────────────────────────────────────
 // Una sola línea, mejoras separadas por " • " (sin saltos de línea).
+// Edición 2026-08-03 — flujo de repuestos v2 (enviada; la anterior quedó abajo).
 const NOVEDADES =
-  'Nuevo panel de supervisión con tu acceso personal en tiempo real (llega con cada informe semanal) • ' +
-  'Etiquetas de estado renombradas y simplificadas: ahora cada una te dice quién debe actuar • ' +
-  'Nueva Guía del Supervisor con el paso a paso de cada etapa (botón abajo) • ' +
-  'El informe semanal en PDF ahora incluye el link a la guía'
+  'Los pedidos de repuesto en garantía ahora te llegan al instante con SKU, cantidad, descripción y dirección de despacho — sin pasos intermedios • ' +
+  'Nuevo en tu panel: sube la guía de envío del repuesto y el sistema avisa automáticamente al cliente (para agendar la visita de finalización) y al técnico • ' +
+  'Descarga en PDF el listado y la ficha de cada servicio • ' +
+  'Toca el botón y abre el aviso verde "Actualización Agosto 2026" para ver el cambio con capturas de antes y después'
+// Edición anterior (2026-07-11):
+//   'Nuevo panel de supervisión con tu acceso personal en tiempo real (llega con cada informe semanal) • ' +
+//   'Etiquetas de estado renombradas y simplificadas: ahora cada una te dice quién debe actuar • ' +
+//   'Nueva Guía del Supervisor con el paso a paso de cada etapa (botón abajo) • ' +
+//   'El informe semanal en PDF ahora incluye el link a la guía'
 // ─────────────────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2)
