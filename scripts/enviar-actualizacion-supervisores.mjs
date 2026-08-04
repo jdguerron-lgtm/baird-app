@@ -16,7 +16,9 @@ const TOKEN = process.env.WHATSAPP_API_TOKEN
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID
 const WABA_ID = process.env.WABA_ID || '2354953275016882'
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// La tabla supervisores quedó detrás de RLS (el anon key ya no la lee).
+// Preferir la service role key; si no está en .env.local, usar --to (abajo).
+const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 const TEMPLATE = 'supervisor_actualizaciones_v1'
 
@@ -59,13 +61,29 @@ if (status !== 'APPROVED' && !FORCE) {
   process.exit(1)
 }
 
-// 2. Supervisores activos
-const supabase = createClient(SB_URL, SB_KEY)
-const { data: sups, error: supErr } = await supabase
-  .from('supervisores')
-  .select('nombre, whatsapp, activo')
-  .eq('activo', true)
-if (supErr) { console.error('Query supervisores falló:', supErr.message); process.exit(1) }
+// 2. Supervisores activos.
+//    --to "Nombre:573...,Nombre2:573..." salta la query (útil sin service key
+//    local, con la lista sacada del dashboard/MCP de Supabase).
+let sups
+const toIdx = args.indexOf('--to')
+if (toIdx !== -1 && args[toIdx + 1]) {
+  sups = args[toIdx + 1].split(',').map(par => {
+    const [nombre, whatsapp] = par.split(':')
+    return { nombre: nombre?.trim(), whatsapp: whatsapp?.trim(), activo: true }
+  }).filter(s => s.nombre && s.whatsapp)
+} else {
+  const supabase = createClient(SB_URL, SB_KEY)
+  const { data, error: supErr } = await supabase
+    .from('supervisores')
+    .select('nombre, whatsapp, activo')
+    .eq('activo', true)
+  if (supErr) { console.error('Query supervisores falló:', supErr.message); process.exit(1) }
+  sups = data
+  if (sups.length === 0 && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('0 supervisores con el anon key (RLS). Agregá SUPABASE_SERVICE_ROLE_KEY a .env.local o usá --to "Nombre:573...,..."')
+    process.exit(1)
+  }
+}
 console.log(`Supervisores activos: ${sups.length}`)
 console.log(`Novedades: ${NOVEDADES}\n`)
 
