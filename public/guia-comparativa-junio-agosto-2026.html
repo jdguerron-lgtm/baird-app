@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Comparativa junio → agosto 2026 — Baird Service</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8fafc; color: #1e293b; line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 1.25rem 4rem; }
+
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    color: #fff; padding: 3rem 1.25rem 2.5rem; text-align: center;
+  }
+  .hero .logo { font-size: 1rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: .8; margin-bottom: .75rem; }
+  .hero h1 { font-size: 2rem; line-height: 1.2; margin-bottom: .5rem; }
+  .hero p { max-width: 660px; margin: 0 auto; opacity: .85; font-size: 1.05rem; }
+  .hero .fecha { margin-top: 1.25rem; font-size: .8rem; opacity: .6; }
+
+  h2 {
+    font-size: 1.45rem; margin: 3rem 0 1rem; padding-bottom: .5rem;
+    border-bottom: 3px solid #10b981; color: #0f172a;
+  }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2rem; height: 2rem; border-radius: 50%; background: #10b981; color: #fff;
+    font-size: 1rem; margin-right: .6rem; vertical-align: middle;
+  }
+  h3 { font-size: 1.1rem; margin: 1.75rem 0 .5rem; color: #0f172a; }
+  p + p { margin-top: .75rem; }
+
+  .card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 1.25rem 1.4rem; margin: 1rem 0;
+  }
+  .card.nota { border-left: 5px solid #f59e0b; background: #fffbeb; }
+  .card.ok   { border-left: 5px solid #10b981; background: #ecfdf5; }
+  .card.info { border-left: 5px solid #3b82f6; background: #eff6ff; }
+
+  ul, ol { padding-left: 1.4rem; margin: .5rem 0; }
+  li { margin: .35rem 0; }
+  strong { color: #0f172a; }
+
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; background: #fff; font-size: .9rem; }
+  th, td { border: 1px solid #e2e8f0; padding: .5rem .75rem; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
+  .tbl-scroll { overflow-x: auto; }
+
+  .badge {
+    display: inline-block; padding: .2rem .65rem; border-radius: 9999px;
+    font-size: .8rem; font-weight: 700; white-space: nowrap;
+  }
+  .b-fuchsia { background: #fae8ff; color: #86198f; }
+  .b-sky     { background: #e0f2fe; color: #075985; }
+  .b-lime    { background: #ecfccb; color: #3f6212; }
+  .b-violet  { background: #ede9fe; color: #5b21b6; }
+  .b-amber   { background: #fef3c7; color: #92400e; }
+  .b-gris    { background: #e5e7eb; color: #374151; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0 1.75rem; }
+  @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+  figure {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  figure img { width: 100%; height: auto; display: block; }
+  figcaption {
+    padding: .55rem .9rem; font-size: .8rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  figure.antes   figcaption { background: #fef2f2; color: #b91c1c; }
+  figure.despues figcaption { background: #ecfdf5; color: #047857; }
+  figure.solo    figcaption { background: #eff6ff; color: #1d4ed8; }
+  .img-scroll { max-height: 620px; overflow-y: auto; }
+  .pie { font-size: .85rem; color: #64748b; margin-top: -1rem; margin-bottom: 1.5rem; }
+
+  .flujo {
+    background: #0f172a; color: #e2e8f0; border-radius: 14px;
+    padding: 1.1rem 1.3rem; font-size: .88rem; margin: 1rem 0;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .flujo b { color: #34d399; }
+  .flujo .rojo { color: #f87171; }
+  footer { text-align: center; margin-top: 4rem; font-size: .8rem; color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="logo">Baird Service</div>
+  <h1>📈 Todo lo que cambió: 1 de junio → hoy</h1>
+  <p>Comparativa extendida de vistas y funcionalidades de la plataforma, con capturas reales de la versión que corría el 1 de junio de 2026 frente a la versión actual.</p>
+  <div class="fecha">Corte: 1 de junio de 2026 vs 3 de agosto de 2026 · lineablanca.bairdservice.com</div>
+</div>
+
+<div class="wrap">
+
+  <h2><span class="num">1</span>Resumen ejecutivo</h2>
+  <div class="card ok">
+    <p><strong>Lo que existía el 1 de junio:</strong> portal del técnico con diagnóstico y completación, formulario público de solicitud con horarios en texto libre, flujo de repuestos con espera de precios/aprobaciones, y supervisores que solo recibían avisos por WhatsApp — sin panel propio.</p>
+    <p><strong>Lo que se sumó desde entonces:</strong></p>
+    <ul>
+      <li>🛡️ <strong>Portal del supervisor completo</strong> (no existía): acceso con código por WhatsApp, listado y ficha de cada servicio, descarga en PDF, y ahora la subida de la guía de envío de repuestos.</li>
+      <li>📦 <strong>Flujo de repuestos rediseñado</strong>: pedido directo al supervisor de la marca, nuevo estado <span class="badge b-sky">Repuesto en camino</span>, y el cliente agenda la visita de finalización desde WhatsApp.</li>
+      <li>🏷️ <strong>Foto de la placa obligatoria</strong> en el diagnóstico, con su propia sección.</li>
+      <li>🗓️ <strong>Agenda real con cupos</strong>: franjas canónicas con disponibilidad en vivo y agendamiento automático al crear la solicitud (ya no hay ida y vuelta por WhatsApp para confirmar horario).</li>
+      <li>🏷️ <strong>Estados renombrados y simplificados</strong> (de 22 a 19): cada etiqueta dice quién debe actuar.</li>
+      <li>📲 <strong>+15 plantillas de WhatsApp nuevas</strong> que cierran huecos de comunicación en todo el ciclo.</li>
+      <li>📄 <strong>Guías y reportes</strong>: Guía de pagos, Guía del Supervisor, informe semanal en PDF y canal de novedades.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">2</span>Portal del técnico</h2>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ 1 de junio</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/portal_tecnico_junio.png" alt="Portal del técnico en junio"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Hoy</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/portal_tecnico_hoy.png" alt="Portal del técnico hoy"></div>
+    </figure>
+  </div>
+  <p class="pie">Mismo técnico, mismos servicios. En junio el servicio esperando repuesto <strong>desaparecía de la lista</strong> (mira el contador: 2 vs 3) — hoy siempre está visible con su estado.</p>
+  <div class="card">
+    <ul>
+      <li><strong>Los servicios con repuesto ya no se pierden de vista:</strong> aparecen en "En proceso" con las etiquetas <span class="badge b-fuchsia">Esperando repuesto</span>, <span class="badge b-sky">Repuesto en camino</span> o <span class="badge b-lime">Repuesto recibido</span> y una línea que explica qué se está esperando.</li>
+      <li><strong>💰 Guía de pagos</strong> a un toque desde el encabezado, y el <strong>QR de pagos Baird</strong> (Bre-B) a la mano para cobrar en sitio.</li>
+      <li>Etiquetas de estado renombradas: p. ej. "Cliente debe aprobar siguiente paso" o "Cliente debe confirmar servicio" en vez de los nombres técnicos ambiguos de antes.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">3</span>Formulario de diagnóstico</h2>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ 1 de junio</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/diagnostico_junio.png" alt="Formulario de diagnóstico en junio"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Hoy</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/diagnostico_hoy.png" alt="Formulario de diagnóstico hoy"></div>
+    </figure>
+  </div>
+  <div class="card">
+    <ul>
+      <li>🏷️ <strong>Nueva sección obligatoria "Foto de la placa del producto"</strong> — sin ella no se puede enviar el diagnóstico (antes era solo un recordatorio).</li>
+      <li>📦 En garantía, el aviso del flujo de repuestos cambió: <strong>el pedido va directo al supervisor de la marca</strong> — ya no dice "el equipo Baird fija precio y tiempo de entrega".</li>
+      <li>🛒 Búsqueda de repuestos conectada a la <strong>tienda Baird</strong> y link al despiece Serviplus según el modelo.</li>
+      <li>El rango de pago estimado se mantiene, con el detalle de bonos al elegir complejidad.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">4</span>Completar servicio</h2>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ 1 de junio</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/completar_junio.png" alt="Completar servicio en junio"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Hoy</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/completar_hoy.png" alt="Completar servicio hoy"></div>
+    </figure>
+  </div>
+  <div class="card">
+    <ul>
+      <li>Se mantuvo <strong>a propósito simple</strong>: fotos/video, checklist y firma del cliente — sin pasos nuevos obligatorios.</li>
+      <li>El resumen "qué te falta antes de enviar" lista todo de una vez (antes el técnico descubría los faltantes uno por uno).</li>
+      <li>El estado del WhatsApp al cliente se muestra con la verdad: enviado, filtrado o fallido (antes podía decir "éxito" sin haber salido).</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">5</span>Solicitud del cliente (/solicitar)</h2>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ 1 de junio</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/solicitar_junio.png" alt="Formulario de solicitud en junio"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Hoy</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/solicitar_hoy.png" alt="Formulario de solicitud hoy"></div>
+    </figure>
+  </div>
+  <div class="card">
+    <ul>
+      <li>🗓️ <strong>Selector de fecha + franja con cupo en vivo</strong>: el cliente solo ve franjas disponibles (antes escribía el horario en texto libre y podía chocar con la agenda).</li>
+      <li>⚡ <strong>Auto-agendamiento</strong>: al enviar el formulario la visita queda agendada de una vez y los técnicos son notificados al instante — ya no hay que esperar el WhatsApp de "confirma tu horario" (aplica a garantía y particular).</li>
+      <li>Términos y condiciones se aceptan con checkbox en el mismo formulario.</li>
+      <li>Campos de <strong>edificio/conjunto y apartamento</strong> para direcciones más precisas.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">6</span>Flujo de repuestos (garantía)</h2>
+  <div class="flujo">
+    <span class="rojo">1 de junio:</span> diagnóstico → pendiente de precios (admin fija "tiempo de entrega") → cliente aprueba el paso → esperando repuesto → admin marca recibido → cliente reprograma → en proceso
+  </div>
+  <div class="flujo">
+    <b>Hoy:</b> diagnóstico → <b>esperando repuesto al instante</b> (supervisor recibe SKU × cantidad + dirección) → supervisor sube <b>guía de envío</b> → <b>repuesto en camino</b> (aviso a cliente y técnico) → cliente <b>agenda la visita de finalización</b> → en proceso
+  </div>
+  <div class="compare">
+    <figure class="antes">
+      <figcaption>❌ 1 de junio — el cliente reprogramaba cuando el repuesto YA había llegado</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/reprogramar_junio.png" alt="Página de reprogramación en junio"></div>
+    </figure>
+    <figure class="despues">
+      <figcaption>✅ Hoy — agenda desde que el repuesto va en camino</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/reprogramar_hoy.png" alt="Página de agendamiento de finalización hoy"></div>
+    </figure>
+  </div>
+  <p class="pie">La página del cliente: antes esperaba a que el repuesto llegara físicamente; hoy agenda apenas se despacha, con la misma validación de agenda (franja + cupo) del agendamiento inicial.</p>
+
+  <h2><span class="num">7</span>Portal del supervisor — NUEVO (no existía en junio)</h2>
+  <div class="card nota">
+    <strong>El 1 de junio los supervisores no tenían ninguna vista propia:</strong> la supervisión era solo por los avisos de WhatsApp de cambio de estado (estrenados pocos días antes). Todo lo de abajo se construyó después.
+  </div>
+  <div class="compare">
+    <figure class="solo">
+      <figcaption>🆕 Entrada de autoservicio — código por WhatsApp</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/supervisor_entrada_hoy.png" alt="Entrada al portal supervisor con OTP"></div>
+    </figure>
+    <figure class="solo">
+      <figcaption>🆕 Listado en tiempo real (solo lectura)</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/supervisor_listado_hoy.png" alt="Listado del portal supervisor"></div>
+    </figure>
+  </div>
+  <div class="compare">
+    <figure class="solo">
+      <figcaption>🆕 Ficha del servicio + repuestos + guía de envío</figcaption>
+      <div class="img-scroll"><img src="guias/2026-08/comparativa/supervisor_detalle_hoy.png" alt="Detalle del portal supervisor con guía de envío"></div>
+    </figure>
+    <figure class="solo">
+      <figcaption>🧭 Cómo funciona hoy</figcaption>
+      <div style="padding: 1.1rem 1.3rem; font-size: .92rem;">
+        <ul>
+          <li><strong>Acceso</strong>: link personal permanente o entrando a <strong>/supervisor</strong> con tu número (código de 6 dígitos por WhatsApp).</li>
+          <li><strong>Alcance forzado en el servidor</strong>: cada supervisor ve solo su ámbito (garantía/particular) y marca.</li>
+          <li><strong>PDF</strong>: listado y ficha descargables.</li>
+          <li><strong>Guía de envío</strong>: única acción de escritura — al subirla avisa a cliente y técnico.</li>
+          <li><strong>Informe semanal en PDF</strong> por WhatsApp + canal de novedades + <a href="/guia-supervisores.html">Guía del Supervisor</a>.</li>
+        </ul>
+      </div>
+    </figure>
+  </div>
+
+  <h2><span class="num">8</span>Estados del servicio: de 22 a 19, con nombres claros</h2>
+  <p>Las etiquetas que ven técnicos, supervisores y el panel admin se renombraron para que digan <strong>quién debe actuar</strong>, y se eliminaron estados muertos o duplicados.</p>
+  <div class="tbl-scroll"><table>
+    <tr><th>Antes (1 de junio)</th><th>Hoy</th><th>Qué significa</th></tr>
+    <tr><td><span class="badge b-gris">verificacion_pendiente</span></td><td><span class="badge b-violet">Cliente debe aprobar siguiente paso</span></td><td>Tras el diagnóstico (garantía), el cliente aprueba la acción propuesta</td></tr>
+    <tr><td><span class="badge b-gris">en_verificacion</span></td><td><span class="badge b-amber">Cliente debe confirmar servicio</span></td><td>Tras completar, el cliente confirma satisfacción</td></tr>
+    <tr><td><span class="badge b-gris">cancelada_cliente</span></td><td><span class="badge b-gris">Reparación rechazada por cliente</span></td><td>El cliente se negó a reparar tras el diagnóstico</td></tr>
+    <tr><td><span class="badge b-gris">diagnostico_pendiente</span></td><td><span class="badge b-lime">Asignada</span></td><td>Fusionados: técnico aceptó, visita pendiente (ambos flujos)</td></tr>
+    <tr><td><span class="badge b-gris">pendiente / cotizacion_aprobada / reagendamiento_pendiente</span></td><td>— eliminados</td><td>Estados muertos que nadie escribía</td></tr>
+    <tr><td>— no existía</td><td><span class="badge b-sky">Repuesto en camino</span></td><td>Supervisor subió la guía de envío; el cliente agenda la finalización</td></tr>
+  </table></div>
+
+  <h2><span class="num">9</span>Comunicación por WhatsApp: huecos cerrados</h2>
+  <p>En junio varios momentos del ciclo quedaban en silencio o dependían de mensajes que fallaban fuera de la ventana de 24h. Desde entonces se estrenaron plantillas para:</p>
+  <div class="card">
+    <ul>
+      <li><strong>Cliente</strong>: horario confirmado con link de gestión permanente, aviso de solicitud expirada, paso aprobado/rechazado, cotización con desglose claro (v3), valor actualizado, aviso de anticipo, repuesto solicitado/en camino/recibido con botón de agenda.</li>
+      <li><strong>Técnico</strong>: datos completos del repuesto en garantía (N° de garantía + SKU + dirección), repuesto entregado, repuesto en camino con N° de guía, nueva fecha elegida por el cliente, resolución del paso (aprobó/rechazó), pago clarificado (tu pago vs total del cliente).</li>
+      <li><strong>Supervisor</strong>: bienvenida con su alcance, acceso al panel, código de ingreso, novedades de repuesto con el requerimiento exacto, cambio de fecha, informe semanal en PDF y canal de novedades de la plataforma.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">10</span>Otras mejoras que no se ven en una captura</h2>
+  <div class="card info">
+    <ul>
+      <li><strong>Agenda con cupo real</strong>: máximo de visitas por franja, validado en el servidor; el panel admin tiene vista de calendario y mapa de servicios.</li>
+      <li><strong>Tarifas y pagos documentados</strong>: <a href="/guia-pagos.html">Guía de pagos</a> pública para técnicos (cotización particular con IVA y utilidad calculados automáticamente, visita de diagnóstico con pago fijo, recargo de fin de semana y festivos también en particular).</li>
+      <li><strong>Trazabilidad</strong>: cada cambio de estado queda en un historial auditable visible en la ficha (quién lo movió y cuándo).</li>
+      <li><strong>Robustez en campo</strong>: reintentos automáticos ante red 4G inestable, compresión de fotos antes de subir, servidor más cerca de Colombia.</li>
+      <li><strong>Seguridad</strong>: accesos admin restringidos por lista de correos, endpoints del portal supervisor validados en el servidor, y cierre progresivo de la capa de datos (RLS).</li>
+      <li><strong>Visibilidad del negocio</strong>: Google Analytics + conversiones de Ads del formulario, y páginas de servicio por ciudad para búsqueda orgánica.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Baird Service · Comparativa 1 de junio → 3 de agosto de 2026<br>
+    Capturas reales: versión de junio reconstruida del historial del código · versión actual en producción.<br>
+    ¿Dudas? Escríbenos por WhatsApp al canal de siempre. · <a href="/guia-actualizacion-2026-08.html">Ver la guía corta de la última actualización</a>
+  </footer>
+</div>
+
+</body>
+</html>
