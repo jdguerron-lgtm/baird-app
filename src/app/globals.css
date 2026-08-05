@@ -38,3 +38,32 @@ html {
   -webkit-text-fill-color: transparent;
   animation: shimmer 3s linear infinite;
 }
+
+/* ── Experimento A/B del hero móvil ──────────────────────────────────────────
+   Ver src/lib/analytics/experimentoHero.ts para el diseño del test.
+
+   La foto va como background-image y NO como <Image> a propósito: el navegador
+   no descarga imágenes de reglas que no aplican, así que el grupo `a` no paga
+   los 46 KB y su LCP no queda contaminado. Con <Image> ambos grupos la
+   bajarían y el test mediría peso de página, no diseño. */
+/* Contenedor: oculto salvo en la variante `b`. */
+.hero-variante-b {
+  display: none;
+}
+
+[data-hero='b'] .hero-variante-b {
+  display: block;
+}
+
+/* La foto en sí. La regla vive bajo [data-hero='b'] para que el grupo `a`
+   nunca la descargue.
+
+   Se usa tecnico-trabajo y no tecnico-puerta —que es la que mejor ilustra el
+   mensaje— porque esa última ya aparece en la tarjeta 3 de "Cómo funciona", a
+   poco scroll del hero en móvil: verla dos veces seguidas se lee como error y
+   ensuciaría el resultado del test. */
+[data-hero='b'] .hero-tecnico-foto {
+  background-image: url('/img/tecnico-trabajo.webp');
+  background-size: cover;
+  background-position: center 35%;
+}

@@ -5,6 +5,7 @@ import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
 import { GOOGLE_ADS_ID } from '@/lib/analytics/googleAds'
 import { GA_MEASUREMENT_ID } from '@/lib/analytics/googleAnalytics'
+import { HERO_ASSIGN_SCRIPT } from '@/lib/analytics/experimentoHero'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -35,8 +36,23 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // suppressHydrationWarning va por el `data-hero` que el script del
+  // experimento escribe en el <html> antes de hidratar: el servidor no lo emite
+  // y React lo reporta como desajuste. Solo silencia atributos de ESTE nodo, no
+  // del árbol.
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* Asigna la variante del experimento del hero antes del primer paint.
+            Va con `beforeInteractive` y no como <Script> normal porque si
+            corriera después de hidratar se vería el hero de la variante `a`
+            durante un instante. Ver src/lib/analytics/experimentoHero.ts */}
+        <Script
+          id="hero-experimento"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: HERO_ASSIGN_SCRIPT }}
+        />
+      </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
         <BotonWhatsAppFlotante />

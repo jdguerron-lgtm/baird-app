@@ -30,6 +30,7 @@
 | **Verificar que un cambio de RLS / Storage no rompió flujos** | `scripts/verify-flows.mjs` + `docs/SEGURIDAD.md` § 5.1 |
 | **Investigar un error de conexión del cliente** | `/admin/errores` panel + `docs/ARQUITECTURA.md` § "Observabilidad" |
 | **Entender el retry con backoff de queries (`querySupabase`)** | `docs/ARQUITECTURA.md` § "Utilidades transversales" |
+| **Tocar analítica, conversiones de Ads o el A/B del hero** | `docs/ARQUITECTURA.md` § "Analítica y experimentos" + `src/lib/analytics/experimentoHero.ts` |
 | **Auditar deuda técnica / gaps** | `docs/FLOWS.md` § "Gaps conocidos" + `supabase/migrations/README.md` § "Hallazgos del audit" |
 | **Convenciones de código** (nombres, idiomas, patrones) | `CLAUDE.md` § "Code Conventions" + `docs/GOTCHAS.md` |
 | **Trampas conocidas antes de tocar código sensible** | `docs/GOTCHAS.md` | Todo |

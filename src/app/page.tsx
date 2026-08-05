@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import MenuMovil from '@/components/MenuMovil'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
 
 // ── Imágenes propias de marca (generadas para Baird, servidas desde /public) ─
@@ -119,6 +120,11 @@ const CONTENIDO = {
   footer: {
     copyright: '© 2026 Baird Service S.A.S. — Colombia',
     tagline: 'Empresa certificada ISO 9001 · Técnicos verificados · Todo por WhatsApp',
+    // Verificados en bairdservice.com el 2026-08-05. El NIT no está publicado
+    // ahí; cuando se tenga, añadirlo a este bloque (lo pide Ley 1480 art. 50).
+    direccion: 'Cra 80C # 24D-74, Bogotá, Colombia',
+    telefono: '+57 314 241 1888',
+    telefonoTel: '+573142411888',
   },
 }
 
@@ -212,8 +218,10 @@ export default function Home() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="relative w-52 h-14 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" priority />
+          {/* En móvil el logo baja a w-40: a w-52 se comía la mitad de un
+              viewport de 390px y empujaba el CTA a dos líneas. */}
+          <Link href="/" className="relative w-40 sm:w-52 h-12 sm:h-14 block shrink-0">
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="(max-width: 640px) 160px, 208px" className="object-contain object-left" priority />
           </Link>
 
           {/* Nav links */}
@@ -228,7 +236,7 @@ export default function Home() {
             {/* Cross-promo: tienda. Botón secundario (ghost outline) para que no
                 compita con la CTA primaria verde. External link → target=_blank
                 con rel noopener noreferrer. Oculto en mobile para no atestar
-                el header — la tienda queda descubrible vía /#equipos o footer. */}
+                el header — ahí la sirve <MenuMovil />, igual que el nav. */}
             <a
               href="https://tienda.bairdservice.com/"
               target="_blank"
@@ -243,10 +251,12 @@ export default function Home() {
             </a>
 
             <Link href="/solicitar">
-              <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">
+              <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-4 sm:px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40 whitespace-nowrap">
                 Solicitar servicio
               </button>
             </Link>
+
+            <MenuMovil />
           </div>
         </div>
       </header>
@@ -320,6 +330,24 @@ export default function Home() {
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Certificados ISO 9001</span>
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Gratis para clientes</span>
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Pago seguro a Baird Service</span>
+              </div>
+            </div>
+
+            {/* Variante `b` del experimento del hero: foto de un técnico real
+                en el hueco que deja el mockup de WhatsApp por debajo de lg.
+                Solo se muestra —y solo se descarga la imagen— si el script de
+                asignación puso data-hero="b" en el <html>. Ver
+                src/lib/analytics/experimentoHero.ts */}
+            {/* h-36 y no más: a h-48 el CTA primario se salía del fold en un
+                viewport de 390x844, que es justo lo que el test no debe
+                cambiar — si mueve el botón, mide layout y no la foto. */}
+            <div className="hero-variante-b lg:!hidden -order-1 w-full -mb-2">
+              <div className="relative h-36 sm:h-48 rounded-3xl overflow-hidden ring-1 ring-white/10 shadow-2xl shadow-black/40 bg-slate-900">
+                <div className="hero-tecnico-foto absolute inset-0" aria-hidden="true" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent" />
+                <p className="absolute bottom-4 left-4 right-4 text-white text-sm font-semibold leading-snug">
+                  Recibes su foto y documento por WhatsApp antes de que toque tu puerta.
+                </p>
               </div>
             </div>
 
@@ -643,14 +671,14 @@ export default function Home() {
         <div className="max-w-5xl mx-auto">
           {/* Links SEO a las landing pages por servicio (/servicios/[slug]) */}
           <div className="mb-10 pb-8 border-b border-white/5">
-            <p className="text-white/40 text-sm font-semibold mb-3">Servicios en Bogotá y la Sabana:</p>
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/40">
+            <p className="text-white/70 text-sm font-semibold mb-3">Servicios en Bogotá y la Sabana:</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/70">
               {SERVICIOS_SEO.map((s) => (
-                <Link key={s.slug} href={`/servicios/${s.slug}`} className="hover:text-white/70 transition-colors">
+                <Link key={s.slug} href={`/servicios/${s.slug}`} className="hover:text-white transition-colors">
                   Reparación de {s.plural}
                 </Link>
               ))}
-              <Link href="/servicios" className="text-green-400/60 hover:text-green-400 transition-colors">
+              <Link href="/servicios" className="text-green-400 hover:text-green-300 transition-colors">
                 Ver todos →
               </Link>
             </div>
@@ -660,21 +688,48 @@ export default function Home() {
             {/* Logo */}
             <div className="flex flex-col items-center md:items-start gap-3">
               <div className="relative w-52 h-14">
-                <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+                <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="208px" className="object-contain object-left" />
               </div>
-              <p className="text-white/30 text-xs">{CONTENIDO.footer.tagline}</p>
+              <p className="text-white/70 text-xs">{CONTENIDO.footer.tagline}</p>
+
+              {/* Identificación del proveedor. El Estatuto del Consumidor
+                  (Ley 1480 de 2011, art. 50) la exige visible en comercio
+                  electrónico. Dirección y teléfono verificados en
+                  bairdservice.com; falta el NIT, que no está publicado ahí. */}
+              <address className="not-italic text-white/60 text-xs leading-relaxed text-center md:text-left">
+                {CONTENIDO.footer.direccion}
+                <br />
+                <a href={`tel:${CONTENIDO.footer.telefonoTel}`} className="hover:text-white transition-colors">
+                  {CONTENIDO.footer.telefono}
+                </a>
+              </address>
             </div>
 
             {/* Links */}
-            <div className="flex flex-wrap gap-x-8 gap-y-3 justify-center md:justify-end text-sm text-white/40">
-              <Link href="/solicitar" className="hover:text-white/70 transition-colors">Solicitar servicio</Link>
-              <Link href="/registro" className="hover:text-white/70 transition-colors">Registrarse como técnico</Link>
-              <Link href="/#como-funciona" className="hover:text-white/70 transition-colors">Cómo funciona</Link>
+            <div className="flex flex-col gap-3 items-center md:items-end text-sm text-white/70">
+              <div className="flex flex-wrap gap-x-8 gap-y-3 justify-center md:justify-end">
+                <Link href="/solicitar" className="hover:text-white transition-colors">Solicitar servicio</Link>
+                <Link href="/registro" className="hover:text-white transition-colors">Registrarse como técnico</Link>
+                <Link href="/#como-funciona" className="hover:text-white transition-colors">Cómo funciona</Link>
+                <a
+                  href="https://tienda.bairdservice.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-white transition-colors"
+                >
+                  Nuestra tienda ↗
+                </a>
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-2 justify-center md:justify-end text-xs text-white/60">
+                <Link href="/terminos" className="hover:text-white transition-colors">Términos y condiciones</Link>
+                <Link href="/politica-privacidad" className="hover:text-white transition-colors">Política de privacidad</Link>
+                <Link href="/eliminacion-datos" className="hover:text-white transition-colors">Eliminación de datos</Link>
+              </div>
             </div>
           </div>
 
           <div className="mt-10 pt-6 border-t border-white/5 text-center">
-            <p className="text-white/20 text-xs">{CONTENIDO.footer.copyright}</p>
+            <p className="text-white/50 text-xs">{CONTENIDO.footer.copyright}</p>
           </div>
         </div>
       </footer>

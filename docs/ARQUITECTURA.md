@@ -56,9 +56,14 @@ src/
 │       ├── admin/                  # Endpoints admin (export, editar/cambiar-estado, notas, supervisores, etc.)
 │       └── whatsapp/               # notify (admin-only), accept, webhook
 ├── components/ui/              # Reusable UI: Button, InputField, PhoneInput, etc.
+├── components/MenuMovil.tsx    # Nav hamburguesa <640px de la home (los links del header están en `hidden sm:*`)
 ├── hooks/                      # useDebounce, useSolicitudForm, useTriaje
 ├── lib/
 │   ├── supabase.ts             # Supabase client singleton — always import from here
+│   ├── analytics/
+│   │   ├── googleAds.ts        # trackLeadConversion() — conversión de Ads del form de /solicitar
+│   │   ├── googleAnalytics.ts  # trackGaLead() — evento GA4 `generate_lead`
+│   │   └── experimentoHero.ts  # A/B del hero móvil; la variante viaja en `generate_lead`
 │   ├── constants/
 │   │   ├── especialidades.ts   # TIPO_A_ESPECIALIDAD mapping
 │   │   └── estados.ts          # ESTADO_ESTILOS, ESTADO_LABELS (styling + labels per state)
@@ -193,6 +198,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 
 | Page | URL | Purpose |
 |------|-----|---------|
+| **Home / landing** | `/` | Landing comercial. Nav hamburguesa <640px vía `MenuMovil` — el nav del header y el link a la tienda están en `hidden sm:*`. Footer con identificación del proveedor (Ley 1480 art. 50), links legales y tienda. Corre el A/B del hero móvil (ver abajo). |
 | Service request form | `/solicitar` | Customer creates a new request |
 | **Schedule confirmation** | `/horario/{horario_token}` | Customer picks fecha + franja + accepts T&C |
 | **Self-service portal** | `/servicio/{cliente_token}` | Cancela / reagenda. Token durable, vive en `solicitudes_servicio.cliente_token` |
@@ -297,3 +303,40 @@ querySupabase / page-load handler
 **`connection_errors` columnas clave:** `url`, `error_type` (`query_retry|query_failed|page_load_error|fetch_failed|unknown`), `error_message`, `attempt_number`, `network_effective_type` (`'4g'|'3g'|'2g'|'slow-2g'`), `network_rtt`, `online`, `actor`, `ip`.
 
 **Diseño fire-and-forget:** `/api/log-error` SIEMPRE retorna 200 (incluso si el insert falla). Telemetría no debe romper la UX de un usuario que ya está sufriendo un error de red.
+
+## Analítica y experimentos
+
+El tag de gtag se carga UNA vez en `src/app/layout.tsx` y sirve a los dos destinos:
+Google Ads (`AW-18163777075`, conversiones) y GA4 (`G-DXSC4J9RGF`, tráfico y eventos).
+La pantalla de éxito de `/solicitar` dispara ambos: `trackLeadConversion()` (Ads) y
+`trackGaLead()` (evento GA4 `generate_lead`, marcado como evento clave).
+
+### A/B del hero móvil (`src/lib/analytics/experimentoHero.ts`)
+
+**Qué prueba.** El mockup de WhatsApp del hero es `hidden lg:flex`, así que por debajo
+de 1024px el hero es solo texto. La variante `b` llena ese hueco con la foto de un
+técnico trabajando; la `a` es el hero actual. Reparto 50/50.
+
+**Cómo se mide.** La variante viaja como parámetro `hero_variante` (`a` | `b`) dentro
+del evento `generate_lead`. En GA4 se compara la conversión de una contra otra
+**segmentando por móvil** — en desktop las dos variantes son idénticas, así que incluir
+desktop solo diluye la señal.
+
+**Tres decisiones que hay que respetar si se toca esto:**
+
+1. La asignación la hace un script inline con `strategy="beforeInteractive"` que escribe
+   `data-hero` en el `<html>` antes del primer paint. Si corriera después de hidratar se
+   vería la variante `a` un instante. Por ese atributo el `<html>` lleva
+   `suppressHydrationWarning`: el servidor no lo emite y React lo reportaría como
+   desajuste.
+2. La foto de la variante `b` se pinta con `background-image` desde una regla CSS bajo
+   `[data-hero='b']` en `globals.css`, **no** con `<Image>` de Next. El navegador no
+   descarga imágenes de reglas que no aplican, así que el grupo `a` no paga esos KB ni
+   ensucia su LCP. Con `<Image>` ambos grupos la bajarían y el test mediría peso de
+   página, no diseño.
+3. El bloque de la foto es `h-36` en móvil a propósito: más alto empuja el CTA primario
+   fuera del fold y el test pasaría a medir posición del botón en vez de la foto.
+
+**Cerrar el experimento** = borrar el `<Script id="hero-experimento">`, las reglas
+`.hero-variante-b` / `.hero-tecnico-foto` de `globals.css`, el bloque del hero en
+`page.tsx` y el parámetro en `trackGaLead()`. Dejar la variante ganadora fija.

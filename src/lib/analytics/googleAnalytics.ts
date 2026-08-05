@@ -15,6 +15,8 @@
  * su propio tag en su propio deployment — no tocarla desde aquí.
  */
 
+import { getHeroVariante } from './experimentoHero'
+
 export const GA_MEASUREMENT_ID =
   process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID ?? 'G-DXSC4J9RGF'
 
@@ -34,11 +36,16 @@ export function trackGaLead(params?: { es_garantia?: boolean; tipo_solicitud?: s
   const w = window as unknown as { gtag?: GtagFn }
   if (typeof w.gtag !== 'function') return
 
+  // Variante del experimento del hero (ver experimentoHero.ts). Se omite si no
+  // se pudo asignar, para no meter una categoría falsa en el análisis.
+  const heroVariante = getHeroVariante()
+
   w.gtag('event', 'generate_lead', {
     send_to: GA_MEASUREMENT_ID,
     ...(params?.tipo_solicitud ? { tipo_solicitud: params.tipo_solicitud } : {}),
     ...(typeof params?.es_garantia === 'boolean'
       ? { es_garantia: params.es_garantia ? 'garantia' : 'particular' }
       : {}),
+    ...(heroVariante ? { hero_variante: heroVariante } : {}),
   })
 }
