@@ -2,16 +2,16 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
 
-// ── Unsplash image URLs (free, no attribution required) ─────────────────────
+// ── Imágenes propias de marca (generadas para Baird, servidas desde /public) ─
 const IMAGES = {
-  heroBackground: 'https://images.unsplash.com/photo-1584367368267-02e2d41d5768?auto=format&fit=crop&w=1920&q=80',
-  kitchenPanorama: 'https://images.unsplash.com/photo-1754415163555-c583965c4fb2?auto=format&fit=crop&w=1920&q=80',
-  technicianWork: 'https://images.unsplash.com/photo-1635424709961-f3a150459ad4?auto=format&fit=crop&w=1200&q=80',
-  modernKitchen: 'https://images.unsplash.com/photo-1758240689297-d8613ca753f3?auto=format&fit=crop&w=1920&q=80',
-  plumberSink: 'https://images.unsplash.com/photo-1540853986208-a3e8f4ab197a?auto=format&fit=crop&w=1200&q=80',
-  washingMachine: 'https://images.unsplash.com/photo-1696546761269-a8f9d2b80512?auto=format&fit=crop&w=800&q=80',
-  minimalistKitchen: 'https://images.unsplash.com/photo-1757711990497-4bd910fbe3cb?auto=format&fit=crop&w=1920&q=80',
-  repairMan: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=80',
+  heroBackground: '/img/hero-cocina.webp',
+  kitchenPanorama: '/img/cocina-panoramica.webp',
+  technicianWork: '/img/tecnico-trabajo.webp',
+  modernKitchen: '/img/cocina-equipos.webp',
+  plumberSink: '/img/tecnico-puerta.webp',
+  washingMachine: '/img/paso-describe.webp',
+  minimalistKitchen: '/img/lavanderia-confianza.webp',
+  repairMan: '/img/tecnico-whatsapp.webp',
 }
 
 const CONTENIDO = {
@@ -111,13 +111,14 @@ const CONTENIDO = {
     cta: 'Registrarme como técnico',
   },
   confianza: [
+    { emoji: '🏅', titulo: 'Calidad certificada ISO 9001', texto: 'Somos una empresa certificada en gestión de calidad bajo la norma internacional ISO 9001.' },
     { emoji: '🪪', titulo: 'Identidad verificada', texto: 'El cliente recibe la foto y el documento del técnico por WhatsApp al confirmarse el servicio.' },
     { emoji: '🔒', titulo: 'Pago seguro a Baird Service', texto: 'El pago se realiza directamente a la empresa por medios electrónicos. No se acepta efectivo.' },
     { emoji: '🤝', titulo: 'Compromiso de calidad', texto: 'Solo técnicos que cumplen los estándares de Baird pueden recibir solicitudes.' },
   ],
   footer: {
     copyright: '© 2026 Baird Service S.A.S. — Colombia',
-    tagline: 'Técnicos verificados · WhatsApp · Sin apps adicionales',
+    tagline: 'Empresa certificada ISO 9001 · Técnicos verificados · Todo por WhatsApp',
   },
 }
 
@@ -259,17 +260,19 @@ export default function Home() {
             src={IMAGES.heroBackground}
             alt=""
             fill
-            className="object-cover opacity-[0.12]"
+            className="object-cover opacity-30"
             priority
             sizes="100vw"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/60 to-slate-950" />
+          {/* La máscara sube hacia abajo para que el texto del hero mantenga
+              contraste AA sobre la foto sin volver a taparla por completo. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/[0.72] via-slate-950/[0.55] to-slate-950/[0.96]" />
         </div>
 
         {/* Orbes de fondo */}
         <div className="absolute top-0 left-0 w-[700px] h-[700px] bg-green-500 rounded-full opacity-[0.07] blur-[140px] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
         <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-blue-600 rounded-full opacity-[0.10] blur-[120px] translate-x-1/3 translate-y-1/3 pointer-events-none" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-900 rounded-full opacity-20 blur-[100px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-900 rounded-full opacity-10 blur-[100px] pointer-events-none" />
 
         <div className="relative z-10 max-w-6xl mx-auto w-full">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
@@ -313,9 +316,9 @@ export default function Home() {
               </div>
 
               {/* Trust micro-signals */}
-              <div className="flex items-center gap-4 mt-8 text-white/40 text-xs">
+              <div className="flex items-center gap-4 mt-8 text-white/70 text-xs">
+                <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Certificados ISO 9001</span>
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Gratis para clientes</span>
-                <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Sin registro previo</span>
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Pago seguro a Baird Service</span>
               </div>
             </div>
@@ -352,7 +355,7 @@ export default function Home() {
       <section className="relative h-64 sm:h-80 lg:h-96 overflow-hidden">
         <Image
           src={IMAGES.kitchenPanorama}
-          alt="Cocina moderna con electrodomesticos"
+          alt="Cocina de un hogar colombiano, luminosa y ordenada, con nevera, estufa y lavadora"
           fill
           className="object-cover"
           sizes="100vw"
@@ -486,7 +489,7 @@ export default function Home() {
       <section className="relative h-56 sm:h-72 lg:h-80 overflow-hidden">
         <Image
           src={IMAGES.technicianWork}
-          alt="Tecnico profesional reparando electrodomestico"
+          alt="Técnico de Baird Service reparando el motor de una lavadora en un hogar de Bogotá"
           fill
           className="object-cover"
           sizes="100vw"
@@ -551,7 +554,7 @@ export default function Home() {
       <section className="relative h-48 sm:h-64 overflow-hidden">
         <Image
           src={IMAGES.modernKitchen}
-          alt="Cocina moderna con electrodomesticos de acero inoxidable"
+          alt="Cocina moderna con electrodomésticos de acero inoxidable"
           fill
           className="object-cover"
           sizes="100vw"
@@ -570,7 +573,7 @@ export default function Home() {
               ¿Por qué confiar en Baird Service?
             </h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {CONTENIDO.confianza.map((c, i) => (
               <div key={i} className="text-center group">
                 <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-slate-50 to-green-50 border border-slate-100 rounded-3xl flex items-center justify-center text-3xl shadow-sm group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-300">
