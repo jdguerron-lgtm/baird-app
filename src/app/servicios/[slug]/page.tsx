@@ -141,7 +141,7 @@ export default async function ServicioSeoPage({
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="relative w-52 h-14 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" priority />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="208px" className="object-contain object-left" priority />
           </Link>
           <Link href="/solicitar">
             <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">

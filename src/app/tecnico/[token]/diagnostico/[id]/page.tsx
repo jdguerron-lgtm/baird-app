@@ -577,7 +577,7 @@ export default function DiagnosticoPage() {
         <header className="bg-white border-b border-gray-100 shadow-sm">
           <div className="max-w-lg mx-auto px-4 h-14 flex items-center">
             <div className="relative w-28 h-8">
-              <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+              <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="112px" className="object-contain object-left" />
             </div>
           </div>
         </header>
@@ -664,7 +664,7 @@ export default function DiagnosticoPage() {
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
           <div className="relative w-28 h-8">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="112px" className="object-contain object-left" />
           </div>
           <span className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded-full font-medium">
             Diagnostico

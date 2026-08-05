@@ -117,7 +117,7 @@ export default function SolicitarServicio() {
         }
       },
       () => {
-        setMensaje({ texto: 'No se pudo acceder a tu ubicacion. Verifica los permisos.', tipo: 'error' })
+        setMensaje({ texto: 'No se pudo acceder a tu ubicación. Verifica los permisos.', tipo: 'error' })
         setGeoLoading(false)
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -217,7 +217,7 @@ export default function SolicitarServicio() {
             Inicio
           </Link>
           <Link href="/" className="relative w-32 h-9 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="128px" className="object-contain" priority />
           </Link>
           <div className="w-16" /> {/* spacer */}
         </div>
@@ -338,7 +338,7 @@ export default function SolicitarServicio() {
                     </div>
                     <div>
                       <InputField
-                        label="Direccion Completa"
+                        label="Dirección Completa"
                         name="direccion"
                         value={formData.direccion}
                         onChange={handleChange}
@@ -364,7 +364,7 @@ export default function SolicitarServicio() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                           </svg>
                         )}
-                        {geoLoading ? 'Obteniendo ubicacion...' : 'Usar mi ubicacion actual'}
+                        {geoLoading ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual'}
                       </button>
                     </div>
                     {/* Solo particular: detalle de acceso opcional. El servidor lo

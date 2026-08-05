@@ -228,7 +228,7 @@ export default function ConfirmarServicioPage() {
         <header className="bg-white border-b border-gray-200 px-4 py-4">
           <div className="max-w-lg mx-auto flex items-center gap-3">
             <div className="relative w-28 h-8 shrink-0">
-              <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+              <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="112px" className="object-contain object-left" />
             </div>
             <p className="text-xs text-gray-400">Califica tu servicio</p>
           </div>
@@ -307,7 +307,7 @@ export default function ConfirmarServicioPage() {
       <header className="bg-white border-b border-gray-200 px-4 py-4">
         <div className="max-w-lg mx-auto flex items-center gap-3">
           <div className="relative w-28 h-8 shrink-0">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="112px" className="object-contain object-left" />
           </div>
           <p className="text-xs text-gray-400">Confirma tu servicio</p>
         </div>

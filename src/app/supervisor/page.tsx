@@ -102,7 +102,7 @@ export default function SupervisorAccesoPage() {
       <div className="mx-auto max-w-md">
         <div className="flex justify-center mb-6">
           <Link href="/" className="relative w-36 h-10 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="144px" className="object-contain" priority />
           </Link>
         </div>
 

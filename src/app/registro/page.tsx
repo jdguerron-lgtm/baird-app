@@ -225,7 +225,7 @@ export default function RegistroTecnico() {
             Inicio
           </Link>
           <Link href="/" className="relative w-44 h-12 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain" priority />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="176px" className="object-contain" priority />
           </Link>
           <div className="w-16" />
         </div>

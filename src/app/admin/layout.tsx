@@ -100,7 +100,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Logo */}
         <div className="px-4 py-4 border-b border-gray-100">
           <Link href="/admin" className="relative w-36 h-10 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="144px" className="object-contain object-left" />
           </Link>
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1 block">admin</span>
         </div>

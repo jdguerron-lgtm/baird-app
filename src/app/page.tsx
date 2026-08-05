@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import MenuMovil from '@/components/MenuMovil'
+import { EQUIPOS_HOME } from '@/lib/constants/equipos-home'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
 
 // ── Imágenes propias de marca (generadas para Baird, servidas desde /public) ─
@@ -57,16 +58,9 @@ const CONTENIDO = {
       },
     ],
   },
-  equipos: [
-    { emoji: '🫧', nombre: 'Lavadora' },
-    { emoji: '🧊', nombre: 'Nevera' },
-    { emoji: '🧊', nombre: 'Nevecón' },
-    { emoji: '🔥', nombre: 'Horno' },
-    { emoji: '🍳', nombre: 'Estufa' },
-    { emoji: '❄️', nombre: 'A/C' },
-    { emoji: '💨', nombre: 'Secadora' },
-    { emoji: '🫗', nombre: 'Lavavajillas' },
-  ],
+  // Los equipos viven en EQUIPOS_HOME (src/lib/constants/equipos-home.ts):
+  // llevan icono propio y el slug de su landing SEO, validado contra
+  // SERVICIOS_SEO para que ninguna tarjeta apunte a un 404.
   beneficios: [
     {
       icon: '🛡️',
@@ -468,15 +462,21 @@ export default function Home() {
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-10">
             Reparamos los equipos que usas cada día
           </h2>
+          {/* Cada tarjeta enlaza a su landing SEO: es la única ruta de entrada
+              a /servicios/[slug] desde el cuerpo de la home, además del footer. */}
           <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
-            {CONTENIDO.equipos.map((eq, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-2xl py-4 px-2 flex flex-col items-center gap-2 shadow-sm border border-slate-100 hover:border-green-200 hover:shadow-md hover:-translate-y-1 transition-all duration-200 group cursor-default"
+            {EQUIPOS_HOME.map((eq) => (
+              <Link
+                key={eq.nombre}
+                href={`/servicios/${eq.slug}`}
+                aria-label={`Reparación de ${eq.nombre.toLowerCase()} en Bogotá`}
+                className="bg-white rounded-2xl py-4 px-2 flex flex-col items-center gap-2 shadow-sm border border-slate-100 hover:border-green-300 hover:shadow-md hover:-translate-y-1 transition-all duration-200 group"
               >
-                <span className="text-2xl group-hover:scale-110 transition-transform duration-200">{eq.emoji}</span>
-                <span className="text-[11px] font-semibold text-slate-600 text-center leading-tight">{eq.nombre}</span>
-              </div>
+                <eq.Icon className="w-7 h-7 text-slate-700 group-hover:text-green-600 group-hover:scale-110 transition-all duration-200" />
+                <span className="text-[11px] font-semibold text-slate-600 group-hover:text-slate-900 text-center leading-tight">
+                  {eq.nombre}
+                </span>
+              </Link>
             ))}
           </div>
         </div>
@@ -607,7 +607,10 @@ export default function Home() {
                 <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-slate-50 to-green-50 border border-slate-100 rounded-3xl flex items-center justify-center text-3xl shadow-sm group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-300">
                   {c.emoji}
                 </div>
-                <h3 className="font-bold text-slate-900 text-lg mb-3">{c.titulo}</h3>
+                {/* min-h de dos líneas: el título de ISO 9001 envuelve y los
+                    demás no, y sin esto los párrafos arrancan a distinta
+                    altura en cada tarjeta de la fila. */}
+                <h3 className="font-bold text-slate-900 text-lg mb-3 lg:min-h-[3.5rem] flex items-center justify-center">{c.titulo}</h3>
                 <p className="text-slate-500 text-sm leading-relaxed">{c.texto}</p>
               </div>
             ))}

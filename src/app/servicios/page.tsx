@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
+import { ICONO_POR_SLUG } from '@/lib/constants/equipos-home'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
 
 // Índice público de las landing pages SEO /servicios/[slug].
@@ -32,7 +33,7 @@ export default function ServiciosIndexPage() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="relative w-52 h-14 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill className="object-contain object-left" priority />
+            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="208px" className="object-contain object-left" priority />
           </Link>
           <Link href="/solicitar">
             <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">
@@ -58,19 +59,25 @@ export default function ServiciosIndexPage() {
 
       {/* ── GRID DE SERVICIOS ──────────────────────────────────────── */}
       <section className="py-20 px-4">
-        <div className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {SERVICIOS_SEO.map((s) => (
+        {/* 3 columnas en lg: con 7 servicios, un grid de 2 deja una tarjeta
+            huérfana ocupando media fila; con 3 la última fila lleva 1 y se lee
+            como final de lista, no como hueco. */}
+        <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {SERVICIOS_SEO.map((s) => {
+            const Icon = ICONO_POR_SLUG[s.slug]
+            return (
             <Link
               key={s.slug}
               href={`/servicios/${s.slug}`}
               className="group bg-slate-50 hover:bg-white border border-slate-100 hover:border-green-200 hover:shadow-md rounded-2xl p-6 transition-all duration-200 hover:-translate-y-0.5"
             >
-              <span className="text-3xl block mb-3 group-hover:scale-110 transition-transform origin-left">{s.emoji}</span>
+              <Icon className="w-8 h-8 mb-3 text-slate-700 group-hover:text-green-600 group-hover:scale-110 transition-all origin-left" />
               <h2 className="font-bold text-slate-900 mb-1.5">{s.h1}</h2>
               <p className="text-slate-500 text-sm leading-relaxed line-clamp-2">{s.metaDescription}</p>
               <span className="inline-block mt-3 text-green-700 text-sm font-semibold">Ver servicio →</span>
             </Link>
-          ))}
+            )
+          })}
         </div>
       </section>
 
