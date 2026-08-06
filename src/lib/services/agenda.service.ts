@@ -88,6 +88,40 @@ export async function validarHorarioAgendable(
 }
 
 /**
+ * ¿El técnico ya tiene una visita activa en ese slot exacto (día + franja)?
+ *
+ * El cupo de `validarHorarioAgendable` es GLOBAL (MAX_RESERVAS_POR_FRANJA para
+ * toda la plataforma) y no mira quién atiende: con cupo 2, un mismo técnico
+ * podía quedarse con las dos solicitudes de la franja y estar en dos casas a la
+ * vez. Este chequeo es por técnico y se aplica al aceptar un servicio.
+ *
+ * Fail-open igual que el resto del módulo: ante error de BD devuelve false
+ * (nunca bloquea una aceptación por una falla del conteo).
+ *
+ * @param excluirSolicitudId la propia solicitud no cuenta (reagendamientos).
+ */
+export async function tecnicoOcupadoEnSlot(
+  tecnicoId: string,
+  fechaVisitaAt: string,
+  excluirSolicitudId?: string,
+): Promise<boolean> {
+  let query = supabase
+    .from('solicitudes_servicio')
+    .select('id', { count: 'exact', head: true })
+    .eq('tecnico_asignado_id', tecnicoId)
+    .eq('fecha_visita_at', fechaVisitaAt)
+    .not('estado', 'in', ESTADOS_TERMINALES_IN)
+  if (excluirSolicitudId) query = query.neq('id', excluirSolicitudId)
+
+  const { count, error } = await query
+  if (error) {
+    console.error('[agenda] Error verificando agenda del técnico:', error.message)
+    return false
+  }
+  return (count ?? 0) > 0
+}
+
+/**
  * ISO timestamp del slot (inicio de franja, hora Colombia) para un día
  * YYYY-MM-DD. Espeja la construcción de parsearFechaVisita (hora local + 5).
  */

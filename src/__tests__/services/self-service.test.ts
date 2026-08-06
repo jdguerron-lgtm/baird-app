@@ -6,8 +6,10 @@ const { mockFrom, mockFetch } = vi.hoisted(() => ({
   mockFetch: vi.fn(),
 }))
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: { from: mockFrom },
+// whatsapp.service lee/escribe con service_role desde la Fase 1 de RLS
+// (commit 2353b3a): el mock apunta a supabase-admin, no al cliente anon.
+vi.mock('@/lib/supabase-admin', () => ({
+  supabaseAdmin: { from: mockFrom },
 }))
 
 vi.stubGlobal('fetch', mockFetch)

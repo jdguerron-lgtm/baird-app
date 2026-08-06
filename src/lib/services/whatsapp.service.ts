@@ -5,7 +5,7 @@ import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
-import { validarHorarioAgendable } from '@/lib/services/agenda.service'
+import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
@@ -608,13 +608,13 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   } | null = null
   let horarioPrevio: string | null = null
 
-  if (horarioSeleccionado !== undefined) {
-    const { data: solPrevia } = await supabase
-      .from('solicitudes_servicio')
-      .select('id, horario_visita_1, horario_visita_2, horario_confirmado')
-      .eq('id', notif.solicitud_id)
-      .single()
+  const { data: solPrevia } = await supabase
+    .from('solicitudes_servicio')
+    .select('id, horario_visita_1, horario_visita_2, horario_confirmado, fecha_visita_at')
+    .eq('id', notif.solicitud_id)
+    .single()
 
+  if (horarioSeleccionado !== undefined) {
     if (solPrevia) {
       const elegido = (
         horarioSeleccionado === 1 ? solPrevia.horario_visita_1
@@ -643,6 +643,23 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
           horario_confirmado_at: new Date().toISOString(),
           fecha_visita_at: agenda.fechaVisitaAt,
         }
+      }
+    }
+  }
+
+  // Doble agenda del MISMO técnico (2026-08-06): el cupo por franja es global
+  // (MAX_RESERVAS_POR_FRANJA para toda la plataforma) y no mira quién atiende,
+  // así que un técnico podía quedarse con las dos solicitudes de la franja y
+  // terminar en dos casas a la vez. Se corta antes de asignar, con reintentar:
+  // el servicio sigue disponible por si puede tomar el otro horario propuesto.
+  const slotEfectivo = horarioUpdate ? horarioUpdate.fecha_visita_at : solPrevia?.fecha_visita_at ?? null
+  if (slotEfectivo) {
+    const ocupado = await tecnicoOcupadoEnSlot(notif.tecnico_id, slotEfectivo, notif.solicitud_id)
+    if (ocupado) {
+      return {
+        ganado: false,
+        reintentar: true,
+        mensaje: 'Ya tienes un servicio agendado para esa franja horaria. Elige otro horario de los que propuso el cliente, o deja este servicio para otro técnico.',
       }
     }
   }

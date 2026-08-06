@@ -2,11 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const { mockFrom } = vi.hoisted(() => ({ mockFrom: vi.fn() }))
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: { from: mockFrom },
+// agenda.service lee con service_role desde la Fase 1 de RLS (commit 2353b3a):
+// el mock tiene que apuntar a supabase-admin, no al cliente anon.
+vi.mock('@/lib/supabase-admin', () => ({
+  supabaseAdmin: { from: mockFrom },
 }))
 
-import { validarHorarioAgendable, franjasLlenasParaFecha } from '@/lib/services/agenda.service'
+import {
+  validarHorarioAgendable,
+  franjasLlenasParaFecha,
+  tecnicoOcupadoEnSlot,
+} from '@/lib/services/agenda.service'
 import { MAX_RESERVAS_POR_FRANJA } from '@/lib/constants/franjas'
 import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
 
@@ -103,6 +109,34 @@ describe('franjasLlenasParaFecha', () => {
     mockFrom.mockReturnValue(queryBuilder({ data: null, error: { message: 'boom' } }))
     const llenas = await franjasLlenasParaFecha(fechaColombiaMasDias(3))
     expect(llenas).toEqual([])
+  })
+})
+
+describe('tecnicoOcupadoEnSlot', () => {
+  const SLOT = isoSlot(fechaColombiaMasDias(2), 8)
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('true cuando el técnico ya tiene una visita activa en ese slot', async () => {
+    mockFrom.mockReturnValue(queryBuilder({ count: 1, error: null }))
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(true)
+  })
+
+  it('false cuando no tiene nada en ese slot', async () => {
+    mockFrom.mockReturnValue(queryBuilder({ count: 0, error: null }))
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(false)
+  })
+
+  it('excluye la propia solicitud (reagendamientos)', async () => {
+    const builder = queryBuilder({ count: 0, error: null })
+    mockFrom.mockReturnValue(builder)
+    await tecnicoOcupadoEnSlot('tec-1', SLOT, 'sol-1')
+    expect(builder.neq).toHaveBeenCalledWith('id', 'sol-1')
+  })
+
+  it('fail-open: ante error de BD no bloquea la aceptación', async () => {
+    mockFrom.mockReturnValue(queryBuilder({ count: null, error: { message: 'boom' } }))
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(false)
   })
 })
 
