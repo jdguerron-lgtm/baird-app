@@ -15,8 +15,13 @@ import type { ChecklistServicio } from '@/types/solicitud'
  *  - generarPdfDetalleSolicitud: ficha completa de una solicitud (cliente,
  *    equipo, agenda, técnico, evidencia e historial).
  *
- * Las fotos/firmas NO se embeben (URLs de storage con CORS/firmas): se listan
- * los links como texto.
+ * La ficha embebe las fotos y la firma del cliente (2026-08-06). El bucket
+ * `evidencias-servicio` es público y responde `Access-Control-Allow-Origin: *`,
+ * así que el navegador puede leerlas a canvas sin manchar el contexto. Cada
+ * imagen se reescala a MAX_PX y se recodifica a JPEG antes de entrar al PDF:
+ * los originales pesan ~1,7 MB y el documento sería inmanejable. La carga vive
+ * en `generarPdfDetalleSolicitud` (browser); `construirPdfDetalleSolicitud`
+ * recibe los bitmaps ya resueltos y sigue siendo puro para poder testearlo.
  */
 
 // ── Tipos (espejo de lo que devuelven /api/supervisor/solicitudes y /solicitud) ──
@@ -35,6 +40,10 @@ export interface SolicitudListado {
   es_garantia: boolean
   created_at: string
   tecnico_nombre: string | null
+  /** Diagnóstico del técnico, aplanado desde triaje_resultado por la API. */
+  codigo_falla?: string | null
+  descripcion_falla?: string | null
+  complejidad_falla?: string | null
 }
 
 export interface SupervisorInfoPdf {
@@ -86,6 +95,19 @@ export interface EventoPdf {
   ocurrido_at: string | null
 }
 
+/** Imagen ya cargada y reescalada, lista para `doc.addImage`. */
+export interface ImagenEvidencia {
+  /** data:image/jpeg;base64,… */
+  dataUrl: string
+  /** Dimensiones del bitmap reescalado (para conservar el aspecto en el PDF). */
+  ancho: number
+  alto: number
+  titulo: string
+  /** Fecha de subida del archivo (storage), null si no se pudo determinar. */
+  subida_at: string | null
+  grupo: 'diagnostico' | 'completacion' | 'firma'
+}
+
 export interface EvidenciaPdf {
   fotos: string[]
   checklist: ChecklistServicio
@@ -94,6 +116,9 @@ export interface EvidenciaPdf {
   confirmado: boolean | null
   confirmado_at: string | null
   cliente_comentario: string | null
+  /** Firma del técnico (juramento). Opcional: no todas las evidencias la traen. */
+  oath_firma?: string | null
+  oath_firmado_at?: string | null
 }
 
 // ── Helpers ──
@@ -223,15 +248,46 @@ export function construirPdfListadoSupervisor(
     y = finalY(doc) + 8
   }
 
+  // Resumen por código de falla — la lectura que le sirve a la marca: qué
+  // falla se repite en su parque. Solo aparece si ya hay diagnósticos.
+  const conteoFalla = new Map<string, { n: number; descripcion: string }>()
+  solicitudes.forEach(s => {
+    if (!s.codigo_falla) return
+    const previo = conteoFalla.get(s.codigo_falla)
+    conteoFalla.set(s.codigo_falla, {
+      n: (previo?.n ?? 0) + 1,
+      descripcion: previo?.descripcion || s.descripcion_falla || '',
+    })
+  })
+
+  if (conteoFalla.size > 0) {
+    autoTable(doc, {
+      startY: y,
+      head: [['Código de falla', 'Descripción', 'Casos']],
+      body: [...conteoFalla.entries()]
+        .sort((a, b) => b[1].n - a[1].n)
+        .map(([codigo, { n, descripcion }]) => [codigo, descripcion || '—', String(n)]),
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: AZUL_MARINO, textColor: [255, 255, 255] },
+      columnStyles: { 0: { cellWidth: 28, fontStyle: 'bold' }, 2: { halign: 'right', cellWidth: 18 } },
+      tableWidth: 150,
+      margin: { left: 14, top: 26 },
+    })
+    y = finalY(doc) + 8
+  }
+
   // Tabla completa
   autoTable(doc, {
     startY: y,
-    head: [['Cliente', 'Teléfono', 'Equipo', 'Marca', 'Ciudad', 'Zona', 'Flujo', 'Valor', 'Estado', 'Técnico', 'Fecha']],
+    head: [['Cliente', 'Teléfono', 'Equipo', 'Marca', 'Falla', 'Descripción falla', 'Ciudad', 'Zona', 'Flujo', 'Valor', 'Estado', 'Técnico', 'Fecha']],
     body: solicitudes.map(s => [
       s.cliente_nombre ?? '—',
       s.cliente_telefono ?? '—',
       s.tipo_equipo ?? '—',
       s.marca_equipo ?? '—',
+      s.codigo_falla ?? '—',
+      s.descripcion_falla ?? '—',
       s.ciudad_pueblo ?? '—',
       s.zona_servicio ?? '—',
       s.es_garantia ? 'Garantía' : 'Particular',
@@ -247,8 +303,14 @@ export function construirPdfListadoSupervisor(
       fechaCorta(s.created_at),
     ]),
     theme: 'striped',
-    styles: { fontSize: 7.5, cellPadding: 1.8, textColor: [30, 41, 59] },
-    headStyles: { fillColor: AZUL_MARINO, textColor: [255, 255, 255], fontSize: 7.5 },
+    styles: { fontSize: 7, cellPadding: 1.5, textColor: [30, 41, 59] },
+    headStyles: { fillColor: AZUL_MARINO, textColor: [255, 255, 255], fontSize: 7 },
+    // Falla: código angosto y en negrita; la descripción se lleva el ancho
+    // que necesita sin empujar el resto fuera de la hoja horizontal.
+    columnStyles: {
+      4: { cellWidth: 13, fontStyle: 'bold' },
+      5: { cellWidth: 38 },
+    },
     margin: { left: 14, right: 14, top: 26 },
   })
 
@@ -272,6 +334,7 @@ export function construirPdfDetalleSolicitud(
   tecnico: TecnicoPdf | null,
   eventos: EventoPdf[],
   evidencia: EvidenciaPdf | null,
+  imagenes: ImagenEvidencia[] = [],
 ): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
@@ -370,8 +433,8 @@ export function construirPdfDetalleSolicitud(
           : 'Esperando confirmación',
     ])
     if (evidencia.cliente_comentario) filas.push(['Comentario cliente', evidencia.cliente_comentario])
-    if (evidencia.fotos?.length) filas.push(['Fotos', `${evidencia.fotos.length} foto(s) — ver en el portal`])
-    if (evidencia.firma_url) filas.push(['Firma cliente', 'Registrada — ver en el portal'])
+    if (evidencia.fotos?.length) filas.push(['Fotos', `${evidencia.fotos.length} foto(s) — ver galería al final`])
+    if (evidencia.firma_url) filas.push(['Firma cliente', 'Registrada — ver galería al final'])
     y = seccionCampos(doc, 'Evidencia del servicio', filas, y)
   }
 
@@ -396,17 +459,207 @@ export function construirPdfDetalleSolicitud(
     })
   }
 
+  // Galería: fotos del diagnóstico, de la completación y las firmas, cada una
+  // con su fecha de subida. Siempre en página propia — así la ficha de texto
+  // queda legible y las imágenes no parten una tabla por la mitad.
+  if (imagenes.length > 0) galeriaEvidencia(doc, imagenes)
+
   pieDePagina(doc)
   return doc
 }
 
-export function generarPdfDetalleSolicitud(
+const GRUPO_TITULO: Record<ImagenEvidencia['grupo'], string> = {
+  diagnostico: 'Fotos del diagnóstico',
+  completacion: 'Fotos del servicio completado',
+  firma: 'Firmas',
+}
+
+/** Grilla de imágenes con su fecha de subida al pie de cada una. */
+function galeriaEvidencia(doc: jsPDF, imagenes: ImagenEvidencia[]) {
+  const ancho = doc.internal.pageSize.getWidth()
+  const alto = doc.internal.pageSize.getHeight()
+  const MARGEN = 14
+  const COLS = 3
+  const GAP = 6
+  const CELDA = (ancho - MARGEN * 2 - GAP * (COLS - 1)) / COLS
+  const CAJA_ALTO = 42 // alto máximo del bitmap
+  const PIE = 8        // título + fecha bajo cada imagen
+  const FILA = CAJA_ALTO + PIE + 4
+
+  doc.addPage()
+  let y = encabezado(doc, 'Evidencia fotográfica', `${imagenes.length} archivo${imagenes.length !== 1 ? 's' : ''} · fecha de subida al pie de cada imagen`)
+
+  for (const grupo of ['diagnostico', 'completacion', 'firma'] as const) {
+    const delGrupo = imagenes.filter(i => i.grupo === grupo)
+    if (delGrupo.length === 0) continue
+
+    if (y + FILA + 8 > alto - 16) {
+      doc.addPage()
+      y = 20
+    }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...AZUL_MARINO)
+    doc.text(`${GRUPO_TITULO[grupo]} (${delGrupo.length})`, MARGEN, y)
+    y += 5
+
+    delGrupo.forEach((img, i) => {
+      const col = i % COLS
+      if (col === 0 && i > 0) y += FILA
+      if (col === 0 && y + FILA > alto - 16) {
+        doc.addPage()
+        y = 20
+      }
+      const x = MARGEN + col * (CELDA + GAP)
+
+      // Escalar conservando aspecto dentro de CELDA × CAJA_ALTO.
+      const escala = Math.min(CELDA / img.ancho, CAJA_ALTO / img.alto)
+      const w = img.ancho * escala
+      const h = img.alto * escala
+      const offsetX = x + (CELDA - w) / 2
+
+      doc.setDrawColor(226, 232, 240)
+      doc.setFillColor(248, 250, 252)
+      doc.rect(x, y, CELDA, CAJA_ALTO, 'FD')
+      try {
+        doc.addImage(img.dataUrl, 'JPEG', offsetX, y + (CAJA_ALTO - h) / 2, w, h)
+      } catch {
+        // Una imagen corrupta no puede tumbar el PDF completo.
+        doc.setFontSize(7)
+        doc.setTextColor(...GRIS_TEXTO)
+        doc.text('No se pudo cargar', x + 2, y + CAJA_ALTO / 2)
+      }
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(7)
+      doc.setTextColor(...AZUL_MARINO)
+      doc.text(img.titulo, x, y + CAJA_ALTO + 4, { maxWidth: CELDA })
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(...GRIS_TEXTO)
+      doc.text(
+        img.subida_at ? `Subida: ${fechaHora(img.subida_at)}` : 'Fecha de subida no disponible',
+        x,
+        y + CAJA_ALTO + 7.5,
+        { maxWidth: CELDA },
+      )
+    })
+
+    y += FILA + 4
+  }
+}
+
+// ── Carga de imágenes (solo browser: usa Image + canvas) ──
+
+/** Lado mayor al que se reescala cada foto antes de entrar al PDF. */
+const MAX_PX = 900
+
+/**
+ * Descarga una imagen del storage y la devuelve como JPEG reescalado.
+ * Fondo blanco explícito: las firmas son PNG con transparencia y en JPEG
+ * el canal alfa se volvería negro. null si falla (CORS, 404, formato que el
+ * navegador no decodifica) — una foto perdida no debe frenar el PDF.
+ */
+async function cargarImagen(
+  url: string,
+  titulo: string,
+  grupo: ImagenEvidencia['grupo'],
+  subida_at: string | null,
+): Promise<ImagenEvidencia | null> {
+  try {
+    const bitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.crossOrigin = 'anonymous'
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('load'))
+      el.src = url
+    })
+
+    const escala = Math.min(1, MAX_PX / Math.max(bitmap.naturalWidth, bitmap.naturalHeight))
+    const ancho = Math.max(1, Math.round(bitmap.naturalWidth * escala))
+    const alto = Math.max(1, Math.round(bitmap.naturalHeight * escala))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = ancho
+    canvas.height = alto
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, ancho, alto)
+    ctx.drawImage(bitmap, 0, 0, ancho, alto)
+
+    return { dataUrl: canvas.toDataURL('image/jpeg', 0.72), ancho, alto, titulo, subida_at, grupo }
+  } catch {
+    return null
+  }
+}
+
+/** Fecha de subida: primero storage (`archivosAt`), si no el stamp del nombre. */
+function fechaSubida(url: string, archivosAt: Record<string, string>): string | null {
+  const nombre = url.split('/').pop() ?? ''
+  const deStorage = archivosAt[nombre]
+  if (deStorage) return deStorage
+  // Los nombres se generan con Date.now(): diagnostico_<ms>_…, firma_<ms>.png,
+  // <ms>_<rand>_<i>.jpg. Sirve de respaldo si el listado de storage falla.
+  const ms = nombre.match(/(?:^|_)(\d{13})(?:_|\.)/)?.[1]
+  if (!ms) return null
+  const fecha = new Date(Number(ms))
+  return Number.isNaN(fecha.getTime()) ? null : fecha.toISOString()
+}
+
+/**
+ * Reúne las URLs de la solicitud (diagnóstico + completación + firmas) y las
+ * carga en paralelo. Las que fallen se descartan.
+ */
+export async function cargarImagenesEvidencia(
+  sol: SolicitudDetallePdf,
+  evidencia: EvidenciaPdf | null,
+  archivosAt: Record<string, string> = {},
+): Promise<ImagenEvidencia[]> {
+  const diagTriaje = (sol.triaje_resultado?.evidencias_diagnostico as string[] | undefined) ?? []
+  const diagCotizacion = (sol.cotizacion?.evidencias_diagnostico as string[] | undefined) ?? []
+  const diagnostico = [...new Set([...diagTriaje, ...diagCotizacion])]
+
+  const pendientes: Array<Promise<ImagenEvidencia | null>> = [
+    ...diagnostico.map((url, i) =>
+      cargarImagen(url, `Diagnóstico ${i + 1}`, 'diagnostico', fechaSubida(url, archivosAt)),
+    ),
+    ...(evidencia?.fotos ?? []).map((url, i) =>
+      cargarImagen(url, `Completación ${i + 1}`, 'completacion', fechaSubida(url, archivosAt)),
+    ),
+  ]
+  if (evidencia?.firma_url) {
+    pendientes.push(
+      cargarImagen(
+        evidencia.firma_url,
+        'Firma del cliente',
+        'firma',
+        fechaSubida(evidencia.firma_url, archivosAt) ?? evidencia.confirmado_at ?? evidencia.completado_at,
+      ),
+    )
+  }
+  if (evidencia?.oath_firma) {
+    pendientes.push(
+      cargarImagen(
+        evidencia.oath_firma,
+        'Oath del técnico',
+        'firma',
+        fechaSubida(evidencia.oath_firma, archivosAt) ?? evidencia.oath_firmado_at ?? null,
+      ),
+    )
+  }
+
+  return (await Promise.all(pendientes)).filter((i): i is ImagenEvidencia => i !== null)
+}
+
+export async function generarPdfDetalleSolicitud(
   sol: SolicitudDetallePdf,
   tecnico: TecnicoPdf | null,
   eventos: EventoPdf[],
   evidencia: EvidenciaPdf | null,
-): void {
-  construirPdfDetalleSolicitud(sol, tecnico, eventos, evidencia).save(
+  archivosAt: Record<string, string> = {},
+): Promise<void> {
+  const imagenes = await cargarImagenesEvidencia(sol, evidencia, archivosAt)
+  construirPdfDetalleSolicitud(sol, tecnico, eventos, evidencia, imagenes).save(
     `baird-solicitud-${sol.id.slice(0, 8)}.pdf`,
   )
 }

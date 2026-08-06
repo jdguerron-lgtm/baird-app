@@ -123,10 +123,23 @@ export async function GET(req: NextRequest) {
     sol.recargo_weekend_aplicado as number | null,
   )
 
+  // Fecha de subida de cada archivo de la solicitud (nombre → created_at de
+  // storage). El PDF la imprime al pie de cada foto; sin esto solo se sabría
+  // cuándo se completó el servicio, no cuándo entró cada evidencia. Los
+  // archivos viven todos en la carpeta {solicitud_id}/ del bucket.
+  const archivos_at: Record<string, string> = {}
+  const { data: objetos } = await supabase.storage
+    .from('evidencias-servicio')
+    .list(id, { limit: 200 })
+  objetos?.forEach(o => {
+    if (o.created_at) archivos_at[o.name] = o.created_at
+  })
+
   return NextResponse.json({
     solicitud: { ...sol, precio_cliente },
     tecnico,
     eventos: eventos ?? [],
     evidencia: evidencia ?? null,
+    archivos_at,
   })
 }

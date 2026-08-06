@@ -21,6 +21,10 @@ interface Solicitud {
   es_garantia: boolean
   created_at: string
   tecnico_nombre: string | null
+  /** Diagnóstico del técnico, aplanado desde triaje_resultado por la API. */
+  codigo_falla: string | null
+  descripcion_falla: string | null
+  complejidad_falla: string | null
 }
 
 interface SupervisorInfo {
@@ -116,6 +120,8 @@ export default function SupervisorSolicitudes() {
           (s.cliente_nombre ?? '').toLowerCase().includes(q) ||
           (s.ciudad_pueblo ?? '').toLowerCase().includes(q) ||
           (s.tipo_equipo ?? '').toLowerCase().includes(q) ||
+          (s.codigo_falla ?? '').toLowerCase().includes(q) ||
+          (s.descripcion_falla ?? '').toLowerCase().includes(q) ||
           s.id.includes(busqueda)
         )
       })
@@ -190,7 +196,7 @@ export default function SupervisorSolicitudes() {
         <div className="flex-1 sm:max-w-xs">
           <input
             type="text"
-            placeholder="Buscar por cliente, ciudad o equipo…"
+            placeholder="Buscar por cliente, ciudad, equipo o falla…"
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
             className="w-full border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -213,6 +219,7 @@ export default function SupervisorSolicitudes() {
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Cliente</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Equipo</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Falla</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Ciudad</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Valor</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
@@ -231,6 +238,23 @@ export default function SupervisorSolicitudes() {
                     <td className="px-5 py-3">
                       <p className="text-sm text-gray-700">{s.tipo_equipo ?? '—'}</p>
                       <p className="text-xs text-gray-400">{s.marca_equipo ?? '—'}</p>
+                    </td>
+                    {/* Código de falla del diagnóstico — el dato con el que la
+                        marca clasifica el servicio. Vacío hasta que el técnico
+                        diagnostica. */}
+                    <td className="px-5 py-3">
+                      {s.codigo_falla ? (
+                        <>
+                          <span className="inline-block text-xs font-extrabold text-purple-700 bg-purple-50 border border-purple-100 rounded-md px-2 py-0.5">
+                            {s.codigo_falla}
+                          </span>
+                          {s.descripcion_falla && (
+                            <p className="text-xs text-gray-400 mt-1 max-w-[180px]">{s.descripcion_falla}</p>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-300">Sin diagnóstico</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <p className="text-sm text-gray-700">{s.ciudad_pueblo ?? '—'}</p>

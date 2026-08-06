@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from('solicitudes_servicio')
     .select(
-      'id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado',
+      'id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado, triaje_resultado',
     )
     .order('created_at', { ascending: false })
 
@@ -51,6 +51,14 @@ export async function GET(req: NextRequest) {
     tecnicos?.forEach((t: { id: string; nombre_completo: string }) => tecnicoMap.set(t.id, t.nombre_completo))
   }
 
+  // Código de falla del diagnóstico (JSONB triaje_resultado). Se aplana acá para
+  // que el listado y su PDF lo muestren sin abrir cada solicitud — es el dato
+  // con el que la marca clasifica el servicio.
+  const codigoFalla = (t: unknown, campo: string): string | null => {
+    const v = (t as Record<string, unknown> | null)?.[campo]
+    return typeof v === 'string' && v.trim() ? v.trim() : null
+  }
+
   const solicitudes = enAlcance.map(s => ({
     id: s.id,
     cliente_nombre: s.cliente_nombre,
@@ -65,6 +73,9 @@ export async function GET(req: NextRequest) {
     es_garantia: s.es_garantia,
     created_at: s.created_at,
     tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) ?? null : null,
+    codigo_falla: codigoFalla(s.triaje_resultado, 'codigo_falla'),
+    descripcion_falla: codigoFalla(s.triaje_resultado, 'descripcion_falla'),
+    complejidad_falla: codigoFalla(s.triaje_resultado, 'complejidad_falla'),
   }))
 
   return NextResponse.json({

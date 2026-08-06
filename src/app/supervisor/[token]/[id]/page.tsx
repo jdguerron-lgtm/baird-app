@@ -112,17 +112,20 @@ export default function SupervisorDetalle() {
   const [tecnico, setTecnico] = useState<Tecnico | null>(null)
   const [eventos, setEventos] = useState<Evento[]>([])
   const [evidencia, setEvidencia] = useState<Evidencia | null>(null)
+  // nombre de archivo en storage → fecha de subida (la imprime el PDF).
+  const [archivosAt, setArchivosAt] = useState<Record<string, string>>({})
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generandoPdf, setGenerandoPdf] = useState(false)
 
   // Ficha completa en PDF (jsPDF con dynamic import, igual que en el listado).
+  // Es async porque descarga y reescala las fotos/firmas antes de armar el PDF.
   const descargarPdf = async () => {
     if (!sol || generandoPdf) return
     setGenerandoPdf(true)
     try {
       const { generarPdfDetalleSolicitud } = await import('@/lib/pdf/supervisorPdf')
-      generarPdfDetalleSolicitud(sol, tecnico, eventos, evidencia)
+      await generarPdfDetalleSolicitud(sol, tecnico, eventos, evidencia, archivosAt)
     } catch {
       alert('No se pudo generar el PDF. Intenta de nuevo.')
     }
@@ -152,6 +155,7 @@ export default function SupervisorDetalle() {
         setTecnico(data.tecnico)
         setEventos(data.eventos ?? [])
         setEvidencia(data.evidencia ?? null)
+        setArchivosAt(data.archivos_at ?? {})
       } catch {
         setError('No se pudo cargar la solicitud.')
       }
