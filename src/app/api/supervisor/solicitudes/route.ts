@@ -6,6 +6,7 @@ import {
   filtroEsGarantia,
 } from '@/lib/auth/supervisor'
 import { precioClienteServicio } from '@/types/solicitud'
+import { campoFalla } from '@/lib/utils/falla'
 
 /**
  * Lista de solicitudes DENTRO DEL ALCANCE del supervisor (solo lectura).
@@ -53,12 +54,8 @@ export async function GET(req: NextRequest) {
 
   // Código de falla del diagnóstico (JSONB triaje_resultado). Se aplana acá para
   // que el listado y su PDF lo muestren sin abrir cada solicitud — es el dato
-  // con el que la marca clasifica el servicio.
-  const codigoFalla = (t: unknown, campo: string): string | null => {
-    const v = (t as Record<string, unknown> | null)?.[campo]
-    return typeof v === 'string' && v.trim() ? v.trim() : null
-  }
-
+  // con el que la marca clasifica el servicio. La coerción de tipos vive en
+  // campoFalla (el código viene como number desde la BD).
   const solicitudes = enAlcance.map(s => ({
     id: s.id,
     cliente_nombre: s.cliente_nombre,
@@ -73,9 +70,9 @@ export async function GET(req: NextRequest) {
     es_garantia: s.es_garantia,
     created_at: s.created_at,
     tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) ?? null : null,
-    codigo_falla: codigoFalla(s.triaje_resultado, 'codigo_falla'),
-    descripcion_falla: codigoFalla(s.triaje_resultado, 'descripcion_falla'),
-    complejidad_falla: codigoFalla(s.triaje_resultado, 'complejidad_falla'),
+    codigo_falla: campoFalla(s.triaje_resultado,'codigo_falla'),
+    descripcion_falla: campoFalla(s.triaje_resultado,'descripcion_falla'),
+    complejidad_falla: campoFalla(s.triaje_resultado,'complejidad_falla'),
   }))
 
   return NextResponse.json({
