@@ -127,6 +127,27 @@ El link se envía por WhatsApp (`supervisor_acceso_v1`, botón URL dinámico) v�
 para copiar/pegar mientras Meta aprueba la plantilla. Revocar acceso = poner el
 supervisor `activo=false` (el resolver rechaza inactivos).
 
+#### Qué ve y qué descarga el supervisor — 2026-08-06
+
+El **listado** (`/api/supervisor/solicitudes`) incluye el código de falla del
+diagnóstico aplanado desde `triaje_resultado` (`codigo_falla`,
+`descripcion_falla`, `complejidad_falla` — ver el gotcha de tipos en
+`docs/GOTCHAS.md`). El **detalle** devuelve además `archivos_at`: nombre de
+archivo → `created_at` de `storage.objects` de la carpeta `{solicitud_id}/`,
+que es lo que imprime el PDF como fecha de subida de cada foto.
+
+Ambas vistas tienen botón **Descargar PDF** (jsPDF client-side, `src/lib/pdf/supervisorPdf.ts`):
+- Listado: resumen por estado + resumen por código de falla + tabla completa.
+- Ficha: datos, diagnóstico, agenda, evidencia, historial y **galería** con las
+  fotos de diagnóstico/completación y las firmas, cada una con su fecha de subida.
+
+La galería se arma en el navegador leyendo las imágenes del bucket público
+`evidencias-servicio` (responde `Access-Control-Allow-Origin: *`) a canvas y
+recodificándolas a JPEG 900px — sin eso el PDF pesaría decenas de MB. Como el
+bucket es público, el PDF no expone nada que el supervisor no pudiera ver ya en
+el portal; **si el bucket pasa a privado con URLs firmadas (backlog de PII, ver
+`docs/GOTCHAS.md`), esta carga hay que rehacerla contra la URL firmada**.
+
 #### Entrada de autoservicio con OTP — 2026-07-09
 
 Además del link mágico enviado por el admin, el supervisor puede entrar solo
