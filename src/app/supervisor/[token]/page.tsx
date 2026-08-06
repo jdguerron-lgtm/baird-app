@@ -43,12 +43,18 @@ const AMBITO_LABEL: Record<string, string> = {
 // Es compartible: no contiene tokens ni datos de servicios.
 const GUIA_SUPERVISOR_URL = 'https://lineablanca.bairdservice.com/guia-supervisores.html'
 
+// El chip "Repuestos" agrupa los tres estados del ciclo de repuesto: es el
+// tramo donde el supervisor actúa (gestiona el repuesto ante la marca y sube
+// la guía de envío en esperando_repuesto).
+const ESTADOS_REPUESTO = ['esperando_repuesto', 'repuesto_en_camino', 'repuesto_recibido']
+
 const FILTROS = [
   { value: 'todos', label: 'Todos' },
   { value: 'pendiente_horario', label: 'Pendiente horario' },
   { value: 'notificada', label: 'Notificada' },
   { value: 'asignada', label: 'Asignada' },
   { value: 'en_proceso', label: 'En proceso' },
+  { value: 'repuestos', label: '📦 Repuestos' },
   { value: 'completada', label: 'Completada' },
   { value: 'cancelada', label: 'Cancelada' },
 ]
@@ -112,7 +118,12 @@ export default function SupervisorSolicitudes() {
     )
   }
 
-  const porEstado = filtro === 'todos' ? solicitudes : solicitudes.filter(s => s.estado === filtro)
+  const porEstado =
+    filtro === 'todos'
+      ? solicitudes
+      : filtro === 'repuestos'
+        ? solicitudes.filter(s => ESTADOS_REPUESTO.includes(s.estado))
+        : solicitudes.filter(s => s.estado === filtro)
   const filtradas = busqueda
     ? porEstado.filter(s => {
         const q = busqueda.toLowerCase()
