@@ -1027,7 +1027,10 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
  * Envía recordatorio si el cliente no confirmó el horario tras 24h.
  * Llamado por el cron job /api/cron/horario-recordatorio.
  */
-export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+export async function enviarRecordatorioHorario(
+  solicitudId: string,
+  opts?: { permitirReenvio?: boolean },
+): Promise<{ ok: boolean; error?: string }> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
     .select('cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_token, horario_recordatorio_at, es_garantia, numero_serie_factura')
@@ -1036,7 +1039,9 @@ export async function enviarRecordatorioHorario(solicitudId: string): Promise<{ 
 
   if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
   if (!sol.horario_token) return { ok: false, error: 'horario_token no existe' }
-  if (sol.horario_recordatorio_at) return { ok: false, error: 'Recordatorio ya enviado' }
+  // Garantía manda hasta 3 recordatorios (2026-08-07) — el cron controla el
+  // conteo con horario_recordatorio_count y pasa permitirReenvio.
+  if (sol.horario_recordatorio_at && !opts?.permitirReenvio) return { ok: false, error: 'Recordatorio ya enviado' }
 
   const equipo = equipoConGarantia(sol)
   const cliente = sol.cliente_nombre.split(' ')[0]

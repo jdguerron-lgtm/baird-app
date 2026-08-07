@@ -12,11 +12,21 @@ export const dynamic = 'force-dynamic'
  * Configurar en vercel.ts:
  *   crons: [{ path: '/api/cron/horario-recordatorio', schedule: '0 * * * *' }]
  *
- * 1. Solicitudes pendiente_horario sin recordatorio enviado y con created_at > 24h:
- *    → enviar plantilla recordatorio_horario_v2
- * 2. Solicitudes pendiente_horario con recordatorio enviado y created_at > 36h
- *    (24h + 12h adicionales):
- *    → marcar estado='sin_agendar' (terminal)
+ * Solicitudes pendiente_horario (cliente aún no fija fecha):
+ *
+ * GARANTÍA (2026-08-07 — antes 1 solo recordatorio):
+ *   → hasta 3 solicitudes de agendamiento, a las 24h / 48h / 72h desde
+ *     created_at. Cada envío queda en el historial del servicio
+ *     (solicitud_eventos tipo 'recordatorio_horario', payload {intento, max}).
+ *   → sin_agendar 12h después del 3er recordatorio (>= 84h).
+ *
+ * PARTICULAR (comportamiento previo intacto):
+ *   → 1 recordatorio a las 24h (también va al historial desde hoy).
+ *   → sin_agendar a las 36h (24h + 12h de gracia).
+ *
+ * Contador en solicitudes_servicio.horario_recordatorio_count (migración
+ * 20260807_llamadas_y_recordatorios.sql); horario_recordatorio_at guarda el
+ * último envío.
  */
 export async function GET(req: Request) {
   // Verificar Vercel Cron header opcional (opcional — Vercel envía x-vercel-cron-signature)
@@ -28,39 +38,55 @@ export async function GET(req: Request) {
   }
 
   const now = Date.now()
-  const horaRecordatorio = new Date(now - HORARIO_TIMEOUT_HORAS * 3600 * 1000).toISOString()
-  const horaSinAgendar = new Date(now - HORARIO_FINAL_TIMEOUT_HORAS * 3600 * 1000).toISOString()
+  const GRACIA_FINAL_HORAS = HORARIO_FINAL_TIMEOUT_HORAS - HORARIO_TIMEOUT_HORAS // 12h tras el último recordatorio
 
   let recordatorios = 0
   let sinAgendar = 0
   const errors: string[] = []
 
-  // 1. Recordatorios — solicitudes pendiente_horario sin recordatorio enviado y con created_at > 24h
-  const { data: paraRecordar } = await supabase
+  const { data: pendientes } = await supabase
     .from('solicitudes_servicio')
-    .select('id')
+    .select('id, es_garantia, created_at, estado, horario_recordatorio_count')
     .eq('estado', 'pendiente_horario')
-    .is('horario_recordatorio_at', null)
-    .lte('created_at', horaRecordatorio)
 
-  if (paraRecordar) {
-    for (const s of paraRecordar) {
-      const r = await enviarRecordatorioHorario(s.id)
-      if (r.ok) recordatorios++
-      else errors.push(`recordatorio ${s.id}: ${r.error}`)
-    }
-  }
+  for (const s of pendientes ?? []) {
+    const maxIntentos = s.es_garantia ? 3 : 1
+    const count = s.horario_recordatorio_count ?? 0
+    const edadHoras = (now - new Date(s.created_at).getTime()) / 3600000
 
-  // 2. Sin agendar — recordatorio enviado y created_at > 36h
-  const { data: paraExpirar } = await supabase
-    .from('solicitudes_servicio')
-    .select('id')
-    .eq('estado', 'pendiente_horario')
-    .not('horario_recordatorio_at', 'is', null)
-    .lte('created_at', horaSinAgendar)
+    if (count < maxIntentos && edadHoras >= HORARIO_TIMEOUT_HORAS * (count + 1)) {
+      // Siguiente recordatorio (intento count+1)
+      const r = await enviarRecordatorioHorario(s.id, { permitirReenvio: count > 0 })
+      if (r.ok) {
+        recordatorios++
+        const intento = count + 1
+        const { error: cntErr } = await supabase
+          .from('solicitudes_servicio')
+          .update({ horario_recordatorio_count: intento })
+          .eq('id', s.id)
+        if (cntErr) errors.push(`count ${s.id}: ${cntErr.message}`)
 
-  if (paraExpirar) {
-    for (const s of paraExpirar) {
+        // Historial: cada reenvío visible en /admin/solicitudes/[id].
+        // Best-effort — si el CHECK aún no tiene el tipo (migración sin
+        // aplicar) solo se loguea, el envío no se revierte.
+        const { error: evErr } = await supabase.from('solicitud_eventos').insert({
+          solicitud_id: s.id,
+          tipo: 'recordatorio_horario',
+          estado_previo: s.estado,
+          estado_nuevo: s.estado,
+          actor: 'sistema',
+          motivo: `Solicitud de agendamiento enviada al cliente (${intento}/${maxIntentos})`,
+          payload: { intento, max: maxIntentos },
+        })
+        if (evErr) console.error(`[cron horario-recordatorio] evento ${s.id} falló:`, evErr.message)
+      } else {
+        errors.push(`recordatorio ${s.id}: ${r.error}`)
+      }
+    } else if (
+      count >= maxIntentos &&
+      edadHoras >= HORARIO_TIMEOUT_HORAS * maxIntentos + GRACIA_FINAL_HORAS
+    ) {
+      // Todos los recordatorios enviados + gracia vencida → sin_agendar
       const { error: updErr } = await supabase
         .from('solicitudes_servicio')
         .update({ estado: 'sin_agendar' })

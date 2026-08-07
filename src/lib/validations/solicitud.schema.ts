@@ -5,7 +5,7 @@ import { isValidPhone } from '@/lib/utils/phone'
 const phoneWithCode = z
   .string()
   .min(1, 'El telefono es requerido')
-  .refine(isValidPhone, 'Ingresa un numero de telefono valido (minimo 7 digitos)')
+  .refine(isValidPhone, 'Ingresa un celular valido: 10 digitos empezando por 3 (ej: 3001234567)')
 
 const nonEmptyString = (fieldName: string, feminine = false) =>
   z.string()

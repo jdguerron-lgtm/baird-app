@@ -106,8 +106,39 @@ describe('isMobileColombiano', () => {
 })
 
 describe('isValidPhone', () => {
-  it('validates pipe format with 7+ digit number', () => {
+  it('validates pipe format with full Colombian mobile', () => {
     expect(isValidPhone('57|3001234567')).toBe(true)
+  })
+
+  // Estricto CO (2026-08-07): un celular incompleto pasaba la validación
+  // vieja ("mínimo 7") y la cotización se enviaba a un número inexistente.
+  it('rejects incomplete Colombian mobile in pipe format (caso real 9 dígitos)', () => {
+    expect(isValidPhone('57|321709789')).toBe(false)
+  })
+
+  it('rejects 11-digit raw number with 57 prefix (missing one digit)', () => {
+    expect(isValidPhone('57321709789')).toBe(false)
+  })
+
+  it('rejects incomplete raw mobile starting with 3', () => {
+    expect(isValidPhone('321709789')).toBe(false)
+  })
+
+  it('rejects mobile with one digit too many', () => {
+    expect(isValidPhone('30012345678')).toBe(false)
+    expect(isValidPhone('57|30012345678')).toBe(false)
+  })
+
+  it('rejects Colombian landline in pipe 57 format (WhatsApp requiere celular)', () => {
+    expect(isValidPhone('57|6015551234')).toBe(false)
+  })
+
+  it('still accepts foreign numbers with 7+ digits in pipe format', () => {
+    expect(isValidPhone('1|2025551234')).toBe(true)
+  })
+
+  it('validates full 12-digit Colombian mobile raw', () => {
+    expect(isValidPhone('573001234567')).toBe(true)
   })
 
   it('rejects pipe format with short number', () => {

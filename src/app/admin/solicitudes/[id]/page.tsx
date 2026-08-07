@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS, ESTADOS_VALIDOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
-import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
+import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
+import { PAGO_MINIMO_TECNICO_GARANTIA, calcularTarifaMABE, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import { escapeLikePattern } from '@/lib/utils/format'
 import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
@@ -137,6 +138,7 @@ export default function SolicitudDetalle() {
   const [edicionCiudad, setEdicionCiudad] = useState('')
   const [edicionZona, setEdicionZona] = useState('')
   const [edicionTipoEquipo, setEdicionTipoEquipo] = useState('')
+  const [edicionTelefono, setEdicionTelefono] = useState('')
   const [edicionMotivo, setEdicionMotivo] = useState('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
   const [errorEdicion, setErrorEdicion] = useState<string | null>(null)
@@ -159,6 +161,12 @@ export default function SolicitudDetalle() {
   const [nuevaNota, setNuevaNota] = useState('')
   const [guardandoNota, setGuardandoNota] = useState(false)
   const [errorNota, setErrorNota] = useState<string | null>(null)
+  // Registro de llamadas del equipo (2026-08-07) — tipo 'llamada_admin'
+  const [llamadas, setLlamadas] = useState<EventoSolicitud[]>([])
+  const [llamadaHora, setLlamadaHora] = useState('')
+  const [llamadaNotas, setLlamadaNotas] = useState('')
+  const [guardandoLlamada, setGuardandoLlamada] = useState(false)
+  const [errorLlamada, setErrorLlamada] = useState<string | null>(null)
   // Cambiar fecha de servicio (calendario + franja → /api/admin/reagendar-solicitud)
   const [fechaReagenda, setFechaReagenda] = useState('')
   const [franjaReagenda, setFranjaReagenda] = useState('')
@@ -222,6 +230,7 @@ export default function SolicitudDetalle() {
     setEdicionCiudad(solicitud.ciudad_pueblo ?? '')
     setEdicionZona(solicitud.zona_servicio ?? '')
     setEdicionTipoEquipo(solicitud.tipo_equipo ?? '')
+    setEdicionTelefono(solicitud.cliente_telefono ?? '')
     setEdicionMotivo('')
     setErrorEdicion(null)
     setEditando(true)
@@ -244,6 +253,16 @@ export default function SolicitudDetalle() {
     }
     if (edicionTipoEquipo.trim() && edicionTipoEquipo.trim() !== solicitud.tipo_equipo) {
       cambios.tipo_equipo = edicionTipoEquipo.trim()
+    }
+    if (edicionTelefono.trim() && edicionTelefono.trim() !== solicitud.cliente_telefono) {
+      // Validación temprana en cliente — el API repite el chequeo server-side.
+      const digits = phoneToDigits(edicionTelefono.trim())
+      if (!isMobileColombiano(digits)) {
+        setErrorEdicion('Celular inválido: debe ser un celular colombiano de 10 dígitos empezando por 3 (ej: 3001234567)')
+        setGuardandoEdicion(false)
+        return
+      }
+      cambios.cliente_telefono = digits
     }
 
     if (Object.keys(cambios).length === 0) {
@@ -388,6 +407,56 @@ export default function SolicitudDetalle() {
       setErrorNota(e instanceof Error ? e.message : 'Error de conexión.')
     } finally {
       setGuardandoNota(false)
+    }
+  }
+
+  const handleRegistrarLlamada = async () => {
+    if (!solicitud) return
+    const texto = llamadaNotas.trim()
+    if (!texto) {
+      setErrorLlamada('Describe brevemente la llamada antes de guardar.')
+      return
+    }
+    if (!llamadaHora) {
+      setErrorLlamada('Indica la hora de la llamada.')
+      return
+    }
+    setGuardandoLlamada(true)
+    setErrorLlamada(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorLlamada('Sesión expirada — vuelve a iniciar sesión.')
+        setGuardandoLlamada(false)
+        return
+      }
+      const res = await fetch('/api/admin/llamadas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          solicitudId: solicitud.id,
+          // datetime-local entrega hora local sin TZ — Date() la interpreta
+          // en la TZ del navegador (Colombia) y la ISO queda correcta.
+          horaLlamada: new Date(llamadaHora).toISOString(),
+          notas: texto,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorLlamada(data.error || 'No se pudo registrar la llamada.')
+        setGuardandoLlamada(false)
+        return
+      }
+      setLlamadas(prev => [data.llamada as EventoSolicitud, ...prev])
+      setLlamadaNotas('')
+      setLlamadaHora('')
+    } catch (e) {
+      setErrorLlamada(e instanceof Error ? e.message : 'Error de conexión.')
+    } finally {
+      setGuardandoLlamada(false)
     }
   }
 
@@ -732,7 +801,15 @@ export default function SolicitudDetalle() {
         .order('ocurrido_at', { ascending: false })
       const eventos: EventoSolicitud[] = eventosData ?? []
       setNotas(eventos.filter(e => e.tipo === 'nota_admin'))
-      setHistorial(eventos.filter(e => e.tipo !== 'nota_admin' && e.estado_previo !== e.estado_nuevo))
+      // Llamadas: manuales del equipo (llamada_admin) + intenciones de
+      // llamada del técnico desde su portal (llamada_tecnico).
+      setLlamadas(eventos.filter(e => e.tipo === 'llamada_admin' || e.tipo === 'llamada_tecnico'))
+      // Historial: transiciones reales + recordatorios de agendamiento (estos
+      // no cambian el estado pero el equipo necesita ver cada reenvío).
+      setHistorial(eventos.filter(e =>
+        e.tipo === 'recordatorio_horario' ||
+        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.estado_previo !== e.estado_nuevo),
+      ))
 
       // 6. Run matching diagnostics
       await runDiagnostics(sol)
@@ -864,7 +941,17 @@ export default function SolicitudDetalle() {
             </div>
             <div>
               <dt className="text-xs text-gray-500">WhatsApp</dt>
-              <dd className="text-sm font-medium text-slate-900">{solicitud.cliente_telefono}</dd>
+              <dd className="text-sm font-medium text-slate-900">
+                {solicitud.cliente_telefono}
+                {/* Detección de número roto (2026-08-07): si tras normalizar no
+                    tiene forma de celular CO, los WhatsApp "se envían" pero
+                    nunca llegan — caso real: cliente tipeó 9 dígitos. */}
+                {!isMobileColombiano(phoneToDigits(solicitud.cliente_telefono)) && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                    ⚠️ Número inválido — el cliente NO recibe WhatsApp. Corregilo con ✏️ Editar.
+                  </span>
+                )}
+              </dd>
             </div>
             {solicitud.cliente_token && (
               <div>
@@ -993,6 +1080,104 @@ export default function SolicitudDetalle() {
             </div>
           </dl>
         </div>
+
+        {/* 💰 Cuentas del servicio (2026-08-07) — discrimina lo que entra a
+            Baird (MABE en garantía / cliente en particular) vs lo que se le
+            paga al técnico, para tener el resumen de cuentas claras por
+            servicio. Garantía: reconstrucción con calcularTarifaMABE (misma
+            fórmula del diagnóstico); particular: desglose persistido en
+            cotizacion (base/IVA/margen) o derivado del precio de catálogo. */}
+        {(() => {
+          const triaje = (solicitud as unknown as Record<string, unknown>).triaje_resultado as Record<string, unknown> | null
+          const cot = (solicitud as unknown as Record<string, unknown>).cotizacion as Record<string, unknown> | null
+
+          const Fila = ({ label, valor, bold, verde }: { label: string; valor: number; bold?: boolean; verde?: boolean }) => (
+            <div className={`flex justify-between text-sm ${bold ? 'font-bold border-t border-gray-200 pt-2 mt-1' : ''}`}>
+              <span className={bold ? 'text-slate-900' : 'text-gray-600'}>{label}</span>
+              <span className={verde ? 'font-bold text-green-700' : bold ? 'text-slate-900' : 'text-slate-800'}>
+                ${formatCOP(valor)} COP
+              </span>
+            </div>
+          )
+
+          if (solicitud.es_garantia) {
+            const complejidad = triaje?.complejidad as ComplejidadServicio | undefined
+            if (!complejidad) {
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                  <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">💰 Cuentas del servicio</h2>
+                  <p className="text-xs text-gray-500">
+                    Pendiente de diagnóstico — el desglose (tarifa MABE, pago al técnico
+                    y margen Baird) se calcula con la complejidad que fije el técnico.
+                  </p>
+                </div>
+              )
+            }
+            const dias = Number(triaje?.dias_transcurridos ?? 0) || 0
+            const cumpleTa = (solicitud as unknown as { cumple_ta?: boolean | null }).cumple_ta
+            const conRecargo = Number((solicitud as unknown as { recargo_weekend_aplicado?: number | null }).recargo_weekend_aplicado ?? 0) > 0
+            const r = calcularTarifaMABE({
+              complejidad,
+              diasSolucion: dias,
+              cumpleTA: cumpleTa ?? true,
+              cumpleEncuesta: true,
+              esFinDeSemana: conRecargo,
+            })
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">💰 Cuentas del servicio — Garantía MABE</h2>
+                <div className="space-y-1.5">
+                  <Fila label={`Tarifa base MABE (complejidad ${complejidad})`} valor={r.tarifaBase} />
+                  {r.bono > 0 && <Fila label="Bono por tiempo de solución" valor={r.bono} />}
+                  {r.recargoWeekend > 0 && <Fila label="Recargo fin de semana / festivo" valor={r.recargoWeekend} />}
+                  <Fila label="Total que factura Baird a MABE" valor={r.totalMABE} bold verde />
+                  <Fila label="Pago al técnico (78% base + 90% bonos)" valor={r.pagoTecnico} />
+                  <Fila label="Margen Baird (22% base + 10% bonos)" valor={r.margenBaird} bold />
+                </div>
+                <p className="mt-3 text-[11px] text-gray-400">
+                  Proyección con encuesta de satisfacción respondida
+                  {cumpleTa === null || cumpleTa === undefined ? ' y TA asumido cumplido' : cumpleTa ? ' (TA cumplido)' : ' (TA NO cumplido — bono anulado)'}.
+                  El consolidado final se fija al cierre del servicio.
+                </p>
+              </div>
+            )
+          }
+
+          // ── Particular ──
+          const totalCliente = Number(cot?.total ?? 0) > 0
+            ? Number(cot?.total)
+            : precioClienteServicio(
+                solicitud.tipo_equipo,
+                solicitud.tipo_solicitud,
+                solicitud.es_garantia,
+                cot as { total?: number | null } | null,
+                (solicitud as unknown as { recargo_weekend_aplicado?: number | null }).recargo_weekend_aplicado,
+              )
+          if (!totalCliente || totalCliente <= 0) return null
+          const baseVenta = Number(cot?.base_venta ?? 0) > 0 ? Number(cot?.base_venta) : Math.round(totalCliente / 1.19)
+          const ivaVenta = Number(cot?.iva_venta ?? 0) > 0 ? Number(cot?.iva_venta) : totalCliente - baseVenta
+          const pagoTec = solicitud.pago_tecnico ?? 0
+          const margenBaird = Number(cot?.margen_baird ?? 0) > 0
+            ? Number(cot?.margen_baird)
+            : Math.max(0, baseVenta - pagoTec)
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">💰 Cuentas del servicio — Particular</h2>
+              <div className="space-y-1.5">
+                <Fila label="Total que paga el cliente a Baird (IVA incluido)" valor={totalCliente} bold verde />
+                <Fila label="Base gravable (sin IVA)" valor={baseVenta} />
+                <Fila label="IVA 19%" valor={ivaVenta} />
+                <Fila label="Pago al técnico (neto)" valor={pagoTec} />
+                <Fila label="Margen Baird (antes de IVA)" valor={margenBaird} bold />
+              </div>
+              <p className="mt-3 text-[11px] text-gray-400">
+                {Number(cot?.total ?? 0) > 0
+                  ? 'Desglose persistido en la cotización aprobada por el cliente.'
+                  : 'Tarifa fija de catálogo — el desglose exacto se consolida con la cotización o el cierre.'}
+              </p>
+            </div>
+          )
+        })()}
 
         {/* Diagnosis & Fault Code — visible para warranty Y particular cuando hay diagnóstico */}
         {(() => {
@@ -1897,6 +2082,78 @@ export default function SolicitudDetalle() {
         )}
       </div>
 
+      {/* Registro de llamadas del equipo (2026-08-07) — el admin carga a mano
+          cada llamada con el cliente (hora + qué se habló). Va al audit log
+          append-only (tipo llamada_admin) via /api/admin/llamadas. NO envía
+          WhatsApp ni trackea nada automático. */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          📞 Llamadas del equipo
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Registro manual de llamadas con el cliente. Quedan en el historial del
+          servicio y no se pueden borrar; si te equivocas, registra otra entrada
+          aclarando.
+        </p>
+        <div className="flex items-start gap-3 flex-wrap sm:flex-nowrap">
+          <div className="shrink-0">
+            <span className="block text-[11px] font-semibold text-gray-500 mb-1">Hora de la llamada</span>
+            <input
+              type="datetime-local"
+              value={llamadaHora}
+              onChange={(e) => { setLlamadaHora(e.target.value); if (errorLlamada) setErrorLlamada(null) }}
+              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <span className="block text-[11px] font-semibold text-gray-500 mb-1">Qué se habló</span>
+            <textarea
+              value={llamadaNotas}
+              onChange={(e) => { setLlamadaNotas(e.target.value); if (errorLlamada) setErrorLlamada(null) }}
+              placeholder="Ej: Se llamó al cliente para coordinar el agendamiento — pidió que lo volvamos a llamar mañana."
+              rows={2}
+              className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+            />
+          </div>
+          <button
+            onClick={handleRegistrarLlamada}
+            disabled={guardandoLlamada || llamadaNotas.trim().length === 0 || !llamadaHora}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 sm:mt-5"
+          >
+            {guardandoLlamada ? 'Guardando...' : 'Registrar llamada'}
+          </button>
+        </div>
+        {errorLlamada && (
+          <p className="mt-2 text-xs text-red-600">{errorLlamada}</p>
+        )}
+        {llamadas.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {llamadas.map((l) => {
+              const esTecnico = l.tipo === 'llamada_tecnico'
+              const hora = (l.payload as { hora_llamada?: string } | null)?.hora_llamada
+              return (
+                <div key={l.id} className="rounded-lg border border-gray-200 bg-slate-50 p-3">
+                  <p className="text-sm text-slate-900">
+                    📞 {l.motivo}
+                    {esTecnico && (
+                      <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">técnico</span>
+                    )}
+                  </p>
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    {esTecnico
+                      ? `Botón "Llamar" del portal · ${new Date(l.ocurrido_at).toLocaleString('es-CO')}`
+                      : <>Llamada: {hora ? new Date(hora).toLocaleString('es-CO') : '—'}
+                        {' · '}✍️ {l.actor ?? 'admin'} · registrada {new Date(l.ocurrido_at).toLocaleString('es-CO')}</>}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-gray-400">Aún no hay llamadas registradas para este servicio.</p>
+        )}
+      </div>
+
       {/* Notas del administrador — notas internas + eventos nota_admin del
           audit log (ediciones de campos, avisos del sistema). Solo visibles
           en el panel; NO envían WhatsApp. Append-only via /api/admin/notas:
@@ -1993,6 +2250,16 @@ export default function SolicitudDetalle() {
                   {badge.label}
                 </span>
                 <div className="min-w-0">
+                  {e.tipo === 'recordatorio_horario' ? (
+                    <p className="text-sm text-slate-900">
+                      📅 <span className="font-semibold">Solicitud de agendamiento enviada al cliente</span>
+                      {typeof (e.payload as { intento?: number } | null)?.intento === 'number' && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                          intento {(e.payload as { intento?: number }).intento}
+                        </span>
+                      )}
+                    </p>
+                  ) : (
                   <p className="text-sm text-slate-900">
                     {e.estado_previo ? (ESTADO_LABELS[e.estado_previo] ?? e.estado_previo) : '—'}
                     {' → '}
@@ -2001,6 +2268,7 @@ export default function SolicitudDetalle() {
                       <span className="ml-2 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-700">manual</span>
                     )}
                   </p>
+                  )}
                   {e.motivo && <p className="mt-0.5 text-xs text-gray-500">{e.motivo}</p>}
                   <p className="mt-0.5 text-xs text-gray-400">{new Date(e.ocurrido_at).toLocaleString('es-CO')}</p>
                 </div>
@@ -2193,6 +2461,23 @@ export default function SolicitudDetalle() {
                 <span className="block text-[11px] text-gray-400 mt-1">
                   Cambiarlo afecta el matching de técnicos y las familias de falla
                   que ve el técnico en el diagnóstico.
+                </span>
+              </label>
+
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Celular del cliente (WhatsApp)</span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={edicionTelefono}
+                  onChange={(e) => setEdicionTelefono(e.target.value)}
+                  placeholder="3001234567"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <span className="block text-[11px] text-gray-400 mt-1">
+                  Celular colombiano de 10 dígitos (empieza por 3). Toda la comunicación
+                  con el cliente va a este número — corregirlo NO reenvía mensajes:
+                  usá &ldquo;↻ Reenviar&rdquo; después de guardar.
                 </span>
               </label>
 

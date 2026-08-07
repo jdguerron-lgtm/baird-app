@@ -85,13 +85,28 @@ export function isMobileColombiano(digits: string): boolean {
 
 /**
  * Validates a phone value is well-formed.
- * Accepts "code|number" format or raw digits (10+).
+ * Accepts "code|number" format or raw digits.
+ *
+ * ESTRICTO para Colombia (2026-08-07): si el código es 57 (o los dígitos
+ * empiezan por 57/3), el número debe ser un CELULAR válido — exactamente
+ * 3XXXXXXXXX (10 dígitos). Toda la coordinación del servicio es por
+ * WhatsApp; un número incompleto deja al cliente incontactable (caso real:
+ * "321709789" con 9 dígitos pasó la validación vieja de "mínimo 7" y la
+ * cotización se envió a un número inexistente).
+ *
+ * Otros códigos de país siguen siendo permisivos (>= 7 dígitos) para no
+ * romper técnicos/clientes extranjeros.
  */
 export function isValidPhone(value: string): boolean {
   if (value.includes('|')) {
     const [code, num] = value.split('|', 2)
-    return code.length >= 1 && num.length >= 7
+    const numDigits = num.replace(/\D/g, '')
+    if (code === '57') return /^3\d{9}$/.test(numDigits)
+    return code.length >= 1 && numDigits.length >= 7
   }
   const digits = value.replace(/\D/g, '')
+  // Dígitos crudos que parecen colombianos → exigir forma de celular
+  if (digits.startsWith('57') && digits.length >= 11) return isMobileColombiano(digits)
+  if (digits.startsWith('3')) return /^3\d{9}$/.test(digits)
   return digits.length >= 10
 }

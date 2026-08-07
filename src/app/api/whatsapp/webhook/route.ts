@@ -62,6 +62,27 @@ export async function POST(req: NextRequest) {
         for (const msg of messages) {
           console.log(`[Webhook] Mensaje de ${msg.from}: tipo=${msg.type}`)
         }
+
+        // Detección de envíos fallidos (2026-08-07). Meta acepta el POST de
+        // enviarPlantilla (200 + wamid) aunque el número no exista — el fallo
+        // real llega DESPUÉS por acá como status=failed (p.ej. error 131026
+        // "message undeliverable" cuando el número no tiene WhatsApp o está
+        // mal digitado). Caso real: cliente tipeó su celular con 9 dígitos,
+        // la cotización "se envió" dos veces y nunca llegó. Este log hace el
+        // fallo visible en los runtime logs de Vercel (buscar "UNDELIVERED").
+        const statuses = change.value?.statuses ?? []
+        for (const st of statuses) {
+          if (st.status === 'failed') {
+            const errores = (st.errors ?? [])
+              .map((e: { code?: number; title?: string; message?: string }) =>
+                `${e.code ?? '?'} ${e.title ?? e.message ?? ''}`.trim())
+              .join('; ')
+            console.error(
+              `[Webhook] ⚠️ UNDELIVERED — mensaje ${st.id} a ${st.recipient_id} FALLÓ: ${errores || 'sin detalle'}. ` +
+              `Revisar cliente_telefono/whatsapp del destinatario en la BD (¿número incompleto o sin WhatsApp?).`,
+            )
+          }
+        }
       }
     }
 

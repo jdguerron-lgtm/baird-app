@@ -9,6 +9,7 @@ import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
+import { phoneToDigits } from '@/lib/utils/phone'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import QrPagosBaird from '@/components/ui/QrPagosBaird'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
@@ -22,6 +23,7 @@ interface Tecnico {
 interface Servicio {
   id: string
   cliente_nombre: string
+  cliente_telefono: string
   tipo_equipo: string
   marca_equipo: string
   novedades_equipo: string
@@ -76,7 +78,7 @@ export default function PortalTecnicoPage() {
       const { data: sols } = await querySupabase(() =>
         supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado')
+          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado')
           .eq('tecnico_asignado_id', tec.id)
           .order('created_at', { ascending: false })
       )
@@ -102,6 +104,7 @@ export default function PortalTecnicoPage() {
 
         setServicios(sols.map(s => ({
           ...s,
+          cliente_telefono: s.cliente_telefono ?? '',
           estado: s.estado ?? 'pendiente_horario',
           pago_tecnico: s.pago_tecnico ?? 0,
           es_garantia: s.es_garantia ?? false,
@@ -274,6 +277,12 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
   // ambos flujos — fusión 2026-07-09).
   const needsDiagnostic = s.estado === 'asignada'
   const canComplete = s.estado === 'en_proceso' && !s.tiene_evidencia
+  // "Llamar" solo en servicios vivos — en el historial ya no hay a quién
+  // coordinar y esconderlo evita llamadas por error a clientes cerrados.
+  const esActivo = ![
+    'completada', 'cancelada', 'reparacion_rechazada', 'cotizacion_rechazada',
+    'finalizado_sin_reparacion', 'sin_agendar', 'en_disputa',
+  ].includes(s.estado)
   const esperaInfo: string | null =
     s.estado === 'pendiente_pricing' ? 'Baird está fijando precio y tiempo de entrega'
     : s.estado === 'cotizacion_enviada' ? 'Esperando aprobación de cotización del cliente'
@@ -317,9 +326,31 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
           <p><span className="font-semibold text-gray-500">Zona:</span> {s.zona_servicio}, {s.ciudad_pueblo}</p>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+        {/* Pago */}
+        <div className="mb-3">
           <PagoLabel servicio={s} />
+        </div>
+
+        {/* Footer: 📞 Llamar a la izquierda, acciones (Diagnosticar /
+            Completar) a la derecha. El botón registra la INTENCIÓN de llamada
+            en el audit log (best-effort) y abre el marcador con tel:. */}
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+          {esActivo && s.cliente_telefono ? (
+            <a
+              href={`tel:+${phoneToDigits(s.cliente_telefono)}`}
+              onClick={() => {
+                // Fire-and-forget: no bloquea la llamada si falla
+                fetch('/api/tecnico/llamada-intento', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
+                }).catch(() => {})
+              }}
+              className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
+            >
+              📞 Llamar
+            </a>
+          ) : <span />}
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-gray-300">
               {new Date(s.created_at).toLocaleDateString('es-CO')}
