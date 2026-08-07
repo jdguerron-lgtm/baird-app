@@ -804,11 +804,16 @@ export default function SolicitudDetalle() {
       // Llamadas: manuales del equipo (llamada_admin) + intenciones de
       // llamada del técnico desde su portal (llamada_tecnico).
       setLlamadas(eventos.filter(e => e.tipo === 'llamada_admin' || e.tipo === 'llamada_tecnico'))
-      // Historial: transiciones reales + recordatorios de agendamiento (estos
-      // no cambian el estado pero el equipo necesita ver cada reenvío).
+      // Historial consolidado (2026-08-07): transiciones reales + recordatorios
+      // de agendamiento + llamadas (equipo y técnico) + ediciones de campos del
+      // admin (nota_admin con payload.campos_modificados). Un solo lugar con
+      // TODO lo que le pasó al servicio, en orden cronológico.
       setHistorial(eventos.filter(e =>
         e.tipo === 'recordatorio_horario' ||
-        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.estado_previo !== e.estado_nuevo),
+        e.tipo === 'llamada_admin' ||
+        e.tipo === 'llamada_tecnico' ||
+        (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
+        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.estado_previo !== e.estado_nuevo),
       ))
 
       // 6. Run matching diagnostics
@@ -2237,13 +2242,20 @@ export default function SolicitudDetalle() {
           Historial de estados
         </h2>
         <p className="text-xs text-gray-500 mb-3">
-          Cada cambio de estado de este servicio y quién lo disparó: el cliente
-          (confirmó horario, aprobó pasos), el técnico (aceptó, diagnosticó,
-          completó), un admin (acciones manuales) o el sistema (timeouts).
+          Todo lo que le pasó a este servicio en orden cronológico: cambios de
+          estado (y quién los disparó), llamadas registradas por el equipo,
+          intenciones de llamada del técnico, ediciones de datos del admin y
+          recordatorios de agendamiento enviados al cliente.
         </p>
         <div className="space-y-2">
           {historial.map((e) => {
             const badge = actorBadge(e.actor)
+            const payload = e.payload as {
+              intento?: number
+              hora_llamada?: string
+              campos_modificados?: Record<string, { previo: string | null; nuevo: string }>
+            } | null
+            const esEdicion = e.tipo === 'nota_admin' && !!payload?.campos_modificados
             return (
               <div key={e.id} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-slate-50 p-3">
                 <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${badge.clase}`}>
@@ -2253,11 +2265,32 @@ export default function SolicitudDetalle() {
                   {e.tipo === 'recordatorio_horario' ? (
                     <p className="text-sm text-slate-900">
                       📅 <span className="font-semibold">Solicitud de agendamiento enviada al cliente</span>
-                      {typeof (e.payload as { intento?: number } | null)?.intento === 'number' && (
+                      {typeof payload?.intento === 'number' && (
                         <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                          intento {(e.payload as { intento?: number }).intento}
+                          intento {payload.intento}
                         </span>
                       )}
+                    </p>
+                  ) : e.tipo === 'llamada_admin' ? (
+                    <p className="text-sm text-slate-900">
+                      📞 <span className="font-semibold">Llamada del equipo al cliente</span>
+                      {payload?.hora_llamada && (
+                        <span className="ml-2 text-xs text-gray-500">
+                          ({new Date(payload.hora_llamada).toLocaleString('es-CO')})
+                        </span>
+                      )}
+                    </p>
+                  ) : e.tipo === 'llamada_tecnico' ? (
+                    <p className="text-sm text-slate-900">
+                      📞 <span className="font-semibold">El técnico intentó llamar al cliente</span>
+                      <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">portal técnico</span>
+                    </p>
+                  ) : esEdicion ? (
+                    <p className="text-sm text-slate-900">
+                      ✏️ <span className="font-semibold">Edición de datos del servicio</span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({Object.keys(payload!.campos_modificados!).join(', ')})
+                      </span>
                     </p>
                   ) : (
                   <p className="text-sm text-slate-900">
@@ -2268,6 +2301,19 @@ export default function SolicitudDetalle() {
                       <span className="ml-2 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-purple-700">manual</span>
                     )}
                   </p>
+                  )}
+                  {/* En ediciones, el diff campo por campo (previo → nuevo) */}
+                  {esEdicion && (
+                    <div className="mt-1 space-y-0.5">
+                      {Object.entries(payload!.campos_modificados!).map(([campo, d]) => (
+                        <p key={campo} className="text-xs text-gray-500">
+                          <span className="font-semibold">{campo}:</span>{' '}
+                          <span className="line-through text-gray-400">{d.previo ?? '—'}</span>
+                          {' → '}
+                          <span className="text-slate-700">{d.nuevo}</span>
+                        </p>
+                      ))}
+                    </div>
                   )}
                   {e.motivo && <p className="mt-0.5 text-xs text-gray-500">{e.motivo}</p>}
                   <p className="mt-0.5 text-xs text-gray-400">{new Date(e.ocurrido_at).toLocaleString('es-CO')}</p>
