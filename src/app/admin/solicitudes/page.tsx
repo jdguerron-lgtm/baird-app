@@ -22,6 +22,7 @@ interface Solicitud {
   pago_tecnico: number          // NETO al técnico (catálogo ÷ 1.3447 × 0.8, $35k fijo diagnóstico, o costo cotizado)
   precio_cliente: number        // lo que paga el cliente (catálogo / total cotizado, IVA incl.)
   es_garantia: boolean
+  numero_serie_factura: string | null   // N° orden/garantía MABE
   created_at: string
   tecnico_asignado_id: string | null
   tecnico_nombre?: string
@@ -55,7 +56,7 @@ export default function SolicitudesAdmin() {
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado')
           .order('created_at', { ascending: false })
 
         if (filtro !== 'todos') {
@@ -210,10 +211,15 @@ export default function SolicitudesAdmin() {
   const filtradas = busqueda
     ? solicitudes.filter(s => {
         const q = busqueda.toLowerCase()
+        // Solo-dígitos para matchear teléfonos sin importar +57/espacios
+        const qDigits = q.replace(/\D/g, '')
         return (
           (s.cliente_nombre ?? '').toLowerCase().includes(q) ||
           (s.ciudad_pueblo ?? '').toLowerCase().includes(q) ||
           (s.tipo_equipo ?? '').toLowerCase().includes(q) ||
+          (s.marca_equipo ?? '').toLowerCase().includes(q) ||
+          (s.numero_serie_factura ?? '').toLowerCase().includes(q) ||
+          (qDigits.length >= 4 && (s.cliente_telefono ?? '').replace(/\D/g, '').includes(qDigits)) ||
           s.id.includes(busqueda)
         )
       })
@@ -284,7 +290,7 @@ export default function SolicitudesAdmin() {
         <div className="flex-1 sm:max-w-xs">
           <input
             type="text"
-            placeholder="Buscar por cliente, ciudad, equipo o ID..."
+            placeholder="Buscar por cliente, teléfono, orden, ciudad, equipo o ID..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             className="w-full border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -366,7 +372,7 @@ export default function SolicitudesAdmin() {
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Asignado a</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Fecha</th>
-                  <th className="px-5 py-3" />
+                  <th className="px-5 py-3 sticky right-0 bg-gray-50" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -428,10 +434,11 @@ export default function SolicitudesAdmin() {
                         {new Date(s.created_at).toLocaleDateString('es-CO')}
                       </span>
                     </td>
-                    <td className="px-5 py-3">
+                    {/* Sticky: el acceso al detalle siempre visible aunque la tabla scrollee */}
+                    <td className="px-5 py-3 sticky right-0 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]">
                       <Link
                         href={`/admin/solicitudes/${s.id}`}
-                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
                       >
                         Ver detalle →
                       </Link>

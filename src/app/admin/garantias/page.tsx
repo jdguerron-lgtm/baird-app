@@ -302,7 +302,7 @@ export default function GarantiasPage() {
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Valor</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Fecha</th>
-                  <th className="px-5 py-3" />
+                  <th className="px-5 py-3 sticky right-0 bg-gray-50" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -327,10 +327,11 @@ export default function GarantiasPage() {
                     <td className="px-5 py-3 text-xs text-gray-400">
                       {new Date(s.created_at).toLocaleDateString('es-CO')}
                     </td>
-                    <td className="px-5 py-3">
+                    {/* Sticky: el acceso al detalle siempre visible aunque la tabla scrollee */}
+                    <td className="px-5 py-3 sticky right-0 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]">
                       <Link
                         href={`/admin/solicitudes/${s.id}`}
-                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap"
                       >
                         Ver detalle
                       </Link>

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { esEmailAdmin } from '@/lib/auth/adminEmails'
+import BuscadorGlobal from '@/components/admin/BuscadorGlobal'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -105,8 +106,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1 block">admin</span>
         </div>
 
+        {/* Buscador global: clientes, casos, órdenes de garantía, técnicos */}
+        <BuscadorGlobal />
+
         {/* Nav */}
-        <nav className="flex-1 py-4 px-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
           {navItems.map(({ href, label, icon }) => {
             const active = pathname === href || (href !== '/admin' && pathname.startsWith(href))
             return (
