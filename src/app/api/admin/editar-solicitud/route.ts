@@ -22,6 +22,7 @@ export const maxDuration = 30
  *     ciudad_pueblo?: string,
  *     zona_servicio?: string,
  *     tipo_equipo?: string,        // debe estar en TIPOS_EQUIPO
+ *     marca_equipo?: string,       // texto libre — afecta alcance de supervisores por marca
  *     cliente_telefono?: string,   // celular CO válido (573XXXXXXXXX tras normalizar)
  *   },
  *   motivo?: string,   // razón opcional de la edición (queda en audit)
@@ -54,7 +55,9 @@ export async function POST(req: NextRequest) {
     // Sanitizar campos permitidos. Solo aceptamos los que un admin razonable
     // debería corregir. Otros campos críticos (estado, es_garantia, tokens,
     // tecnico_asignado_id, etc.) NO se exponen — requieren su propio flujo.
-    const camposPermitidos = ['horario_confirmado', 'direccion', 'ciudad_pueblo', 'zona_servicio', 'tipo_equipo', 'cliente_telefono'] as const
+    // marca_equipo (2026-08-10): texto libre, pero OJO — define qué supervisores
+    // ven el caso (alcance por marca, normalizeForMatch) y el flujo de garantía.
+    const camposPermitidos = ['horario_confirmado', 'direccion', 'ciudad_pueblo', 'zona_servicio', 'tipo_equipo', 'marca_equipo', 'cliente_telefono'] as const
     const cambiosLimpios: Record<string, string> = {}
     for (const campo of camposPermitidos) {
       const valor = cambiosRaw[campo]
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
     // 1. Leer estado actual para diff de audit
     const { data: actual, error: readErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, horario_confirmado, direccion, ciudad_pueblo, zona_servicio, tipo_equipo')
+      .select('id, estado, horario_confirmado, direccion, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, cliente_telefono')
       .eq('id', id)
       .single()
     if (readErr || !actual) {

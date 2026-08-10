@@ -138,6 +138,7 @@ export default function SolicitudDetalle() {
   const [edicionCiudad, setEdicionCiudad] = useState('')
   const [edicionZona, setEdicionZona] = useState('')
   const [edicionTipoEquipo, setEdicionTipoEquipo] = useState('')
+  const [edicionMarca, setEdicionMarca] = useState('')
   const [edicionTelefono, setEdicionTelefono] = useState('')
   const [edicionMotivo, setEdicionMotivo] = useState('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
@@ -230,6 +231,7 @@ export default function SolicitudDetalle() {
     setEdicionCiudad(solicitud.ciudad_pueblo ?? '')
     setEdicionZona(solicitud.zona_servicio ?? '')
     setEdicionTipoEquipo(solicitud.tipo_equipo ?? '')
+    setEdicionMarca(solicitud.marca_equipo ?? '')
     setEdicionTelefono(solicitud.cliente_telefono ?? '')
     setEdicionMotivo('')
     setErrorEdicion(null)
@@ -253,6 +255,9 @@ export default function SolicitudDetalle() {
     }
     if (edicionTipoEquipo.trim() && edicionTipoEquipo.trim() !== solicitud.tipo_equipo) {
       cambios.tipo_equipo = edicionTipoEquipo.trim()
+    }
+    if (edicionMarca.trim() && edicionMarca.trim() !== solicitud.marca_equipo) {
+      cambios.marca_equipo = edicionMarca.trim()
     }
     if (edicionTelefono.trim() && edicionTelefono.trim() !== solicitud.cliente_telefono) {
       // Validación temprana en cliente — el API repite el chequeo server-side.
@@ -2507,6 +2512,21 @@ export default function SolicitudDetalle() {
                 <span className="block text-[11px] text-gray-400 mt-1">
                   Cambiarlo afecta el matching de técnicos y las familias de falla
                   que ve el técnico en el diagnóstico.
+                </span>
+              </label>
+
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-700 mb-1">Marca del equipo</span>
+                <input
+                  type="text"
+                  value={edicionMarca}
+                  onChange={(e) => setEdicionMarca(e.target.value)}
+                  placeholder="Ej: MABE, Whirlpool, LG…"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <span className="block text-[11px] text-gray-400 mt-1">
+                  La marca define qué supervisores ven el caso (alcance por marca)
+                  y el flujo de garantía.
                 </span>
               </label>
 
