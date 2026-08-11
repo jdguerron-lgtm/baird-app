@@ -63,6 +63,15 @@ interface Evento {
   estado_nuevo: string | null
   actor: string | null
   motivo: string | null
+  payload: Record<string, unknown> | null
+  ocurrido_at: string | null
+}
+
+/** Comprobante de envío adjuntado por un supervisor (evento comprobante_envio). */
+interface Comprobante {
+  url: string
+  nota: string | null
+  subido_por: string | null
   ocurrido_at: string | null
 }
 
@@ -338,6 +347,11 @@ export default function SupervisorDetalle() {
           para agendar la visita de finalización. */}
       <GuiaEnvioSeccion sol={sol} token={token} />
 
+      {/* Comprobantes de envío adicionales (recibo transportadora, tracking,
+          remisión). A diferencia de la guía, no transicionan estado: quedan
+          como evidencia en el historial del caso. */}
+      <ComprobantesEnvioSeccion sol={sol} token={token} eventos={eventos} />
+
       {/* Galería completa — fotos de diagnóstico (triaje/cotización) +
           fotos de completación + firmas, igual que en el detalle admin. */}
       {(() => {
@@ -500,7 +514,46 @@ export default function SupervisorDetalle() {
                   <span className="text-gray-300 mt-0.5">•</span>
                   <div>
                     <p className="text-slate-800">
-                      {e.estado_previo && e.estado_nuevo ? (
+                      {e.tipo === 'comprobante_envio' ? (
+                        <span className="font-medium">
+                          🧾 Comprobante de envío adjuntado
+                          {typeof e.payload?.url === 'string' && (
+                            <a
+                              href={e.payload.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-2 text-xs font-semibold text-sky-700 underline hover:text-sky-900"
+                            >
+                              Ver archivo
+                            </a>
+                          )}
+                        </span>
+                      ) : e.tipo === 'mensaje_cliente' ? (
+                        // Protocolo de contacto: cada WhatsApp de reserva/confirmación
+                        // enviado al cliente, para que el supervisor valide la gestión.
+                        <span className="font-medium">
+                          💬 WhatsApp al cliente
+                          {typeof e.payload?.plantilla === 'string' && (
+                            <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">{String(e.payload!.plantilla)}</span>
+                          )}
+                        </span>
+                      ) : e.tipo === 'recordatorio_horario' ? (
+                        <span className="font-medium">
+                          📅 Solicitud de agendamiento enviada al cliente
+                          {typeof e.payload?.intento === 'number' && (
+                            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">intento {String(e.payload!.intento)}</span>
+                          )}
+                        </span>
+                      ) : e.tipo === 'llamada_admin' ? (
+                        <span className="font-medium">
+                          📞 Llamada del equipo Baird al cliente
+                          {typeof e.payload?.hora_llamada === 'string' && (
+                            <span className="ml-2 text-xs text-gray-500">({fechaHora(e.payload!.hora_llamada as string)})</span>
+                          )}
+                        </span>
+                      ) : e.tipo === 'llamada_tecnico' ? (
+                        <span className="font-medium">📞 El técnico intentó llamar al cliente</span>
+                      ) : e.estado_previo && e.estado_nuevo && e.estado_previo !== e.estado_nuevo ? (
                         <>
                           <span className="text-gray-500">{ESTADO_LABELS[e.estado_previo] ?? e.estado_previo}</span>
                           {' → '}
@@ -665,6 +718,148 @@ function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
               {enviando ? 'Subiendo…' : '🚚 Subir guía y notificar'}
             </button>
           </div>
+        )}
+      </Seccion>
+    </div>
+  )
+}
+
+// Estados en los que se pueden adjuntar comprobantes (todo el ciclo de repuesto).
+const ESTADOS_COMPROBANTE = ['esperando_repuesto', 'repuesto_en_camino', 'repuesto_recibido']
+
+/**
+ * Comprobantes de envío del repuesto.
+ *
+ * El supervisor puede adjuntar N comprobantes (recibo de la transportadora,
+ * pantallazo de tracking, remisión — foto o PDF + nota opcional) durante todo
+ * el ciclo de repuesto → POST /api/supervisor/comprobante-envio. No cambia el
+ * estado ni notifica: queda como evidencia en el historial (evento
+ * comprobante_envio) y visible también en la ficha admin.
+ */
+function ComprobantesEnvioSeccion({ sol, token, eventos }: { sol: Solicitud; token: string; eventos: Evento[] }) {
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [nota, setNota] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  // Comprobantes subidos en ESTA sesión (se suman a los del historial sin recargar).
+  const [nuevos, setNuevos] = useState<Comprobante[]>([])
+  // Reset del <input type="file"> tras cada subida (cambia el key).
+  const [inputKey, setInputKey] = useState(0)
+
+  const previos: Comprobante[] = eventos
+    .filter(e => e.tipo === 'comprobante_envio' && typeof e.payload?.url === 'string')
+    .map(e => ({
+      url: e.payload!.url as string,
+      nota: e.motivo,
+      subido_por: typeof e.payload?.subido_por === 'string' ? (e.payload.subido_por as string) : null,
+      ocurrido_at: e.ocurrido_at,
+    }))
+  // nuevos primero (más recientes); previos ya vienen desc del API.
+  const comprobantes = [...nuevos, ...previos]
+
+  const puedeSubir = ESTADOS_COMPROBANTE.includes(sol.estado)
+  if (!puedeSubir && comprobantes.length === 0) return null
+
+  const subir = async () => {
+    if (!archivo || enviando) return
+    setEnviando(true)
+    setMsg(null)
+    try {
+      const form = new FormData()
+      form.append('token', token)
+      form.append('id', sol.id)
+      form.append('archivo', archivo)
+      if (nota.trim()) form.append('nota', nota.trim())
+      const res = await fetch('/api/supervisor/comprobante-envio', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) {
+        setMsg({ tipo: 'error', texto: data.error ?? 'No se pudo subir el comprobante.' })
+        setEnviando(false)
+        return
+      }
+      setNuevos(prev => [data.comprobante as Comprobante, ...prev])
+      setArchivo(null)
+      setNota('')
+      setInputKey(k => k + 1)
+      setMsg({ tipo: 'ok', texto: 'Comprobante adjuntado. Quedó registrado en el historial del caso.' })
+    } catch {
+      setMsg({ tipo: 'error', texto: 'Error de conexión. Intenta de nuevo.' })
+    }
+    setEnviando(false)
+  }
+
+  return (
+    <div className="mt-4">
+      <Seccion titulo={`🧾 Comprobantes de envío${comprobantes.length > 0 ? ` (${comprobantes.length})` : ''}`}>
+        {comprobantes.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {comprobantes.map((c, i) => (
+              <div key={`${c.url}-${i}`} className="flex items-start justify-between gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  {c.nota && <p className="text-sm text-slate-800">{c.nota}</p>}
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {fechaHora(c.ocurrido_at)}
+                    {c.subido_por ? ` · por ${c.subido_por}` : ''}
+                  </p>
+                </div>
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-xs font-semibold text-sky-700 underline hover:text-sky-900"
+                >
+                  Ver archivo
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {puedeSubir ? (
+          <div className="border-2 border-dashed border-gray-300 bg-gray-50/50 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-1">Adjuntar comprobante</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Recibo de la transportadora, pantallazo de tracking o remisión (foto o PDF).
+              No cambia el estado del caso — queda como evidencia en el historial.
+            </p>
+            <input
+              key={inputKey}
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={e => setArchivo(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-gray-600 mb-2 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800"
+            />
+            <input
+              type="text"
+              value={nota}
+              onChange={e => setNota(e.target.value)}
+              placeholder="Nota (opcional): ej. recibo Servientrega ida"
+              maxLength={300}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-slate-500"
+            />
+            {msg && (
+              <p
+                className={`text-xs rounded-lg px-3 py-2 mb-3 ${
+                  msg.tipo === 'ok'
+                    ? 'bg-green-50 border border-green-200 text-green-800'
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}
+              >
+                {msg.texto}
+              </p>
+            )}
+            <button
+              onClick={subir}
+              disabled={!archivo || enviando}
+              className="w-full rounded-lg bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {enviando ? 'Subiendo…' : '🧾 Adjuntar comprobante'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">
+            Los comprobantes se adjuntan mientras el caso está en el ciclo de repuesto.
+          </p>
         )}
       </Seccion>
     </div>

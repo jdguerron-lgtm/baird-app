@@ -68,6 +68,43 @@ async function logEnvio(promise: Promise<EnvioResult>, contexto: string): Promis
   }
 }
 
+/**
+ * Registra en el audit log (solicitud_eventos, tipo 'mensaje_cliente') que se
+ * envió al CLIENTE un WhatsApp del protocolo de contacto — mensajes para que
+ * reserve y confirme su servicio (link de horario, técnico asignado,
+ * confirmación de horario, repuesto en camino/recibido, expiración, etc.).
+ *
+ * Lo leen el historial consolidado del admin y la ficha del supervisor
+ * (validación del protocolo de contacto). Best-effort: si falla solo se
+ * loguea, nunca revierte el envío. Requiere migración
+ * 20260807_mensaje_cliente.sql (tipo 'mensaje_cliente' en el CHECK).
+ */
+async function registrarMensajeCliente(
+  solicitudId: string,
+  plantilla: string,
+  descripcion: string,
+): Promise<void> {
+  try {
+    const { data: sol } = await supabase
+      .from('solicitudes_servicio')
+      .select('estado')
+      .eq('id', solicitudId)
+      .single()
+    const { error } = await supabase.from('solicitud_eventos').insert({
+      solicitud_id: solicitudId,
+      tipo: 'mensaje_cliente',
+      estado_previo: sol?.estado ?? null,
+      estado_nuevo: sol?.estado ?? null,
+      actor: 'sistema',
+      motivo: descripcion,
+      payload: { plantilla, canal: 'whatsapp' },
+    })
+    if (error) console.error(`[registrarMensajeCliente] insert falló (${plantilla}):`, error.message)
+  } catch (err) {
+    console.error(`[registrarMensajeCliente] threw (${plantilla}):`, err)
+  }
+}
+
 // ─────────────────────────────────────────
 // Funciones de envío (primitivas)
 // ─────────────────────────────────────────
@@ -822,21 +859,23 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   if (sol.es_garantia) {
     // ── WARRANTY FLOW: template v5 with schedule + no-pay warning + T&C link ──
-    await logEnvio(
-      enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: sol.cliente_nombre },
-            { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-            { type: 'text', text: equipoConGarantia(sol) },
-            { type: 'text', text: horarioServicio },
-            { type: 'text', text: `+${tecnicoDigits}` },
-          ],
-        },
-      ]),
-      'procesarAceptacion → tecnico_asignado_cliente_v6',
-    )
+    const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+          { type: 'text', text: equipoConGarantia(sol) },
+          { type: 'text', text: horarioServicio },
+          { type: 'text', text: `+${tecnicoDigits}` },
+        ],
+      },
+    ])
+    await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_cliente_v6')
+    void envioCliente.then(r => {
+      if (r.sent) registrarMensajeCliente(sol.id, 'tecnico_asignado_cliente_v6',
+        `Se confirmó al cliente su servicio: técnico asignado y visita ${horarioServicio}`)
+    }).catch(() => {})
   } else {
     // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
     // Aquí mostramos al CLIENTE lo que él paga (precio de catálogo / total
@@ -851,23 +890,25 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     const tarifaDiagnostico = formatCOP(precioCliente)
     const anticipo = formatCOP(Math.round(precioCliente * 0.5))
 
-    await logEnvio(
-      enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: sol.cliente_nombre },
-            { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-            { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-            { type: 'text', text: horarioServicio },
-            { type: 'text', text: `+${tecnicoDigits}` },
-            { type: 'text', text: tarifaDiagnostico },
-            { type: 'text', text: anticipo },
-          ],
-        },
-      ]),
-      'procesarAceptacion → tecnico_asignado_particular_v1',
-    )
+    const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+          { type: 'text', text: horarioServicio },
+          { type: 'text', text: `+${tecnicoDigits}` },
+          { type: 'text', text: tarifaDiagnostico },
+          { type: 'text', text: anticipo },
+        ],
+      },
+    ])
+    await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_particular_v1')
+    void envioCliente.then(r => {
+      if (r.sent) registrarMensajeCliente(sol.id, 'tecnico_asignado_particular_v1',
+        `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
+    }).catch(() => {})
 
     // Link de recaudo del anticipo (tienda Shopify) — gap cerrado 2026-07-21:
     // la plantilla de arriba anuncia el monto del anticipo pero el link de
@@ -878,18 +919,20 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // El botón de la plantilla apunta a URL_PAGO_ANTICIPO_DIAGNOSTICO
     // (URL fija en la plantilla — ver scripts/upload-templates.mjs).
     if (sol.tipo_solicitud === 'Diagnóstico' || sol.tipo_solicitud === 'Reparación') {
-      await logEnvio(
-        enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v1', 'es', [
-          {
-            type: 'body',
-            parameters: [
-              { type: 'text', text: sol.cliente_nombre },
-              { type: 'text', text: anticipo },
-            ],
-          },
-        ]),
-        'procesarAceptacion → pago_anticipo_cliente_v1',
-      )
+      const envioAnticipo = enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: anticipo },
+          ],
+        },
+      ])
+      await logEnvio(envioAnticipo, 'procesarAceptacion → pago_anticipo_cliente_v1')
+      void envioAnticipo.then(r => {
+        if (r.sent) registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v1',
+          `Se envió al cliente el link de pago del anticipo ($${anticipo}) para confirmar su servicio`)
+      }).catch(() => {})
     }
   }
 
@@ -1017,6 +1060,8 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
       },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'cliente_seleccion_horario_v2',
+      'Se envió al cliente el link para reservar el horario de su visita (2 opciones propuestas)')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -1248,6 +1293,8 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
       },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'repuesto_recibido_cliente_v2',
+      'Se avisó al cliente que el repuesto llegó, con link para reservar la fecha de la visita final')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -2062,6 +2109,8 @@ export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promis
         botonReprogramar,
       ])
       if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      void registrarMensajeCliente(solicitudId, 'repuesto_en_camino_cliente_v1',
+        'Se avisó al cliente que el repuesto va en camino, con link para reservar la visita final')
       return { ok: true }
     } catch (err) {
       // Fallback mientras repuesto_en_camino_cliente_v1 no esté APPROVED en
@@ -2081,6 +2130,8 @@ export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promis
         botonReprogramar,
       ])
       if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      void registrarMensajeCliente(solicitudId, 'repuesto_recibido_cliente_v2',
+        'Se avisó al cliente sobre el repuesto (fallback), con link para reservar la visita final')
       return { ok: true }
     }
   } catch (err) {
@@ -2187,6 +2238,8 @@ export async function enviarHorarioConfirmadoCliente(solicitudId: string, horari
       { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'horario_confirmado_cliente_v1',
+      `Se envió al cliente la confirmación de su horario: ${horario}`)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -2219,6 +2272,8 @@ export async function enviarSolicitudExpiradaCliente(solicitudId: string): Promi
       },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'solicitud_expirada_cliente_v1',
+      'Se avisó al cliente que su solicitud expiró por no reservar horario (con link para crear una nueva)')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
@@ -3127,6 +3182,8 @@ export async function procesarReagendamientoAdmin(
       `Hola ${clienteNombre} 👋 Reprogramamos tu servicio de ${equipo}. 📅 Nueva fecha: ${horarioLimpio}. ${tieneTecnico ? 'Ya le avisamos al técnico asignado.' : 'Estamos buscando un técnico verificado y te avisamos cuando alguno acepte.'}`,
     )
     clienteNotificado = true
+    void registrarMensajeCliente(solicitudId, 'texto_libre',
+      `Se avisó al cliente la reprogramación de su servicio — nueva fecha: ${horarioLimpio}`)
   } catch (err) {
     console.error('[procesarReagendamientoAdmin] error notificando cliente:', err)
   }

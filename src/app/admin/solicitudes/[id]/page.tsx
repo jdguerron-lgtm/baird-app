@@ -105,6 +105,7 @@ const ACTOR_BADGES: Record<string, { label: string; clase: string }> = {
   cliente: { label: '👤 Cliente', clase: 'bg-blue-50 text-blue-700 border-blue-200' },
   tecnico: { label: '🔧 Técnico', clase: 'bg-green-50 text-green-700 border-green-200' },
   admin: { label: '🛡️ Admin', clase: 'bg-purple-50 text-purple-700 border-purple-200' },
+  supervisor: { label: '👁️ Supervisor', clase: 'bg-sky-50 text-sky-700 border-sky-200' },
   sistema: { label: '⚙️ Sistema', clase: 'bg-gray-100 text-gray-600 border-gray-200' },
 }
 
@@ -815,10 +816,12 @@ export default function SolicitudDetalle() {
       // TODO lo que le pasó al servicio, en orden cronológico.
       setHistorial(eventos.filter(e =>
         e.tipo === 'recordatorio_horario' ||
+        e.tipo === 'mensaje_cliente' ||
         e.tipo === 'llamada_admin' ||
         e.tipo === 'llamada_tecnico' ||
+        e.tipo === 'comprobante_envio' ||
         (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
-        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.estado_previo !== e.estado_nuevo),
+        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.estado_previo !== e.estado_nuevo),
       ))
 
       // 6. Run matching diagnostics
@@ -2248,9 +2251,10 @@ export default function SolicitudDetalle() {
         </h2>
         <p className="text-xs text-gray-500 mb-3">
           Todo lo que le pasó a este servicio en orden cronológico: cambios de
-          estado (y quién los disparó), llamadas registradas por el equipo,
-          intenciones de llamada del técnico, ediciones de datos del admin y
-          recordatorios de agendamiento enviados al cliente.
+          estado (y quién los disparó), los WhatsApp enviados al cliente para
+          reservar y confirmar (protocolo de contacto), llamadas registradas
+          por el equipo, intenciones de llamada del técnico, ediciones de
+          datos del admin y recordatorios de agendamiento.
         </p>
         <div className="space-y-2">
           {historial.map((e) => {
@@ -2259,6 +2263,9 @@ export default function SolicitudDetalle() {
               intento?: number
               hora_llamada?: string
               campos_modificados?: Record<string, { previo: string | null; nuevo: string }>
+              url?: string
+              subido_por?: string
+              plantilla?: string
             } | null
             const esEdicion = e.tipo === 'nota_admin' && !!payload?.campos_modificados
             return (
@@ -2285,10 +2292,34 @@ export default function SolicitudDetalle() {
                         </span>
                       )}
                     </p>
+                  ) : e.tipo === 'comprobante_envio' ? (
+                    <p className="text-sm text-slate-900">
+                      🧾 <span className="font-semibold">Comprobante de envío adjuntado</span>
+                      {payload?.subido_por && (
+                        <span className="ml-2 text-xs text-gray-500">por {payload.subido_por}</span>
+                      )}
+                      {payload?.url && (
+                        <a
+                          href={payload.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 text-xs font-semibold text-sky-700 underline hover:text-sky-900"
+                        >
+                          Ver archivo
+                        </a>
+                      )}
+                    </p>
                   ) : e.tipo === 'llamada_tecnico' ? (
                     <p className="text-sm text-slate-900">
                       📞 <span className="font-semibold">El técnico intentó llamar al cliente</span>
                       <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">portal técnico</span>
+                    </p>
+                  ) : e.tipo === 'mensaje_cliente' ? (
+                    <p className="text-sm text-slate-900">
+                      💬 <span className="font-semibold">WhatsApp al cliente</span>
+                      {payload?.plantilla && (
+                        <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-700">{payload.plantilla}</span>
+                      )}
                     </p>
                   ) : esEdicion ? (
                     <p className="text-sm text-slate-900">
