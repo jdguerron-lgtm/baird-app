@@ -596,6 +596,83 @@ const TEMPLATES = [
     ],
   },
 
+  // 11c-bis. Cobro del SALDO tras aprobar la cotización (2026-08-19).
+  // Llamado por: procesarAprobacionCotizacion → enviarPagoSaldoCliente().
+  // saldo = total cotizado − anticipos APPROVED acreditados. Alternativa
+  // online al pago en sitio (QR) — no bloquea transiciones.
+  {
+    name: 'pago_saldo_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu reparación quedó aprobada',
+      },
+      {
+        type: 'BODY',
+        text:
+          '¡Gracias {{1}}! Aprobaste la reparación de tu {{2}} por {{3}} COP (todo incluido).\n\n' +
+          '💳 Si quieres, puedes pagar el saldo de {{4}} COP en línea de forma segura (tu anticipo ya está abonado al total).\n\n' +
+          'También puedes pagarlo al finalizar el servicio con el QR de Baird. Recuerda: nunca pagues en efectivo directamente al técnico.',
+        example: {
+          body_text: [['Juan', 'Lavadora LG', '136.750', '94.750']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Pagar saldo',
+            url: `${APP_URL}/pago/saldo/{{1}}`,
+            example: [`${APP_URL}/pago/saldo/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 11c-ter. Confirmación del SALDO al CLIENTE (2026-08-19).
+  // Llamado por: pagos.service cuando Wompi aprueba la transacción del saldo
+  // (una sola vez — guard saldo_pagado_at). Fallback: texto libre.
+  {
+    name: 'saldo_confirmado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Pago recibido — servicio al día',
+      },
+      {
+        type: 'BODY',
+        text:
+          '¡Listo {{1}}! Recibimos tu pago de {{2}} COP. ✅\n\n' +
+          'Tu servicio de {{3}} quedó totalmente pagado — no debes entregar ningún dinero al técnico en sitio.\n\n' +
+          'Gracias por confiar en Baird Service.',
+        example: {
+          body_text: [['Juan', '94.750', 'Lavadora LG']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver mi servicio',
+            url: `${APP_URL}/servicio/{{1}}`,
+            example: [`${APP_URL}/servicio/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
   // 11d. Confirmación del anticipo al CLIENTE (2026-08-18).
   // Llamado por: pagos.service → enviarAnticipoConfirmadoCliente() cuando
   // Wompi aprueba la transacción (webhook o redirect, una sola vez).

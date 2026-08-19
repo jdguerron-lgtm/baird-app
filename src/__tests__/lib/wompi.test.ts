@@ -8,7 +8,7 @@ import {
   verificarChecksumEvento,
   type EventoWompi,
 } from '@/lib/wompi'
-import { montoAnticipo, precioRepuestoTecnico, DESCUENTO_REPUESTO_TECNICO, ANTICIPO_PORCENTAJE } from '@/lib/constants/pagos'
+import { montoAnticipo, saldoPendiente, precioRepuestoTecnico, DESCUENTO_REPUESTO_TECNICO, ANTICIPO_PORCENTAJE } from '@/lib/constants/pagos'
 
 const ENV_KEYS = ['WOMPI_PUBLIC_KEY', 'WOMPI_INTEGRITY_SECRET', 'WOMPI_EVENTS_SECRET'] as const
 const envBackup: Record<string, string | undefined> = {}
@@ -155,6 +155,15 @@ describe('montos', () => {
     expect(montoAnticipo(134470)).toBe(67235)
     expect(montoAnticipo(0)).toBe(0)
     expect(montoAnticipo(NaN)).toBe(0)
+  })
+
+  it('saldo pendiente = total − anticipos, nunca negativo', () => {
+    expect(saldoPendiente(136_750, 68_375)).toBe(68_375)
+    expect(saldoPendiente(2_000, 1_000)).toBe(1_000)
+    expect(saldoPendiente(100_000, 0)).toBe(100_000)
+    expect(saldoPendiente(100_000, 150_000)).toBe(0)   // sobrepago → 0, ajuste manual
+    expect(saldoPendiente(0, 5_000)).toBe(0)
+    expect(saldoPendiente(NaN, 1_000)).toBe(0)
   })
 
   it('precio de repuesto para el técnico = público − 15%', () => {

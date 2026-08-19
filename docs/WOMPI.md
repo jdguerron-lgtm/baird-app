@@ -11,7 +11,7 @@
 | Cobro | Cuándo | Cómo |
 |---|---|---|
 | **Anticipo (50%)** | Tras `procesarAceptacion` — el técnico aceptó y el horario quedó fijo | Plantilla `pago_anticipo_cliente_v2` con botón → `/pago/anticipo/{cliente_token}` |
-| Saldo | (futuro — hoy se cobra al completar, en sitio) | Referencia `saldo-{id}` ya soportada por el webhook |
+| **Saldo** (desde 2026-08-19) | Tras aprobar el cliente su cotización (`procesarAprobacionCotizacion`) | Plantilla `pago_saldo_cliente_v1` + botón en `/cotizacion` aprobada → `/pago/saldo/{cliente_token}` (total − anticipos acreditados). Alternativa ONLINE al QR en sitio; no bloquea transiciones. Confirmación marca `saldo_pagado_at` + avisa a cliente (plantilla) y técnico ("no cobres nada en sitio") |
 
 Solo servicios **particulares** (garantía la paga la marca). El monto del
 anticipo = `montoAnticipo(precioClienteServicio(...))` = 50% del precio al

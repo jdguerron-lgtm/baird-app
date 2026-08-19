@@ -30,6 +30,17 @@ export function montoAnticipo(precioCliente: number): number {
 }
 
 /**
+ * Saldo pendiente de un servicio: total cotizado menos lo ya pagado como
+ * anticipo. Nunca negativo (si el anticipo cubrió de más, el saldo es 0 y el
+ * ajuste se maneja manualmente). 0 si el total no es válido.
+ */
+export function saldoPendiente(totalCliente: number, anticiposPagados: number): number {
+  if (!Number.isFinite(totalCliente) || totalCliente <= 0) return 0
+  const abonado = Number.isFinite(anticiposPagados) && anticiposPagados > 0 ? anticiposPagados : 0
+  return Math.max(0, Math.round(totalCliente) - Math.round(abonado))
+}
+
+/**
  * Descuento que Baird le da al TÉCNICO sobre el precio público de la tienda
  * al cotizar un repuesto (decisión comercial 2026-08-18).
  *

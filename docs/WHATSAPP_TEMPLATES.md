@@ -193,11 +193,30 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` con `{{1}} = cliente_token` — display "Ver mi servicio"
 - **Fallback**: texto libre (best-effort; suele fallar fuera de ventana 24h — por eso la plantilla).
 
-#### `anticipo_confirmado_tecnico_v1` (nueva 2026-08-18 — **en script, pendiente subir a Meta**)
+#### `anticipo_confirmado_tecnico_v1` (nueva 2026-08-18 — APPROVED 2026-08-19)
 - **Disparo**: `pagos.service → enviarAnticipoConfirmadoTecnico()` — junto con la del cliente.
 - **Destino**: técnico asignado
 - **Body** (4 params): `tecnico`, `cliente`, `equipo`, `horario`
 - **Propósito**: avisarle que la visita quedó firme ("el cliente ya pagó el anticipo, preséntate").
+- **Fallback**: texto libre.
+
+> Nota 2026-08-19: `pago_anticipo_cliente_v2`, `anticipo_confirmado_cliente_v1` y
+> `anticipo_confirmado_tecnico_v1` fueron **APPROVED** por Meta el mismo día de la subida.
+
+#### `pago_saldo_cliente_v1` (nueva 2026-08-19 — **en script, subir a Meta**)
+- **Disparo**: `procesarAprobacionCotizacion → enviarPagoSaldoCliente()` tras aprobar el cliente su cotización (particular). Solo si hay saldo > 0.
+- **Destino**: cliente
+- **Body** (4 params): `cliente`, `equipo`, `total`, `saldo`
+- **Botón URL dinámica**: `{APP_URL}/pago/saldo/{{1}}` con `{{1}} = cliente_token` — display "Pagar saldo". La página muestra total − anticipo acreditado y arma el checkout Wompi firmado.
+- **Propósito**: alternativa ONLINE al pago en sitio (QR). NO bloquea transiciones — el flujo de completar servicio sigue igual si el cliente no paga en línea.
+- **Fallback**: texto libre con el link.
+
+#### `saldo_confirmado_cliente_v1` (nueva 2026-08-19 — **en script, subir a Meta**)
+- **Disparo**: `pagos.service` cuando Wompi aprueba la transacción `saldo-…` (una sola vez — guard `saldo_pagado_at`).
+- **Destino**: cliente
+- **Body** (3 params): `cliente`, `monto`, `equipo`
+- **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` — display "Ver mi servicio"
+- **Propósito**: "servicio totalmente pagado — no entregues dinero al técnico". El técnico recibe el aviso equivalente por texto libre (`enviarSaldoConfirmadoTecnico`).
 - **Fallback**: texto libre.
 
 ### Post-diagnóstico (cliente decide)

@@ -2422,6 +2422,169 @@ export async function enviarAnticipoConfirmadoTecnico(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Cobro y confirmación del SALDO (Wompi, 2026-08-19)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Tras APROBAR la cotización, le manda al CLIENTE el link de pago del saldo
+ * (/pago/saldo/{cliente_token} — total cotizado menos anticipos acreditados).
+ * Plantilla `pago_saldo_cliente_v1` (4 params + botón URL). El pago en sitio
+ * (QR) sigue disponible; este cobro no bloquea ninguna transición.
+ * La dispara procesarAprobacionCotizacion best-effort.
+ */
+export async function enviarPagoSaldoCliente(
+  solicitudId: string,
+  saldo: number,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!Number.isFinite(saldo) || saldo <= 0) return { ok: false, error: 'Sin saldo pendiente' }
+
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, cliente_token, cotizacion')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+  if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
+
+  const total = (sol.cotizacion as { total?: number } | null)?.total ?? saldo
+  const nombre = sol.cliente_nombre.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: equipo },
+          { type: 'text', text: formatCOP(total) },
+          { type: 'text', text: formatCOP(saldo) },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'pago_saldo_cliente_v1',
+      `Se envió al cliente el link de pago del saldo ($${formatCOP(saldo)}) tras aprobar la cotización`)
+    return { ok: true }
+  } catch (err) {
+    // Fallback a texto libre mientras la plantilla esté PENDING en Meta.
+    console.error('[saldo] pago_saldo_cliente_v1 falló, fallback a texto libre:', err)
+    try {
+      const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://lineablanca.bairdservice.com'
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `✅ ¡Gracias ${nombre}! Tu reparación de ${equipo} quedó aprobada por $${formatCOP(total)} COP.\n\n` +
+        `💳 Si quieres, puedes pagar el saldo de $${formatCOP(saldo)} COP en línea de forma segura:\n${APP_URL}/pago/saldo/${sol.cliente_token}\n\n` +
+        `También puedes pagarlo al finalizar el servicio con el QR de Baird. Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`
+      )
+      void registrarMensajeCliente(solicitudId, 'pago_saldo_cliente_v1 (texto libre)',
+        `Se envió al cliente el link de pago del saldo ($${formatCOP(saldo)}) tras aprobar la cotización`)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
+  }
+}
+
+/**
+ * Confirma al CLIENTE que su saldo se recibió — servicio totalmente pagado.
+ * Plantilla `saldo_confirmado_cliente_v1` (3 params + botón URL) con fallback
+ * a texto libre. La dispara pagos.service una sola vez (guard saldo_pagado_at).
+ */
+export async function enviarSaldoConfirmadoCliente(
+  solicitudId: string,
+  montoPagado: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, cliente_token')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  const nombre = sol.cliente_nombre.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+
+  try {
+    const componentes: Record<string, unknown>[] = [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: formatCOP(montoPagado) },
+          { type: 'text', text: equipo },
+        ],
+      },
+    ]
+    if (sol.cliente_token) {
+      componentes.push({
+        type: 'button', sub_type: 'url', index: '0',
+        parameters: [{ type: 'text', text: sol.cliente_token }],
+      })
+    }
+    const r = await enviarPlantilla(sol.cliente_telefono, 'saldo_confirmado_cliente_v1', 'es', componentes)
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1',
+      `Se confirmó al cliente el pago del saldo ($${formatCOP(montoPagado)}) — servicio totalmente pagado`)
+    return { ok: true }
+  } catch (err) {
+    console.error('[saldo] saldo_confirmado_cliente_v1 falló, fallback a texto libre:', err)
+    try {
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `✅ ¡Listo ${nombre}! Recibimos tu pago de $${formatCOP(montoPagado)} COP.\n\n` +
+        `Tu servicio de ${equipo} quedó totalmente pagado. Gracias por confiar en Baird Service. 🔧`
+      )
+      void registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1 (texto libre)',
+        `Se confirmó al cliente el pago del saldo ($${formatCOP(montoPagado)}) — servicio totalmente pagado`)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
+  }
+}
+
+/**
+ * Avisa al TÉCNICO asignado que el cliente pagó el saldo en línea — no debe
+ * cobrar nada en sitio. Texto libre (la ventana del técnico suele estar
+ * abierta; si falla solo se loguea — el evento 💰 queda en el historial).
+ */
+export async function enviarSaldoConfirmadoTecnico(
+  solicitudId: string,
+  montoPagado: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo, whatsapp')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  if (!tecnico?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  try {
+    await enviarMensajeTexto(
+      tecnico.whatsapp,
+      `💰 Hola ${tecnico.nombre_completo.split(' ')[0]}, el cliente ${sol.cliente_nombre} ya pagó el SALDO ($${formatCOP(montoPagado)} COP) de su servicio de ${sol.tipo_equipo} ${sol.marca_equipo} en línea.\n\n` +
+      `✅ El servicio quedó totalmente pagado — NO cobres nada en sitio.\n\n🔧 Baird Service`
+    )
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
 /**
  * Avisa al CLIENTE que su solicitud expiró por no confirmar horario (gap 1).
  * Disparada por el cron horario-recordatorio al transicionar a `sin_agendar`.

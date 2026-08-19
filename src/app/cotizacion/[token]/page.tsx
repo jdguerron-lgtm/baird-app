@@ -57,6 +57,9 @@ export default function CotizacionPage() {
   const [estado, setEstado] = useState<'idle' | 'enviando' | 'aprobada' | 'rechazada'>('idle')
   const [comentarioRechazo, setComentarioRechazo] = useState('')
   const [mostrarRechazo, setMostrarRechazo] = useState(false)
+  // cliente_token disponible también en los early-returns (aprobada/rechazada
+  // cargadas de una) — alimenta el botón "Pagar saldo" → /pago/saldo/{token}.
+  const [clienteToken, setClienteToken] = useState<string | null>(null)
 
   useEffect(() => {
     const cargar = async () => {
@@ -85,6 +88,8 @@ export default function CotizacionPage() {
         setCargando(false)
         return
       }
+
+      setClienteToken(sol.cliente_token ?? null)
 
       // Check if already processed (aprobar salta directo a en_proceso o
       // esperando_repuesto — el estado cotizacion_aprobada se eliminó 2026-07-09)
@@ -198,6 +203,16 @@ export default function CotizacionPage() {
           <p className="text-gray-600 text-sm">
             El técnico procederá con la reparación de tu equipo. Te notificaremos cuando el servicio esté completado.
           </p>
+          {/* Pago del saldo en línea (Wompi, 2026-08-19) — alternativa al pago
+              en sitio; la página /pago/saldo calcula total − anticipo acreditado. */}
+          {clienteToken && (
+            <a
+              href={`/pago/saldo/${clienteToken}`}
+              className="block w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl text-sm"
+            >
+              💳 Pagar el saldo en línea
+            </a>
+          )}
           <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-3">
             <p className="text-xs text-orange-700">
               ⚠️ Recuerda: todos los pagos se gestionan a través de <strong>Baird Service</strong>. No pagues nada directamente al técnico.

@@ -4,11 +4,13 @@ import {
   type TipoPago,
   type TransaccionWompi,
 } from '@/lib/wompi'
-import { montoAnticipo } from '@/lib/constants/pagos'
+import { montoAnticipo, saldoPendiente } from '@/lib/constants/pagos'
 import { precioClienteServicio } from '@/types/solicitud'
 import {
   enviarAnticipoConfirmadoCliente,
   enviarAnticipoConfirmadoTecnico,
+  enviarSaldoConfirmadoCliente,
+  enviarSaldoConfirmadoTecnico,
 } from '@/lib/services/whatsapp.service'
 
 /**
@@ -51,12 +53,13 @@ type SolicitudPago = {
   cotizacion: unknown
   recargo_weekend_aplicado: number | null
   anticipo_pagado_at: string | null
+  saldo_pagado_at: string | null
   horario_confirmado: string | null
   cliente_nombre: string
 }
 
 const CAMPOS_SOLICITUD_PAGO =
-  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, horario_confirmado, cliente_nombre'
+  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre'
 
 /**
  * Monto (COP) del anticipo que corresponde a una solicitud particular.
@@ -83,6 +86,29 @@ export function calcularMontoAnticipo(sol: {
     sol.recargo_weekend_aplicado ?? null,
   )
   return montoAnticipo(precioCliente)
+}
+
+/**
+ * Saldo pendiente (COP) tras la cotización: total cotizado − anticipos
+ * APPROVED registrados en `pagos`. 0 si no hay cotización con total.
+ *
+ * OJO: solo cuenta anticipos ONLINE (tabla pagos); un anticipo recibido por
+ * fuera (transferencia manual) no se acredita solo — admin ajusta el valor
+ * con /api/admin/actualizar-valor si hace falta.
+ */
+export async function calcularMontoSaldo(sol: SolicitudPago): Promise<number> {
+  if (sol.es_garantia) return 0
+  const total = (sol.cotizacion as { total?: number } | null)?.total ?? 0
+  if (!Number.isFinite(total) || total <= 0) return 0
+
+  const { data: anticipos } = await supabase
+    .from('pagos')
+    .select('monto')
+    .eq('solicitud_id', sol.id)
+    .eq('tipo', 'anticipo')
+    .eq('estado', 'APPROVED')
+  const abonado = (anticipos ?? []).reduce((acc, p) => acc + (p.monto ?? 0), 0)
+  return saldoPendiente(total, abonado)
 }
 
 /** Carga la solicitud con lo mínimo para operar sobre su pago. */
@@ -171,27 +197,56 @@ export async function registrarPagoWompi(
 
   // 2. Defensa en profundidad: el monto pagado debe cubrir lo esperado.
   //    La firma de integridad ya impide alterar el monto en el checkout, pero
-  //    si por cualquier vía entra un pago corto NO confirmamos la reserva —
+  //    si por cualquier vía entra un pago corto NO confirmamos nada —
   //    queda registrado y visible para que admin lo resuelva a mano.
-  const esperado = tipo === 'anticipo' ? calcularMontoAnticipo(sol) : 0
+  //    Nota saldo: el esperado se recalcula AL MOMENTO de confirmar (el
+  //    anticipo pudo acreditarse entre que se firmó el checkout y llegó el
+  //    webhook); un pago que cubra el saldo vigente siempre pasa.
+  const esperado = tipo === 'anticipo' ? calcularMontoAnticipo(sol) : await calcularMontoSaldo(sol)
   if (esperado > 0 && montoCOP < esperado) {
     console.error(
-      `[pagos] monto insuficiente en ${tx.id}: pagó ${montoCOP}, esperado ${esperado} (solicitud ${solicitudId})`,
+      `[pagos] monto insuficiente en ${tx.id}: pagó ${montoCOP}, esperado ${esperado} (${tipo}, solicitud ${solicitudId})`,
     )
     await registrarEventoPago(sol, {
-      motivo: `Pago recibido por $${montoCOP} COP pero el anticipo esperado era $${esperado} COP — revisar manualmente`,
+      motivo: `Pago recibido por $${montoCOP} COP pero el ${tipo} esperado era $${esperado} COP — revisar manualmente`,
       payload: { transaccion_id: tx.id, monto: montoCOP, esperado, tipo, origen, requiere_intervencion_admin: true },
     })
     return { ok: true, confirmado: false, solicitudId, error: 'Monto insuficiente' }
   }
 
-  if (tipo !== 'anticipo') {
-    // 'saldo' queda registrado; hoy no dispara transición (el saldo se cobra
-    // al completar el servicio y lo concilia admin).
+  if (tipo === 'saldo') {
+    // Marcar el saldo — guard IS NULL: una sola confirmación aunque webhook
+    // y redirect lleguen a la vez (espejo del anticipo).
+    const { data: marcadaSaldo } = await supabase
+      .from('solicitudes_servicio')
+      .update({ saldo_pagado_at: tx.finalized_at ?? new Date().toISOString() })
+      .eq('id', solicitudId)
+      .is('saldo_pagado_at', null)
+      .select('id')
+      .maybeSingle()
+
+    if (!marcadaSaldo) {
+      return { ok: true, duplicado: true, confirmado: false, solicitudId }
+    }
+
     await registrarEventoPago(sol, {
-      motivo: `Pago de saldo recibido por $${montoCOP} COP`,
-      payload: { transaccion_id: tx.id, monto: montoCOP, tipo, origen },
+      motivo: `Saldo pagado por $${montoCOP} COP (${tx.payment_method_type ?? 'Wompi'}) — servicio totalmente pagado en línea`,
+      payload: { transaccion_id: tx.id, monto: montoCOP, tipo, origen, metodo: tx.payment_method_type ?? null },
     })
+
+    try {
+      const cli = await enviarSaldoConfirmadoCliente(solicitudId, montoCOP)
+      if (!cli.ok) console.error('[pagos] enviarSaldoConfirmadoCliente falló:', cli.error)
+    } catch (err) {
+      console.error('[pagos] enviarSaldoConfirmadoCliente error:', err)
+    }
+    try {
+      const tec = await enviarSaldoConfirmadoTecnico(solicitudId, montoCOP)
+      if (!tec.ok) console.error('[pagos] enviarSaldoConfirmadoTecnico falló:', tec.error)
+    } catch (err) {
+      console.error('[pagos] enviarSaldoConfirmadoTecnico error:', err)
+    }
+
     return { ok: true, confirmado: true, solicitudId }
   }
 

@@ -7,7 +7,9 @@ import {
   enviarHorarioConfirmadoCliente,
   enviarServicioConfirmadoTecnico,
   enviarMensajeTexto,
+  enviarPagoSaldoCliente,
 } from '@/lib/services/whatsapp.service'
+import { cargarSolicitudPago, calcularMontoSaldo } from '@/lib/services/pagos.service'
 import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
 import { validarHorarioAgendable } from '@/lib/services/agenda.service'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
@@ -402,6 +404,20 @@ export async function procesarAprobacionCotizacion(
     const waResult = await notificarCotizacionAprobada(solMatch.id)
     if (!waResult.ok) {
       console.error('Error notificando aprobación al técnico:', waResult.error)
+    }
+
+    // Link de pago del SALDO al cliente (Wompi, 2026-08-19): total cotizado
+    // menos anticipos ya acreditados. Best-effort — es una ALTERNATIVA online
+    // al pago en sitio (QR); si falla, el flujo sigue idéntico al de antes.
+    try {
+      const solPago = await cargarSolicitudPago(solMatch.id)
+      const saldo = solPago ? await calcularMontoSaldo(solPago) : 0
+      if (saldo > 0) {
+        const envioSaldo = await enviarPagoSaldoCliente(solMatch.id, saldo)
+        if (!envioSaldo.ok) console.error('[aprobar-cotizacion] enviarPagoSaldoCliente falló:', envioSaldo.error)
+      }
+    } catch (err) {
+      console.error('[aprobar-cotizacion] link de saldo falló:', err)
     }
 
     return {
