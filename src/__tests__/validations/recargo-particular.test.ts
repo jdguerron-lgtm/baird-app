@@ -39,29 +39,31 @@ describe('recargo finde/festivo particular — constantes', () => {
 })
 
 describe('calcularTarifaParticular con recargo', () => {
-  it('sin recargo conserva la fórmula previa ($100k → $134.470)', () => {
+  it('sin recargo: $100k → $136.750 (incluye mitad de comisión Wompi desde 2026-08-19)', () => {
     const t = calcularTarifaParticular({ costoTecnico: 100_000 })
     expect(t.margenBaird).toBe(13_000)
-    expect(t.baseVenta).toBe(113_000)
-    expect(t.ivaCliente).toBe(21_470)
-    expect(t.totalCliente).toBe(134_470)
+    expect(t.comisionPasarela).toBe(1_916)     // 113.000 × 2.85% × 1.19 × 50%
+    expect(t.baseVenta).toBe(114_916)          // 113.000 + comisión
+    expect(t.ivaCliente).toBe(21_834)          // 19% de 114.916
+    expect(t.totalCliente).toBe(136_750)       // antes de la comisión era 134.470
     expect(t.recargoBruto).toBe(0)
-    expect(t.pagoTecnicoTotal).toBe(100_000)
+    expect(t.pagoTecnicoTotal).toBe(100_000)   // el técnico NO cambia
   })
 
   it('con recargo: el bruto entra a la base gravable y el técnico recibe 90%', () => {
     const t = calcularTarifaParticular({ costoTecnico: 100_000, recargoBruto: 6000 })
-    expect(t.baseVenta).toBe(119_000)          // 113.000 + 6.000
-    expect(t.ivaCliente).toBe(22_610)          // 19% de 119.000
-    expect(t.totalCliente).toBe(141_610)       // = 134.470 + 7.140
+    expect(t.comisionPasarela).toBe(2_018)     // 119.000 × 1.696%
+    expect(t.baseVenta).toBe(121_018)          // 113.000 + 6.000 + 2.018
+    expect(t.ivaCliente).toBe(22_993)          // 19% de 121.018
+    expect(t.totalCliente).toBe(144_011)
     expect(t.recargoTecnico).toBe(5_400)
     expect(t.pagoTecnicoTotal).toBe(105_400)   // costo + 90% del recargo
-    expect(t.margenBaird).toBe(13_600)         // 13% costo + 10% recargo
+    expect(t.margenBaird).toBe(13_600)         // 13% costo + 10% recargo (sin comisión: va a Wompi)
   })
 
-  it('cuadra: total = técnico + margen Baird + IVA', () => {
+  it('cuadra: total = técnico + margen Baird + comisión pasarela + IVA', () => {
     const t = calcularTarifaParticular({ costoTecnico: 250_000, recargoBruto: 6000 })
-    expect(t.pagoTecnicoTotal + t.margenBaird + t.ivaCliente).toBe(t.totalCliente)
+    expect(t.pagoTecnicoTotal + t.margenBaird + t.comisionPasarela + t.ivaCliente).toBe(t.totalCliente)
   })
 })
 

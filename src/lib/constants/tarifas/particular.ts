@@ -8,8 +8,12 @@
  * 19% se aplica sobre la venta completa (costo + utilidad), como exige la
  * DIAN para facturación.
  *
- * Cliente paga = (costo_técnico × 1.13) × 1.19 = costo_técnico × 1.3447
- * Cliente VE solo "Total: $X (incluye IVA)" sin desglose.
+ * Desde 2026-08-19 la cotización incluye además la MITAD de la comisión de
+ * la pasarela Wompi (2.85% + IVA, repartida 50/50 cliente/Baird — ver
+ * COMISION_PASARELA más abajo):
+ *
+ * Cliente paga = costo × 1.13 × (1 + 2.85%×1.19×50%) × 1.19 ≈ costo × 1.3675
+ * (antes: costo × 1.3447). Cliente VE solo "Total: $X (incluye IVA)".
  *
  * Modelo anterior (2026-05-12 → 2026-07-05): IVA sobre el costo y margen
  * 10% sobre el subtotal con IVA (factor 1.309). Las solicitudes creadas
@@ -23,10 +27,44 @@ import { MARGEN_BAIRD_BONO, RECARGO_FIN_DE_SEMANA, esFinDeSemana } from './mabe'
 export const MARGEN_BAIRD_PARTICULAR = 0.13
 
 /**
- * Multiplicador total aplicado al costo del técnico para llegar al precio final del cliente.
+ * Multiplicador base (utilidad + IVA, SIN comisión de pasarela).
  * Equivale a (1 + MARGEN_BAIRD_PARTICULAR) × (1 + IVA_TARIFA) = 1.3447.
+ *
+ * ⚠️ Desde 2026-08-19 el precio de una COTIZACIÓN al cliente usa además la
+ * comisión de pasarela (ver `calcularTarifaParticular` — multiplicador
+ * efectivo ≈1.3675). Este valor se conserva SIN pasarela a propósito porque
+ * es la inversa de los precios FIJOS de catálogo (`pagoNetoTecnicoTarifaFija`):
+ * los precios publicados no cambiaron, así que el neto del técnico tampoco —
+ * en tarifa fija Baird absorbe la comisión completa.
  */
 export const MULTIPLICADOR_PARTICULAR = (1 + MARGEN_BAIRD_PARTICULAR) * (1 + IVA_TARIFA)
+
+// ──────────────────────────────────────────────────────────────────
+// Comisión de la pasarela (Wompi) — reparto 50/50 (cambio 2026-08-19)
+//
+// Wompi cobra ~2.85% + IVA sobre lo recaudado (≈3.39% efectivo). Decisión
+// comercial: el CLIENTE asume la mitad y Baird absorbe la otra mitad.
+//
+// La mitad del cliente entra a la cotización como un ítem más de la BASE
+// GRAVABLE (mismo patrón que el recargo finde/festivo): se calcula sobre la
+// base previa (costo + utilidad + recargo), y el IVA 19% aplica encima —
+// así la factura DIAN sigue cuadrando (base + IVA = total).
+//
+//   comisionPasarela = basePrevio × 2.85% × 1.19 × 50%  ≈ basePrevio × 1.696%
+//   → el cliente termina pagando ≈ +1.7% del total anterior
+//   → multiplicador efectivo de cotizaciones: 1.3447 → ≈1.3675
+//
+// NO aplica a: pago del técnico (recibe su costo íntegro), precios FIJOS de
+// catálogo (Mantenimiento/Cambio de filtro/Diagnóstico — son precios
+// publicados en las landings; ahí Baird absorbe la comisión completa) ni
+// garantía (paga la marca por transferencia, sin pasarela).
+// ──────────────────────────────────────────────────────────────────
+
+/** Comisión de Wompi sobre lo recaudado, SIN IVA (validar con el primer pago real). */
+export const COMISION_PASARELA = 0.0285
+
+/** Porción de la comisión (con su IVA) que se traslada al cliente. El resto lo absorbe Baird. */
+export const PORCION_CLIENTE_COMISION_PASARELA = 0.5
 
 /**
  * Pago FIJO al técnico por una visita de diagnóstico particular
@@ -120,7 +158,8 @@ export interface TarifaParticularResultado {
   recargoBruto: number       // recargo finde/festivo (base) — 0 si no aplica
   recargoTecnico: number     // 90% del recargo — parte del técnico
   pagoTecnicoTotal: number   // costoTecnico + recargoTecnico
-  baseVenta: number          // costoTecnico + utilidad + recargoBruto — base gravable DIAN
+  comisionPasarela: number   // mitad de la comisión Wompi trasladada al cliente (base gravable)
+  baseVenta: number          // costo + utilidad + recargo + comisión pasarela — base gravable DIAN
   ivaCliente: number         // 19% sobre la baseVenta
   totalCliente: number       // baseVenta + ivaCliente
 }
@@ -129,20 +168,23 @@ export interface TarifaParticularResultado {
  * Calcula el reparto de pagos para un servicio particular.
  *
  * Ejemplo: costoTecnico = 100,000 (sin recargo)
- *   - margenBaird = 13,000  (13% del costo)
- *   - baseVenta   = 113,000 (base gravable para factura DIAN)
- *   - ivaCliente  = 21,470  (19% sobre la base de venta)
- *   - totalCliente = 134,470
+ *   - margenBaird       = 13,000  (13% del costo)
+ *   - comisionPasarela  = 1,916   (113,000 × 2.85% × 1.19 × 50% — mitad Wompi al cliente)
+ *   - baseVenta         = 114,916 (base gravable para factura DIAN)
+ *   - ivaCliente        = 21,834  (19% sobre la base de venta)
+ *   - totalCliente      = 136,750 (antes del cambio 2026-08-19 era 134,470)
  *
  * Con recargo finde/festivo (recargoBruto = 6,000):
- *   - baseVenta   = 113,000 + 6,000 = 119,000
- *   - ivaCliente  = 22,610
- *   - totalCliente = 141,610 (= 134,470 + 7,140)
+ *   - basePrevio  = 113,000 + 6,000 = 119,000
+ *   - comisión    = 2,018 → baseVenta = 121,018
+ *   - ivaCliente  = 22,993 → totalCliente = 144,011
  *   - técnico     = 100,000 + 5,400; Baird = 13,000 + 600
  *
- * El técnico recibe íntegro su `costoTecnico` (+ 90% del recargo). El IVA se
- * calcula sobre la venta completa (costo + utilidad + recargo), así la
- * factura electrónica cuadra sin ajustes del contador.
+ * El técnico recibe íntegro su `costoTecnico` (+ 90% del recargo). La otra
+ * mitad de la comisión Wompi la absorbe Baird de su margen al momento del
+ * settlement (no aparece acá: es un costo, no un cobro). El IVA se calcula
+ * sobre la venta completa, así la factura electrónica cuadra sin ajustes:
+ * total = técnico + margen Baird + comisión pasarela + IVA.
  */
 export function calcularTarifaParticular(params: {
   costoTecnico: number
@@ -154,7 +196,15 @@ export function calcularTarifaParticular(params: {
   const recargoTecnico = recargoTecnicoDesdeBruto(recargoBruto)
   const utilidadBaird = Math.round(costoTecnico * MARGEN_BAIRD_PARTICULAR)
   const margenBaird = utilidadBaird + (recargoBruto - recargoTecnico)
-  const baseVenta = costoTecnico + utilidadBaird + recargoBruto
+  const basePrevio = costoTecnico + utilidadBaird + recargoBruto
+  // Mitad de la comisión Wompi (con su IVA) trasladada al cliente, expresada
+  // como ítem de base gravable. Se calcula sobre la base previa: la comisión
+  // real se cobra sobre el total recaudado, pero el error de segundo orden
+  // (~0.06% — la comisión sobre la propia comisión) lo absorbe Baird.
+  const comisionPasarela = costoTecnico > 0
+    ? Math.round(basePrevio * COMISION_PASARELA * (1 + IVA_TARIFA) * PORCION_CLIENTE_COMISION_PASARELA)
+    : 0
+  const baseVenta = basePrevio + comisionPasarela
   const ivaCliente = Math.round(baseVenta * IVA_TARIFA)
   const totalCliente = baseVenta + ivaCliente
   return {
@@ -163,6 +213,7 @@ export function calcularTarifaParticular(params: {
     recargoBruto,
     recargoTecnico,
     pagoTecnicoTotal: costoTecnico + recargoTecnico,
+    comisionPasarela,
     baseVenta,
     ivaCliente,
     totalCliente,

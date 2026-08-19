@@ -379,6 +379,9 @@ export async function POST(req: NextRequest) {
         base_venta: tarifa?.baseVenta ?? 0,
         iva_venta: tarifa?.ivaCliente ?? 0,
         margen_baird: tarifa?.margenBaird ?? 0,
+        // Mitad de la comisión Wompi trasladada al cliente (2026-08-19) —
+        // ver COMISION_PASARELA en tarifas/particular.ts.
+        comision_pasarela: tarifa?.comisionPasarela ?? 0,
         recargo_weekend: recargoBruto,
         // Compat con la página de cotización (cliente ve solo total)
         mano_obra: 0,

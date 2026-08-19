@@ -78,8 +78,11 @@ Reparación; página de pago muestra "el equipo te contactará").
 
 ## Pendientes conocidos
 
-- Comisión Wompi (~2.85% + IVA) NO está modelada en el margen del 13% —
-  validar con el primer pago real (TARIFAS.md § Pendientes).
+- ~~Comisión Wompi sin modelar~~ → **modelada el 2026-08-19**: reparto 50/50 —
+  la mitad se suma a la cotización del cliente (`COMISION_PASARELA` en
+  `tarifas/particular.ts`, multiplicador efectivo ≈1.3675) y la otra mitad la
+  absorbe Baird; en precios fijos de catálogo Baird absorbe todo. Queda
+  validar el 2.85% nominal contra el primer settlement real.
 - Cobro del saldo por Wompi al completar (la referencia `saldo-` ya existe).
 - Badge "Anticipo pagado" en listados admin (hoy se ve en el historial de la
   ficha, evento 💰 'pago_registrado').

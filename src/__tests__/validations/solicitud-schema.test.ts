@@ -171,25 +171,27 @@ describe('pagoNetoTecnicoTarifaFija (reseller: catálogo ÷ 1.3447 × 0.8, ajust
   })
 })
 
-describe('calcularTarifaParticular (utilidad 13% + IVA 19% sobre la venta)', () => {
-  it('ejemplo canónico $100.000: margen 13.000, base 113.000, IVA 21.470, total 134.470', () => {
+describe('calcularTarifaParticular (utilidad 13% + comisión pasarela 50% + IVA 19%)', () => {
+  it('ejemplo canónico $100.000: margen 13.000, comisión 1.916, base 114.916, IVA 21.834, total 136.750', () => {
     const t = calcularTarifaParticular({ costoTecnico: 100000 })
     expect(t.margenBaird).toBe(13000)
-    expect(t.baseVenta).toBe(113000)
-    expect(t.ivaCliente).toBe(21470)
-    expect(t.totalCliente).toBe(134470)
+    expect(t.comisionPasarela).toBe(1916)
+    expect(t.baseVenta).toBe(114916)
+    expect(t.ivaCliente).toBe(21834)
+    expect(t.totalCliente).toBe(136750)
   })
 
   it('el técnico recibe íntegro su costo y el total suma base + IVA', () => {
     const t = calcularTarifaParticular({ costoTecnico: 70000 })
     expect(t.costoTecnico).toBe(70000)
-    expect(t.baseVenta).toBe(t.costoTecnico + t.margenBaird)
+    expect(t.baseVenta).toBe(t.costoTecnico + t.margenBaird + t.comisionPasarela)
     expect(t.totalCliente).toBe(t.baseVenta + t.ivaCliente)
   })
 
   it('costo 0 o negativo → todo en 0', () => {
     const t = calcularTarifaParticular({ costoTecnico: -5000 })
     expect(t.totalCliente).toBe(0)
+    expect(t.comisionPasarela).toBe(0)
   })
 })
 

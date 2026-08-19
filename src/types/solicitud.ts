@@ -193,12 +193,13 @@ export interface CotizacionReparacion {
   // Totales (admin completa):
   mano_obra: number
   repuestos: number      // suma de subtotales de productos_necesarios
-  total: number          // TOTAL al cliente (costo_tecnico × 1.3447 desde 2026-07-05)
+  total: number          // TOTAL al cliente (costo_tecnico × ≈1.3675 desde 2026-08-19; × 1.3447 entre 2026-07-05 y 2026-08-18)
   // Auditoría interna del cálculo (no visible al cliente):
   costo_tecnico?: number         // lo que recibe el técnico (su input)
   base_venta?: number            // costo_tecnico + margen_baird — base gravable DIAN (desde 2026-07-05)
   iva_venta?: number             // 19% sobre base_venta (desde 2026-07-05)
   margen_baird?: number          // utilidad Baird (13% del costo_tecnico desde 2026-07-05; antes 10% del subtotal con IVA) + 10% del recargo finde
+  comision_pasarela?: number     // mitad de la comisión Wompi trasladada al cliente, en base gravable (desde 2026-08-19; ver COMISION_PASARELA)
   recargo_weekend?: number       // recargo finde/festivo BRUTO incorporado al total (0 si no aplica; desde 2026-07-21)
   mano_obra_admin?: number       // mano de obra fijada por admin (flujo esperar_repuesto)
   repuestos_total_admin?: number // suma de subtotales fijados por admin

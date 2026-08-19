@@ -163,34 +163,52 @@ Aplica cuando `solicitudes_servicio.es_garantia = false`. El cliente paga a Bair
 
 Baird actúa como reseller del servicio: factura al cliente con IVA, paga al técnico el costo neto, y declara IVA + impuestos a la DIAN. Esta decisión está cerrada (ver Apéndice C para análisis del modelo marketplace alternativo).
 
-### Fórmula (2026-07-05)
+### Fórmula (2026-08-19 — incluye comisión de pasarela)
 
 ```
-Costo_Técnico  = lo que el técnico ingresa — ES SU PAGO, lo recibe completo
-                 (mano de obra + repuestos)
-Utilidad_Baird = Costo_Técnico × 0.13
-Base_Venta     = Costo_Técnico + Utilidad_Baird        (base gravable DIAN)
-IVA            = Base_Venta × 0.19
-Total_Cliente  = Base_Venta + IVA
-               = Costo_Técnico × 1.13 × 1.19
-               = Costo_Técnico × 1.3447
+Costo_Técnico     = lo que el técnico ingresa — ES SU PAGO, lo recibe completo
+                    (mano de obra + repuestos, estos con su 15% de dto de la tienda)
+Utilidad_Baird    = Costo_Técnico × 0.13
+Base_Previa       = Costo_Técnico + Utilidad_Baird [+ Recargo_Finde]
+Comisión_Pasarela = Base_Previa × 2.85% × 1.19 × 50%   (mitad Wompi al cliente ≈ 1.696%)
+Base_Venta        = Base_Previa + Comisión_Pasarela    (base gravable DIAN)
+IVA               = Base_Venta × 0.19
+Total_Cliente     = Base_Venta + IVA
+                  ≈ Costo_Técnico × 1.3675   (sin recargo finde)
 
 Ejemplo con Costo_Técnico = $100.000:
-  Utilidad Baird  = $13.000
-  Base de venta   = $113.000
-  IVA 19%         = $21.470
-  Total cliente   = $134.470
+  Utilidad Baird     = $13.000
+  Comisión pasarela  = $1.916    (113.000 × 1.696%)
+  Base de venta      = $114.916
+  IVA 19%            = $21.834
+  Total cliente      = $136.750  (con la fórmula 2026-07-05 era $134.470)
 
 Distribución del Total_Cliente:
-  Técnico recibe   = Costo_Técnico (íntegro)
-  IVA a la DIAN    = Base_Venta × 0.19 (sobre la venta completa — la factura cuadra sin ajustes)
+  Técnico recibe   = Costo_Técnico (íntegro — la comisión NO lo toca)
+  IVA a la DIAN    = Base_Venta × 0.19 (la factura cuadra: total = técnico + margen + comisión + IVA)
   Utilidad Baird   = Costo_Técnico × 0.13
+  Comisión Wompi   = el cliente cubre ~la mitad vía Comisión_Pasarela; la otra
+                     mitad la absorbe Baird de su margen en el settlement
 ```
 
-> **Modelo anterior (2026-05-12 → 2026-07-05):** `Costo × 1.19 IVA × 1.10 margen = × 1.309`,
-> con el margen calculado sobre el subtotal con IVA. Las cotizaciones creadas antes del
-> cambio conservan sus valores (campo legacy `subtotal_con_iva` en el JSONB `cotizacion`;
-> el modelo nuevo persiste `base_venta` + `iva_venta`).
+> **Reparto de la comisión Wompi (decisión 2026-08-19):** Wompi cobra ~2.85% + IVA
+> sobre lo recaudado (≈3.39% efectivo). Se reparte **50/50**: la mitad se suma a la
+> cotización del cliente (constantes `COMISION_PASARELA = 0.0285` y
+> `PORCION_CLIENTE_COMISION_PASARELA = 0.5` en `tarifas/particular.ts`) y la otra
+> mitad la absorbe Baird. El traslado entra a la **base gravable** (mismo patrón
+> que el recargo finde) para que la factura DIAN cuadre. Solo aplica a
+> **cotizaciones** — en precios FIJOS de catálogo (Mantenimiento, Cambio de filtro,
+> Diagnóstico $84.000) el precio publicado no cambia y Baird absorbe la comisión
+> completa; el neto del técnico de tarifa fija tampoco cambia
+> (`MULTIPLICADOR_PARTICULAR` se conserva en 1.3447 como inversa de catálogo).
+> ⚠️ El 2.85% es el nominal del Apéndice B — **validar contra el primer settlement
+> real de Wompi** y ajustar la constante si difiere.
+
+> **Modelo 2026-07-05 → 2026-08-18:** `Costo × 1.13 × 1.19 = × 1.3447` (sin comisión
+> de pasarela). **Modelo anterior (2026-05-12 → 2026-07-05):** `Costo × 1.19 IVA ×
+> 1.10 margen = × 1.309`, con el margen sobre el subtotal con IVA. Las cotizaciones
+> viejas conservan sus valores (legacy `subtotal_con_iva`; el modelo actual persiste
+> `base_venta` + `iva_venta` + `comision_pasarela`).
 
 ### Display al cliente
 
@@ -223,8 +241,8 @@ Baird captura              = $600
 ### Implementación
 
 - Constantes y cálculo: `src/lib/constants/tarifas/particular.ts`
-- Función principal: `calcularTarifaParticular({ costoTecnico, recargoBruto? })` → `{ costoTecnico, margenBaird, recargoBruto, recargoTecnico, pagoTecnicoTotal, baseVenta, ivaCliente, totalCliente }`
-- Constantes: `IVA_TARIFA = 0.19` (`src/types/solicitud.ts`), `MARGEN_BAIRD_PARTICULAR = 0.13`, `MULTIPLICADOR_PARTICULAR = 1.3447`, `PAGO_TECNICO_DIAGNOSTICO = 35000`, `FACTOR_PAGO_TECNICO_TARIFA_FIJA = 0.8` (solo tarifa fija de catálogo), `RECARGO_FIN_DE_SEMANA_PARTICULAR = 6000` (técnico $5.400 / cliente $7.140)
+- Función principal: `calcularTarifaParticular({ costoTecnico, recargoBruto? })` → `{ costoTecnico, margenBaird, recargoBruto, recargoTecnico, pagoTecnicoTotal, comisionPasarela, baseVenta, ivaCliente, totalCliente }`
+- Constantes: `IVA_TARIFA = 0.19` (`src/types/solicitud.ts`), `MARGEN_BAIRD_PARTICULAR = 0.13`, `MULTIPLICADOR_PARTICULAR = 1.3447` (base, sin pasarela — inversa de catálogo), `COMISION_PASARELA = 0.0285`, `PORCION_CLIENTE_COMISION_PASARELA = 0.5` (multiplicador efectivo cotizaciones ≈1.3675), `PAGO_TECNICO_DIAGNOSTICO = 35000`, `FACTOR_PAGO_TECNICO_TARIFA_FIJA = 0.8` (solo tarifa fija de catálogo), `RECARGO_FIN_DE_SEMANA_PARTICULAR = 6000` (técnico $5.400 / cliente $7.140)
 
 ### Ajuste manual del valor al cliente (admin, 2026-05-30)
 
@@ -428,8 +446,10 @@ La SIC y los jueces civiles pueden hacer corresponsable a Baird por:
 > técnico. El split (Pagos a Terceros de Wompi u otra) sigue pendiente para
 > escala. Detalle operativo y de seguridad: `docs/WOMPI.md`. El plan de draft
 > orders de Shopify quedó archivado (`docs/mejoras-futuras/pagos-shopify/`);
-> la tienda queda solo para repuestos. La comisión (~2.85% + IVA) aún no está
-> modelada en el margen del 13% — validar con el primer pago real.
+> la tienda queda solo para repuestos. **2026-08-19: la comisión ya está
+> modelada** — reparto 50/50 cliente/Baird en cotizaciones (ver § "Fórmula");
+> en tarifa fija Baird la absorbe completa. Validar el 2.85% nominal contra el
+> primer settlement real.
 
 ### Cómo funciona el split (cuando se integre)
 

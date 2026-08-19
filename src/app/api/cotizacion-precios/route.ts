@@ -124,6 +124,8 @@ export async function POST(req: NextRequest) {
         base_venta: tarifa.baseVenta,
         iva_venta: tarifa.ivaCliente,
         margen_baird: tarifa.margenBaird,
+        // Mitad de la comisión Wompi trasladada al cliente (2026-08-19).
+        comision_pasarela: tarifa.comisionPasarela,
         recargo_weekend: recargoBruto,
         tiempo_entrega: tiempoEntrega,
         pendiente_precio: false,

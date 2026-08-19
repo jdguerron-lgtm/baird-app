@@ -149,7 +149,8 @@ function PricingForm({ solicitud, onClose }: PricingFormProps) {
     return acc + precio * Math.max(1, p.cantidad || 1)
   }, 0)
   // En particular el total al cliente lleva utilidad Baird 13% + IVA 19%
-  // (misma fórmula del backend — calcularTarifaParticular, factor 1.3447).
+  // (misma fórmula del backend — calcularTarifaParticular, factor ≈1.3675
+  // desde 2026-08-19: utilidad 13% + mitad de comisión Wompi + IVA).
   // Calculamos en vivo para mostrar al admin lo que el cliente va a ver.
   const costoTecnicoTotal = (Number(manoObra) || 0) + repuestosTotal
   const tarifaEstimada = calcularTarifaParticular({ costoTecnico: costoTecnicoTotal })
