@@ -910,29 +910,66 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
         `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
     }).catch(() => {})
 
-    // Link de recaudo del anticipo (tienda Shopify) — gap cerrado 2026-07-21:
-    // la plantilla de arriba anuncia el monto del anticipo pero el link de
-    // pago solo existía en la pantalla de éxito de /solicitar (fácil de
-    // cerrar sin pagar). Solo Diagnóstico/Reparación: el producto de la
-    // tienda es el anticipo FIJO de $42.000 (50% de TARIFA_DIAGNOSTICO); en
-    // Mantenimiento/Cambio de filtro la tarifa es otra y no hay producto.
-    // El botón de la plantilla apunta a URL_PAGO_ANTICIPO_DIAGNOSTICO
-    // (URL fija en la plantilla — ver scripts/upload-templates.mjs).
-    if (sol.tipo_solicitud === 'Diagnóstico' || sol.tipo_solicitud === 'Reparación') {
-      const envioAnticipo = enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v1', 'es', [
+    // ── Cobro del anticipo para CONFIRMAR LA RESERVA (Wompi, 2026-08-18) ──
+    //
+    // El anticipo se cobra ACÁ, justo después de que el técnico aceptó y
+    // quedó fijo el horario: el cliente paga sabiendo quién lo atiende y
+    // cuándo. El botón lleva a /pago/anticipo/{cliente_token}, que arma el
+    // Web Checkout de Wompi con el monto EXACTO leído de la BD y firmado
+    // (ver src/lib/wompi.ts) — el monto nunca viaja como input del cliente.
+    //
+    // Aplica a TODO servicio particular (antes solo Diagnóstico/Reparación,
+    // porque el producto de la tienda Shopify era el anticipo fijo de
+    // $42.000). Con Wompi el monto es dinámico, así que ya no hay razón para
+    // excluir Mantenimiento / Cambio de filtro.
+    //
+    // Fallback mientras `pago_anticipo_cliente_v2` esté PENDING en Meta:
+    // se reintenta con `pago_anticipo_cliente_v1` (URL fija a la tienda), que
+    // solo es correcta en Diagnóstico/Reparación — ahí el anticipo ES $42.000.
+    if (sol.cliente_token) {
+      const paramsV2 = [
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: sol.cliente_nombre },
+            { type: 'text', text: sol.cliente_nombre.split(' ')[0] },
+            { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+            { type: 'text', text: horarioServicio },
             { type: 'text', text: anticipo },
           ],
         },
-      ])
-      await logEnvio(envioAnticipo, 'procesarAceptacion → pago_anticipo_cliente_v1')
-      void envioAnticipo.then(r => {
-        if (r.sent) registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v1',
-          `Se envió al cliente el link de pago del anticipo ($${anticipo}) para confirmar su servicio`)
-      }).catch(() => {})
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: sol.cliente_token }],
+        },
+      ]
+
+      try {
+        const r = await enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v2', 'es', paramsV2)
+        if (r.sent) {
+          void registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v2',
+            `Se confirmó la disponibilidad del técnico para ${horarioServicio} y se envió el link de pago del anticipo ($${anticipo}) para asegurar la reserva`)
+        }
+      } catch (v2Err) {
+        console.error('[procesarAceptacion] pago_anticipo_cliente_v2 falló, intentando v1:', v2Err)
+        if (sol.tipo_solicitud === 'Diagnóstico' || sol.tipo_solicitud === 'Reparación') {
+          const envioAnticipo = enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v1', 'es', [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: sol.cliente_nombre },
+                { type: 'text', text: anticipo },
+              ],
+            },
+          ])
+          await logEnvio(envioAnticipo, 'procesarAceptacion → pago_anticipo_cliente_v1 (fallback)')
+          void envioAnticipo.then(r => {
+            if (r.sent) registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v1',
+              `Se envió al cliente el link de pago del anticipo ($${anticipo}) para confirmar su servicio`)
+          }).catch(() => {})
+        }
+      }
     }
   }
 
@@ -2243,6 +2280,145 @@ export async function enviarHorarioConfirmadoCliente(solicitudId: string, horari
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Confirmaciones de pago del anticipo (Wompi, 2026-08-18)
+//
+// Las dispara pagos.service tras registrar una transacción APROBADA — una
+// sola vez por solicitud (el guard de idempotencia vive allá). Ambas hacen
+// fallback a texto libre si la plantilla no está aprobada todavía: para el
+// TÉCNICO el texto libre suele funcionar (interactúa con el bot y mantiene
+// abierta la ventana 24h); para el CLIENTE es best-effort.
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Le confirma al CLIENTE que su anticipo se recibió y la reserva quedó
+ * asegurada. Plantilla `anticipo_confirmado_cliente_v1` (4 params + botón URL
+ * → /servicio/{cliente_token} para gestionar el servicio).
+ */
+export async function enviarAnticipoConfirmadoCliente(
+  solicitudId: string,
+  montoPagado: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, horario_confirmado, horario_visita_1, cliente_token, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  const { data: tecnico } = sol.tecnico_asignado_id
+    ? await supabase.from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+    : { data: null }
+
+  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'el horario acordado'
+  const nombre = sol.cliente_nombre.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const nombreTecnico = tecnico?.nombre_completo ?? 'tu técnico asignado'
+
+  try {
+    const componentes: Record<string, unknown>[] = [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: formatCOP(montoPagado) },
+          { type: 'text', text: nombreTecnico },
+          { type: 'text', text: horario },
+        ],
+      },
+    ]
+    if (sol.cliente_token) {
+      componentes.push({
+        type: 'button', sub_type: 'url', index: '0',
+        parameters: [{ type: 'text', text: sol.cliente_token }],
+      })
+    }
+
+    const r = await enviarPlantilla(sol.cliente_telefono, 'anticipo_confirmado_cliente_v1', 'es', componentes)
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    void registrarMensajeCliente(solicitudId, 'anticipo_confirmado_cliente_v1',
+      `Se confirmó al cliente el pago del anticipo ($${formatCOP(montoPagado)}) y su reserva para ${horario}`)
+    return { ok: true }
+  } catch (err) {
+    // Fallback a texto libre — la plantilla puede seguir PENDING en Meta.
+    console.error('[anticipo] anticipo_confirmado_cliente_v1 falló, fallback a texto libre:', err)
+    try {
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `✅ ¡Listo ${nombre}! Recibimos tu anticipo de $${formatCOP(montoPagado)} COP y tu reserva quedó confirmada.\n\n` +
+        `🔧 Equipo: ${equipo}\n👨‍🔧 Técnico: ${nombreTecnico}\n🕐 Visita: ${horario}\n\n` +
+        `El anticipo se abona al total del servicio. Te avisaremos ante cualquier novedad.\n\n🔧 Baird Service`
+      )
+      void registrarMensajeCliente(solicitudId, 'anticipo_confirmado_cliente_v1 (texto libre)',
+        `Se confirmó al cliente el pago del anticipo ($${formatCOP(montoPagado)}) y su reserva para ${horario}`)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
+  }
+}
+
+/**
+ * Le avisa al TÉCNICO asignado que el cliente ya pagó el anticipo — la visita
+ * quedó firme y puede presentarse. Plantilla `anticipo_confirmado_tecnico_v1`
+ * (4 params) con fallback a texto libre.
+ */
+export async function enviarAnticipoConfirmadoTecnico(
+  solicitudId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, direccion, zona_servicio, horario_confirmado, horario_visita_1, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo, whatsapp')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  if (!tecnico?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'el horario acordado'
+  const direccion = `${sol.direccion}, ${sol.zona_servicio}`
+
+  try {
+    const r = await enviarPlantilla(tecnico.whatsapp, 'anticipo_confirmado_tecnico_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombreTecnico },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: equipo },
+          { type: 'text', text: horario },
+        ],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    console.error('[anticipo] anticipo_confirmado_tecnico_v1 falló, fallback a texto libre:', err)
+    try {
+      await enviarMensajeTexto(
+        tecnico.whatsapp,
+        `💰 ¡Hola ${nombreTecnico}! El cliente ${sol.cliente_nombre} ya pagó el anticipo — la visita quedó CONFIRMADA.\n\n` +
+        `🔧 Equipo: ${equipo}\n🕐 Visita: ${horario}\n📍 ${direccion}\n\n` +
+        `Preséntate en el horario acordado. Recuerda: nunca recibas efectivo del cliente.\n\n🔧 Baird Service`
+      )
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
   }
 }
 

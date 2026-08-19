@@ -43,6 +43,7 @@ stack, conventions, env vars). Todo el detalle vive en docs específicos:
 - **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de las 25 plantillas + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en `scripts/upload-templates.mjs` + este doc → (3) subir a Meta para aprobación. Backlog de plantillas nuevas con JSON listo. **Léelo antes de tocar cualquier mensaje WhatsApp**.
 - **`docs/SEGURIDAD.md`** — Mapa de autenticación y autorización: frontend admin, endpoints API (admin/cliente/cron), tokens UUID, RLS, storage, histórico de incidentes, backlog de hardening.
 - **`docs/DAPTA.md`** — Segunda línea de voz IA (llamadas cuando WhatsApp no responde). Fase 0 desplegada pero apagada (`DAPTA_ENABLED=false`). Resume lo operativo; el doc de decisión/fases/costos es `docs/mejoras-futuras/segunda-linea-voz/README.md`.
+- **`docs/WOMPI.md`** — Pasarela de pagos (decisión 2026-08-18: Wompi única pasarela; Shopify solo repuestos). Anticipo de reserva post-aceptación del técnico, página `/pago/anticipo/{token}`, webhook, tabla `pagos`, reglas de seguridad y puesta en marcha. **Léelo antes de tocar cualquier cobro online**.
 - **`supabase/migrations/README.md`** — Orden de aplicación, verificación SQL, hallazgos del audit + backlog de migraciones.
 - **`docs/FLUJOS-USUARIO.md`** — DEPRECATED (state machine v1, marzo 2026). No actualizar.
 
@@ -107,6 +108,14 @@ BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. 
                                   # alertar a técnicos reales. Vacío/no definido = comportamiento
                                   # normal (envía a todos). La 2ª línea de voz (Dapta) reusa
                                   # esta misma whitelist vía isPhoneAllowed.
+
+# Wompi — pasarela de pagos (anticipo de reserva + recaudo online). Ver docs/WOMPI.md.
+WOMPI_PUBLIC_KEY                  # pub_prod_… / pub_test_… (test → sandbox automático)
+WOMPI_INTEGRITY_SECRET            # Firma SHA-256 del Web Checkout (Sensitive)
+WOMPI_EVENTS_SECRET               # Verificación del webhook /api/wompi/webhook (Sensitive)
+WOMPI_PRIVATE_KEY                 # OPCIONAL — reservada para API transaccional futura
+                                  # Sin PUBLIC_KEY + INTEGRITY_SECRET todo Wompi es no-op
+                                  # (kill-switch, mismo patrón que Dapta).
 
 # Dapta — segunda línea de voz IA (llamadas automatizadas). Ver docs/DAPTA.md.
 DAPTA_ENABLED                     # Kill-switch global: 'true' habilita disparar llamadas. Default off.

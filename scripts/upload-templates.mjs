@@ -552,6 +552,119 @@ const TEMPLATES = [
     ],
   },
 
+  // 11c. Anticipo v2 — Wompi (2026-08-18). Reemplaza a v1: monto DINÁMICO por
+  // servicio (aplica a todos los tipos particulares, no solo Diagnóstico) y
+  // botón a nuestra página /pago/anticipo/{cliente_token}, que arma el Web
+  // Checkout de Wompi firmado server-side.
+  // Llamado por: procesarAceptacion() tras confirmar el técnico su visita
+  // (fallback a v1 mientras esta esté PENDING).
+  {
+    name: 'pago_anticipo_cliente_v2',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu técnico confirmó la visita — asegura tu reserva',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, ¡buenas noticias! Te confirmamos que nuestro técnico {{2}} puede atenderte en el horario que elegiste:\n\n' +
+          '🕐 {{3}}\n\n' +
+          'Para verificar tu reserva, por favor genera el pago del anticipo de {{4}} COP (50% del valor del servicio).\n\n' +
+          '✅ El anticipo se abona al total — no es un cobro adicional.\n' +
+          '💳 Pago seguro con tarjeta, PSE, Nequi o Bancolombia.\n\n' +
+          'Recuerda: nunca pagues en efectivo directamente al técnico — todo se gestiona vía Baird Service.',
+        example: {
+          body_text: [['Juan', 'Carlos Pérez', 'martes 19 de agosto · 8am-12pm', '42.000']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Pagar anticipo',
+            url: `${APP_URL}/pago/anticipo/{{1}}`,
+            example: [`${APP_URL}/pago/anticipo/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 11d. Confirmación del anticipo al CLIENTE (2026-08-18).
+  // Llamado por: pagos.service → enviarAnticipoConfirmadoCliente() cuando
+  // Wompi aprueba la transacción (webhook o redirect, una sola vez).
+  // Fallback: texto libre (suele fallar fuera de ventana 24h — por eso la
+  // plantilla). Botón → /servicio/{cliente_token}.
+  {
+    name: 'anticipo_confirmado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Anticipo recibido — reserva confirmada',
+      },
+      {
+        type: 'BODY',
+        text:
+          '¡Listo {{1}}! Recibimos tu anticipo de {{2}} COP y tu reserva quedó confirmada. ✅\n\n' +
+          '👨‍🔧 Técnico: {{3}}\n' +
+          '🕐 Visita: {{4}}\n\n' +
+          'El anticipo se abona al total del servicio. Tu técnico ya fue notificado y te atenderá en el horario acordado.',
+        example: {
+          body_text: [['Juan', '42.000', 'Carlos Pérez', 'martes 19 de agosto · 8am-12pm']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver mi servicio',
+            url: `${APP_URL}/servicio/{{1}}`,
+            example: [`${APP_URL}/servicio/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 11e. Confirmación del anticipo al TÉCNICO (2026-08-18).
+  // Llamado por: pagos.service → enviarAnticipoConfirmadoTecnico().
+  // Fallback: texto libre (el técnico suele tener la ventana 24h abierta).
+  {
+    name: 'anticipo_confirmado_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'El cliente pagó el anticipo',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el cliente {{2}} ya pagó el anticipo de su servicio. 💰\n\n' +
+          '🔧 Equipo: {{3}}\n' +
+          '🕐 Visita: {{4}}\n\n' +
+          'La visita quedó CONFIRMADA — preséntate en el horario acordado. Recuerda: nunca recibas pagos en efectivo del cliente.',
+        example: {
+          body_text: [['Carlos', 'Juan Guerrón', 'Lavadora LG', 'martes 19 de agosto · 8am-12pm']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
   // 12. Cotización al cliente para aprobar (particular)
   // Llamado por: enviarCotizacionCliente() — POST admin pricing
   {

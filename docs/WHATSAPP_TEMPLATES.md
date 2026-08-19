@@ -177,6 +177,28 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL FIJA**: `https://tienda.bairdservice.com/products/diagnostico-linea-blanca-copia` — display "Pagar anticipo" (producto Shopify "Diagnostico Linea Blanca (Anticipo)", $42.000)
 - **Propósito**: cerrar el gap de recaudo — `tecnico_asignado_particular_v1` anuncia el monto del anticipo pero el link de pago solo existía en la pantalla de éxito de `/solicitar`. No se envía en Mantenimiento/Cambio de filtro porque el producto de la tienda es el anticipo fijo de $42.000 (50% de `TARIFA_DIAGNOSTICO`).
 - **Nota**: hasta que Meta la apruebe, el envío falla y queda en el log (`procesarAceptacion → pago_anticipo_cliente_v1`) — es best-effort y no bloquea la asignación.
+- **⚠️ SUPERSEDIDA por `pago_anticipo_cliente_v2` (2026-08-18)**: queda solo como fallback mientras v2 esté PENDING, y únicamente en Diagnóstico/Reparación (donde el anticipo ES $42.000 fijo).
+
+#### `pago_anticipo_cliente_v2` (nueva 2026-08-18 — **en script, pendiente subir a Meta**)
+- **Disparo**: `procesarAceptacion()` cuando `es_garantia=false` (TODOS los tipos particulares), justo después de `tecnico_asignado_particular_v1`. Intenta v2; si falla (PENDING/rechazo) cae a v1 solo en Diagnóstico/Reparación.
+- **Destino**: cliente
+- **Body** (4 params): `cliente`, `tecnico`, `horario`, `anticipo`
+- **Botón URL dinámica**: `{APP_URL}/pago/anticipo/{{1}}` con `{{1}} = cliente_token` — display "Pagar anticipo". La página arma el Web Checkout de **Wompi** con el monto exacto de la BD firmado server-side (`src/lib/wompi.ts`).
+- **Propósito**: confirmar la reserva — "el técnico puede atenderte en {horario}; para verificar la reserva genera el pago del anticipo". El monto es dinámico (50% del precio al cliente), por lo que ya aplica también a Mantenimiento/Cambio de filtro.
+
+#### `anticipo_confirmado_cliente_v1` (nueva 2026-08-18 — **en script, pendiente subir a Meta**)
+- **Disparo**: `pagos.service → enviarAnticipoConfirmadoCliente()` cuando Wompi aprueba la transacción del anticipo (webhook `/api/wompi/webhook` o redirect de vuelta — idempotente, se envía UNA vez).
+- **Destino**: cliente
+- **Body** (4 params): `cliente`, `monto`, `tecnico`, `horario`
+- **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` con `{{1}} = cliente_token` — display "Ver mi servicio"
+- **Fallback**: texto libre (best-effort; suele fallar fuera de ventana 24h — por eso la plantilla).
+
+#### `anticipo_confirmado_tecnico_v1` (nueva 2026-08-18 — **en script, pendiente subir a Meta**)
+- **Disparo**: `pagos.service → enviarAnticipoConfirmadoTecnico()` — junto con la del cliente.
+- **Destino**: técnico asignado
+- **Body** (4 params): `tecnico`, `cliente`, `equipo`, `horario`
+- **Propósito**: avisarle que la visita quedó firme ("el cliente ya pagó el anticipo, preséntate").
+- **Fallback**: texto libre.
 
 ### Post-diagnóstico (cliente decide)
 

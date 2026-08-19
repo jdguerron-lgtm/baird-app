@@ -820,8 +820,9 @@ export default function SolicitudDetalle() {
         e.tipo === 'llamada_admin' ||
         e.tipo === 'llamada_tecnico' ||
         e.tipo === 'comprobante_envio' ||
+        e.tipo === 'pago_registrado' ||
         (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
-        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.estado_previo !== e.estado_nuevo),
+        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.tipo !== 'pago_registrado' && e.estado_previo !== e.estado_nuevo),
       ))
 
       // 6. Run matching diagnostics
@@ -2308,6 +2309,11 @@ export default function SolicitudDetalle() {
                           Ver archivo
                         </a>
                       )}
+                    </p>
+                  ) : e.tipo === 'pago_registrado' ? (
+                    <p className="text-sm text-slate-900">
+                      💰 <span className="font-semibold">Pago registrado (Wompi)</span>
+                      <span className="ml-2 text-xs text-gray-600">{e.motivo}</span>
                     </p>
                   ) : e.tipo === 'llamada_tecnico' ? (
                     <p className="text-sm text-slate-900">

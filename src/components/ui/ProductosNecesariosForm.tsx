@@ -5,13 +5,17 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { compressImageIfNeeded, inferExtension } from '@/lib/utils/media'
 import { formatCOP } from '@/lib/utils/format'
+import { DESCUENTO_REPUESTO_TECNICO } from '@/lib/constants/pagos'
 import type { ProductoNecesario } from '@/types/solicitud'
 
 /** Producto de la tienda Baird tal como lo devuelve GET /api/tienda/buscar. */
 interface ProductoTienda {
   titulo: string
   sku: string | null
+  /** Precio público de la tienda (lo que pagaría un cliente en la web). */
   precio: number | null
+  /** Precio para el técnico: público − DESCUENTO_REPUESTO_TECNICO (15%). */
+  precio_tecnico: number | null
   disponible: boolean
   url: string
   imagen: string | null
@@ -181,7 +185,16 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
         )}
       </div>
       <p className="text-xs text-gray-500 mb-3">
-        Repuestos que se necesitan para completar la reparación. Solo SKU, descripción y cantidad — el equipo Baird fija el precio y tiempo de entrega.
+        Repuestos que se necesitan para completar la reparación. Escribe el SKU o la
+        descripción y te mostramos disponibilidad y precio en la tienda Baird.
+      </p>
+      {/* Descuento de técnico (2026-08-18): al cotizar, el técnico usa el
+          precio con descuento, no el público. Dejarlo explícito acá evita
+          que cotice de más y que el cliente pague un repuesto inflado. */}
+      <p className="text-xs bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-3 py-2 mb-3">
+        🏷️ <strong>Tienes {Math.round(DESCUENTO_REPUESTO_TECNICO * 100)}% de descuento</strong> sobre
+        el precio de la página web. Usa <strong>tu precio</strong> (el que aparece en verde) al calcular
+        el costo del servicio.
       </p>
 
       {productos.length === 0 && (
@@ -233,7 +246,7 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
           {(buscando[idx] || (sugerencias[idx]?.length ?? 0) > 0) && (
             <div className="bg-white border border-fuchsia-200 rounded-lg p-2">
               <p className="text-[10px] font-semibold text-gray-500 uppercase mb-1">
-                🛒 En la tienda Baird
+                🛒 En la tienda Baird · tu precio con {Math.round(DESCUENTO_REPUESTO_TECNICO * 100)}% dto
               </p>
               {buscando[idx] && (
                 <p className="text-xs text-gray-400 px-1 py-1">Buscando en tienda.bairdservice.com…</p>
@@ -259,10 +272,28 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
                     )}
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-semibold text-slate-900 truncate">{s.titulo}</span>
-                      <span className="text-[11px] font-bold text-emerald-700">
-                        {s.precio != null ? `$${formatCOP(s.precio)} COP` : 'Precio en la tienda'}
-                        {!s.disponible && <span className="text-red-600 font-semibold"> · Agotado</span>}
-                      </span>
+                      {/* Precio del técnico (−15%) como valor principal: es el
+                          que debe usar al armar el costo de la cotización. El
+                          precio público queda tachado al lado como referencia. */}
+                      {s.precio_tecnico != null ? (
+                        <span className="block text-[11px]">
+                          <span className="font-bold text-emerald-700">
+                            ${formatCOP(s.precio_tecnico)} COP
+                          </span>
+                          <span className="text-gray-400"> tu precio</span>
+                          {s.precio != null && (
+                            <span className="text-gray-400 line-through ml-1.5">
+                              ${formatCOP(s.precio)}
+                            </span>
+                          )}
+                          {!s.disponible && <span className="text-red-600 font-semibold"> · Agotado</span>}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-emerald-700">
+                          Precio en la tienda
+                          {!s.disponible && <span className="text-red-600 font-semibold"> · Agotado</span>}
+                        </span>
+                      )}
                     </span>
                   </button>
                   <button

@@ -297,27 +297,27 @@ export default function CotizacionPage() {
             </div>
           )}
 
-          {/* Productos necesarios */}
+          {/* Qué incluye el servicio.
+              Precio "todo incluido" (2026-08-18): se lista QUÉ repuestos entran
+              en la reparación, pero SIN precio por ítem — el cliente aprueba un
+              total único (mano de obra + repuestos + IVA). Discriminar invitaba
+              a comparar repuesto por repuesto contra la tienda y a negociar
+              línea por línea; el desglose sigue existiendo internamente en el
+              JSONB de la cotización y en la vista admin. */}
           {cotizacion.productos_necesarios && cotizacion.productos_necesarios.length > 0 && (
             <div className="mb-4">
-              <h3 className="text-sm font-bold text-gray-700 mb-2">🔧 Repuestos requeridos</h3>
+              <h3 className="text-sm font-bold text-gray-700 mb-2">🔧 Qué incluye</h3>
               <div className="space-y-2">
                 {cotizacion.productos_necesarios.map((p, i) => (
                   <div key={i} className="bg-gray-50 rounded-xl p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">{p.descripcion}</p>
-                        <p className="text-xs text-gray-500 font-mono mt-0.5">SKU: {p.sku} · cant: {p.cantidad}</p>
-                      </div>
-                      {typeof p.subtotal === 'number' && (
-                        <span className="text-sm font-semibold text-slate-700 shrink-0">
-                          ${formatCOP(p.subtotal)}
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-sm font-semibold text-slate-900">{p.descripcion}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Cantidad: {p.cantidad}</p>
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Repuestos originales incluidos en el precio, junto con la mano de obra del técnico.
+              </p>
             </div>
           )}
 

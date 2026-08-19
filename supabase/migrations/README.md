@@ -262,7 +262,7 @@ Las migraciones no traen rollback automático. Si necesitas revertir una columna
 
 ## Nota sobre RLS (actualizada 2026-07-05, auditoría 2026-06-24)
 
-- Tablas con RLS habilitado: `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `solicitud_eventos`, `repuestos_pendientes`, `gps_pings`, `cliente_historial`, `supervisores` (desde `20260529`), `llamadas` (desde `20260602`), `connection_errors` (desde `20260516`).
+- Tablas con RLS habilitado: `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `solicitud_eventos`, `repuestos_pendientes`, `gps_pings`, `cliente_historial`, `supervisores` (desde `20260529`), `llamadas` (desde `20260602`), `connection_errors` (desde `20260516`), `pagos` (desde `20260818` — nace CERRADA: solo service_role, sin policy anon).
 - Tablas **sin** RLS: `solicitudes_servicio` (la principal) y `especialidades_tecnico`.
 - **Ojo**: tener RLS "on" no protege mucho hoy — las policies de write son `USING(true)` para `anon`, así que con el `anon_key` (extraíble del bundle) se puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. La raíz es que la app escribe con anon (registro client-side + cliente singleton). El fix real es migrar los writes a `service_role` server-side antes de endurecer policies. Ver `docs/SEGURIDAD.md`.
 

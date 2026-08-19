@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { TIENDA_URL } from '@/lib/constants/tienda'
+import { precioRepuestoTecnico, DESCUENTO_REPUESTO_TECNICO } from '@/lib/constants/pagos'
 
 /**
  * GET /api/tienda/buscar?q=2611
@@ -18,7 +19,14 @@ import { TIENDA_URL } from '@/lib/constants/tienda'
  * al endpoint público /products/{handle}.js (variants[].sku). Si falla,
  * sku queda null y la UI conserva lo que el técnico escribió.
  *
- * Respuesta: { productos: [{ titulo, sku, precio, disponible, url, imagen }] }
+ * Respuesta: { productos: [{ titulo, sku, precio, precio_tecnico, disponible, url, imagen }],
+ *              descuento_tecnico: 0.15 }
+ *
+ * `precio_tecnico` es el precio público con el descuento de técnico aplicado
+ * (−15%, ver DESCUENTO_REPUESTO_TECNICO): es el valor que el técnico debe
+ * usar al armar el costo de su cotización. Se calcula SERVER-SIDE para que el
+ * porcentaje viva en un solo lugar y no se pueda alterar desde el cliente.
+ *
  * Ante cualquier falla upstream responde { productos: [] } (fail-open:
  * la búsqueda es informativa, nunca bloquea el diagnóstico).
  */
@@ -73,19 +81,21 @@ export async function GET(req: NextRequest) {
 
     const productos = crudos.map((p, i) => {
       const precio = Number.parseFloat(p.price ?? '')
+      const precioPublico = Number.isFinite(precio) ? Math.round(precio) : null
       return {
         titulo: p.title ?? '',
         sku: skus[i],
-        precio: Number.isFinite(precio) ? Math.round(precio) : null,
+        precio: precioPublico,
+        precio_tecnico: precioRepuestoTecnico(precioPublico),
         disponible: p.available !== false,
         url: p.url?.startsWith('http') ? p.url : `${TIENDA_URL}${p.url ?? ''}`,
         imagen: p.featured_image?.url ?? p.image ?? null,
       }
     }).filter(p => p.titulo && p.url)
 
-    return NextResponse.json({ productos })
+    return NextResponse.json({ productos, descuento_tecnico: DESCUENTO_REPUESTO_TECNICO })
   } catch (err) {
     console.error('[/api/tienda/buscar] Error consultando la tienda:', err)
-    return NextResponse.json({ productos: [] })
+    return NextResponse.json({ productos: [], descuento_tecnico: DESCUENTO_REPUESTO_TECNICO })
   }
 }

@@ -421,6 +421,16 @@ La SIC y los jueces civiles pueden hacer corresponsable a Baird por:
 
 **Recomendación inicial para split-payment**: ePayco Pagos Divididos o Mercado Pago Marketplace.
 
+> **✅ Decisión 2026-08-18 — Wompi es la pasarela de la plataforma.** Juan
+> abrió cuenta Wompi y se integró como pasarela única de recaudo online
+> (anticipo de reserva post-aceptación del técnico; el saldo sigue en sitio
+> por ahora). SIN split todavía: Baird recibe todo y transfiere manual al
+> técnico. El split (Pagos a Terceros de Wompi u otra) sigue pendiente para
+> escala. Detalle operativo y de seguridad: `docs/WOMPI.md`. El plan de draft
+> orders de Shopify quedó archivado (`docs/mejoras-futuras/pagos-shopify/`);
+> la tienda queda solo para repuestos. La comisión (~2.85% + IVA) aún no está
+> modelada en el margen del 13% — validar con el primer pago real.
+
 ### Cómo funciona el split (cuando se integre)
 
 1. Cliente paga `Total_Cliente` al endpoint de la pasarela.

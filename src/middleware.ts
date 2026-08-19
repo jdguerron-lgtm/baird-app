@@ -66,7 +66,7 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
 // 120/min por IP y por portal: una lista de ~50 solicitudes navegada rápido
 // genera decenas de requests legítimos por minuto; un atacante enumerando
 // UUIDs (122 bits) necesita órdenes de magnitud más que cualquier límite.
-const TOKEN_PAGE_PREFIXES = ['/aceptar/', '/tecnico/', '/confirmar/', '/supervisor/']
+const TOKEN_PAGE_PREFIXES = ['/aceptar/', '/tecnico/', '/confirmar/', '/supervisor/', '/pago/']
 const TOKEN_PAGE_LIMIT = 120  // requests per minute per IP per prefix
 const TOKEN_PAGE_WINDOW = 60_000
 
@@ -85,6 +85,8 @@ const NOINDEX_PREFIXES = [
   '/servicio/',
   '/verificar-paso/',
   '/reprogramar-repuesto/',
+  // Página de pago del anticipo (lleva cliente_token en la URL).
+  '/pago/',
   // Sin slash final: cubre también la página pública de acceso OTP
   // (/supervisor) además de los portales con token (/supervisor/{token}).
   '/supervisor',

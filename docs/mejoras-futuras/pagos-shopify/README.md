@@ -1,9 +1,14 @@
 # Pagos vía tienda Shopify — sync automático de precios + link de pago por cotización
 
-> **Estado: PLANEADO** (2026-07-06). Fase 0 ya en producción.
-> Objetivo de la sesión siguiente: implementar Fases 1–2 (link de pago automático).
+> **Estado: ARCHIVADO** (2026-08-18). Superseded por **Wompi** como pasarela
+> única de recaudo (`docs/WOMPI.md`): links firmados con monto dinámico +
+> webhook con referencia nativa hacen innecesarios los draft orders. Las
+> Fases 2–4 de este plan NO se implementarán. La tienda Shopify queda solo
+> para repuestos; la Fase 0 (link del anticipo fijo) sobrevive únicamente
+> como fallback de la plantilla `pago_anticipo_cliente_v1` mientras la v2
+> (Wompi) esté PENDING en Meta.
 >
-> 🧭 Ver también: `docs/TARIFAS.md` § Pendientes #5 (recaudo), Apéndice B (pasarelas).
+> 🧭 Ver también: `docs/TARIFAS.md` § Apéndice B (decisión 2026-08-18).
 
 ## Contexto y objetivo
 
