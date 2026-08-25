@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from('solicitudes_servicio')
     .select(
-      'id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado, triaje_resultado',
+      'id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado, triaje_resultado, anticipo_pagado_at, saldo_pagado_at',
     )
     .order('created_at', { ascending: false })
 
@@ -73,6 +73,9 @@ export async function GET(req: NextRequest) {
     codigo_falla: campoFalla(s.triaje_resultado,'codigo_falla'),
     descripcion_falla: campoFalla(s.triaje_resultado,'descripcion_falla'),
     complejidad_falla: campoFalla(s.triaje_resultado,'complejidad_falla'),
+    // Capa paralela de pago del cliente (solo particular) — pago-cliente.ts
+    anticipo_pagado_at: s.anticipo_pagado_at ?? null,
+    saldo_pagado_at: s.saldo_pagado_at ?? null,
   }))
 
   return NextResponse.json({

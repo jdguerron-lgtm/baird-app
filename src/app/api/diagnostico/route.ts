@@ -8,7 +8,8 @@ import {
   notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
 import crypto from 'crypto'
-import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico } from '@/types/solicitud'
+import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico, TipoEquipo, TipoSolicitud } from '@/types/solicitud'
+import { calcularPagoTecnico } from '@/types/solicitud'
 import { calcularTarifaParticular, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
 
 /**
@@ -127,7 +128,7 @@ export async function POST(req: NextRequest) {
     // Verify assignment
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
-      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, horario_confirmado_at, recargo_weekend_aplicado')
+      .select('id, cliente_nombre, cliente_telefono, tipo_equipo, tipo_solicitud, marca_equipo, estado, es_garantia, horario_confirmado_at, recargo_weekend_aplicado')
       .eq('id', solicitudId)
       .eq('tecnico_asignado_id', tecnico.id)
       .single()
@@ -367,6 +368,19 @@ export async function POST(req: NextRequest) {
         ? calcularTarifaParticular({ costoTecnico: costoTecnicoNum, recargoBruto })
         : null
 
+      // Diagnóstico DISCRIMINADO (2026-08-25): la visita de diagnóstico se
+      // SUMA al total de la cotización — ya no se abona contra ella. El
+      // cliente ve "Diagnóstico $X + Servicio $Y = Total $X+$Y" y su anticipo
+      // pagado se acredita contra ese total. Tarifa de catálogo de la visita
+      // (TARIFA_DIAGNOSTICO para Diagnóstico/Reparación; la fija del tipo de
+      // servicio en los demás). Sin recargo: el finde/festivo ya entra al
+      // servicio vía calcularTarifaParticular.
+      const diagnosticoCliente = calcularPagoTecnico(
+        sol.tipo_equipo as TipoEquipo,
+        sol.tipo_solicitud as TipoSolicitud,
+        false,
+      )
+
       // Construir cotizacion JSONB. Mantenemos la forma legacy (mano_obra, repuestos,
       // total) para compat con la página /cotizacion/{token}.
       const cotizacionData: Record<string, unknown> = {
@@ -386,7 +400,10 @@ export async function POST(req: NextRequest) {
         // Compat con la página de cotización (cliente ve solo total)
         mano_obra: 0,
         repuestos: 0,
-        total: tarifa?.totalCliente ?? 0,
+        // Desglose al cliente (2026-08-25): total = diagnóstico + servicio.
+        diagnostico_cliente: diagnosticoCliente,
+        servicio_cliente: tarifa?.totalCliente ?? 0,
+        total: tarifa ? tarifa.totalCliente + diagnosticoCliente : 0,
         evidencias_diagnostico: evidenciaUrls || [],
         cotizado_at: new Date().toISOString(),
         token: cotizacionToken,
@@ -497,7 +514,8 @@ export async function POST(req: NextRequest) {
         flow: 'particular',
         estado: nuevoEstado,
         cotizacionToken: cierraSinCotizacion ? null : cotizacionToken,
-        totalCliente: tarifa?.totalCliente ?? 0,
+        // Total que verá el CLIENTE: servicio cotizado + diagnóstico (2026-08-25).
+        totalCliente: tarifa ? tarifa.totalCliente + diagnosticoCliente : 0,
         // Neto al técnico (costo + 90% del recargo finde/festivo si aplicó) —
         // la pantalla de éxito lo muestra tal cual, sin recalcular en cliente.
         pagoTecnico: tarifa?.pagoTecnicoTotal ?? 0,

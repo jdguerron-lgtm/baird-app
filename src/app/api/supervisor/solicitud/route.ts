@@ -54,6 +54,9 @@ const COLUMNAS_SEGURAS = [
   'motivo_cancelacion',
   'reagendamientos_count',
   'recargo_weekend_aplicado',
+  // Capa paralela de pago del cliente (Wompi) — no son tokens, solo timestamps.
+  'anticipo_pagado_at',
+  'saldo_pagado_at',
 ].join(', ')
 
 export async function GET(req: NextRequest) {

@@ -6,6 +6,7 @@ import { z } from 'zod'
 const initialFormData: SolicitudFormData = {
   cliente_nombre: '',
   cliente_telefono: '',
+  cliente_cedula: '',
   direccion: '',
   edificio_conjunto: '',
   apto_casa: '',

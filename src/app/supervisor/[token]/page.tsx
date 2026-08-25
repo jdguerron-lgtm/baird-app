@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { ESTADO_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
+import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 
 interface Solicitud {
   id: string
@@ -25,6 +26,9 @@ interface Solicitud {
   codigo_falla: string | null
   descripcion_falla: string | null
   complejidad_falla: string | null
+  /** Capa paralela de pago del cliente (solo particular) — pago-cliente.ts */
+  anticipo_pagado_at: string | null
+  saldo_pagado_at: string | null
 }
 
 interface SupervisorInfo {
@@ -364,7 +368,12 @@ export default function SupervisorSolicitudes() {
                           <p className="text-sm font-medium text-gray-700">${formatCOP(s.pago_tecnico)}</p>
                         )
                       ) : (
-                        <p className="text-sm font-medium text-gray-700">${formatCOP(s.precio_cliente)}</p>
+                        <>
+                          <p className="text-sm font-medium text-gray-700">${formatCOP(s.precio_cliente)}</p>
+                          <div className="mt-1">
+                            <BadgePagoCliente solicitud={s} />
+                          </div>
+                        </>
                       )}
                     </td>
                     <td className="px-5 py-3">

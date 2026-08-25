@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/gps-followup",
       "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/repuesto-recordatorio",
+      "schedule": "45 9 * * *"
     }
   ]
 }

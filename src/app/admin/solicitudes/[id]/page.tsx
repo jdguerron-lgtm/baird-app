@@ -15,6 +15,7 @@ import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/t
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
+import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 
 interface Solicitud {
   id: string
@@ -40,6 +41,9 @@ interface Solicitud {
   horario_confirmado_at: string | null
   reagendamientos_count: number | null
   ultimo_reagendado_at: string | null
+  // Capa paralela de pago (solo particular) — ver lib/constants/pago-cliente.ts
+  anticipo_pagado_at: string | null
+  saldo_pagado_at: string | null
 }
 
 interface Tecnico {
@@ -921,6 +925,7 @@ export default function SolicitudDetalle() {
           >
             {exportando ? 'Generando…' : '📥 Descargar resumen'}
           </button>
+          <BadgePagoCliente solicitud={solicitud} size="md" />
           <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${ESTADO_ESTILOS[solicitud.estado] ?? 'bg-gray-100 text-gray-600'}`}>
             {ESTADO_LABELS[solicitud.estado] ?? solicitud.estado}
           </span>
@@ -1183,6 +1188,33 @@ export default function SolicitudDetalle() {
                 <Fila label="IVA 19%" valor={ivaVenta} />
                 <Fila label="Pago al técnico (neto)" valor={pagoTec} />
                 <Fila label="Margen Baird (antes de IVA)" valor={margenBaird} bold />
+              </div>
+              {/* Recaudo online (Wompi) — capa paralela: qué pagó ya el cliente.
+                  El pago en sitio con QR no se registra automáticamente. */}
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Anticipo (50% — reserva y diagnóstico)</span>
+                  {solicitud.anticipo_pagado_at ? (
+                    <span className="font-semibold text-emerald-700">
+                      ✅ Pagado el {new Date(solicitud.anticipo_pagado_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-amber-600">Pendiente</span>
+                  )}
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Saldo (tras aprobar cotización)</span>
+                  {solicitud.saldo_pagado_at ? (
+                    <span className="font-semibold text-emerald-700">
+                      ✅ Pagado el {new Date(solicitud.saldo_pagado_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-amber-600">Pendiente</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 pt-1">
+                  Solo pagos ONLINE (Wompi). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
+                </p>
               </div>
               <p className="mt-3 text-[11px] text-gray-400">
                 {Number(cot?.total ?? 0) > 0

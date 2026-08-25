@@ -255,7 +255,18 @@ El admin puede reajustar el valor que paga el cliente desde `/admin/solicitudes/
 Cuando el técnico va a diagnosticar y el cliente decide no proceder con la reparación, se cobra una tarifa fija:
 - **TARIFA_DIAGNOSTICO** = $84,000 COP (IVA incluido, base $70,588 + IVA $13,412)
 - **ANTICIPO_PORCENTAJE** = 50% — se cobra antes de la visita técnica
-- Si el cliente aprueba la cotización completa, el anticipo se acredita al total.
+- **Cambio 2026-08-25 — diagnóstico DISCRIMINADO y SUMADO:** en las cotizaciones
+  nuevas el total al cliente = **diagnóstico + servicio cotizado**
+  (`cotizacion.total = diagnostico_cliente + servicio_cliente` — campos nuevos
+  del JSONB). El diagnóstico ya NO se descuenta del valor de la reparación; lo
+  que el cliente pagó de anticipo se **acredita contra ese total** al pagar el
+  saldo (`calcularMontoSaldo` descuenta anticipos + abonos APPROVED de `pagos`).
+  Cotizaciones anteriores (sin los campos) conservan su total histórico.
+- **Abono de repuestos (2026-08-25):** si la cotización aprobada incluye
+  repuestos, se cobra un **abono del 50% del saldo** (`ABONO_REPUESTOS_PORCENTAJE`
+  en `src/lib/constants/pagos.ts`) antes de que el técnico compre los
+  repuestos; el resto se cobra al completar el servicio. Solo aplica con
+  repuestos. Ver `docs/WOMPI.md` § "Qué cobra hoy".
 - **Pago al técnico por la visita de diagnóstico: `PAGO_TECNICO_DIAGNOSTICO` = $35,000 fijo** (2026-07-05). No sale de la fórmula ÷1.3447 — es una oferta comercial de Baird; la diferencia cubre IVA, adquisición del cliente y operación. Si el cliente aprueba la cotización de reparación, el pago del técnico pasa a ser su costo cotizado.
 
 Constantes en `src/types/solicitud.ts` (`TARIFA_DIAGNOSTICO`, `ANTICIPO_PORCENTAJE`) y `src/lib/constants/tarifas/particular.ts` (`PAGO_TECNICO_DIAGNOSTICO`).

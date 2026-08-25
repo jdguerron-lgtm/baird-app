@@ -28,6 +28,11 @@ export type TipoSolicitud = typeof TIPOS_SOLICITUD[number]
 export interface SolicitudFormData {
   cliente_nombre: string
   cliente_telefono: string
+  // Opcional — cédula/NIT para la factura electrónica (2026-08-25). Vacío/
+  // ausente = consumidor final. Columna cliente_cedula en BD (migración
+  // 20260825). Opcional para no romper constructores existentes (carga
+  // masiva Excel, rows de BD viejas).
+  cliente_cedula?: string
   direccion: string
   // Solo particular (opcionales). No son columnas en BD: el servidor los
   // anexa a `direccion` al insertar, así llegan a todo consumidor
@@ -193,7 +198,11 @@ export interface CotizacionReparacion {
   // Totales (admin completa):
   mano_obra: number
   repuestos: number      // suma de subtotales de productos_necesarios
-  total: number          // TOTAL al cliente (costo_tecnico × ≈1.3675 desde 2026-08-19; × 1.3447 entre 2026-07-05 y 2026-08-18)
+  total: number          // TOTAL al cliente (costo_tecnico × ≈1.3675 desde 2026-08-19; × 1.3447 entre 2026-07-05 y 2026-08-18). Desde 2026-08-25 incluye ADEMÁS el diagnóstico (total = diagnostico_cliente + servicio_cliente)
+  // Desglose al cliente (desde 2026-08-25 — el diagnóstico se SUMA al total,
+  // ya no se abona contra él; ausentes en cotizaciones anteriores):
+  diagnostico_cliente?: number   // tarifa de la visita de diagnóstico (catálogo, IVA incl.)
+  servicio_cliente?: number      // servicio cotizado todo incluido (mano de obra + repuestos + IVA)
   // Auditoría interna del cálculo (no visible al cliente):
   costo_tecnico?: number         // lo que recibe el técnico (su input)
   base_venta?: number            // costo_tecnico + margen_baird — base gravable DIAN (desde 2026-07-05)

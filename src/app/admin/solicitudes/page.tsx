@@ -8,6 +8,7 @@ import { formatCOP } from '@/lib/utils/format'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { precioClienteServicio } from '@/types/solicitud'
 import AgendaCalendario from '@/components/admin/AgendaCalendario'
+import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 
 interface Solicitud {
   id: string
@@ -26,6 +27,9 @@ interface Solicitud {
   created_at: string
   tecnico_asignado_id: string | null
   tecnico_nombre?: string
+  // Capa paralela de pago (solo particular) — ver lib/constants/pago-cliente.ts
+  anticipo_pagado_at: string | null
+  saldo_pagado_at: string | null
 }
 
 const ESTADOS = [
@@ -56,7 +60,7 @@ export default function SolicitudesAdmin() {
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at')
           .order('created_at', { ascending: false })
 
         if (filtro !== 'todos') {
@@ -412,9 +416,14 @@ export default function SolicitudesAdmin() {
                         )
                       ) : (
                         // Particular: el "Valor" es lo que paga el cliente (no el neto del técnico).
-                        <p className="text-sm font-medium text-gray-700">
-                          ${formatCOP(s.precio_cliente)}
-                        </p>
+                        <>
+                          <p className="text-sm font-medium text-gray-700">
+                            ${formatCOP(s.precio_cliente)}
+                          </p>
+                          <div className="mt-1">
+                            <BadgePagoCliente solicitud={s} />
+                          </div>
+                        </>
                       )}
                     </td>
                     <td className="px-5 py-3">

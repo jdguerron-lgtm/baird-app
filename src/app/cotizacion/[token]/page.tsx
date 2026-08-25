@@ -40,6 +40,9 @@ interface DatosCotizacion {
     repuestos: number
     repuestos_detalle: string | null
     total: number
+    // Desglose discriminado (cotizaciones desde 2026-08-25): total = diagnóstico + servicio
+    diagnostico_cliente?: number
+    servicio_cliente?: number
     tiempo_entrega?: string | null
     productos_necesarios?: ProductoNecesario[]
     productos_recomendados?: ProductoRecomendado[]
@@ -397,7 +400,33 @@ export default function CotizacionPage() {
                 </div>
               </>
             )}
-            {cotizacion.mano_obra === 0 && cotizacion.repuestos === 0 && (
+            {/* Desglose discriminado (2026-08-25): diagnóstico + servicio.
+                El diagnóstico se SUMA al total (ya no se abona contra él);
+                el anticipo que el cliente pagó se acredita al pagar el saldo. */}
+            {cotizacion.mano_obra === 0 && cotizacion.repuestos === 0 &&
+              (cotizacion.diagnostico_cliente ?? 0) > 0 && (cotizacion.servicio_cliente ?? 0) > 0 && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Visita de diagnóstico</span>
+                  <span className="font-medium">${formatCOP(cotizacion.diagnostico_cliente!)} COP</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Servicio (mano de obra + repuestos)<br /><span className="text-[10px] text-gray-400">Incluye IVA</span></span>
+                  <span className="font-medium">${formatCOP(cotizacion.servicio_cliente!)} COP</span>
+                </div>
+                <div className="border-t pt-2 mt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-900">Total</span>
+                    <span className="font-bold text-blue-600 text-xl">${formatCOP(cotizacion.total)} <span className="text-xs font-medium">COP</span></span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Los pagos que ya hiciste (anticipo de reserva) se acreditan al pagar el saldo.
+                  </p>
+                </div>
+              </>
+            )}
+            {cotizacion.mano_obra === 0 && cotizacion.repuestos === 0 &&
+              !((cotizacion.diagnostico_cliente ?? 0) > 0 && (cotizacion.servicio_cliente ?? 0) > 0) && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">Total del servicio<br /><span className="text-[10px] text-gray-400">Incluye mano de obra, repuestos e IVA</span></span>
                 <span className="font-bold text-blue-600 text-xl">${formatCOP(cotizacion.total)} <span className="text-xs font-medium">COP</span></span>

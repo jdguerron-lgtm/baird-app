@@ -46,7 +46,7 @@ src/
 │       ├── repuesto-recibido/      # Admin marks parts arrived → estado repuesto_recibido
 │       ├── reprogramar-repuesto/   # Public (token): customer picks new tentative date → en_proceso
 │       ├── gps-ping/               # Tech browser GPS ping by phase
-│       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup)
+│       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup, repuesto reminder)
 │       ├── triaje/                 # Gemini AI diagnosis (disabled)
 │       ├── health/                 # Health check
 │       ├── log-error/              # Client connection-error telemetry (fire-and-forget)
@@ -110,7 +110,7 @@ legal/                          # Legal documents (Baird Service SAS)
 | `enviarEsperandoRepuestoCliente(...)` | Plantilla esperando_repuesto_cliente_v1 con SKU | No |
 | `enviarEsperandoRepuestoTecnico(solicitudId)` | Plantilla `esperando_repuesto_tecnico_v1`: al aprobarse `esperar_repuesto` el técnico recibe los datos de gestión del repuesto ante la marca — No. de garantía (`numero_serie_factura`), SKU(s) de `repuestos_pendientes` y dirección del cliente. Disparada por `/api/verificar-paso`. | Sí — **solo garantía** (guard interno; en particular el técnico ya recibe `cotizacion_aprobada_tecnico_v2`) |
 | `enviarRepuestoRecibidoCliente(solicitudId)` | Plantilla `repuesto_recibido_cliente_v2` (con botón → `/reprogramar-repuesto/{token}`). Auto-genera `reprogramacion_token` si falta. El cliente elige nueva fecha tentativa. | No |
-| `enviarRepuestoLlegadoTecnico(solicitudId)` | Plantilla `repuesto_llegado_tecnico_v1`: avisa al técnico que el repuesto ya fue entregado al cliente, apenas admin lo marca recibido (`/api/repuesto-recibido`). Informativo — la fecha tentativa llega después vía `notificarTecnicoVisitaReprogramada`. | No — ambos flujos |
+| `enviarRepuestoLlegadoTecnico(solicitudId)` | Plantilla `repuesto_llegado_tecnico_v1`: avisa al técnico que el repuesto ya fue entregado al cliente, apenas lo marca recibido el admin (`/api/repuesto-recibido`) o el supervisor (`/api/supervisor/repuesto-entregado`). Informativo — la fecha tentativa llega después vía `notificarTecnicoVisitaReprogramada`. | No — ambos flujos |
 | `notificarTecnicoVisitaReprogramada(solicitudId, horario)` | Avisa al técnico la nueva fecha tentativa elegida por el cliente tras el repuesto. Plantilla `repuesto_recibido_tecnico_v1` (NO texto libre — la ventana 24h del técnico suele estar cerrada tras semanas de espera). | No |
 | `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo, opciones?)` | (1) **Registra la transición en el historial**: inserta evento `cambio_estado` en `solicitud_eventos` con actor inferido por `inferirActorTransicion(previo, nuevo)` — cliente/tecnico/admin/sistema según el endpoint dueño de la transición (migración `20260612_evento_cambio_estado.sql`; lo muestra "Historial de estados" en `/admin/solicitudes/[id]`). `opciones.registrarEvento:false` lo omite — lo pasan los call-sites que ya insertan su propio evento (cancelacion, reagendamiento, reagendamiento_confirmado, cambio_estado_admin). (2) Notifica por WhatsApp a supervisores activos (tabla `supervisores`) filtrados por ámbito/marca/estados. Plantilla `supervisor_cambio_estado_v1`; para eventos de repuesto en **garantía** (`estadoNuevo` ∈ esperando_repuesto/repuesto_recibido) usa `supervisor_repuesto_garantia_v1` (No. garantía + SKU + dirección) con fallback a la genérica. **Nunca lanza** (atrapa+loguea); corta si previo===nuevo. Ver call-sites abajo. | Sí — flujo repuesto garantía usa plantilla dedicada; además filtra por `ambito` |
 | `enviarFinalizadoSinReparacion(solicitudId, motivo)` | Plantilla finalizado_sin_reparacion_v1 | No |
@@ -148,8 +148,9 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `pendiente_pricing → cotizacion_enviada`/`aprobacion_paso_pendiente` | `/api/cotizacion-precios` |
 | `cotizacion_enviada → aprobada`/`rechazada` | `/api/aprobar-cotizacion` |
 | `* → en_disputa` y aprobación de paso | `/api/verificar-paso` |
-| `esperando_repuesto → repuesto_recibido` | `/api/repuesto-recibido` |
-| `repuesto_recibido → en_proceso` | `/api/reprogramar-repuesto` |
+| `esperando_repuesto → repuesto_en_camino` | `/api/supervisor/guia-envio` |
+| `esperando_repuesto \| repuesto_en_camino → repuesto_recibido` | `/api/repuesto-recibido` (admin) o `/api/supervisor/repuesto-entregado` (supervisor, 2026-08-25) |
+| `repuesto_en_camino \| repuesto_recibido → en_proceso` | `/api/reprogramar-repuesto` |
 | `en_proceso → confirmacion_pendiente` | `/api/completar-servicio` |
 | `confirmacion_pendiente → completada`/`en_disputa` | `/api/confirmar-servicio` |
 | `pendiente_horario → sin_agendar` | `/api/cron/horario-recordatorio` |
@@ -179,6 +180,8 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/gps-ping` | POST | Tech browser sends GPS coords by phase | Both |
 | `/api/cron/horario-recordatorio` | GET | Cron 1h: reminder + sin_agendar transition | N/A |
 | `/api/cron/gps-followup` | GET | Cron 10min: post-visit GPS flagging | N/A |
+| `/api/cron/repuesto-recordatorio` | GET | Cron diario: casos estancados en el ciclo de repuesto. `esperando_repuesto` (solo garantía) → re-avisa a supervisores (`notificarRepuestoSupervisores`, 3/6/9 días, máx 3); `repuesto_en_camino` → re-avisa al cliente para agendar (`repuesto_en_camino_cliente_v1`, cada 3 días, máx 2). Tracking `repuesto_recordatorio_count/at` (mig `20260825`); historial `solicitud_eventos` tipo `recordatorio_repuesto`. | Both |
+| `/api/supervisor/repuesto-entregado` | POST | Supervisor (portal_token + alcance) marca el repuesto ENTREGADO al cliente: `esperando_repuesto \| repuesto_en_camino → repuesto_recibido`, marca `repuestos_pendientes` recibidos, reusa `reprogramacion_token` si existe y notifica cliente (`repuesto_recibido_cliente_v2`, botón agendar), técnico (`repuesto_llegado_tecnico_v1`) y supervisores. Evento con `actor='supervisor'`. | Both |
 | `/api/carga-masiva` | POST, DELETE | Bulk Excel upload for warranty (DELETE: borrar solicitudes de una carga) | Warranty only |
 | `/api/admin/export` | POST | Admin: descarga `.xlsx` con resumen completo de solicitudes (cliente, técnico, evidencias, fotos, eventos, GPS, cotización). Body: `{ ids?: string[] }` — sin IDs exporta todas. | Both |
 | `/api/admin/editar-solicitud` | POST | Admin: corrige manualmente `tipo_equipo`, horario, dirección, ciudad, zona. Auditado en `solicitud_eventos` con diff. | Both |

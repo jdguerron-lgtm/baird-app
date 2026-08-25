@@ -34,6 +34,7 @@ export default function RegistroTecnico() {
     tipo_documento: 'CC',
     numero_documento: '',
     especialidades: [] as string[],
+    tiene_arl: '' as '' | 'si' | 'no',
     acepta_garantias: true
   })
 
@@ -116,6 +117,9 @@ export default function RegistroTecnico() {
       if (!fotoDocumento) {
         throw new Error('La foto del documento es requerida')
       }
+      if (formData.tiene_arl !== 'si' && formData.tiene_arl !== 'no') {
+        throw new Error('Indica si estás afiliado a una ARL')
+      }
 
       // 1. Insertar técnico inicial
       const { data: tecnicoData, error: insertError } = await supabase
@@ -127,6 +131,7 @@ export default function RegistroTecnico() {
           tipo_documento: formData.tipo_documento,
           numero_documento: formData.numero_documento,
           especialidad_principal: formData.especialidades[0],
+          tiene_arl: formData.tiene_arl === 'si',
           acepta_garantias: formData.acepta_garantias,
           estado_verificacion: 'pendiente'
         }])
@@ -197,6 +202,7 @@ export default function RegistroTecnico() {
         tipo_documento: 'CC',
         numero_documento: '',
         especialidades: [],
+        tiene_arl: '',
         acepta_garantias: true
       })
       setFotoPerfil(null)
@@ -461,6 +467,51 @@ export default function RegistroTecnico() {
                   </div>
                   {formData.especialidades.length === 0 && (
                     <p className="mt-2 text-xs text-red-500">* Selecciona al menos una especialidad</p>
+                  )}
+                </div>
+
+                {/* ── Sección: Seguridad social ── */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Seguridad social</p>
+                  <p className="text-sm font-semibold text-gray-700 mb-1.5">
+                    ¿Tienes ARL (afiliación a riesgos laborales)? <span className="text-red-500">*</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Muchos conjuntos y empresas la exigen para dejar ingresar al técnico. Si no la tienes puedes registrarte igual.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { valor: 'si' as const, icono: '🛡️', texto: 'Sí, tengo ARL' },
+                      { valor: 'no' as const, icono: '🚫', texto: 'No tengo ARL' },
+                    ]).map(({ valor, icono, texto }) => {
+                      const selected = formData.tiene_arl === valor
+                      return (
+                        <button
+                          key={valor}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setFormData(prev => ({ ...prev, tiene_arl: valor }))}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                            selected
+                              ? 'border-blue-500 bg-blue-50 text-blue-900'
+                              : 'border-gray-200 hover:border-blue-300 text-gray-700'
+                          }`}
+                        >
+                          <span className="text-xl">{icono}</span>
+                          <span className="text-sm font-medium">{texto}</span>
+                          {selected && (
+                            <span className="ml-auto w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {formData.tiene_arl === '' && (
+                    <p className="mt-2 text-xs text-red-500">* Selecciona una opción</p>
                   )}
                 </div>
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseExcelData, FAMILIA_A_TIPO_EQUIPO } from '@/lib/utils/excel-mapping'
+import { parseExcelData, FAMILIA_A_TIPO_EQUIPO, mapFamilia } from '@/lib/utils/excel-mapping'
 
 // ── Helper: build a mock BITÁCORA Excel structure ──────────────────────
 function buildMockSheet(dataRows: unknown[][]): unknown[][] {
@@ -88,6 +88,40 @@ describe('FAMILIA_A_TIPO_EQUIPO mapping', () => {
 
   it('maps LAVAVAJILLAS to Lavavajillas', () => {
     expect(FAMILIA_A_TIPO_EQUIPO['LAVAVAJILLAS']).toBe('Lavavajillas')
+  })
+})
+
+describe('mapFamilia — refrigeracion agrupa en Nevera', () => {
+  it.each([
+    'REFRIGERADOR',
+    'REFRIGERADORES',
+    'refrigerador',
+    ' Refrigeradores ',
+    'REFRIGERACION',
+    'Refrigeración',
+    'REFRIS',
+    'NEVERA',
+    'NEVERAS',
+    'REFRIGERADOR NO FROST',
+  ])('agrupa "%s" en Nevera', (familia) => {
+    expect(mapFamilia(familia)).toBe('Nevera')
+  })
+
+  it('mantiene Nevecón separado de Nevera', () => {
+    expect(mapFamilia('NEVECONES')).toBe('Nevecón')
+    expect(mapFamilia('Nevecón')).toBe('Nevecón')
+  })
+
+  it('tolera singular/plural en el resto de familias', () => {
+    expect(mapFamilia('ESTUFA')).toBe('Estufa')
+    expect(mapFamilia('lavadora')).toBe('Lavadora')
+    expect(mapFamilia('SECADORA')).toBe('Secadora')
+    expect(mapFamilia('Aire Acondicionado')).toBe('Aire Acondicionado')
+  })
+
+  it('devuelve null para familias desconocidas', () => {
+    expect(mapFamilia('ASPIRADORAS')).toBeNull()
+    expect(mapFamilia('')).toBeNull()
   })
 })
 

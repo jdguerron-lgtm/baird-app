@@ -102,6 +102,9 @@ WHATSAPP_WEBHOOK_SECRET           # App Secret for HMAC verification
 NEXT_PUBLIC_APP_URL               # Base URL (https://lineablanca.bairdservice.com)
                                   # baird-app.vercel.app sigue vivo como alias del mismo deployment
                                   # (red de seguridad post-cutover 2026-05-23 — ver docs/mejoras-futuras/migracion-dominio/runbook-cutover-2026-05-23.md)
+WHATSAPP_ALERT_PHONE              # OPCIONAL — número (digits con país) que recibe una alerta
+                                  # por cada mensaje entrante al webhook (default 573153019192).
+                                  # Mensaje libre: requiere ventana de 24h abierta con la línea.
 BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. "573134951164").
                                   # Si está definida, las primitivas WhatsApp omiten cualquier
                                   # envío a un número fuera de la lista. Útil en dev para no
@@ -116,6 +119,13 @@ WOMPI_EVENTS_SECRET               # Verificación del webhook /api/wompi/webhook
 WOMPI_PRIVATE_KEY                 # OPCIONAL — reservada para API transaccional futura
                                   # Sin PUBLIC_KEY + INTEGRITY_SECRET todo Wompi es no-op
                                   # (kill-switch, mismo patrón que Dapta).
+
+# Resend — correos transaccionales (correo de facturación al completar servicio).
+RESEND_API_KEY                    # API key de Resend. Ausente = correos no-op (kill-switch).
+FACTURACION_EMAIL                 # Destino del correo de facturación al completar
+                                  # (default logistica@encompasslatam.com)
+EMAIL_FROM                        # Remitente verificado en Resend
+                                  # (default "Baird Service <facturacion@bairdservice.com>")
 
 # Dapta — segunda línea de voz IA (llamadas automatizadas). Ver docs/DAPTA.md.
 DAPTA_ENABLED                     # Kill-switch global: 'true' habilita disparar llamadas. Default off.

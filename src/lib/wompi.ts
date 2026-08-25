@@ -45,15 +45,16 @@ function wompiApiBase(): string {
 // ─────────────────────────────────────────
 // Formato canónico: "{tipo}-{solicitudId}" — la referencia viaja con la
 // transacción de Wompi y es la ÚNICA fuente para conciliar contra la
-// solicitud. tipo: 'anticipo' (reserva) | 'saldo' (reservado para el futuro).
+// solicitud. tipo: 'anticipo' (reserva) | 'abono' (50% del saldo para
+// compra de repuestos, 2026-08-25) | 'saldo' (resto al finalizar).
 
-export type TipoPago = 'anticipo' | 'saldo'
+export type TipoPago = 'anticipo' | 'abono' | 'saldo'
 
 export function referenciaPago(tipo: TipoPago, solicitudId: string): string {
   return `${tipo}-${solicitudId}`
 }
 
-const REFERENCIA_RE = /^(anticipo|saldo)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+const REFERENCIA_RE = /^(anticipo|abono|saldo)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
 
 /** Parsea una referencia nuestra; null si es ajena (p.ej. pedidos de la tienda). */
 export function parseReferenciaPago(referencia: unknown): { tipo: TipoPago; solicitudId: string } | null {

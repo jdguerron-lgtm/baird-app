@@ -28,6 +28,12 @@ const GUIAS = [
     url: 'https://lineablanca.bairdservice.com/guia-pagos.html',
     mensajeCompartir: '💰 Guía de pagos de Baird Service — cómo se calcula tu pago como técnico:',
   },
+  {
+    titulo: 'Guía del técnico — uso de la plataforma',
+    descripcion: 'Ciclo completo del servicio: aceptar, visita, diagnóstico, cotización, repuestos y cierre',
+    url: 'https://lineablanca.bairdservice.com/guia-plataforma.html',
+    mensajeCompartir: '📲 Guía del técnico de Baird Service — cómo usar la plataforma de principio a fin:',
+  },
 ]
 
 export default function AdminDashboard() {

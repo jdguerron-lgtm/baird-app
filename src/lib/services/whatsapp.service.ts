@@ -456,7 +456,13 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     : sol.novedades_equipo
 
   const equipo = equipoConGarantia(sol)
-  const problema = notifNovedades.substring(0, 100)
+  // `novedades_equipo` es texto libre del cliente: puede traer saltos de línea
+  // o tabs, y Meta rechaza el envío completo (error 132018) si un parámetro
+  // los contiene. Colapsar whitespace igual que `ubicacion`.
+  const problema = (notifNovedades ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 100)
   // Ubicación para el técnico: dirección exacta + zona + ciudad. La dirección
   // le permite evaluar distancia/parqueo/acceso antes de aceptar. Si no está
   // cargada (caso raro), cae a zona + ciudad. Se colapsa el whitespace porque
@@ -1506,7 +1512,9 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
       // esperando_repuesto. Particular: el cliente aprueba la cotización.
       return estadoPrevio === 'asignada' ? 'tecnico' : 'cliente'
     case 'repuesto_en_camino': return 'supervisor'  // subió la guía de envío (/api/supervisor/guia-envio)
-    case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido)
+    case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido).
+                                                    // El supervisor también puede (/api/supervisor/repuesto-entregado),
+                                                    // pero ese endpoint registra su propio evento (registrarEvento: false).
     case 'en_proceso': return 'cliente'             // aprobó reparar/cotización o eligió fecha tras repuesto
     case 'confirmacion_pendiente': return 'tecnico' // completó el servicio (/api/completar-servicio)
     case 'completada':
@@ -2486,6 +2494,130 @@ export async function enviarPagoSaldoCliente(
     } catch (err2) {
       return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
     }
+  }
+}
+
+/**
+ * Tras aprobar una cotización CON REPUESTOS, le pide al CLIENTE el abono del
+ * 50% del saldo (compra de repuestos, 2026-08-25). El link es el mismo
+ * /pago/saldo/{cliente_token} — la página detecta el modo abono y cobra el
+ * 50% con referencia `abono-{id}`. Plantilla `abono_repuestos_cliente_v1`
+ * con fallback a `pago_saldo_cliente_v1` (monto = abono) mientras esté
+ * PENDING en Meta, y a texto libre como último recurso.
+ */
+export async function enviarAbonoRepuestosCliente(
+  solicitudId: string,
+  abono: number,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!Number.isFinite(abono) || abono <= 0) return { ok: false, error: 'Sin abono por cobrar' }
+
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, cliente_token, cotizacion')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+  if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
+
+  const total = (sol.cotizacion as { total?: number } | null)?.total ?? 0
+  const nombre = sol.cliente_nombre.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const boton = { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] }
+  const registrar = (plantilla: string) =>
+    void registrarMensajeCliente(solicitudId, plantilla,
+      `Se envió al cliente el cobro del abono de repuestos ($${formatCOP(abono)} — 50% del saldo) tras aprobar la cotización`)
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'abono_repuestos_cliente_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: equipo },
+          { type: 'text', text: formatCOP(total) },
+          { type: 'text', text: formatCOP(abono) },
+        ],
+      },
+      boton,
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    registrar('abono_repuestos_cliente_v1')
+    return { ok: true }
+  } catch (err) {
+    // Fallback 1: plantilla del saldo (APPROVED) con el monto del abono —
+    // el link cobra igual el 50% porque la página decide el modo server-side.
+    console.error('[abono] abono_repuestos_cliente_v1 falló, fallback a pago_saldo_cliente_v1:', err)
+    try {
+      const r = await enviarPlantilla(sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombre },
+            { type: 'text', text: equipo },
+            { type: 'text', text: formatCOP(total) },
+            { type: 'text', text: formatCOP(abono) },
+          ],
+        },
+        boton,
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      registrar('pago_saldo_cliente_v1 (abono repuestos)')
+      return { ok: true }
+    } catch (err2) {
+      console.error('[abono] pago_saldo_cliente_v1 falló, fallback a texto libre:', err2)
+      try {
+        const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://lineablanca.bairdservice.com'
+        await enviarMensajeTexto(
+          sol.cliente_telefono,
+          `✅ ¡Gracias ${nombre}! Aprobaste la reparación de tu ${equipo} por $${formatCOP(total)} COP (diagnóstico + servicio con repuestos incluidos).\n\n` +
+          `🔩 Como tu reparación necesita repuestos, te pedimos un abono del 50% del saldo: $${formatCOP(abono)} COP. Con este abono el técnico compra los repuestos y coordinamos la instalación.\n\n` +
+          `💳 Págalo en línea de forma segura:\n${APP_URL}/pago/saldo/${sol.cliente_token}\n\n` +
+          `El resto lo pagas al finalizar el servicio. Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`
+        )
+        registrar('abono_repuestos_cliente_v1 (texto libre)')
+        return { ok: true }
+      } catch (err3) {
+        return { ok: false, error: `Error WhatsApp: ${err3 instanceof Error ? err3.message : String(err3)}` }
+      }
+    }
+  }
+}
+
+/**
+ * Avisa al TÉCNICO que el cliente pagó el ABONO de repuestos (50% del saldo)
+ * — puede proceder con la compra de los repuestos. Texto libre (misma
+ * lógica que enviarSaldoConfirmadoTecnico: la ventana suele estar abierta).
+ */
+export async function enviarAbonoConfirmadoTecnico(
+  solicitudId: string,
+  montoPagado: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('nombre_completo, whatsapp')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  if (!tecnico?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  try {
+    await enviarMensajeTexto(
+      tecnico.whatsapp,
+      `🔩 Hola ${tecnico.nombre_completo.split(' ')[0]}, el cliente ${sol.cliente_nombre} ya pagó el ABONO de repuestos ($${formatCOP(montoPagado)} COP — 50% del saldo) de su servicio de ${sol.tipo_equipo} ${sol.marca_equipo}.\n\n` +
+      `✅ Puedes proceder con la compra de los repuestos. El saldo restante lo paga el cliente al finalizar el servicio — NO cobres nada en sitio.\n\n🔧 Baird Service`
+    )
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
 

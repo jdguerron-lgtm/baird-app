@@ -4,13 +4,14 @@ import {
   type TipoPago,
   type TransaccionWompi,
 } from '@/lib/wompi'
-import { montoAnticipo, saldoPendiente } from '@/lib/constants/pagos'
+import { montoAnticipo, saldoPendiente, montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
 import { precioClienteServicio } from '@/types/solicitud'
 import {
   enviarAnticipoConfirmadoCliente,
   enviarAnticipoConfirmadoTecnico,
   enviarSaldoConfirmadoCliente,
   enviarSaldoConfirmadoTecnico,
+  enviarAbonoConfirmadoTecnico,
 } from '@/lib/services/whatsapp.service'
 
 /**
@@ -89,11 +90,12 @@ export function calcularMontoAnticipo(sol: {
 }
 
 /**
- * Saldo pendiente (COP) tras la cotización: total cotizado − anticipos
- * APPROVED registrados en `pagos`. 0 si no hay cotización con total.
+ * Saldo pendiente (COP) tras la cotización: total cotizado − pagos APPROVED
+ * ya acreditados en `pagos` (anticipos de reserva + abonos de repuestos).
+ * 0 si no hay cotización con total.
  *
- * OJO: solo cuenta anticipos ONLINE (tabla pagos); un anticipo recibido por
- * fuera (transferencia manual) no se acredita solo — admin ajusta el valor
+ * OJO: solo cuenta pagos ONLINE (tabla pagos); un pago recibido por fuera
+ * (transferencia manual) no se acredita solo — admin ajusta el valor
  * con /api/admin/actualizar-valor si hace falta.
  */
 export async function calcularMontoSaldo(sol: SolicitudPago): Promise<number> {
@@ -101,14 +103,40 @@ export async function calcularMontoSaldo(sol: SolicitudPago): Promise<number> {
   const total = (sol.cotizacion as { total?: number } | null)?.total ?? 0
   if (!Number.isFinite(total) || total <= 0) return 0
 
-  const { data: anticipos } = await supabase
+  const { data: acreditados } = await supabase
     .from('pagos')
     .select('monto')
     .eq('solicitud_id', sol.id)
-    .eq('tipo', 'anticipo')
+    .in('tipo', ['anticipo', 'abono'])
     .eq('estado', 'APPROVED')
-  const abonado = (anticipos ?? []).reduce((acc, p) => acc + (p.monto ?? 0), 0)
+  const abonado = (acreditados ?? []).reduce((acc, p) => acc + (p.monto ?? 0), 0)
   return saldoPendiente(total, abonado)
+}
+
+/**
+ * Abono para compra de REPUESTOS (2026-08-25): si la cotización aprobada
+ * incluye repuestos, se le pide al cliente el 50% del saldo pendiente antes
+ * de que el técnico compre los repuestos. Devuelve 0 si no aplica (sin
+ * repuestos, garantía, sin saldo o abono ya pagado).
+ */
+export async function calcularMontoAbonoRepuestos(sol: SolicitudPago): Promise<number> {
+  if (sol.es_garantia) return 0
+  if (!cotizacionTieneRepuestos(sol.cotizacion)) return 0
+  if (await abonoRepuestosPagado(sol.id)) return 0
+  const saldo = await calcularMontoSaldo(sol)
+  return montoAbonoRepuestos(saldo)
+}
+
+/** true si ya hay un abono de repuestos APPROVED registrado para la solicitud. */
+export async function abonoRepuestosPagado(solicitudId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('pagos')
+    .select('id')
+    .eq('solicitud_id', solicitudId)
+    .eq('tipo', 'abono')
+    .eq('estado', 'APPROVED')
+    .limit(1)
+  return Boolean(data && data.length > 0)
 }
 
 /** Carga la solicitud con lo mínimo para operar sobre su pago. */
@@ -202,7 +230,14 @@ export async function registrarPagoWompi(
   //    Nota saldo: el esperado se recalcula AL MOMENTO de confirmar (el
   //    anticipo pudo acreditarse entre que se firmó el checkout y llegó el
   //    webhook); un pago que cubra el saldo vigente siempre pasa.
-  const esperado = tipo === 'anticipo' ? calcularMontoAnticipo(sol) : await calcularMontoSaldo(sol)
+  //    Nota abono: el esperado no se puede recalcular acá — la fila del
+  //    abono ya quedó insertada en el paso 1 y el saldo ya la descuenta.
+  //    La firma de integridad del checkout ya fijó el monto server-side.
+  const esperado = tipo === 'anticipo'
+    ? calcularMontoAnticipo(sol)
+    : tipo === 'saldo'
+      ? await calcularMontoSaldo(sol)
+      : 0
   if (esperado > 0 && montoCOP < esperado) {
     console.error(
       `[pagos] monto insuficiente en ${tx.id}: pagó ${montoCOP}, esperado ${esperado} (${tipo}, solicitud ${solicitudId})`,
@@ -212,6 +247,26 @@ export async function registrarPagoWompi(
       payload: { transaccion_id: tx.id, monto: montoCOP, esperado, tipo, origen, requiere_intervencion_admin: true },
     })
     return { ok: true, confirmado: false, solicitudId, error: 'Monto insuficiente' }
+  }
+
+  if (tipo === 'abono') {
+    // Abono del 50% para repuestos (2026-08-25). No marca ninguna columna de
+    // la solicitud: el saldo restante se recalcula solo (calcularMontoSaldo
+    // descuenta abonos APPROVED). Idempotencia: el índice único sobre
+    // transaccion_id ya cortó los reintentos arriba (duplicado → return).
+    await registrarEventoPago(sol, {
+      motivo: `Abono para repuestos pagado por $${montoCOP} COP (${tx.payment_method_type ?? 'Wompi'}) — el técnico puede comprar los repuestos`,
+      payload: { transaccion_id: tx.id, monto: montoCOP, tipo, origen, metodo: tx.payment_method_type ?? null },
+    })
+
+    try {
+      const tec = await enviarAbonoConfirmadoTecnico(solicitudId, montoCOP)
+      if (!tec.ok) console.error('[pagos] enviarAbonoConfirmadoTecnico falló:', tec.error)
+    } catch (err) {
+      console.error('[pagos] enviarAbonoConfirmadoTecnico error:', err)
+    }
+
+    return { ok: true, confirmado: true, solicitudId }
   }
 
   if (tipo === 'saldo') {

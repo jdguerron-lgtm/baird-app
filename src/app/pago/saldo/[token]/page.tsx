@@ -4,15 +4,22 @@ import { construirCheckoutUrl, referenciaPago, consultarTransaccion, wompiHabili
 import {
   cargarSolicitudPagoPorClienteToken,
   calcularMontoSaldo,
+  calcularMontoAbonoRepuestos,
   registrarPagoWompi,
 } from '@/lib/services/pagos.service'
 import { formatCOP } from '@/lib/utils/format'
 
 /**
  * Página de pago del SALDO (pasarela Wompi) — el total cotizado menos los
- * anticipos ya acreditados. Se ofrece tras aprobar la cotización (plantilla
+ * pagos ya acreditados. Se ofrece tras aprobar la cotización (plantilla
  * `pago_saldo_cliente_v1` + botón en /cotizacion) como ALTERNATIVA online al
  * pago en sitio con QR — no bloquea ninguna transición de estado.
+ *
+ * Modo ABONO (2026-08-25): si la cotización aprobada incluye REPUESTOS y aún
+ * no hay abono registrado, la página cobra primero el 50% del saldo
+ * (referencia `abono-{id}`) para que el técnico compre los repuestos; el
+ * resto se cobra en una visita posterior por esta misma página (referencia
+ * `saldo-{id}`). Solo en cotizaciones con repuestos.
  *
  * Misma arquitectura que /pago/anticipo/{token} (ver ese archivo): Server
  * Component, monto desde la BD firmado server-side, confirmación por webhook
@@ -41,13 +48,23 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
   if (!sol) notFound()
 
   // ── Redirect de vuelta de Wompi: confirmar contra el API ──
+  // La misma página cobra 'saldo' o 'abono' (repuestos) — aceptamos ambas
+  // referencias, siempre validando que correspondan a ESTA solicitud.
   if (transactionId) {
     const tx = await consultarTransaccion(transactionId)
-    const refEsperada = referenciaPago('saldo', sol.id)
-    if (tx && tx.reference === refEsperada) {
+    const refSaldo = referenciaPago('saldo', sol.id)
+    const refAbono = referenciaPago('abono', sol.id)
+    if (tx && (tx.reference === refSaldo || tx.reference === refAbono)) {
       await registrarPagoWompi(tx, 'redirect')
+      const esAbono = tx.reference === refAbono
       if (tx.status === 'APPROVED') {
-        return <Resultado tipo="aprobado" token={token} monto={Math.round(tx.amount_in_cents / 100)} />
+        return (
+          <Resultado
+            tipo={esAbono ? 'abono_aprobado' : 'aprobado'}
+            token={token}
+            monto={Math.round(tx.amount_in_cents / 100)}
+          />
+        )
       }
       if (tx.status === 'PENDING') return <Resultado tipo="pendiente" token={token} />
       return <Resultado tipo="rechazado" token={token} />
@@ -69,8 +86,23 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
     )
   }
 
-  const total = (sol.cotizacion as { total?: number } | null)?.total ?? 0
+  const cot = sol.cotizacion as {
+    total?: number
+    diagnostico_cliente?: number
+    servicio_cliente?: number
+  } | null
+  const total = cot?.total ?? 0
   const saldo = await calcularMontoSaldo(sol)
+  // Modo ABONO: cotización con repuestos y sin abono registrado → se cobra
+  // el 50% del saldo (0 = no aplica → modo saldo normal).
+  const abono = await calcularMontoAbonoRepuestos(sol)
+  const modoAbono = abono > 0 && abono < saldo
+  const montoACobrar = modoAbono ? abono : saldo
+  // Desglose discriminado (cotizaciones desde 2026-08-25): diagnóstico +
+  // servicio con repuestos. Las viejas no traen los campos → solo total.
+  const diagnosticoCliente = cot?.diagnostico_cliente ?? 0
+  const servicioCliente = cot?.servicio_cliente ?? 0
+  const hayDesglose = diagnosticoCliente > 0 && servicioCliente > 0
 
   if (total <= 0) {
     return (
@@ -108,8 +140,8 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
   }
 
   const checkoutUrl = construirCheckoutUrl({
-    referencia: referenciaPago('saldo', sol.id),
-    montoCOP: saldo,
+    referencia: referenciaPago(modoAbono ? 'abono' : 'saldo', sol.id),
+    montoCOP: montoACobrar,
     redirectUrl: `${APP_URL}/pago/saldo/${token}`,
     nombreCliente: sol.cliente_nombre,
   })
@@ -125,7 +157,7 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
     )
   }
 
-  const anticipoAcreditado = total - saldo
+  const pagosAcreditados = total - saldo
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -133,31 +165,65 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <div className="text-center mb-5">
             <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-3xl">🧾</span>
+              <span className="text-3xl">{modoAbono ? '🔩' : '🧾'}</span>
             </div>
-            <h1 className="text-xl font-bold text-gray-900">Paga el saldo de tu servicio</h1>
+            <h1 className="text-xl font-bold text-gray-900">
+              {modoAbono ? 'Abono para repuestos' : 'Paga el saldo de tu servicio'}
+            </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Hola {sol.cliente_nombre.split(' ')[0]}, tu reparación de {sol.tipo_equipo} quedó aprobada.
+              {modoAbono
+                ? `Hola ${sol.cliente_nombre.split(' ')[0]}, tu reparación de ${sol.tipo_equipo} necesita repuestos. Con este abono del 50% el técnico los compra y coordinamos la instalación.`
+                : `Hola ${sol.cliente_nombre.split(' ')[0]}, tu reparación de ${sol.tipo_equipo} quedó aprobada.`}
             </p>
           </div>
 
           <div className="space-y-2 border-t border-gray-100 pt-4">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Total del servicio (todo incluido)</span>
-              <span className="font-medium">${formatCOP(total)} COP</span>
-            </div>
-            {anticipoAcreditado > 0 && (
+            {hayDesglose ? (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Visita de diagnóstico</span>
+                  <span className="font-medium">${formatCOP(diagnosticoCliente)} COP</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Servicio (mano de obra + repuestos)</span>
+                  <span className="font-medium">${formatCOP(servicioCliente)} COP</span>
+                </div>
+                <div className="flex justify-between text-sm border-t pt-2">
+                  <span className="text-gray-600 font-semibold">Total del servicio</span>
+                  <span className="font-semibold">${formatCOP(total)} COP</span>
+                </div>
+              </>
+            ) : (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Anticipo acreditado</span>
-                <span className="font-medium text-emerald-700">−${formatCOP(anticipoAcreditado)} COP</span>
+                <span className="text-gray-600">Total del servicio (todo incluido)</span>
+                <span className="font-medium">${formatCOP(total)} COP</span>
+              </div>
+            )}
+            {pagosAcreditados > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Pagos acreditados</span>
+                <span className="font-medium text-emerald-700">−${formatCOP(pagosAcreditados)} COP</span>
+              </div>
+            )}
+            {modoAbono && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Saldo pendiente</span>
+                <span className="font-medium">${formatCOP(saldo)} COP</span>
               </div>
             )}
             <div className="flex justify-between items-center border-t pt-2 mt-2">
-              <span className="font-bold text-gray-900">Saldo a pagar</span>
+              <span className="font-bold text-gray-900">
+                {modoAbono ? 'Abono a pagar hoy (50% del saldo)' : 'Saldo a pagar'}
+              </span>
               <span className="text-2xl font-bold text-emerald-700">
-                ${formatCOP(saldo)} <span className="text-xs font-medium text-gray-500">COP</span>
+                ${formatCOP(montoACobrar)} <span className="text-xs font-medium text-gray-500">COP</span>
               </span>
             </div>
+            {modoAbono && (
+              <p className="text-xs text-gray-500">
+                El resto (${formatCOP(saldo - abono)} COP) lo pagas al finalizar el servicio.
+              </p>
+            )}
           </div>
         </div>
 
@@ -165,7 +231,7 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
           href={checkoutUrl}
           className="block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-center text-base transition-colors"
         >
-          💳 Pagar ${formatCOP(saldo)} COP
+          💳 Pagar ${formatCOP(montoACobrar)} COP
         </a>
 
         <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -219,11 +285,25 @@ function Marco({
 function Resultado({
   tipo, token, monto, yaRegistrado,
 }: {
-  tipo: 'aprobado' | 'pendiente' | 'rechazado'
+  tipo: 'aprobado' | 'abono_aprobado' | 'pendiente' | 'rechazado'
   token: string
   monto?: number
   yaRegistrado?: boolean
 }) {
+  if (tipo === 'abono_aprobado') {
+    return (
+      <Marco titulo="¡Abono recibido!" emoji="🔩" color="emerald">
+        <p className="text-sm text-gray-600">
+          Recibimos tu abono{monto ? ` de $${formatCOP(monto)} COP` : ''} para la compra de los repuestos.
+          Le avisamos a tu técnico para que proceda con la compra — te contactaremos para coordinar la instalación.
+        </p>
+        <p className="text-xs text-gray-500">
+          El saldo restante lo pagas al finalizar el servicio, en línea o con el QR de Baird.
+        </p>
+        <LinkPortal token={token} />
+      </Marco>
+    )
+  }
   if (tipo === 'aprobado') {
     return (
       <Marco titulo="¡Servicio totalmente pagado!" emoji="🎉" color="emerald">

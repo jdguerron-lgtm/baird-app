@@ -20,6 +20,17 @@ export const solicitudFormSchema = z.object({
 
   cliente_telefono: phoneWithCode,
 
+  // Opcional — cédula o NIT para la factura electrónica. Vacío = consumidor
+  // final. Solo dígitos (sin puntos ni dígito de verificación).
+  cliente_cedula: z.string()
+    .trim()
+    .max(15, 'La cédula no puede exceder 15 dígitos')
+    .refine(
+      (v) => v === '' || /^\d{5,15}$/.test(v),
+      'Ingresa solo números, sin puntos ni guiones (mínimo 5 dígitos)',
+    )
+    .optional(),
+
   direccion: nonEmptyString('La direccion', true)
     .min(5, 'La direccion debe ser mas especifica')
     .max(200, 'La direccion no puede exceder 200 caracteres'),

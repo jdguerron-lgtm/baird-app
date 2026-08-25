@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cómo usar la plataforma — Guía del técnico Baird Service</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #ffffff;
+      --soft: #f1f5f9;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --accent: #10b981;
+      --accent-soft: #d1fae5;
+      --indigo: #4f46e5;
+      --indigo-soft: #e0e7ff;
+      --warn: #f59e0b;
+      --warn-soft: #fef3c7;
+      --bad: #ef4444;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 80px; }
+    header.hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #f8fafc;
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .hero-eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; margin: 0 0 8px; }
+    .hero h1 { margin: 0 0 8px; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    .hero p { margin: 0; color: #cbd5e1; font-size: 15px; }
+    .navlinks { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+    .navlinks a {
+      text-decoration: none; font-size: 13px; font-weight: 600; padding: 9px 16px;
+      border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.18); transition: background 0.15s;
+    }
+    .navlinks a:hover { background: rgba(255, 255, 255, 0.16); }
+    section {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+      padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow); scroll-margin-top: 16px;
+    }
+    h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+    .stepnum {
+      display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; font-weight: 800;
+      font-size: 14px; margin-right: 8px; vertical-align: middle;
+    }
+    .pill {
+      display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px;
+      font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+    }
+    .pill.green { background: var(--accent-soft); color: #047857; }
+    .pill.amber { background: var(--warn-soft); color: #92400e; }
+    .pill.gray { background: var(--soft); color: var(--muted); }
+    .pill.indigo { background: var(--indigo-soft); color: #3730a3; }
+    .pill.red { background: #fee2e2; color: #991b1b; }
+    .note { border-radius: 12px; padding: 14px 16px; font-size: 13px; margin-top: 14px; line-height: 1.5; }
+    .note strong { font-weight: 700; }
+    .note.blue { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+    .note.amber { background: var(--warn-soft); border: 1px solid #fde68a; color: #92400e; }
+    .note.green { background: var(--accent-soft); border: 1px solid #a7f3d0; color: #065f46; }
+    .note.red { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
+    .checklist { list-style: none; padding: 0; margin: 12px 0 0; }
+    .checklist li {
+      padding: 10px 12px; border-radius: 10px; background: var(--soft); margin-bottom: 8px;
+      font-size: 14px; display: flex; align-items: flex-start; gap: 10px;
+    }
+    .checklist .check { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    .paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+    .path { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+    .path h4 { margin: 0 0 6px; font-size: 14px; }
+    .path p { margin: 0; font-size: 13px; color: var(--muted); }
+    details {
+      border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 8px; background: var(--soft);
+    }
+    details + details { margin-top: 8px; }
+    summary { cursor: pointer; font-weight: 600; color: var(--ink); font-size: 14px; }
+    details[open] summary { margin-bottom: 10px; }
+    details p { margin: 6px 0; color: var(--muted); font-size: 13px; }
+    a.inlink { color: var(--indigo); font-weight: 600; }
+    footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 32px; }
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 22px; }
+      .wrap { padding: 16px 12px 60px; }
+      section { padding: 18px 16px; }
+    }
+    @media print {
+      body { background: #ffffff; }
+      .wrap { padding: 0 8px 8px; max-width: 100%; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      section, .path, .note, ul.checklist li, details { break-inside: avoid; }
+      .navlinks { display: none; }
+      header.hero { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="hero">
+      <p class="hero-eyebrow">Baird Service · Guía del técnico</p>
+      <h1>Cómo usar la plataforma</h1>
+      <p>Todo el servicio se maneja desde tu WhatsApp y tu portal personal — sin apps que instalar. Esta guía recorre el ciclo completo: desde que te llega un servicio hasta que cobras.</p>
+      <div class="navlinks">
+        <a href="#llegan">📲 1 · Te llega un servicio</a>
+        <a href="#visita">🚗 2 · La visita</a>
+        <a href="#diagnostico">🔍 3 · Diagnóstico</a>
+        <a href="#cotizacion">💰 4 · Cotización y pagos</a>
+        <a href="#repuestos">🔩 5 · Repuestos</a>
+        <a href="#cierre">✅ 6 · Cierre</a>
+      </div>
+    </header>
+
+    <section id="llegan">
+      <h2><span class="stepnum">1</span>Te llega un servicio por WhatsApp</h2>
+      <p class="subtitle">Cuando un cliente pide un servicio en tu zona y de tu especialidad, te llega un mensaje con el equipo, el problema, la dirección, el horario y tu pago.</p>
+      <ul class="checklist">
+        <li><span class="check">⚡</span><span><strong>El primero que acepta se queda con el servicio.</strong> Toca el botón del mensaje para verlo y aceptarlo. Si otro técnico aceptó antes, la plataforma te avisa.</span></li>
+        <li><span class="check">💵</span><span><strong>El pago aparece en el mensaje.</strong> En garantía es "pago desde $X" (puede subir según complejidad y bonos). En particular ves el pago de la visita de diagnóstico o la tarifa fija del servicio.</span></li>
+        <li><span class="check">🔗</span><span><strong>Al aceptar recibes tu link del portal.</strong> Guárdalo: ahí ves los datos del cliente, puedes llamarlo, registrar el diagnóstico y cerrar el servicio. El link es personal — no lo compartas.</span></li>
+      </ul>
+    </section>
+
+    <section id="visita">
+      <h2><span class="stepnum">2</span>Antes y durante la visita</h2>
+      <p class="subtitle">El cliente ya confirmó un horario. Preséntate en la franja acordada — la puntualidad afecta tus bonos y tu reputación en la red.</p>
+      <ul class="checklist">
+        <li><span class="check">📞</span><span><strong>Usa el botón "Llamar" del portal</strong> si necesitas contactar al cliente (confirmar dirección, avisar que vas en camino). Las llamadas quedan registradas y te protegen ante cualquier reclamo.</span></li>
+        <li><span class="check">🕐</span><span><strong>Si el cliente no está (no-show):</strong> sigue el protocolo — foto del inmueble, intentos de contacto, espera de 15 minutos documentada. Con esa evidencia Baird te protege. Sin evidencia, nadie paga.</span></li>
+        <li><span class="check">🔁</span><span><strong>¿No puedes ir?</strong> Avisa lo antes posible por WhatsApp para reasignar o reagendar. No dejes al cliente esperando.</span></li>
+      </ul>
+    </section>
+
+    <section id="diagnostico">
+      <h2><span class="stepnum">3</span>Registra el diagnóstico en el portal</h2>
+      <p class="subtitle">En la visita, entra a tu portal y registra el diagnóstico. En garantía, el reloj de tus bonos arranca aquí.</p>
+      <ul class="checklist">
+        <li><span class="check">📷</span><span><strong>Foto de la placa del equipo (obligatoria):</strong> placa de características o etiqueta amarilla de consumo. Confirma el modelo y asegura el repuesto correcto.</span></li>
+        <li><span class="check">📸</span><span><strong>Fotos de evidencia del daño</strong> — se le muestran al cliente en la cotización y respaldan tu trabajo.</span></li>
+        <li><span class="check">✍️</span><span><strong>Describe el diagnóstico claro y completo:</strong> el cliente lo lee tal cual al decidir si aprueba.</span></li>
+      </ul>
+      <h3 style="margin: 20px 0 6px; font-size: 15px;">Después del diagnóstico eliges uno de 4 caminos:</h3>
+      <div class="paths">
+        <div class="path"><h4>🔧 Reparar <span class="pill green">directo</span></h4><p>Puedes reparar ya (tienes el repuesto o no se necesita). Cotizas en el mismo momento y el cliente recibe la cotización al instante.</p></div>
+        <div class="path"><h4>🔩 Esperar repuesto <span class="pill indigo">con pedido</span></h4><p>Se necesita un repuesto que no tienes. Registras los SKU necesarios; Baird fija precios y le envía la cotización al cliente.</p></div>
+        <div class="path"><h4>🚫 No reparable <span class="pill gray">cierre</span></h4><p>El equipo no tiene arreglo razonable. El servicio se cierra y el cliente paga solo la visita de diagnóstico.</p></div>
+        <div class="path"><h4>🙅 Cliente no acepta <span class="pill gray">cierre</span></h4><p>El cliente decide no continuar. Se cierra el servicio; la visita de diagnóstico ya quedó cubierta.</p></div>
+      </div>
+    </section>
+
+    <section id="cotizacion">
+      <h2><span class="stepnum">4</span>Cotización y pagos del cliente</h2>
+      <p class="subtitle">En servicios particulares, tú decides cuánto quieres ganar por la reparación (mano de obra + repuestos). Ese monto lo recibes íntegro.</p>
+      <ul class="checklist">
+        <li><span class="check">🧾</span><span><strong>El cliente ve el total discriminado:</strong> visita de diagnóstico + servicio (mano de obra y repuestos incluidos, con IVA). El diagnóstico se <strong>suma</strong> al valor de la reparación. Baird agrega su utilidad e IVA por encima de lo tuyo — no salen de tu bolsillo.</span></li>
+        <li><span class="check">✅</span><span><strong>El cliente aprueba o rechaza desde su celular.</strong> Te llega aviso por WhatsApp con la decisión.</span></li>
+        <li><span class="check">🔩</span><span><strong>Si la cotización incluye repuestos:</strong> al aprobar, la plataforma le pide al cliente un <strong>abono del 50% del saldo</strong>. Cuando te llegue la confirmación del abono, puedes comprar los repuestos. <strong>No compres antes.</strong></span></li>
+        <li><span class="check">💳</span><span><strong>El resto lo paga el cliente al finalizar</strong> — en línea (link de pago Wompi) o con el QR de Baird en sitio.</span></li>
+      </ul>
+      <div class="note red">
+        🚫 <strong>Nunca recibas efectivo ni pagos directos del cliente.</strong> Todos los pagos pasan por Baird Service (link en línea o QR de Baird). Recibir dinero directo es causal de retiro de la red.
+      </div>
+      <div class="note blue">
+        💵 Cuánto ganas exactamente en cada tipo de servicio (garantía, mantenimiento, filtro, diagnóstico, reparación cotizada, recargos de fin de semana): ver la <a class="inlink" href="/guia-pagos.html">Guía de pagos para técnicos</a>.
+      </div>
+    </section>
+
+    <section id="repuestos">
+      <h2><span class="stepnum">5</span>Flujo de repuestos</h2>
+      <p class="subtitle">Cuando el servicio queda esperando un repuesto, la plataforma coordina la llegada y la visita de instalación.</p>
+      <ul class="checklist">
+        <li><span class="check">📦</span><span><strong>Garantía:</strong> la marca envía el repuesto. Cuando llega, el cliente agenda la visita final y te llega la nueva fecha.</span></li>
+        <li><span class="check">🔩</span><span><strong>Particular:</strong> compras el repuesto con el abono del 50% confirmado. Puedes conseguirlo en <a class="inlink" href="https://tienda.bairdservice.com">tienda.bairdservice.com</a> con tu descuento de técnico (15%).</span></li>
+        <li><span class="check">📅</span><span><strong>Cuando el repuesto esté listo, avisa por tu portal</strong> — el cliente recibe el aviso y agenda la visita de instalación.</span></li>
+      </ul>
+    </section>
+
+    <section id="cierre">
+      <h2><span class="stepnum">6</span>Cierre del servicio</h2>
+      <p class="subtitle">El servicio no queda completado hasta que subas la evidencia y el cliente confirme.</p>
+      <ul class="checklist">
+        <li><span class="check">📸</span><span><strong>Sube todas las fotos del trabajo terminado + la firma del cliente</strong> desde tu portal. Sin evidencia completa el servicio queda en disputa y se demora tu pago.</span></li>
+        <li><span class="check">✅</span><span><strong>El cliente confirma por WhatsApp</strong> que todo quedó bien. Si aún tiene saldo pendiente, la plataforma le envía el link de pago automáticamente.</span></li>
+        <li><span class="check">⭐</span><span><strong>Pídele al cliente que conteste la encuesta.</strong> En garantía, tu bono casi se duplica si la contesta.</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Reglas de oro</h2>
+      <ul class="checklist">
+        <li><span class="check">🚫</span><span><strong>Nunca efectivo, nunca pagos directos.</strong> Todo pago pasa por Baird (link Wompi o QR).</span></li>
+        <li><span class="check">🔗</span><span><strong>Tu link del portal es personal.</strong> No lo compartas ni lo publiques.</span></li>
+        <li><span class="check">📷</span><span><strong>Evidencia siempre:</strong> foto de placa en el diagnóstico, fotos del daño, fotos del cierre y firma. La evidencia te protege a ti.</span></li>
+        <li><span class="check">💬</span><span><strong>Comunica por la plataforma:</strong> llamadas desde el botón del portal y avisos por WhatsApp — todo queda registrado a tu favor.</span></li>
+        <li><span class="check">🔩</span><span><strong>Repuestos solo con abono confirmado</strong> (servicios particulares con repuestos).</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Preguntas frecuentes</h2>
+      <details>
+        <summary>Perdí el link de mi portal, ¿qué hago?</summary>
+        <p>Escríbenos por WhatsApp a la línea de Baird Service y te lo reenviamos. No intentes adivinar el link ni usar el de otro técnico.</p>
+      </details>
+      <details>
+        <summary>¿Puedo tomar dos servicios en la misma franja horaria?</summary>
+        <p>No — la plataforma lo bloquea automáticamente. Si ya tienes un servicio confirmado en una franja, no podrás aceptar otro que se cruce.</p>
+      </details>
+      <details>
+        <summary>El cliente quiere pagarme en efectivo "para agilizar", ¿acepto?</summary>
+        <p><strong>No.</strong> Explícale que todos los pagos se gestionan a través de Baird Service (link en línea o QR). Es lo que dicen sus términos y condiciones y también te protege a ti de reclamos.</p>
+      </details>
+      <details>
+        <summary>¿Qué pasa si el cliente no paga el abono de repuestos?</summary>
+        <p>No compres los repuestos. El servicio queda en espera y el equipo de Baird hace seguimiento con el cliente. Si el cliente desiste, la visita de diagnóstico ya quedó cubierta con lo que pagó.</p>
+      </details>
+      <details>
+        <summary>¿Dónde veo cuánto voy a ganar?</summary>
+        <p>En el mensaje de WhatsApp de cada servicio y en tu portal. El detalle completo de tarifas, bonos y recargos está en la <a class="inlink" href="/guia-pagos.html">Guía de pagos</a>.</p>
+      </details>
+    </section>
+
+    <footer>
+      Baird Service SAS · Guía del técnico — uso de la plataforma · Publicada 2026-08-25
+    </footer>
+
+  </div>
+</body>
+</html>

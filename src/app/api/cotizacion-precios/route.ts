@@ -6,7 +6,8 @@ import {
   enviarVerificacionPasoCliente,
   notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
-import type { CotizacionReparacion, ProductoNecesario } from '@/types/solicitud'
+import type { CotizacionReparacion, ProductoNecesario, TipoEquipo, TipoSolicitud } from '@/types/solicitud'
+import { calcularPagoTecnico } from '@/types/solicitud'
 import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
 
 export const maxDuration = 30
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     const { data: sol, error: solErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, es_garantia, cotizacion, siguiente_paso, recargo_weekend_aplicado')
+      .select('id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, siguiente_paso, recargo_weekend_aplicado')
       .eq('id', solicitudId)
       .single()
 
@@ -104,6 +105,13 @@ export async function POST(req: NextRequest) {
       const costoTecnico = manoObra + repuestosTotal
       const tarifa = calcularTarifaParticular({ costoTecnico, recargoBruto })
 
+      // Diagnóstico DISCRIMINADO (2026-08-25): la visita se SUMA al total —
+      // mismo criterio que /api/diagnostico rama "reparar". Se reusa el valor
+      // ya persistido si el diagnóstico lo dejó; si no, catálogo.
+      const diagnosticoCliente = typeof cotPrev.diagnostico_cliente === 'number' && cotPrev.diagnostico_cliente > 0
+        ? cotPrev.diagnostico_cliente
+        : calcularPagoTecnico(sol.tipo_equipo as TipoEquipo, sol.tipo_solicitud as TipoSolicitud, false)
+
       const cotizacionData: CotizacionReparacion = {
         ...(cotPrev as CotizacionReparacion),
         productos_necesarios: necesariosConPrecio,
@@ -116,7 +124,10 @@ export async function POST(req: NextRequest) {
         // (igual que el flujo sin admin gate, ver fix de 2026-05-12).
         mano_obra: 0,
         repuestos: 0,
-        total: tarifa.totalCliente,
+        // Desglose al cliente (2026-08-25): total = diagnóstico + servicio.
+        diagnostico_cliente: diagnosticoCliente,
+        servicio_cliente: tarifa.totalCliente,
+        total: tarifa.totalCliente + diagnosticoCliente,
         // Datos auditables internos (no se muestran al cliente)
         costo_tecnico: costoTecnico,
         mano_obra_admin: manoObra,
@@ -164,7 +175,7 @@ export async function POST(req: NextRequest) {
         flow: 'particular',
         costo_tecnico: costoTecnico,
         repuestos_total: repuestosTotal,
-        total_cliente: tarifa.totalCliente,
+        total_cliente: tarifa.totalCliente + diagnosticoCliente,
         whatsapp_enviado: waResult.ok,
       })
     }

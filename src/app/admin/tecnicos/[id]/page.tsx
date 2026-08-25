@@ -23,6 +23,7 @@ interface Tecnico {
   fecha_verificacion: string | null
   nota_verificacion: string | null
   acepta_garantias: boolean
+  tiene_arl: boolean | null
   created_at: string
 }
 
@@ -281,9 +282,17 @@ export default function TecnicoDetalle() {
                   <p className="text-sm font-semibold text-slate-900">{tecnico.numero_documento}</p>
                 </div>
               </div>
-              <div>
-                <p className="text-xs text-gray-400">Acepta garantías</p>
-                <p className="text-sm font-semibold text-slate-900">{tecnico.acepta_garantias ? 'Sí' : 'No'}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-gray-400">Acepta garantías</p>
+                  <p className="text-sm font-semibold text-slate-900">{tecnico.acepta_garantias ? 'Sí' : 'No'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400">Tiene ARL</p>
+                  <p className={`text-sm font-semibold ${tecnico.tiene_arl === null ? 'text-gray-400' : tecnico.tiene_arl ? 'text-green-700' : 'text-amber-700'}`}>
+                    {tecnico.tiene_arl === null ? 'No informado' : tecnico.tiene_arl ? 'Sí' : 'No'}
+                  </p>
+                </div>
               </div>
               <div>
                 <p className="text-xs text-gray-400">Fecha de registro</p>

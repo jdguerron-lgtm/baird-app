@@ -12,6 +12,8 @@ import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import QrPagosBaird from '@/components/ui/QrPagosBaird'
+import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
+import { estadoPagoCliente } from '@/lib/constants/pago-cliente'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
 interface Tecnico {
@@ -39,6 +41,9 @@ interface Servicio {
   horario_confirmado: string | null
   triaje_resultado: { complejidad?: ComplejidadServicio | null } | null
   tiene_evidencia?: boolean
+  // Capa paralela de pago del cliente (solo particular) — pago-cliente.ts
+  anticipo_pagado_at: string | null
+  saldo_pagado_at: string | null
 }
 
 export default function PortalTecnicoPage() {
@@ -78,7 +83,7 @@ export default function PortalTecnicoPage() {
       const { data: sols } = await querySupabase(() =>
         supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado')
+          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, anticipo_pagado_at, saldo_pagado_at')
           .eq('tecnico_asignado_id', tec.id)
           .order('created_at', { ascending: false })
       )
@@ -111,6 +116,8 @@ export default function PortalTecnicoPage() {
           horario_confirmado: s.horario_confirmado ?? null,
           triaje_resultado: (s.triaje_resultado ?? null) as Servicio['triaje_resultado'],
           tiene_evidencia: completadoSet.has(s.id),
+          anticipo_pagado_at: s.anticipo_pagado_at ?? null,
+          saldo_pagado_at: s.saldo_pagado_at ?? null,
         })))
       }
 
@@ -185,6 +192,14 @@ export default function PortalTecnicoPage() {
           {/* Guía canónica de pagos (public/guia-pagos.html) — quick win
               auditoría 2026-07-05: antes vivía solo en docs/ y el técnico no
               podía consultarla. */}
+          <a
+            href="/guia-plataforma.html"
+            target="_blank"
+            rel="noopener"
+            className="shrink-0 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2"
+          >
+            📲 Guía
+          </a>
           <a
             href="/guia-pagos.html"
             target="_blank"
@@ -327,9 +342,18 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
         </div>
 
         {/* Pago */}
-        <div className="mb-3">
+        <div className="mb-3 flex items-end justify-between gap-2 flex-wrap">
           <PagoLabel servicio={s} />
+          {/* Estado de pago del CLIENTE (particular): el técnico sabe de una
+              si la reserva/diagnóstico ya está pagada o si el servicio quedó
+              totalmente pagado en línea (→ no cobrar nada en sitio). */}
+          <BadgePagoCliente solicitud={s} />
         </div>
+        {estadoPagoCliente(s) === 'pagado' && (
+          <p className="mb-3 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            ✅ El cliente ya pagó TODO en línea — no cobres nada en sitio.
+          </p>
+        )}
 
         {/* Footer: 📞 Llamar a la izquierda, acciones (Diagnosticar /
             Completar) a la derecha. El botón registra la INTENCIÓN de llamada

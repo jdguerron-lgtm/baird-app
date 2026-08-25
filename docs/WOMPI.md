@@ -11,11 +11,21 @@
 | Cobro | Cuándo | Cómo |
 |---|---|---|
 | **Anticipo (50%)** | Tras `procesarAceptacion` — el técnico aceptó y el horario quedó fijo | Plantilla `pago_anticipo_cliente_v2` con botón → `/pago/anticipo/{cliente_token}` |
-| **Saldo** (desde 2026-08-19) | Tras aprobar el cliente su cotización (`procesarAprobacionCotizacion`) | Plantilla `pago_saldo_cliente_v1` + botón en `/cotizacion` aprobada → `/pago/saldo/{cliente_token}` (total − anticipos acreditados). Alternativa ONLINE al QR en sitio; no bloquea transiciones. Confirmación marca `saldo_pagado_at` + avisa a cliente (plantilla) y técnico ("no cobres nada en sitio") |
+| **Abono repuestos (50% del saldo)** (desde 2026-08-25) | Tras aprobar el cliente una cotización **CON repuestos** (`procesarAprobacionCotizacion`) | Plantilla `abono_repuestos_cliente_v1` (fallback `pago_saldo_cliente_v1` mientras esté PENDING) → `/pago/saldo/{cliente_token}` en **modo abono** (referencia `abono-{id}`, monto = 50% del saldo). Garantiza compromiso del cliente y financia la compra de repuestos por el técnico. Confirmación: evento `pago_registrado` + aviso al técnico "puedes comprar los repuestos" (texto libre). NO marca `saldo_pagado_at` |
+| **Saldo** (desde 2026-08-19) | Cotización **SIN repuestos**: tras aprobarla. Con repuestos: al confirmar el cliente el servicio (`confirmarServicioCliente` → completada, saldo restante) | Plantilla `pago_saldo_cliente_v1` + botón en `/cotizacion` aprobada → `/pago/saldo/{cliente_token}` (total − pagos acreditados: anticipos + abonos). Alternativa ONLINE al QR en sitio; no bloquea transiciones. Confirmación marca `saldo_pagado_at` + avisa a cliente (plantilla) y técnico ("no cobres nada en sitio") |
 
 Solo servicios **particulares** (garantía la paga la marca). El monto del
 anticipo = `montoAnticipo(precioClienteServicio(...))` = 50% del precio al
 cliente — siempre calculado server-side desde la BD.
+
+**Total discriminado (2026-08-25)**: en las cotizaciones nuevas
+`cotizacion.total = diagnostico_cliente + servicio_cliente` — la visita de
+diagnóstico se **SUMA** al servicio cotizado (antes el anticipo del
+diagnóstico se restaba del total del servicio). El cliente ve el desglose en
+`/cotizacion/{token}` y `/pago/saldo/{token}`; su anticipo pagado se acredita
+contra ese total al pagar. Cotizaciones anteriores (sin los campos nuevos)
+conservan su comportamiento histórico. `/pago/saldo` decide server-side entre
+modo abono (cotización con repuestos y sin abono APPROVED) y modo saldo.
 
 ## Arquitectura (todo aditivo, kill-switch por env vars)
 
@@ -83,7 +93,18 @@ Reparación; página de pago muestra "el equipo te contactará").
   `tarifas/particular.ts`, multiplicador efectivo ≈1.3675) y la otra mitad la
   absorbe Baird; en precios fijos de catálogo Baird absorbe todo. Queda
   validar el 2.85% nominal contra el primer settlement real.
-- Cobro del saldo por Wompi al completar (la referencia `saldo-` ya existe).
-- Badge "Anticipo pagado" en listados admin (hoy se ve en el historial de la
-  ficha, evento 💰 'pago_registrado').
+- ~~Cobro del saldo por Wompi al completar~~ → **hecho el 2026-08-25**:
+  `confirmarServicioCliente` envía el link del saldo restante si queda
+  pendiente (cierra el ciclo del abono de repuestos).
+- Plantilla `abono_repuestos_cliente_v1` pendiente de subir a Meta
+  (`node --env-file=.env.local scripts/upload-templates.mjs abono_repuestos_cliente_v1`);
+  mientras esté PENDING el código usa `pago_saldo_cliente_v1` con el monto
+  del abono.
+- ~~Badge "Anticipo pagado" en listados admin~~ → **hecho el 2026-08-23**:
+  estado de pago como capa PARALELA (no es un estado del flujo) en admin
+  (listado + ficha), portal del técnico y portal del supervisor (listado +
+  detalle). Derivado de `anticipo_pagado_at`/`saldo_pagado_at` — helper
+  `estadoPagoCliente()` en `src/lib/constants/pago-cliente.ts` + componente
+  `BadgePagoCliente`. Solo particulares; refleja únicamente recaudo ONLINE
+  (un pago en sitio con QR no aparece).
 - Factura DIAN sigue pendiente de Siigo (Wompi emite comprobante, no factura).

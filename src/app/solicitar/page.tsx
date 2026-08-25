@@ -336,6 +336,18 @@ export default function SolicitarServicio() {
                         required
                       />
                     </div>
+                    {/* Cédula opcional para la factura electrónica (2026-08-25).
+                        Vacío = consumidor final. */}
+                    <InputField
+                      label="Cédula o NIT (opcional, para tu factura)"
+                      name="cliente_cedula"
+                      value={formData.cliente_cedula ?? ''}
+                      onChange={handleChange}
+                      placeholder="1234567890"
+                      error={errors.cliente_cedula}
+                      icon={<DocumentIcon className="w-5 h-5 mr-2 text-green-600" />}
+                      hint="💡 Si quieres tu factura electrónica a tu nombre, déjanos tu cédula o NIT (solo números). Si lo omites, facturamos como consumidor final."
+                    />
                     <div>
                       <InputField
                         label="Dirección Completa"

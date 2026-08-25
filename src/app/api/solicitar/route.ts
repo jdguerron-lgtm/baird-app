@@ -92,6 +92,9 @@ export async function POST(req: NextRequest) {
       zona_servicio: formData.zona_servicio.trim(),
       direccion: direccionCompleta,
       cliente_nombre: formData.cliente_nombre.trim(),
+      // Cédula opcional para facturación (2026-08-25): vacío → null =
+      // consumidor final. Columna cliente_cedula (migración 20260825).
+      cliente_cedula: formData.cliente_cedula?.trim() || null,
       numero_serie_factura: formData.es_garantia ? formData.numero_serie_factura : null,
       estado: 'pendiente_horario' as const,
       horario_token: horarioToken,

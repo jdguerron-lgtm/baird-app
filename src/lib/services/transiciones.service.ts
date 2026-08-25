@@ -8,8 +8,11 @@ import {
   enviarServicioConfirmadoTecnico,
   enviarMensajeTexto,
   enviarPagoSaldoCliente,
+  enviarAbonoRepuestosCliente,
 } from '@/lib/services/whatsapp.service'
 import { cargarSolicitudPago, calcularMontoSaldo } from '@/lib/services/pagos.service'
+import { enviarCorreoFacturacionServicio } from '@/lib/services/email.service'
+import { montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
 import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
 import { validarHorarioAgendable } from '@/lib/services/agenda.service'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
@@ -315,6 +318,36 @@ export async function confirmarServicioCliente(
     }
   }
 
+  // Saldo restante al COMPLETAR (2026-08-25): con el modelo de abono de
+  // repuestos (50% tras aprobar), el resto queda pendiente hasta acá. Si aún
+  // hay saldo (particular, cotización con total y pagos que no lo cubren),
+  // se manda el link de pago. Best-effort — el QR en sitio sigue vigente.
+  if (confirmado) {
+    try {
+      const solPago = await cargarSolicitudPago(evidencia.solicitud_id)
+      if (solPago && !solPago.es_garantia && !solPago.saldo_pagado_at) {
+        const saldo = await calcularMontoSaldo(solPago)
+        if (saldo > 0) {
+          const envioSaldo = await enviarPagoSaldoCliente(evidencia.solicitud_id, saldo)
+          if (!envioSaldo.ok) console.error('[confirmar-servicio] enviarPagoSaldoCliente falló:', envioSaldo.error)
+        }
+      }
+    } catch (err) {
+      console.error('[confirmar-servicio] link de saldo final falló:', err)
+    }
+
+    // Correo de facturación (2026-08-25): al completar, se avisa al equipo de
+    // facturación (FACTURACION_EMAIL) con cliente, cédula y el estado del
+    // recaudo online (Wompi). No-op sin RESEND_API_KEY; un fallo de correo
+    // nunca revierte la confirmación.
+    try {
+      const mail = await enviarCorreoFacturacionServicio(evidencia.solicitud_id)
+      if (!mail.ok) console.error('[confirmar-servicio] correo de facturación falló:', mail.error)
+    } catch (err) {
+      console.error('[confirmar-servicio] correo de facturación threw:', err)
+    }
+  }
+
   return { ok: true, httpStatus: 200, body: { success: true } }
 }
 
@@ -406,18 +439,28 @@ export async function procesarAprobacionCotizacion(
       console.error('Error notificando aprobación al técnico:', waResult.error)
     }
 
-    // Link de pago del SALDO al cliente (Wompi, 2026-08-19): total cotizado
-    // menos anticipos ya acreditados. Best-effort — es una ALTERNATIVA online
-    // al pago en sitio (QR); si falla, el flujo sigue idéntico al de antes.
+    // Cobro online tras aprobar (Wompi). Best-effort — ALTERNATIVA online al
+    // pago en sitio (QR); si falla, el flujo sigue idéntico al de antes.
+    //   - CON repuestos (2026-08-25): abono del 50% del saldo — garantiza el
+    //     compromiso del cliente y financia la compra de repuestos. El resto
+    //     se cobra al completar el servicio (confirmarServicioCliente).
+    //   - SIN repuestos: saldo completo (total − pagos acreditados), igual
+    //     que desde 2026-08-19.
     try {
       const solPago = await cargarSolicitudPago(solMatch.id)
       const saldo = solPago ? await calcularMontoSaldo(solPago) : 0
       if (saldo > 0) {
-        const envioSaldo = await enviarPagoSaldoCliente(solMatch.id, saldo)
-        if (!envioSaldo.ok) console.error('[aprobar-cotizacion] enviarPagoSaldoCliente falló:', envioSaldo.error)
+        if (cotizacionTieneRepuestos(solMatch.cotizacion)) {
+          const abono = montoAbonoRepuestos(saldo)
+          const envioAbono = await enviarAbonoRepuestosCliente(solMatch.id, abono)
+          if (!envioAbono.ok) console.error('[aprobar-cotizacion] enviarAbonoRepuestosCliente falló:', envioAbono.error)
+        } else {
+          const envioSaldo = await enviarPagoSaldoCliente(solMatch.id, saldo)
+          if (!envioSaldo.ok) console.error('[aprobar-cotizacion] enviarPagoSaldoCliente falló:', envioSaldo.error)
+        }
       }
     } catch (err) {
-      console.error('[aprobar-cotizacion] link de saldo falló:', err)
+      console.error('[aprobar-cotizacion] cobro online post-aprobación falló:', err)
     }
 
     return {

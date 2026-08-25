@@ -2,21 +2,45 @@ import type { TipoEquipo } from '@/types/solicitud'
 
 /**
  * Maps "Familia" values from Mabe/GE BITÁCORA Excel to our tipo_equipo enum.
- * Keys are uppercase for case-insensitive matching.
+ * Keys están normalizados (mayúsculas, sin tildes, sin puntuación) — el lookup
+ * pasa por `normalizarFamilia()`, así que la entrada del Excel puede venir en
+ * minúsculas, con tildes o en singular/plural.
  */
 const FAMILIA_A_TIPO_EQUIPO: Record<string, TipoEquipo> = {
   'ESTUFAS':               'Estufa',
+  'COCINAS':               'Estufa',        // alias MABE
+  'CUBIERTAS':             'Estufa',        // cubierta de empotrar
   'REFRIGERADORES':        'Nevera',
+  'REFRIGERACION':         'Nevera',        // familia del catálogo de códigos de falla
+  'REFRIS':                'Nevera',        // abreviatura usada en la bitácora
   'AIRES ACONDICIONADOS':  'Aire Acondicionado',
+  'AIRE ACONDICIONADO':    'Aire Acondicionado',
+  'AIRES':                 'Aire Acondicionado',
   'CENTRO DE LAVADO':      'Lavadora Secadora',  // combo 2-en-1
   'CENTROS DE LAVADO':     'Lavadora Secadora',  // variante plural
   'LAVAVAJILLAS':          'Lavavajillas',
   'LAVADORAS':             'Lavadora',
+  'LAVADO':                'Lavadora',      // familia del catálogo de códigos de falla
   'SECADORAS':             'Secadora',
   'HORNOS':                'Horno',
+  'HORNOS MICROONDAS':     'Horno',
+  'MICROONDAS':            'Horno',
   'BOILERS':               'Horno',        // Calentadores → closest match
   'NEVECONES':             'Nevecón',
   'NEVERAS':               'Nevera',
+}
+
+/**
+ * Normaliza un valor de familia para el lookup: mayúsculas, sin tildes,
+ * puntuación → espacio, espacios colapsados.
+ */
+function normalizarFamilia(familia: string): string {
+  return familia
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')  // quita tildes (NFD)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()
 }
 
 export interface ExcelRow {
@@ -165,10 +189,38 @@ function extractBrand(modelo: string): string {
 
 /**
  * Maps a Familia string to our tipo_equipo enum value.
+ * Tolera singular/plural, tildes y minúsculas: "refrigerador", "REFRIGERADORES"
+ * y "Refrigeración" caen todos en 'Nevera'.
  */
-function mapFamilia(familia: string): TipoEquipo | null {
-  const key = familia.trim().toUpperCase()
-  return FAMILIA_A_TIPO_EQUIPO[key] ?? null
+export function mapFamilia(familia: string): TipoEquipo | null {
+  const key = normalizarFamilia(familia)
+  if (!key) return null
+
+  // 1. Match exacto sobre la tabla
+  const directo = FAMILIA_A_TIPO_EQUIPO[key]
+  if (directo) return directo
+
+  // 2. Variantes singular/plural ("REFRIGERADOR" → "REFRIGERADORES",
+  //    "NEVECON" → "NEVECONES", "LAVADORAS" → "LAVADORA")
+  const variantes = [
+    `${key}S`,
+    `${key}ES`,
+    key.replace(/ES$/, ''),
+    key.replace(/S$/, ''),
+  ]
+  for (const v of variantes) {
+    const hit = FAMILIA_A_TIPO_EQUIPO[v]
+    if (hit) return hit
+  }
+
+  // 3. Última red: la familia contiene la raíz de una conocida
+  //    (ej. "REFRIGERADOR NO FROST" → 'Nevera')
+  for (const [nombre, tipo] of Object.entries(FAMILIA_A_TIPO_EQUIPO)) {
+    const raiz = nombre.replace(/ES$/, '').replace(/S$/, '')
+    if (raiz.length >= 5 && key.includes(raiz)) return tipo
+  }
+
+  return null
 }
 
 /**

@@ -884,7 +884,7 @@ export default function DiagnosticoPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-1">Evidencia del fallo *</h2>
           <p className="text-xs text-gray-400 mb-3">
-            Toma fotos del problema con la cámara o súbelas desde la galería. También puedes adjuntar un video.
+            Toma fotos del problema o graba un video corto de la falla/prueba con el botón 🎬.
           </p>
 
           {/* File grid */}
@@ -913,14 +913,27 @@ export default function DiagnosticoPage() {
             ))}
 
             {evidencias.length < MAX_EVIDENCIAS && (
-              <button
-                onClick={() => fotoInputRef.current?.click()}
-                className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:border-purple-400 hover:bg-purple-50/50 transition-colors"
-              >
-                <span className="text-2xl mb-1">📷</span>
-                <span className="text-xs text-gray-500 font-medium">Tomar foto</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
-              </button>
+              <>
+                <button
+                  onClick={() => fotoInputRef.current?.click()}
+                  className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center hover:border-purple-400 hover:bg-purple-50/50 transition-colors"
+                >
+                  <span className="text-2xl mb-1">📷</span>
+                  <span className="text-xs text-gray-500 font-medium">Tomar foto</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
+                </button>
+                {/* Video como tile de primer nivel (2026-08-12): antes era un
+                    link chiquito debajo de la grilla y los técnicos no lo veían
+                    al registrar la falla/prueba en video. */}
+                <button
+                  onClick={() => videoInputRef.current?.click()}
+                  className="aspect-square rounded-xl border-2 border-dashed border-purple-300 bg-purple-50/50 flex flex-col items-center justify-center hover:border-purple-500 hover:bg-purple-50 transition-colors"
+                >
+                  <span className="text-2xl mb-1">🎬</span>
+                  <span className="text-xs text-purple-700 font-semibold">Grabar video</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
+                </button>
+              </>
             )}
           </div>
 
@@ -938,7 +951,7 @@ export default function DiagnosticoPage() {
             onChange={(e) => handleFileSelect(e.target.files)}
           />
 
-          {/* Input opcional para video desde cámara — explícito, secundario. */}
+          {/* Input para video desde cámara — lo dispara el tile "Grabar video". */}
           <input
             ref={videoInputRef}
             type="file"
@@ -967,13 +980,6 @@ export default function DiagnosticoPage() {
                 className="text-xs text-gray-600 underline hover:text-purple-700"
               >
                 🖼️ Elegir foto o video de galería
-              </button>
-              <button
-                type="button"
-                onClick={() => videoInputRef.current?.click()}
-                className="text-xs text-gray-600 underline hover:text-purple-700"
-              >
-                🎬 Grabar video con cámara
               </button>
             </div>
           )}

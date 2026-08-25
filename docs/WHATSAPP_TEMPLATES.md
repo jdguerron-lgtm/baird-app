@@ -204,12 +204,20 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 > `anticipo_confirmado_tecnico_v1` fueron **APPROVED** por Meta el mismo día de la subida.
 
 #### `pago_saldo_cliente_v1` (nueva 2026-08-19 — **en script, subir a Meta**)
-- **Disparo**: `procesarAprobacionCotizacion → enviarPagoSaldoCliente()` tras aprobar el cliente su cotización (particular). Solo si hay saldo > 0.
+- **Disparo**: `procesarAprobacionCotizacion → enviarPagoSaldoCliente()` tras aprobar el cliente una cotización **SIN repuestos** (particular), y `confirmarServicioCliente` (→ completada) si queda saldo restante (2026-08-25 — cierra el ciclo del abono). Solo si hay saldo > 0.
 - **Destino**: cliente
 - **Body** (4 params): `cliente`, `equipo`, `total`, `saldo`
-- **Botón URL dinámica**: `{APP_URL}/pago/saldo/{{1}}` con `{{1}} = cliente_token` — display "Pagar saldo". La página muestra total − anticipo acreditado y arma el checkout Wompi firmado.
+- **Botón URL dinámica**: `{APP_URL}/pago/saldo/{{1}}` con `{{1}} = cliente_token` — display "Pagar saldo". La página muestra total − pagos acreditados (anticipos + abonos) y arma el checkout Wompi firmado.
 - **Propósito**: alternativa ONLINE al pago en sitio (QR). NO bloquea transiciones — el flujo de completar servicio sigue igual si el cliente no paga en línea.
 - **Fallback**: texto libre con el link.
+
+#### `abono_repuestos_cliente_v1` (nueva 2026-08-25 — **en script, subir a Meta**)
+- **Disparo**: `procesarAprobacionCotizacion → enviarAbonoRepuestosCliente()` tras aprobar el cliente una cotización **CON repuestos** (particular, `cotizacionTieneRepuestos`). abono = 50% del saldo pendiente (`montoAbonoRepuestos`).
+- **Destino**: cliente
+- **Body** (4 params): `cliente`, `equipo`, `total`, `abono`
+- **Botón URL dinámica**: `{APP_URL}/pago/saldo/{{1}}` con `{{1}} = cliente_token` — display "Pagar abono". La MISMA página `/pago/saldo` detecta server-side el modo abono (repuestos + sin abono APPROVED) y cobra el 50% con referencia `abono-{id}`.
+- **Propósito**: garantizar el compromiso del cliente y financiar la compra de repuestos por el técnico (le llega aviso por texto libre — `enviarAbonoConfirmadoTecnico`). El resto del saldo se cobra al completar.
+- **Fallback**: `pago_saldo_cliente_v1` con el monto del abono (APPROVED-compatible) → texto libre con el link.
 
 #### `saldo_confirmado_cliente_v1` (nueva 2026-08-19 — **en script, subir a Meta**)
 - **Disparo**: `pagos.service` cuando Wompi aprueba la transacción `saldo-…` (una sola vez — guard `saldo_pagado_at`).
@@ -278,33 +286,33 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: darle al técnico los datos con los que se gestiona el repuesto ante la marca (la marca despacha a la dirección del cliente). En **particular NO se envía**: el técnico ya recibe `cotizacion_aprobada_tecnico_v2` y el repuesto lo gestiona él dentro de su costo — ese flujo se mantiene como está.
 - **⚠️ Por qué plantilla**: la aprobación del cliente puede llegar días después de la visita → ventana 24h del técnico cerrada.
 
-#### `repuesto_llegado_tecnico_v1` ⏳ pendiente de subir a Meta
+#### `repuesto_llegado_tecnico_v1` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-06-12)
-- **Disparo**: `enviarRepuestoLlegadoTecnico(solicitudId)` desde `POST /api/repuesto-recibido`, cuando admin marca el último repuesto como recibido (estado pasa a `repuesto_recibido`). **Ambos flujos.**
+- **Disparo**: `enviarRepuestoLlegadoTecnico(solicitudId)` desde `POST /api/repuesto-recibido` (admin marca el último repuesto como recibido) o `POST /api/supervisor/repuesto-entregado` (supervisor marca la entrega desde su portal, 2026-08-25). Estado pasa a `repuesto_recibido`. **Ambos flujos.**
 - **Destino**: técnico asignado
 - **Body** (3 params): `nombre_tecnico`, `equipo`, `cliente`
 - **Sin botón** (informativo)
 - **Propósito**: que el técnico sepa de inmediato que el repuesto fue entregado al cliente. La nueva fecha tentativa le llega después vía `repuesto_recibido_tecnico_v1` cuando el cliente la elige en `/reprogramar-repuesto/{token}`.
 
-#### `repuesto_recibido_cliente_v2` ⏳ pendiente de subir a Meta
+#### `repuesto_recibido_cliente_v2` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (bump de `_v1` el 2026-05-29)
-- **Disparo**: `enviarRepuestoRecibidoCliente(solicitudId)` cuando admin marca todos los repuestos recibidos (estado pasa a `repuesto_recibido`). También re-enviable desde `/api/admin/reenviar-ultimo-mensaje` para ese estado.
+- **Disparo**: `enviarRepuestoRecibidoCliente(solicitudId)` cuando admin (`/api/repuesto-recibido`) o supervisor (`/api/supervisor/repuesto-entregado`, 2026-08-25) marcan los repuestos recibidos (estado pasa a `repuesto_recibido`). También re-enviable desde `/api/admin/reenviar-ultimo-mensaje` para ese estado.
 - **Destino**: cliente
 - **Body** (3 params): `cliente`, `equipo`, `tecnico`
 - **Botón URL**: `/reprogramar-repuesto/{reprogramacion_token}` — display "Elegir nueva fecha"
 - **Propósito**: el repuesto llegó; el cliente elige una **nueva fecha tentativa** (semanas pueden haber pasado desde el diagnóstico). El copy aclara que la fecha se confirma según disponibilidad del técnico. Al elegir, `/api/reprogramar-repuesto` pasa la solicitud a `en_proceso`.
 - **⚠️ Cambio vs `_v1`**: `_v1` (sin botón) solo avisaba "el técnico se contactará". `_v2` agrega el botón para que el cliente reagende. `_v1` queda deprecated en Meta (cooldown 4 semanas).
 
-#### `repuesto_en_camino_cliente_v1` ⏳ PENDING en Meta (subida 2026-08-02, id 1367504061637039)
+#### `repuesto_en_camino_cliente_v1` ✅ APPROVED (subida 2026-08-02, id 1367504061637039; verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-08-02)
-- **Disparo**: `enviarRepuestoEnCaminoCliente(solicitudId)` desde `POST /api/supervisor/guia-envio`, cuando el **supervisor** sube la guía de envío del repuesto (estado pasa a `repuesto_en_camino`).
+- **Disparo**: `enviarRepuestoEnCaminoCliente(solicitudId)` desde `POST /api/supervisor/guia-envio`, cuando el **supervisor** sube la guía de envío del repuesto (estado pasa a `repuesto_en_camino`). Desde 2026-08-25 también la re-envía el cron `/api/cron/repuesto-recordatorio` si el cliente lleva 3+ días sin agendar la visita de finalización (cada 3 días, máx 2 re-avisos).
 - **Destino**: cliente
 - **Body** (4 params): `cliente`, `equipo`, `numero_guia`, `tecnico`
 - **Botón URL**: `/reprogramar-repuesto/{reprogramacion_token}` — display "Agendar visita"
 - **Propósito**: el repuesto va en camino; el cliente **agenda la visita de finalización** (misma página/validación de agenda que el flujo de repuesto recibido: franja + cupo + `fecha_visita_at`). Al elegir, la solicitud pasa a `en_proceso`.
 - **Fallback mientras no esté APPROVED**: `repuesto_recibido_cliente_v2` (mismo botón/URL) — el flujo no se corta, solo cambia el copy ("llegó" en vez de "va en camino").
 
-#### `repuesto_en_camino_tecnico_v1` ⏳ PENDING en Meta (subida 2026-08-02, id 1400519398659010)
+#### `repuesto_en_camino_tecnico_v1` ✅ APPROVED (subida 2026-08-02, id 1400519398659010; verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-08-02)
 - **Disparo**: `enviarRepuestoEnCaminoTecnico(solicitudId)` desde `POST /api/supervisor/guia-envio`, junto al aviso al cliente.
 - **Destino**: técnico asignado
@@ -313,7 +321,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: el técnico sabe que el repuesto de su servicio ya fue despachado; la fecha de la visita de finalización le llega después vía `repuesto_recibido_tecnico_v1` cuando el cliente la elige.
 - **Fallback mientras no esté APPROVED**: `repuesto_llegado_tecnico_v1`.
 
-#### `repuesto_recibido_tecnico_v1` ⏳ pendiente de subir a Meta
+#### `repuesto_recibido_tecnico_v1` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-05-29)
 - **Disparo**: `notificarTecnicoVisitaReprogramada(solicitudId, horario)` desde `POST /api/reprogramar-repuesto`, justo después de que el cliente elige la nueva fecha y la solicitud pasa a `en_proceso`.
 - **Destino**: técnico asignado
@@ -350,7 +358,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Supervisión
 
-#### `supervisor_cambio_estado_v1` ⏳ pendiente de subir a Meta
+#### `supervisor_cambio_estado_v1` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-05-29)
 - **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` — se invoca en cada transición de estado de `solicitudes_servicio` (ver lista de call-sites en `docs/ARQUITECTURA.md`).
 - **Destino**: cada supervisor **activo** de la tabla `supervisores` cuyo filtro matchea la solicitud:
@@ -364,9 +372,9 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Nota**: `notificarCambioEstado` nunca lanza — si el envío falla, loguea y no rompe la transición que lo disparó.
 - **Excepción (2026-06-12, ampliada 2026-08-02)**: para transiciones a `esperando_repuesto` / `repuesto_en_camino` / `repuesto_recibido` de servicios en **garantía**, `notificarCambioEstado` envía `supervisor_repuesto_garantia_v1` (con datos del repuesto) en lugar de esta genérica — con fallback a esta si aquella falla (p.ej. aún no aprobada en Meta).
 
-#### `supervisor_repuesto_garantia_v1` ⏳ pendiente de subir a Meta
+#### `supervisor_repuesto_garantia_v1` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-06-12; ampliada a 9 params 2026-06-16)
-- **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` cuando `es_garantia=true` y `estadoNuevo` ∈ {`esperando_repuesto`, `repuesto_en_camino`, `repuesto_recibido`} — desde 2026-08-02 `esperando_repuesto` sale DIRECTO de `/api/diagnostico` (el técnico solicita la parte → el supervisor recibe el requerimiento exacto al instante) y `repuesto_en_camino` de `/api/supervisor/guia-envio`. Mismo filtrado por supervisor (`ambito`/`marca`/`estados`) que la genérica.
+- **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` cuando `es_garantia=true` y `estadoNuevo` ∈ {`esperando_repuesto`, `repuesto_en_camino`, `repuesto_recibido`} — desde 2026-08-02 `esperando_repuesto` sale DIRECTO de `/api/diagnostico` (el técnico solicita la parte → el supervisor recibe el requerimiento exacto al instante) y `repuesto_en_camino` de `/api/supervisor/guia-envio`. Mismo filtrado por supervisor (`ambito`/`marca`/`estados`) que la genérica. Desde 2026-08-25 también la re-envía el cron `/api/cron/repuesto-recordatorio` (vía `notificarRepuestoSupervisores`, sin filtro `estados`) cuando un caso de garantía lleva 3+ días en `esperando_repuesto` sin guía de envío (cada 3 días, máx 3 re-avisos).
 - **Destino**: cada supervisor activo cuyo filtro matchea
 - **Header**: TEXT — "Actualización de repuesto"
 - **Body** (9 params): `supervisor_nombre`, `novedad` ("Repuesto requerido" | "Repuesto en camino (guía de envío cargada)" | "Repuesto entregado al cliente"), `cliente`, `equipo`, `modelo` (prefijo `[Modelo: X]` de `novedades_equipo`; '—' si no viene), `numero_garantia` (= `numero_serie_factura`), `sku` (lista de `repuestos_pendientes`, excluye cancelados; desde 2026-08-02 incluye descripción y cantidad: `"SKU x2 (descripción)"`), `direccion` (dirección + zona + ciudad), `diagnostico` (`triaje_resultado.diagnostico_tecnico`, saneado a una línea, tope 200; 'Diagnóstico realizado' si no hay)
@@ -374,7 +382,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: que el supervisor tenga los datos con los que se gestiona el repuesto ante la marca (modelo del equipo, No. de garantía, SKU, dirección de despacho y el diagnóstico del técnico) sin abrir el panel. En **particular** los eventos de repuesto siguen llegando con la genérica `supervisor_cambio_estado_v1` (se mantiene como estaba).
 - **Nota**: mientras Meta no la apruebe, `notificarCambioEstado` cae automáticamente a la genérica — no se pierde el aviso.
 
-#### `supervisor_bienvenida_v1` ⏳ pendiente de aprobación Meta (subida 2026-05-30)
+#### `supervisor_bienvenida_v1` ✅ APPROVED (subida 2026-05-30; verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-05-30)
 - **Disparo**: `enviarBienvenidaSupervisor(supervisor)`, llamada desde `POST /api/admin/supervisores` justo después de crear un supervisor **activo**.
 - **Destino**: el supervisor recién creado (`whatsapp`). Solo si queda `activo=true`.
@@ -384,7 +392,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: darle la bienvenida al supervisor, confirmarle su alcance (ámbito + marca + estados) y avisarle que recibirá los cambios de estado por este mismo chat. Funciona fuera de la ventana 24h (el supervisor no chatea con el número del negocio).
 - **Nota**: el BODY no empieza ni termina en variable (regla Meta 2388299) — abre con "Hola {{1}}," y cierra con "…bajo tu supervisión." `enviarBienvenidaSupervisor` es best-effort (no lanza); el POST devuelve `whatsapp_bienvenida` para que el admin sepa si salió. Solo se dispara al **crear** (no en PATCH/reactivación) para no spamear.
 
-#### `supervisor_reagendamiento_v1` ⏳ pendiente de subir a Meta
+#### `supervisor_reagendamiento_v1` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-06-26)
 - **Disparo**: `notificarReagendamientoSupervisores(sol, nuevoHorario)` desde `procesarReagendamientoAdmin()`, cuando el admin cambia la fecha del servicio en `POST /api/admin/reagendar-solicitud` (botón "Cambiar fecha de servicio" del panel).
 - **Destino**: cada supervisor **activo** cuyo filtro matchea (mismo `ambito`/`marca` que `supervisor_cambio_estado_v1`). **NO** filtra por `estados`: reprogramar no es un cambio de estado, es on-demand — igual que `notificarRepuestoSupervisores`.
@@ -402,7 +410,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Params**: el código de 6 dígitos va **dos veces** (exigencia de Meta para auth): como parámetro del body Y como parámetro del botón COPY_CODE.
 - **Propósito**: OTP de acceso al portal de solo lectura. Al verificarse (`POST /api/supervisor/verificar-codigo`) el server responde con la URL `/supervisor/{portal_token}`. Controles: hash sha256 en BD (nunca el código en claro), 10 min de vida, un solo uso, 5 intentos, cooldown de reenvío 60s, rate limit por IP. Ver `docs/SEGURIDAD.md` § "Entrada de autoservicio con OTP".
 
-#### `supervisor_actualizaciones_v1` ⏳ subida a Meta 2026-07-11
+#### `supervisor_actualizaciones_v1` ✅ APPROVED (subida 2026-07-11; verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-07-11)
 - **Disparo**: manual — `node --env-file=.env.local scripts/enviar-actualizacion-supervisores.mjs` (canal recurrente de novedades; editar la constante `NOVEDADES` del script en cada envío). Flags `--dry` / `--force`.
 - **Destino**: cada supervisor **activo** (`supervisores.whatsapp`)

@@ -24,8 +24,9 @@ const EXT_POR_MIME: Record<string, string> = {
 /**
  * POST /api/supervisor/guia-envio  (multipart/form-data)
  *
- * ÚNICA acción de escritura del portal del supervisor (que es de solo lectura
- * para todo lo demás): subir la guía de envío del repuesto. Dispara la
+ * Acción de escritura del portal del supervisor (solo lectura para todo lo
+ * demás, salvo esta y /api/supervisor/repuesto-entregado): subir la guía de
+ * envío del repuesto. Dispara la
  * transición esperando_repuesto → repuesto_en_camino y las notificaciones:
  *   - Cliente: repuesto_en_camino_cliente_v1 (botón → /reprogramar-repuesto/{token}
  *     para agendar la visita de finalización; queda en fecha_visita_at).

@@ -8,7 +8,16 @@ import {
   verificarChecksumEvento,
   type EventoWompi,
 } from '@/lib/wompi'
-import { montoAnticipo, saldoPendiente, precioRepuestoTecnico, DESCUENTO_REPUESTO_TECNICO, ANTICIPO_PORCENTAJE } from '@/lib/constants/pagos'
+import {
+  montoAnticipo,
+  saldoPendiente,
+  precioRepuestoTecnico,
+  DESCUENTO_REPUESTO_TECNICO,
+  ANTICIPO_PORCENTAJE,
+  ABONO_REPUESTOS_PORCENTAJE,
+  montoAbonoRepuestos,
+  cotizacionTieneRepuestos,
+} from '@/lib/constants/pagos'
 
 const ENV_KEYS = ['WOMPI_PUBLIC_KEY', 'WOMPI_INTEGRITY_SECRET', 'WOMPI_EVENTS_SECRET'] as const
 const envBackup: Record<string, string | undefined> = {}
@@ -49,6 +58,10 @@ describe('referencias de pago', () => {
 
   it('roundtrip saldo', () => {
     expect(parseReferenciaPago(referenciaPago('saldo', uuid))).toEqual({ tipo: 'saldo', solicitudId: uuid })
+  })
+
+  it('roundtrip abono (repuestos, 2026-08-25)', () => {
+    expect(parseReferenciaPago(referenciaPago('abono', uuid))).toEqual({ tipo: 'abono', solicitudId: uuid })
   })
 
   it('rechaza referencias ajenas (pedidos de la tienda, basura)', () => {
@@ -164,6 +177,24 @@ describe('montos', () => {
     expect(saldoPendiente(100_000, 150_000)).toBe(0)   // sobrepago → 0, ajuste manual
     expect(saldoPendiente(0, 5_000)).toBe(0)
     expect(saldoPendiente(NaN, 1_000)).toBe(0)
+  })
+
+  it('abono de repuestos = 50% del saldo pendiente', () => {
+    expect(ABONO_REPUESTOS_PORCENTAJE).toBe(0.5)
+    expect(montoAbonoRepuestos(136_750)).toBe(68_375)
+    expect(montoAbonoRepuestos(68_375)).toBe(34_188)   // Math.round
+    expect(montoAbonoRepuestos(0)).toBe(0)
+    expect(montoAbonoRepuestos(NaN)).toBe(0)
+  })
+
+  it('cotizacionTieneRepuestos detecta las tres formas del JSONB', () => {
+    expect(cotizacionTieneRepuestos({ productos_necesarios: [{ sku: 'X' }] })).toBe(true)
+    expect(cotizacionTieneRepuestos({ repuestos: 50_000 })).toBe(true)
+    expect(cotizacionTieneRepuestos({ repuestos_total_admin: 80_000 })).toBe(true)
+    expect(cotizacionTieneRepuestos({ productos_necesarios: [], repuestos: 0, repuestos_total_admin: 0 })).toBe(false)
+    expect(cotizacionTieneRepuestos({})).toBe(false)
+    expect(cotizacionTieneRepuestos(null)).toBe(false)
+    expect(cotizacionTieneRepuestos(undefined)).toBe(false)
   })
 
   it('precio de repuesto para el técnico = público − 15%', () => {

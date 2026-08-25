@@ -635,6 +635,47 @@ const TEMPLATES = [
     ],
   },
 
+  // 11c-bis-2. Cobro del ABONO de repuestos tras aprobar cotización CON
+  // repuestos (2026-08-25). Llamado por: procesarAprobacionCotizacion →
+  // enviarAbonoRepuestosCliente(). abono = 50% del saldo pendiente —
+  // garantiza el compromiso del cliente y financia la compra de repuestos.
+  // El link es el MISMO /pago/saldo/{token}: la página detecta el modo abono
+  // server-side. Fallback mientras esté PENDING: pago_saldo_cliente_v1.
+  {
+    name: 'abono_repuestos_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu reparación quedó aprobada',
+      },
+      {
+        type: 'BODY',
+        text:
+          '¡Gracias {{1}}! Aprobaste la reparación de tu {{2}} por {{3}} COP (diagnóstico + servicio con repuestos incluidos).\n\n' +
+          '🔩 Como tu reparación necesita repuestos, te pedimos un abono del 50% del saldo: {{4}} COP. Con este abono el técnico compra los repuestos y coordinamos la instalación.\n\n' +
+          '💳 Puedes pagarlo en línea de forma segura. El resto lo pagas al finalizar el servicio. Recuerda: nunca pagues en efectivo directamente al técnico.',
+        example: {
+          body_text: [['Juan', 'Lavadora LG', '220.750', '68.375']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Pagar abono',
+            url: `${APP_URL}/pago/saldo/{{1}}`,
+            example: [`${APP_URL}/pago/saldo/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
   // 11c-ter. Confirmación del SALDO al CLIENTE (2026-08-19).
   // Llamado por: pagos.service cuando Wompi aprueba la transacción del saldo
   // (una sola vez — guard saldo_pagado_at). Fallback: texto libre.

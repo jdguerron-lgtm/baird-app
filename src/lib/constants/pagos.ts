@@ -41,6 +41,40 @@ export function saldoPendiente(totalCliente: number, anticiposPagados: number): 
 }
 
 /**
+ * Porcentaje del SALDO que se pide como abono cuando la reparación aprobada
+ * requiere REPUESTOS (cambio 2026-08-25). Solo en ese caso: garantiza el
+ * compromiso del cliente y financia la compra de los repuestos por parte
+ * del técnico. El resto del saldo se paga al finalizar el servicio.
+ */
+export const ABONO_REPUESTOS_PORCENTAJE = 0.5
+
+/**
+ * Abono (COP) para compra de repuestos: 50% del saldo pendiente al momento
+ * de aprobar la cotización. 0 si el saldo no es válido.
+ */
+export function montoAbonoRepuestos(saldo: number): number {
+  if (!Number.isFinite(saldo) || saldo <= 0) return 0
+  return Math.round(saldo * ABONO_REPUESTOS_PORCENTAJE)
+}
+
+/**
+ * true si la cotización incluye repuestos — dispara el modelo de abono 50%.
+ * Acepta el JSONB crudo de `solicitudes_servicio.cotizacion` (unknown).
+ */
+export function cotizacionTieneRepuestos(cotizacion: unknown): boolean {
+  const cot = cotizacion as {
+    productos_necesarios?: unknown[]
+    repuestos?: number
+    repuestos_total_admin?: number
+  } | null
+  if (!cot) return false
+  if (Array.isArray(cot.productos_necesarios) && cot.productos_necesarios.length > 0) return true
+  if (typeof cot.repuestos === 'number' && cot.repuestos > 0) return true
+  if (typeof cot.repuestos_total_admin === 'number' && cot.repuestos_total_admin > 0) return true
+  return false
+}
+
+/**
  * Descuento que Baird le da al TÉCNICO sobre el precio público de la tienda
  * al cotizar un repuesto (decisión comercial 2026-08-18).
  *

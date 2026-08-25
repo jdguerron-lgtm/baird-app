@@ -569,7 +569,7 @@ export default function CompletarServicioPage() {
           <h3 className="text-sm font-bold text-slate-900 mb-1">Evidencia del servicio</h3>
           <p className="text-xs text-gray-400 mb-3">
             Equipo funcionando, placa de serie, repuesto, antes/después (máx 6).
-            Puedes tomar fotos, grabar un video corto o subir desde la galería.
+            Graba un video corto de la prueba de funcionamiento con el botón 🎬.
           </p>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
@@ -595,21 +595,33 @@ export default function CompletarServicioPage() {
               </div>
             ))}
             {fotos.length < MAX_ARCHIVOS && (
-              <button
-                type="button"
-                onClick={() => cameraFotoInputRef.current?.click()}
-                className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors"
-              >
-                <span className="text-xl mb-0.5">📷</span>
-                <span className="text-[10px]">Cámara</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => cameraFotoInputRef.current?.click()}
+                  className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors"
+                >
+                  <span className="text-xl mb-0.5">📷</span>
+                  <span className="text-[10px]">Foto</span>
+                </button>
+                {/* Video como tile de primer nivel (2026-08-12): antes era un
+                    link chiquito debajo de la grilla y los técnicos no lo veían
+                    al registrar la prueba de funcionamiento. */}
+                <button
+                  type="button"
+                  onClick={() => cameraVideoInputRef.current?.click()}
+                  className="aspect-square rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 flex flex-col items-center justify-center text-blue-600 hover:border-blue-400 hover:bg-blue-100 transition-colors"
+                >
+                  <span className="text-xl mb-0.5">🎬</span>
+                  <span className="text-[10px] font-semibold">Grabar video</span>
+                  <span className="text-[9px] text-blue-400">prueba</span>
+                </button>
+              </>
             )}
           </div>
 
-          {/* Botones secundarios: galería (foto/video) y cámara modo video.
-              Mantenerlos separados garantiza que el técnico pueda elegir lo que
-              necesite en cualquier SO/navegador — algunos Android sin `capture`
-              en el input de video abren un picker genérico en vez de la cámara. */}
+          {/* Galería queda como opción secundaria — sin `capture` para que
+              iOS/Android muestren la biblioteca de fotos y videos existentes. */}
           {fotos.length < MAX_ARCHIVOS && (
             <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
               <button
@@ -618,13 +630,6 @@ export default function CompletarServicioPage() {
                 className="text-xs text-gray-600 underline hover:text-slate-900"
               >
                 🖼️ Elegir foto o video de galería
-              </button>
-              <button
-                type="button"
-                onClick={() => cameraVideoInputRef.current?.click()}
-                className="text-xs text-gray-600 underline hover:text-slate-900"
-              >
-                🎬 Grabar video con cámara
               </button>
             </div>
           )}

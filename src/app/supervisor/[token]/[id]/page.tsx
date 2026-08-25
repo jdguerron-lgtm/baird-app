@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
+import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 
 interface Solicitud {
   id: string
@@ -43,6 +44,9 @@ interface Solicitud {
   guia_envio_por: string | null
   cancelado_at: string | null
   motivo_cancelacion: string | null
+  /** Capa paralela de pago del cliente (solo particular) — pago-cliente.ts */
+  anticipo_pagado_at: string | null
+  saldo_pagado_at: string | null
 }
 
 interface RepuestoSolicitado {
@@ -217,6 +221,7 @@ export default function SupervisorDetalle() {
           >
             {generandoPdf ? 'Generando…' : '⬇️ Descargar PDF'}
           </button>
+          <BadgePagoCliente solicitud={sol} size="md" />
           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${ESTADO_ESTILOS[sol.estado] ?? 'bg-gray-100 text-gray-600'}`}>
             {ESTADO_LABELS[sol.estado] ?? sol.estado}
           </span>
@@ -281,6 +286,22 @@ export default function SupervisorDetalle() {
             {cotizacionTotal !== null && (
               <Campo label="Total cotización">${formatCOP(cotizacionTotal)}</Campo>
             )}
+            {/* Recaudo online (Wompi) — solo particular. El pago en sitio con
+                QR no se registra automáticamente. */}
+            {!sol.es_garantia && (
+              <>
+                <Campo label="Anticipo (50%)">
+                  {sol.anticipo_pagado_at
+                    ? `✅ Pagado el ${fechaHora(sol.anticipo_pagado_at)}`
+                    : 'Pendiente'}
+                </Campo>
+                <Campo label="Saldo">
+                  {sol.saldo_pagado_at
+                    ? `✅ Pagado el ${fechaHora(sol.saldo_pagado_at)}`
+                    : 'Pendiente'}
+                </Campo>
+              </>
+            )}
           </div>
         </Seccion>
 
@@ -341,10 +362,11 @@ export default function SupervisorDetalle() {
         )
       })()}
 
-      {/* Repuesto requerido + guía de envío. La subida de la guía es la ÚNICA
-          acción de escritura del portal (2026-08-02): dispara la transición
-          esperando_repuesto → repuesto_en_camino y avisa a cliente y técnico
-          para agendar la visita de finalización. */}
+      {/* Repuesto requerido + guía de envío + marcar entregado. Las acciones de
+          escritura del ciclo de repuesto del portal: subir la guía (2026-08-02,
+          esperando_repuesto → repuesto_en_camino) y marcar el repuesto como
+          entregado al cliente (2026-08-25, → repuesto_recibido; antes solo
+          admin). Ambas avisan a cliente y técnico. */}
       <GuiaEnvioSeccion sol={sol} token={token} />
 
       {/* Comprobantes de envío adicionales (recibo transportadora, tracking,
@@ -589,12 +611,19 @@ export default function SupervisorDetalle() {
  *   servidor valida token + alcance, transiciona a `repuesto_en_camino` y
  *   notifica a cliente (agendar visita de finalización) y técnico.
  * - Si la guía ya fue subida, muestra número, fecha, quién y link al archivo.
+ * - Mientras el caso siga en el ciclo (esperando_repuesto o repuesto_en_camino)
+ *   permite marcar el repuesto como ENTREGADO al cliente →
+ *   POST /api/supervisor/repuesto-entregado (transiciona a repuesto_recibido y
+ *   notifica a cliente —para que agende la visita— y técnico). Antes esto era
+ *   exclusivo del admin.
  */
 function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
   const [archivo, setArchivo] = useState<File | null>(null)
   const [numeroGuia, setNumeroGuia] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [marcando, setMarcando] = useState(false)
+  const [msgEntrega, setMsgEntrega] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
 
   const repuestos: RepuestoSolicitado[] = (() => {
     const deTriaje = (sol.triaje_resultado?.productos_necesarios as RepuestoSolicitado[] | undefined) ?? []
@@ -605,8 +634,10 @@ function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
 
   const puedeSubir = sol.estado === 'esperando_repuesto'
   const guiaSubida = !!sol.guia_envio_url || !!sol.guia_envio_at
+  // Entregado: disponible durante todo el ciclo del repuesto (con o sin guía).
+  const puedeMarcarEntregado = sol.estado === 'esperando_repuesto' || sol.estado === 'repuesto_en_camino'
 
-  if (!puedeSubir && !guiaSubida && repuestos.length === 0) return null
+  if (!puedeSubir && !puedeMarcarEntregado && !guiaSubida && repuestos.length === 0) return null
 
   const subir = async () => {
     if (!archivo || enviando) return
@@ -634,6 +665,35 @@ function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
     } catch {
       setMsg({ tipo: 'error', texto: 'Error de conexión. Intenta de nuevo.' })
       setEnviando(false)
+    }
+  }
+
+  const marcarEntregado = async () => {
+    if (marcando) return
+    if (!window.confirm('¿Confirmas que el repuesto ya fue ENTREGADO al cliente? Se le pedirá agendar la visita de finalización.')) return
+    setMarcando(true)
+    setMsgEntrega(null)
+    try {
+      const res = await fetch('/api/supervisor/repuesto-entregado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, id: sol.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setMsgEntrega({ tipo: 'error', texto: data.error ?? 'No se pudo marcar el repuesto como entregado.' })
+        setMarcando(false)
+        return
+      }
+      setMsgEntrega({
+        tipo: 'ok',
+        texto: `Repuesto marcado como entregado. Cliente ${data.cliente_notificado ? 'notificado para agendar la visita' : 'NO notificado (revisar en admin)'} · técnico ${data.tecnico_notificado ? 'notificado' : 'NO notificado'}.`,
+      })
+      // Refrescar el detalle para reflejar el nuevo estado (repuesto_recibido).
+      setTimeout(() => window.location.reload(), 2500)
+    } catch {
+      setMsgEntrega({ tipo: 'error', texto: 'Error de conexión. Intenta de nuevo.' })
+      setMarcando(false)
     }
   }
 
@@ -716,6 +776,34 @@ function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
               className="w-full rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {enviando ? 'Subiendo…' : '🚚 Subir guía y notificar'}
+            </button>
+          </div>
+        )}
+
+        {puedeMarcarEntregado && (
+          <div className="mt-3 border border-emerald-200 bg-emerald-50/50 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-1">¿El repuesto ya está en manos del cliente?</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Márcalo como entregado para cerrar el ciclo del repuesto: el cliente recibe el
+              aviso para agendar la visita de finalización y el técnico queda informado.
+            </p>
+            {msgEntrega && (
+              <p
+                className={`text-xs rounded-lg px-3 py-2 mb-3 ${
+                  msgEntrega.tipo === 'ok'
+                    ? 'bg-green-50 border border-green-200 text-green-800'
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}
+              >
+                {msgEntrega.texto}
+              </p>
+            )}
+            <button
+              onClick={marcarEntregado}
+              disabled={marcando}
+              className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {marcando ? 'Marcando…' : '✅ Repuesto entregado al cliente'}
             </button>
           </div>
         )}
