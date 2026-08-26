@@ -2,7 +2,7 @@ export const ESTADO_ESTILOS: Record<string, string> = {
   pendiente_horario: 'bg-yellow-100 text-yellow-800',
   sin_agendar: 'bg-gray-200 text-gray-700',
   notificada: 'bg-blue-100 text-blue-800',
-  asignada: 'bg-green-100 text-green-800',
+  asignada: 'bg-orange-200 text-orange-900',
   aprobacion_paso_pendiente: 'bg-violet-100 text-violet-800',
   cotizacion_enviada: 'bg-cyan-100 text-cyan-800',
   cotizacion_rechazada: 'bg-rose-100 text-rose-800',
