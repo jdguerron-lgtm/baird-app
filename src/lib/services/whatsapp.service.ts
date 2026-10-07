@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
+import { codigoServicio } from '@/lib/utils/facturacion'
 import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
@@ -367,6 +368,24 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
 
   if (solErr || !sol) throw new Error(`Solicitud no encontrada: ${solicitudId}`)
 
+  // GUARD (2026-09-08): nunca re-ofertar una solicitud que ya tiene técnico.
+  // Caso real: admin pulsó "Notificar técnicos" sobre 3 solicitudes en
+  // 'asignada' (Carlos Bonilla ya había aceptado). Esta función bajaba el
+  // estado a 'notificada' sin limpiar tecnico_asignado_id → el portal del
+  // técnico (que agrupa por estado) dejó de mostrarlas, y cualquier otro
+  // técnico que aceptara recibía "ya fue tomado". Reasignar es una acción
+  // explícita del admin (cambiar estado / editar solicitud), no un reenvío.
+  if (sol.tecnico_asignado_id) {
+    return {
+      notificados: 0,
+      matched: 0,
+      errors: [
+        `La solicitud ya tiene técnico asignado (estado "${sol.estado}") — no se re-notifica. ` +
+        'Para reasignar, primero quita el técnico o cambia el estado desde el admin.',
+      ],
+    }
+  }
+
   const sendErrors: string[] = []
 
   // 2. Buscar técnicos con la especialidad requerida (accent/case-insensitive)
@@ -573,7 +592,9 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     })
   )
 
-  // 5. Actualizar estado de la solicitud
+  // 5. Actualizar estado de la solicitud. Guard `.is('tecnico_asignado_id', null)`:
+  //    si un técnico aceptó entre el read inicial y este write, NO pisar
+  //    'asignada' con 'notificada' (mismo patrón que la aceptación atómica).
   if (notificados > 0) {
     await supabase
       .from('solicitudes_servicio')
@@ -582,6 +603,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
         notificados_at: new Date().toISOString(),
       })
       .eq('id', solicitudId)
+      .is('tecnico_asignado_id', null)
   }
 
   return { notificados, matched: tecnicos.length, errors: sendErrors }
@@ -2613,7 +2635,9 @@ export async function enviarAbonoConfirmadoTecnico(
     await enviarMensajeTexto(
       tecnico.whatsapp,
       `🔩 Hola ${tecnico.nombre_completo.split(' ')[0]}, el cliente ${sol.cliente_nombre} ya pagó el ABONO de repuestos ($${formatCOP(montoPagado)} COP — 50% del saldo) de su servicio de ${sol.tipo_equipo} ${sol.marca_equipo}.\n\n` +
-      `✅ Puedes proceder con la compra de los repuestos. El saldo restante lo paga el cliente al finalizar el servicio — NO cobres nada en sitio.\n\n🔧 Baird Service`
+      `✅ Puedes proceder con la compra de los repuestos en tienda.bairdservice.com con tu código de descuento. Al pagar, escribe el código del servicio *${codigoServicio(solicitudId)}* en la nota del pedido para que quede ligado a este servicio.
+
+El saldo restante lo paga el cliente al finalizar el servicio — NO cobres nada en sitio.\n\n🔧 Baird Service`
     )
     return { ok: true }
   } catch (err) {

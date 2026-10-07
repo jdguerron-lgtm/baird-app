@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { codigoServicio } from '@/lib/utils/facturacion'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import {
@@ -59,8 +60,12 @@ export default function DiagnosticoPage() {
   const fotoInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
   const galeriaInputRef = useRef<HTMLInputElement>(null)
-  // Input dedicado para la foto de la placa del producto (obligatoria 2026-08-02)
+  // Inputs dedicados para la foto de la placa del producto (obligatoria 2026-08-02):
+  // - placaInputRef: cámara (capture=environment).
+  // - placaGaleriaInputRef: SIN capture → biblioteca de imágenes (2026-09-08). El
+  //   técnico a veces ya tiene la foto tomada o la recibe por WhatsApp del cliente.
   const placaInputRef = useRef<HTMLInputElement>(null)
+  const placaGaleriaInputRef = useRef<HTMLInputElement>(null)
 
   const [tecnico, setTecnico] = useState<{ id: string; nombre_completo: string } | null>(null)
   const [servicio, setServicio] = useState<Servicio | null>(null)
@@ -831,7 +836,7 @@ export default function DiagnosticoPage() {
             <TiendaRepuestosLink
               variant="banner"
               tone="emerald"
-              texto="Consigue los repuestos listados en tienda.bairdservice.com — productos originales con factura DIAN."
+              texto={`Consigue los repuestos listados en tienda.bairdservice.com con tu código de descuento — productos originales con factura DIAN. Al pagar, escribe el código del servicio ${codigoServicio(id)} en la nota del pedido.`}
             />
           </div>
         )}
@@ -862,19 +867,40 @@ export default function DiagnosticoPage() {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => placaInputRef.current?.click()}
-              className="w-full rounded-xl border-2 border-dashed border-amber-400 bg-amber-50 py-5 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
-            >
-              <span className="text-2xl mb-1">📷</span>
-              <span className="text-xs font-semibold text-amber-800">Tomar foto de la placa</span>
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => placaInputRef.current?.click()}
+                className="rounded-xl border-2 border-dashed border-amber-400 bg-amber-50 py-5 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
+              >
+                <span className="text-2xl mb-1">📷</span>
+                <span className="text-xs font-semibold text-amber-800">Tomar foto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => placaGaleriaInputRef.current?.click()}
+                className="rounded-xl border-2 border-dashed border-amber-300 bg-white py-5 flex flex-col items-center justify-center hover:bg-amber-50 transition-colors"
+              >
+                <span className="text-2xl mb-1">🖼️</span>
+                <span className="text-xs font-semibold text-amber-800">Elegir de galería</span>
+              </button>
+            </div>
           )}
+          {/* Cámara: capture="environment" abre la cámara trasera directamente. */}
           <input
             ref={placaInputRef}
             type="file"
             accept="image/*"
             capture="environment"
+            className="hidden"
+            onChange={(e) => handlePlacaSelect(e.target.files)}
+          />
+          {/* Galería: SIN capture para que iOS/Android muestren la biblioteca de
+              imágenes (en iOS capture="environment" oculta "Photo Library"). */}
+          <input
+            ref={placaGaleriaInputRef}
+            type="file"
+            accept="image/*"
             className="hidden"
             onChange={(e) => handlePlacaSelect(e.target.files)}
           />

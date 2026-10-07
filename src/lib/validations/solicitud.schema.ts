@@ -20,8 +20,10 @@ export const solicitudFormSchema = z.object({
 
   cliente_telefono: phoneWithCode,
 
-  // Opcional — cédula o NIT para la factura electrónica. Vacío = consumidor
-  // final. Solo dígitos (sin puntos ni dígito de verificación).
+  // Cédula o NIT para la factura electrónica. Solo dígitos (sin puntos ni
+  // dígito de verificación). OBLIGATORIA en particular (2026-09-02 — el
+  // cliente paga a Baird y la factura DIAN necesita el documento); opcional
+  // en garantía (se factura a MABE — vacío = consumidor final).
   cliente_cedula: z.string()
     .trim()
     .max(15, 'La cédula no puede exceder 15 dígitos')
@@ -98,6 +100,20 @@ export const solicitudFormSchema = z.object({
   {
     message: 'El número de serie o factura es requerido para servicios de garantía',
     path: ['numero_serie_factura']
+  }
+)
+// Refinamiento condicional: en particular la cédula/NIT es obligatoria
+// (facturación electrónica DIAN — el cliente le paga a Baird).
+.refine(
+  (data) => {
+    if (!data.es_garantia) {
+      return !!data.cliente_cedula && data.cliente_cedula.trim().length > 0
+    }
+    return true
+  },
+  {
+    message: 'La cédula o NIT es requerida para generar tu factura',
+    path: ['cliente_cedula']
   }
 )
 

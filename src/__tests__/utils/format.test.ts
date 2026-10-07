@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatCOP, escapeLikePattern, cityTokenForMatch } from '@/lib/utils/format'
+import { formatCOP, escapeLikePattern, cityTokenForMatch, normalizeForMatch } from '@/lib/utils/format'
 
 describe('formatCOP', () => {
   it('formats integer amounts', () => {
@@ -49,7 +49,62 @@ describe('escapeLikePattern', () => {
   })
 })
 
+describe('normalizeForMatch (pipeline de matching)', () => {
+  it('lowercases and strips accents', () => {
+    expect(normalizeForMatch('BOGOTÁ')).toBe('bogota')
+    expect(normalizeForMatch('Medellín')).toBe('medellin')
+    expect(normalizeForMatch('Ñoño')).toBe('nono')
+  })
+
+  it('trims leading/trailing whitespace and collapses inner whitespace', () => {
+    expect(normalizeForMatch('   Bogotá   ')).toBe('bogota')
+    expect(normalizeForMatch('Neveras   y\tNevecones\n')).toBe('neveras y nevecones')
+  })
+
+  it('removes special characters', () => {
+    expect(normalizeForMatch('Bogotá D.C.')).toBe('bogota d c')
+    expect(normalizeForMatch('(Bogotá)')).toBe('bogota')
+    expect(normalizeForMatch('Hornos/Estufas')).toBe('hornos estufas')
+    expect(normalizeForMatch('Neveras y Nevecones!')).toBe('neveras y nevecones')
+    expect(normalizeForMatch('Lavadora - Secadora')).toBe('lavadora secadora')
+    expect(normalizeForMatch('*MABE*')).toBe('mabe')
+  })
+
+  it('keeps digits', () => {
+    expect(normalizeForMatch('Zona 7')).toBe('zona 7')
+  })
+
+  it('makes real-world variants equal', () => {
+    const variantes = ['BOGOTA', 'Bogotá', ' bogota ', 'Bogotá.', 'BOGOTÁ ']
+    const norm = new Set(variantes.map(normalizeForMatch))
+    expect(norm.size).toBe(1)
+    expect([...norm][0]).toBe('bogota')
+  })
+
+  it('handles empty string', () => {
+    expect(normalizeForMatch('')).toBe('')
+    expect(normalizeForMatch('   ')).toBe('')
+  })
+})
+
 describe('cityTokenForMatch', () => {
+  it('strips special characters around the city', () => {
+    expect(cityTokenForMatch('(Bogotá)')).toBe('bogota')
+    expect(cityTokenForMatch('  Soacha.  ')).toBe('soacha')
+  })
+
+  it('treats Bogotá D.C. variants as the same city as Bogotá', () => {
+    for (const v of ['Bogotá D.C.', 'BOGOTA DC', 'Bogotá D. C.', 'Bogota Distrito Capital', 'BOGOTÁ, D.C.', 'Bogotá D.C']) {
+      expect(cityTokenForMatch(v)).toBe('bogota')
+    }
+  })
+
+  it('matches the solicitud city against tecnico coverage regardless of case/accents/junk', () => {
+    const ciudadSolicitud = cityTokenForMatch('BOGOTA')
+    const cobertura = ['Bogotá', 'Soacha'].map(cityTokenForMatch)
+    expect(cobertura.some(c => c.includes(ciudadSolicitud) || ciudadSolicitud.includes(c))).toBe(true)
+  })
+
   it('returns clean city name unchanged', () => {
     expect(cityTokenForMatch('Bogotá')).toBe('bogota')
     expect(cityTokenForMatch('Medellín')).toBe('medellin')

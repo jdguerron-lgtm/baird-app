@@ -48,10 +48,47 @@ export default function CargaMasivaPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const handleFilePdf = useCallback(async (file: File) => {
+    // El browser no parsea PDF: el preview lo arma el servidor (dryRun=true)
+    setPreview([])
+    setParseError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setParseError('Sesión expirada. Inicia sesión de nuevo.')
+        return
+      }
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('defaultHorario2', defaultHorario2)
+      formData.append('dryRun', 'true')
+
+      const res = await fetch('/api/carga-masiva', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setParseError(data.error || 'Error al leer el PDF')
+        return
+      }
+      setPreview(data.preview as ParsedRow[])
+      setTotalRows(data.totalFilas)
+    } catch {
+      setParseError('Error de conexión al servidor')
+    }
+  }, [defaultHorario2])
+
   const handleFile = useCallback((file: File) => {
     setArchivo(file)
     setResultado(null)
     setParseError(null)
+
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      void handleFilePdf(file)
+      return
+    }
 
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -81,7 +118,7 @@ export default function CargaMasivaPage() {
       }
     }
     reader.readAsArrayBuffer(file)
-  }, [defaultPago, defaultHorario1, defaultHorario2])
+  }, [defaultPago, defaultHorario1, defaultHorario2, handleFilePdf])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -177,7 +214,7 @@ export default function CargaMasivaPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Carga Masiva</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Sube archivos Excel con solicitudes de servicio en formato BITÁCORA
+          Sube archivos Excel (formato BITÁCORA) o PDF (orden TALLER de MABE) con solicitudes de servicio
         </p>
       </div>
 
@@ -196,7 +233,7 @@ export default function CargaMasivaPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.pdf"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0]
@@ -214,10 +251,10 @@ export default function CargaMasivaPage() {
         ) : (
           <div>
             <p className="text-sm font-semibold text-slate-700">
-              Arrastra tu archivo Excel aquí
+              Arrastra tu archivo Excel o PDF aquí
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              o haz click para seleccionar — Formato .xlsx o .xls
+              o haz click para seleccionar — Formato .xlsx, .xls o .pdf (TALLER MABE)
             </p>
           </div>
         )}
@@ -323,6 +360,7 @@ export default function CargaMasivaPage() {
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Equipo</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Ciudad</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Zona</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Horario 1</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3">Problema</th>
                   </tr>
                 </thead>
@@ -361,6 +399,9 @@ export default function CargaMasivaPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-600">
                         {row.mapped?.zona_servicio ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                        {row.mapped?.horario_visita_1 ?? '—'}
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-xs text-gray-600 truncate max-w-[250px]">

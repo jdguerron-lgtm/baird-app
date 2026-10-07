@@ -10,12 +10,13 @@ import { ESTADO_ESTILOS, ESTADO_LABELS, NOTIF_ESTILOS, ESTADOS_VALIDOS } from '@
 import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { PAGO_MINIMO_TECNICO_GARANTIA, calcularTarifaMABE, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
-import { escapeLikePattern } from '@/lib/utils/format'
+import { cityTokenForMatch, normalizeForMatch } from '@/lib/utils/format'
 import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
+import { codigoServicio } from '@/lib/utils/facturacion'
 
 interface Solicitud {
   id: string
@@ -51,8 +52,37 @@ interface Tecnico {
   nombre_completo: string
   whatsapp: string
   ciudad_pueblo: string
+  ciudades_cobertura?: string[] | null
   estado_verificacion: string
   especialidades: string[]
+}
+
+/**
+ * Cobertura efectiva de un técnico — espejo exacto de `notificarTecnicos`
+ * (whatsapp.service.ts): `ciudades_cobertura` si tiene, si no `ciudad_pueblo`.
+ */
+function coberturaTecnico(t: { ciudad_pueblo?: string | null; ciudades_cobertura?: string[] | null }): string[] {
+  return Array.isArray(t.ciudades_cobertura) && t.ciudades_cobertura.length > 0
+    ? t.ciudades_cobertura
+    : [t.ciudad_pueblo ?? '']
+}
+
+/**
+ * ¿El técnico cubre la ciudad de la solicitud? Mismo criterio que el motor
+ * real: token de ciudad sin tildes/mayúsculas a ambos lados, `includes`
+ * bidireccional. Antes el panel hacía `ilike` sobre `ciudad_pueblo`, que es
+ * sensible a tildes ("BOGOTA" ≠ "Bogotá") e ignoraba `ciudades_cobertura` —
+ * mostraba como "no habilitados" a técnicos que SÍ habían sido notificados.
+ */
+function tecnicoCubreCiudad(
+  t: { ciudad_pueblo?: string | null; ciudades_cobertura?: string[] | null },
+  ciudadSolicitud: string | null | undefined,
+): boolean {
+  const ciudadNorm = cityTokenForMatch(ciudadSolicitud ?? '')
+  if (!ciudadNorm) return true
+  const tokens = coberturaTecnico(t).map(c => cityTokenForMatch(c ?? '')).filter(Boolean)
+  if (tokens.length === 0) return false
+  return tokens.some(tc => tc.includes(ciudadNorm) || ciudadNorm.includes(tc))
 }
 
 interface Notificacion {
@@ -159,6 +189,47 @@ export default function SolicitudDetalle() {
   const [nuevoValorInput, setNuevoValorInput] = useState('')
   const [motivoValor, setMotivoValor] = useState('')
   const [actualizandoValor, setActualizandoValor] = useState(false)
+  const [descargandoFicha, setDescargandoFicha] = useState(false)
+  const [errorFicha, setErrorFicha] = useState<string | null>(null)
+
+  // Ficha de facturación por servicio (docs/FACTURACION.md § 3): la venta al
+  // cliente es un registro independiente por servicio — mismo Excel del
+  // paquete Siigo pero acotado a esta solicitud.
+  const descargarFichaFacturacion = async () => {
+    setErrorFicha(null)
+    setDescargandoFicha(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setErrorFicha('Sesión expirada — vuelve a iniciar sesión.')
+        return
+      }
+      const res = await fetch('/api/admin/liquidaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ tipo: 'facturacion', solicitud_id: id }),
+      })
+      if (!res.ok) {
+        let msg = `Error ${res.status}`
+        try { msg = (await res.json())?.error ?? msg } catch { /* no JSON */ }
+        setErrorFicha(msg)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `ficha-facturacion-${codigoServicio(id)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setErrorFicha(err instanceof Error ? err.message : 'Error descargando la ficha')
+    } finally {
+      setDescargandoFicha(false)
+    }
+  }
   const [resultadoValor, setResultadoValor] = useState<{ ok: boolean; mensaje: string } | null>(null)
   const [pidiendoRepuesto, setPidiendoRepuesto] = useState(false)
   const [resultadoRepuesto, setResultadoRepuesto] = useState<{ ok: boolean; mensaje: string } | null>(null)
@@ -598,13 +669,18 @@ export default function SolicitudDetalle() {
         : `"${sol.tipo_equipo}" NO tiene mapeo definido, se busca textualmente "${especialidadBuscada}"`,
     })
 
-    // Step 2: Find técnicos with that especialidad
-    const { data: especialidades } = await supabase
+    // Step 2: Find técnicos with that especialidad.
+    // Comparación normalizada (sin tildes/mayúsculas) — igual que notificarTecnicos.
+    const especialidadNorm = normalizeForMatch(especialidadBuscada)
+    const { data: todasEsp } = await supabase
       .from('especialidades_tecnico')
       .select('tecnico_id, especialidad')
-      .eq('especialidad', especialidadBuscada)
 
-    if (!especialidades || especialidades.length === 0) {
+    const especialidades = (todasEsp ?? []).filter(
+      (e: { especialidad: string | null }) => normalizeForMatch(e.especialidad ?? '') === especialidadNorm
+    )
+
+    if (especialidades.length === 0) {
       steps.push({
         step: 'Buscar especialidad en BD',
         status: 'fail',
@@ -612,11 +688,7 @@ export default function SolicitudDetalle() {
       })
 
       // Show what especialidades DO exist
-      const { data: allEsp } = await supabase
-        .from('especialidades_tecnico')
-        .select('especialidad')
-
-      const unique = [...new Set(allEsp?.map((e: { especialidad: string }) => e.especialidad) ?? [])]
+      const unique = [...new Set((todasEsp ?? []).map((e: { especialidad: string | null }) => e.especialidad ?? ''))]
       steps.push({
         step: 'Especialidades existentes en BD',
         status: 'warn',
@@ -629,7 +701,7 @@ export default function SolicitudDetalle() {
       return
     }
 
-    const tecnicoIds = especialidades.map((e: { tecnico_id: string }) => e.tecnico_id)
+    const tecnicoIds = [...new Set(especialidades.map((e: { tecnico_id: string }) => e.tecnico_id))]
     steps.push({
       step: 'Buscar especialidad en BD',
       status: 'pass',
@@ -639,7 +711,7 @@ export default function SolicitudDetalle() {
     // Step 3: Filter by verificado
     const { data: verificados } = await supabase
       .from('tecnicos')
-      .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
+      .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, estado_verificacion')
       .in('id', tecnicoIds)
       .eq('estado_verificacion', 'verificado')
 
@@ -667,19 +739,17 @@ export default function SolicitudDetalle() {
       detail: `${verificados.length} tecnico(s) verificado(s): ${verificados.map((t: { nombre_completo: string }) => t.nombre_completo).join(', ')}`,
     })
 
-    // Step 4: Filter by city
-    const { data: enCiudad } = await supabase
-      .from('tecnicos')
-      .select('id, nombre_completo, whatsapp, ciudad_pueblo, estado_verificacion')
-      .in('id', verificados.map((t: { id: string }) => t.id))
-      .ilike('ciudad_pueblo', `%${escapeLikePattern(sol.ciudad_pueblo)}%`)
+    // Step 4: Filter by city — mismo criterio que notificarTecnicos
+    // (cityTokenForMatch + ciudades_cobertura), no un ilike sensible a tildes.
+    type TecRow = { id: string; nombre_completo: string; whatsapp: string; ciudad_pueblo: string; ciudades_cobertura: string[] | null; estado_verificacion: string }
+    const enCiudad = (verificados as TecRow[]).filter(t => tecnicoCubreCiudad(t, sol.ciudad_pueblo))
 
-    if (!enCiudad || enCiudad.length === 0) {
+    if (enCiudad.length === 0) {
       steps.push({
         step: 'Filtro: ciudad',
         status: 'fail',
-        detail: `Ninguno de los verificados esta en "${sol.ciudad_pueblo}". Ciudades de los verificados: ${
-          verificados.map((t: { nombre_completo: string; ciudad_pueblo: string }) => `${t.nombre_completo} → "${t.ciudad_pueblo}"`).join(', ')
+        detail: `Ninguno de los verificados cubre "${sol.ciudad_pueblo}". Cobertura de los verificados: ${
+          (verificados as TecRow[]).map(t => `${t.nombre_completo} → "${coberturaTecnico(t).join(', ')}"`).join(', ')
         }`,
       })
       setDiagnostics(steps)
@@ -696,7 +766,7 @@ export default function SolicitudDetalle() {
         espMap.set(e.tecnico_id, [...arr, e.especialidad])
       })
 
-      setCandidatos(verificados.map((t: { id: string; nombre_completo: string; whatsapp: string; ciudad_pueblo: string; estado_verificacion: string }) => ({
+      setCandidatos((verificados as TecRow[]).map(t => ({
         ...t,
         especialidades: espMap.get(t.id) ?? [],
       })))
@@ -706,7 +776,7 @@ export default function SolicitudDetalle() {
     steps.push({
       step: 'Filtro: ciudad',
       status: 'pass',
-      detail: `${enCiudad.length} tecnico(s) en "${sol.ciudad_pueblo}": ${enCiudad.map((t: { nombre_completo: string }) => t.nombre_completo).join(', ')}`,
+      detail: `${enCiudad.length} tecnico(s) cubren "${sol.ciudad_pueblo}": ${enCiudad.map(t => `${t.nombre_completo} (${coberturaTecnico(t).join(', ')})`).join(', ')}`,
     })
 
     // Load especialidades for candidates
@@ -721,7 +791,7 @@ export default function SolicitudDetalle() {
       espMap.set(e.tecnico_id, [...arr, e.especialidad])
     })
 
-    setCandidatos(enCiudad.map((t: { id: string; nombre_completo: string; whatsapp: string; ciudad_pueblo: string; estado_verificacion: string }) => ({
+    setCandidatos(enCiudad.map(t => ({
       ...t,
       especialidades: espMap.get(t.id) ?? [],
     })))
@@ -1181,7 +1251,25 @@ export default function SolicitudDetalle() {
             : Math.max(0, baseVenta - pagoTec)
           return (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">💰 Cuentas del servicio — Particular</h2>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">💰 Cuentas del servicio — Particular</h2>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Venta al cliente <span className="font-mono font-semibold text-slate-700">{codigoServicio(id)}</span> — todo incluido, se factura
+                    de forma independiente por servicio (los repuestos que compre el técnico en la tienda se ligan por este código).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={descargarFichaFacturacion}
+                  disabled={descargandoFicha}
+                  className="shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  title="Excel con los datos de esta venta para Siigo (tercero, ítems, IVA, pagos Wompi)"
+                >
+                  {descargandoFicha ? 'Generando…' : '🧾 Ficha de facturación'}
+                </button>
+              </div>
+              {errorFicha && <p className="text-xs text-red-600 mb-2">{errorFicha}</p>}
               <div className="space-y-1.5">
                 <Fila label="Total que paga el cliente a Baird (IVA incluido)" valor={totalCliente} bold verde />
                 <Fila label="Base gravable (sin IVA)" valor={baseVenta} />
@@ -1729,6 +1817,10 @@ export default function SolicitudDetalle() {
         // /api/whatsapp/notify aplica server-side.
         const necesitaHorarioCliente =
           !solicitud.horario_confirmado_at || solicitud.estado === 'sin_agendar'
+        // GUARD (2026-09-08): con técnico asignado NO se re-oferta. Antes el
+        // botón re-notificaba a todos y bajaba el estado a 'notificada' con el
+        // técnico puesto — el servicio desaparecía del portal del técnico.
+        const yaTieneTecnico = !necesitaHorarioCliente && !!solicitud.tecnico_asignado_id
 
         const titulo = necesitaHorarioCliente
           ? 'Reenviar selección de horario al cliente'
@@ -1737,7 +1829,9 @@ export default function SolicitudDetalle() {
           ? solicitud.estado === 'sin_agendar'
             ? 'La solicitud expiró. Al reenviar, se reactivará a pendiente_horario y el cliente recibirá la plantilla para elegir fecha y franja horaria. Los técnicos NO se notifican hasta que el cliente confirme.'
             : 'El cliente aún no ha confirmado horario. Mientras eso no pase no se puede notificar a técnicos — al reenviar se le envía la plantilla de selección de horario.'
-          : 'El cliente ya confirmó horario. Esto envía de nuevo la oferta a los técnicos compatibles.'
+          : yaTieneTecnico
+            ? 'Esta solicitud ya tiene técnico asignado: no se reenvía la oferta a técnicos. Para reasignar, cambia el estado o quita el técnico primero. Para recordarle al cliente, usa "Reenviar último mensaje".'
+            : 'El cliente ya confirmó horario. Esto envía de nuevo la oferta a los técnicos compatibles.'
         const labelBoton = necesitaHorarioCliente
           ? 'Enviar selección de horario al cliente'
           : 'Notificar técnicos'
@@ -1788,7 +1882,7 @@ export default function SolicitudDetalle() {
                   }
                   setReenviando(false)
                 }}
-                disabled={reenviando}
+                disabled={reenviando || yaTieneTecnico}
                 className={`px-4 py-2 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
                   necesitaHorarioCliente
                     ? 'bg-blue-600 hover:bg-blue-700'
@@ -1798,9 +1892,9 @@ export default function SolicitudDetalle() {
                 {reenviando ? 'Enviando...' : labelBoton}
               </button>
 
-              {solicitud.estado === 'asignada' && (
+              {yaTieneTecnico && (
                 <span className="text-xs text-yellow-700 bg-yellow-50 px-3 py-1.5 rounded-lg">
-                  Esta solicitud ya fue asignada. Si reenvia, solo se notificara pero no se reasignara.
+                  Ya tiene técnico asignado — reenviar la oferta está bloqueado.
                 </span>
               )}
             </div>
@@ -2469,7 +2563,7 @@ export default function SolicitudDetalle() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase px-4 py-2">Nombre</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase px-4 py-2">Ciudad</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase px-4 py-2">Cobertura</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase px-4 py-2">Estado</th>
                     <th className="text-left text-xs font-semibold text-gray-500 uppercase px-4 py-2">Especialidades</th>
                   </tr>
@@ -2478,7 +2572,7 @@ export default function SolicitudDetalle() {
                   {candidatos.map((t) => (
                     <tr key={t.id}>
                       <td className="px-4 py-2 text-sm font-medium text-slate-900">{t.nombre_completo}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700">{t.ciudad_pueblo}</td>
+                      <td className="px-4 py-2 text-sm text-gray-700">{coberturaTecnico(t).join(', ')}</td>
                       <td className="px-4 py-2">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                           t.estado_verificacion === 'verificado' ? 'bg-green-100 text-green-800' :

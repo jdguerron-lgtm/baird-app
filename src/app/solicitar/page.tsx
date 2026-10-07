@@ -336,17 +336,24 @@ export default function SolicitarServicio() {
                         required
                       />
                     </div>
-                    {/* Cédula opcional para la factura electrónica (2026-08-25).
-                        Vacío = consumidor final. */}
+                    {/* Cédula/NIT para la factura electrónica (2026-08-25).
+                        Obligatoria en particular (2026-09-02 — el cliente paga
+                        a Baird y la factura DIAN necesita el documento);
+                        opcional en garantía (vacío = consumidor final). */}
                     <InputField
-                      label="Cédula o NIT (opcional, para tu factura)"
+                      label={formData.es_garantia
+                        ? 'Cédula o NIT (opcional, para tu factura)'
+                        : 'Cédula o NIT (para tu factura electrónica)'}
                       name="cliente_cedula"
                       value={formData.cliente_cedula ?? ''}
                       onChange={handleChange}
                       placeholder="1234567890"
                       error={errors.cliente_cedula}
                       icon={<DocumentIcon className="w-5 h-5 mr-2 text-green-600" />}
-                      hint="💡 Si quieres tu factura electrónica a tu nombre, déjanos tu cédula o NIT (solo números). Si lo omites, facturamos como consumidor final."
+                      required={!formData.es_garantia}
+                      hint={formData.es_garantia
+                        ? '💡 Si quieres tu factura electrónica a tu nombre, déjanos tu cédula o NIT (solo números). Si lo omites, facturamos como consumidor final.'
+                        : '💡 Tu cédula o NIT (solo números, sin puntos) — lo necesitamos para emitir tu factura electrónica.'}
                     />
                     <div>
                       <InputField

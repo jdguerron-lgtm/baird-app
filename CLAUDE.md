@@ -44,6 +44,7 @@ stack, conventions, env vars). Todo el detalle vive en docs específicos:
 - **`docs/SEGURIDAD.md`** — Mapa de autenticación y autorización: frontend admin, endpoints API (admin/cliente/cron), tokens UUID, RLS, storage, histórico de incidentes, backlog de hardening.
 - **`docs/DAPTA.md`** — Segunda línea de voz IA (llamadas cuando WhatsApp no responde). Fase 0 desplegada pero apagada (`DAPTA_ENABLED=false`). Resume lo operativo; el doc de decisión/fases/costos es `docs/mejoras-futuras/segunda-linea-voz/README.md`.
 - **`docs/WOMPI.md`** — Pasarela de pagos (decisión 2026-08-18: Wompi única pasarela; Shopify solo repuestos). Anticipo de reserva post-aceptación del técnico, página `/pago/anticipo/{token}`, webhook, tabla `pagos`, reglas de seguridad y puesta en marcha. **Léelo antes de tocar cualquier cobro online**.
+- **`docs/FACTURACION.md`** — Facturación y contabilidad: qué documento contable genera cada servicio (FV cliente particular, FV consolidada a MABE, documento soporte del técnico, ledger de pagos Wompi), campos que pide Siigo y gaps, export `tipo: 'facturacion'` en `/admin/liquidaciones`, liquidación quincenal de técnicos, opciones para venderle repuestos al técnico y fases de integración con Siigo. **Léelo antes de tocar liquidaciones o proponer algo de contabilidad**.
 - **`supabase/migrations/README.md`** — Orden de aplicación, verificación SQL, hallazgos del audit + backlog de migraciones.
 - **`docs/FLUJOS-USUARIO.md`** — DEPRECATED (state machine v1, marzo 2026). No actualizar.
 
@@ -126,6 +127,10 @@ FACTURACION_EMAIL                 # Destino del correo de facturación al comple
                                   # (default logistica@encompasslatam.com)
 EMAIL_FROM                        # Remitente verificado en Resend
                                   # (default "Baird Service <facturacion@bairdservice.com>")
+
+# Facturación — ver docs/FACTURACION.md
+FACTURACION_MABE_NIT              # OPCIONAL — NIT de la marca a la que se factura la garantía (hoja "FV MABE")
+FACTURACION_MABE_NOMBRE           # OPCIONAL — razón social (default "MABE COLOMBIA S.A.S.")
 
 # Dapta — segunda línea de voz IA (llamadas automatizadas). Ver docs/DAPTA.md.
 DAPTA_ENABLED                     # Kill-switch global: 'true' habilita disparar llamadas. Default off.

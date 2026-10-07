@@ -1,5 +1,10 @@
 # Guia de prueba — Carga Masiva de Servicios
 
+> **2026-08-31:** la carga masiva también acepta el **PDF "TALLER" de MABE**
+> (órdenes de servicio de garantía). Ver §7 al final. Además, desde esa fecha
+> las órdenes de garantía **duplicadas se saltan** (mismo N° de orden ya en BD
+> o repetido dentro del archivo) — aplica a Excel y PDF, cierra el gap §5.5.
+
 ## Requisitos previos
 
 1. Tener acceso al panel admin: `https://lineablanca.bairdservice.com/admin/login`
@@ -241,3 +246,47 @@ Verificar que la tabla muestra:
 - [ ] El botón "Cargar otro archivo" reinicia el formulario
 - [ ] La notificación WhatsApp funciona cuando está activada (si WhatsApp está configurado)
 - [ ] El dashboard de garantías refleja las solicitudes cargadas
+
+---
+
+## 7. Carga por PDF "TALLER" de MABE (2026-08-31)
+
+El sistema acepta el PDF de órdenes de servicio que MABE envía por taller
+(encabezado azul `TALLER: CSATDEABTA9P`), con N órdenes por documento.
+
+### Campos que se extraen por orden
+
+| Campo PDF | Mapea a |
+|-----------|---------|
+| NO. ORDEN | `numero_serie_factura` (N° orden MABE) — clave de dedup |
+| TIPO SERVICIO (GARANTÍA DE FÁBRICA) | `es_garantia: true` |
+| FECHA PROG (`26.08.2026 08:00:00`) | `horario_visita_1` en formato canónico parseable: `"miércoles, 26 de agosto · 8am-12pm"` (hora → franja del catálogo `FRANJAS_HORARIO`) |
+| NOMBRE DEL CLIENTE | `cliente_nombre` |
+| TEL. CEL. (fallback casa/oficina; descarta `0` / `00000000000`) | `cliente_telefono` (prefijo 57) |
+| DIRECCIÓN | `direccion` |
+| COLONIA | `zona_servicio` |
+| DELEGACIÓN O MUNICIPIO | `ciudad_pueblo` |
+| MODELO | `modelo_equipo` (embebido en novedades) |
+| DESCRIPCIÓN PRODUCTO | `tipo_equipo` (vía `mapFamilia`, ej. "LAVADORA AUT 18 KG…" → Lavadora) |
+| NO. DE SERIE, LUGAR DE COMPRA | embebidos en `novedades_equipo` |
+| FALLA REPORTADA/QUIÉN REPORTA | `novedades_equipo` |
+
+Marca siempre `MABE`, `pago_tecnico: 0` (tarifa por complejidad post-diagnóstico).
+
+### Flujo de prueba
+
+1. `/admin/carga-masiva` → arrastrar el `.pdf` → el preview lo arma el
+   **servidor** (`POST /api/carga-masiva` con `dryRun=true`), incluye columna
+   "Horario 1" con la FECHA PROG mapeada a franja.
+2. Cargar → mismo pipeline que Excel: `estado: pendiente_horario` +
+   `horario_token`; con "notificar" activo el cliente recibe la plantilla de
+   selección de horario y su opción 1 ya es la fecha acordada con MABE.
+3. Validaciones por orden: N° orden, nombre ≥3, teléfono válido, dirección,
+   tipo de equipo mapeable. Warnings: FECHA PROG no reconocida o ya pasada,
+   municipio ausente (default BOGOTA).
+4. Duplicados (orden ya en BD o repetida en el archivo) → fila inválida con
+   mensaje, no se inserta.
+
+Parser: `src/lib/utils/pdf-orden-mapping.ts` (tests en
+`src/__tests__/utils/pdf-orden-mapping.test.ts`). Extracción de texto:
+`unpdf` (serverless-safe), reconstrucción de líneas por coordenadas x/y.

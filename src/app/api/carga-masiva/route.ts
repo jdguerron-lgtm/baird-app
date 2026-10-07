@@ -3,8 +3,73 @@ import * as XLSX from 'xlsx'
 import crypto from 'crypto'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { verificarAdmin } from '@/lib/auth/admin'
-import { parseExcelData, type MappedSolicitud } from '@/lib/utils/excel-mapping'
+import { parseExcelData, type MappedSolicitud, type ParsedRow } from '@/lib/utils/excel-mapping'
+import { parsePdfTallerData, reconstruirLineas, type PdfTextItem } from '@/lib/utils/pdf-orden-mapping'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
+
+/**
+ * Extrae las líneas de texto de un PDF (formato TALLER MABE) preservando el
+ * layout visual: pdf.js entrega items posicionados y reconstruirLineas los
+ * agrupa por renglón. unpdf se importa dinámico para no cargarlo en cold
+ * start de las cargas Excel.
+ */
+async function extraerLineasPdf(buffer: ArrayBuffer): Promise<string[]> {
+  const { getDocumentProxy } = await import('unpdf')
+  const pdf = await getDocumentProxy(new Uint8Array(buffer))
+  const lineas: string[] = []
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p)
+    const content = await page.getTextContent()
+    const items: PdfTextItem[] = []
+    for (const item of content.items) {
+      if ('str' in item && Array.isArray(item.transform)) {
+        items.push({ str: item.str, x: item.transform[4], y: item.transform[5] })
+      }
+    }
+    lineas.push(...reconstruirLineas(items))
+  }
+  return lineas
+}
+
+/**
+ * Marca como inválidas las filas cuyo N° de orden MABE (numero_serie_factura)
+ * ya existe en solicitudes_servicio — evita duplicados al re-subir el mismo
+ * archivo (gap conocido de la carga Excel, cerrado 2026-08-31). Fail-open:
+ * si la consulta falla, no bloquea la carga.
+ */
+async function marcarDuplicados(parsed: ParsedRow[]): Promise<void> {
+  const ordenes = parsed
+    .filter(r => r.mapped?.es_garantia && r.mapped.numero_serie_factura)
+    .map(r => r.mapped!.numero_serie_factura)
+  if (ordenes.length === 0) return
+
+  const { data, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('numero_serie_factura')
+    .in('numero_serie_factura', ordenes)
+    .eq('es_garantia', true)
+
+  if (error) {
+    console.error('[carga-masiva] Error consultando duplicados:', error.message)
+    return
+  }
+
+  const existentes = new Set((data ?? []).map(d => d.numero_serie_factura))
+  const vistasEnArchivo = new Set<string>()
+  for (const row of parsed) {
+    if (!row.mapped?.es_garantia || !row.mapped.numero_serie_factura) continue
+    const orden = row.mapped.numero_serie_factura
+    if (existentes.has(orden)) {
+      row.errors.push(`Orden ${orden} ya existe en el sistema (duplicado)`)
+      row.mapped = null
+    } else if (vistasEnArchivo.has(orden)) {
+      row.errors.push(`Orden ${orden} repetida dentro del mismo archivo`)
+      row.mapped = null
+    } else {
+      vistasEnArchivo.add(orden)
+    }
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +85,7 @@ export async function POST(req: NextRequest) {
     const defaultHorario1 = (formData.get('defaultHorario1') as string) || 'Lunes a Viernes 8:00 AM - 12:00 PM'
     const defaultHorario2 = (formData.get('defaultHorario2') as string) || 'Lunes a Viernes 2:00 PM - 5:00 PM'
     const notificar = formData.get('notificar') === 'true'
+    const dryRun = formData.get('dryRun') === 'true'
 
     if (!file) {
       return NextResponse.json({ error: 'No se recibió archivo' }, { status: 400 })
@@ -31,12 +97,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate file type
+    const esPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     const validTypes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
     ]
-    if (!validTypes.includes(file.type) && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      return NextResponse.json({ error: 'Formato de archivo no soportado. Usa .xlsx o .xls' }, { status: 400 })
+    const esExcel = validTypes.includes(file.type) || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+    if (!esPdf && !esExcel) {
+      return NextResponse.json({ error: 'Formato de archivo no soportado. Usa .xlsx, .xls o .pdf (orden TALLER MABE)' }, { status: 400 })
     }
 
     // Validate defaultPago
@@ -44,29 +112,69 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Valor de pago inválido' }, { status: 400 })
     }
 
-    // Read Excel file
+    // Parse file → ParsedRow[] (mismo contrato para Excel y PDF)
     const buffer = await file.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array' })
-    const sheetName = workbook.SheetNames[0]
-    const sheet = workbook.Sheets[sheetName]
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+    let parsed: ParsedRow[]
+    let totalRawRows: number
+    let sheetName: string
 
-    // Parse and map rows
-    const { parsed, totalRawRows } = parseExcelData(rows, {
-      defaultPago,
-      defaultHorario1,
-      defaultHorario2,
-    })
+    if (esPdf) {
+      const lineas = await extraerLineasPdf(buffer)
+      const resultado = parsePdfTallerData(lineas, { defaultHorario2 })
+      parsed = resultado.parsed
+      totalRawRows = resultado.totalRawRows
+      sheetName = 'PDF TALLER MABE'
 
-    if (totalRawRows === 0) {
-      return NextResponse.json({
-        error: 'No se encontraron datos válidos en el archivo. Verifica que el formato sea BITÁCORA SERVICIOS PROGRAMADOS.',
-      }, { status: 400 })
+      if (totalRawRows === 0) {
+        return NextResponse.json({
+          error: 'No se encontraron órdenes en el PDF. Verifica que sea el formato TALLER de MABE (con "NO. ORDEN:").',
+        }, { status: 400 })
+      }
+    } else {
+      const workbook = XLSX.read(buffer, { type: 'array' })
+      sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+
+      const resultado = parseExcelData(rows, {
+        defaultPago,
+        defaultHorario1,
+        defaultHorario2,
+      })
+      parsed = resultado.parsed
+      totalRawRows = resultado.totalRawRows
+
+      if (totalRawRows === 0) {
+        return NextResponse.json({
+          error: 'No se encontraron datos válidos en el archivo. Verifica que el formato sea BITÁCORA SERVICIOS PROGRAMADOS.',
+        }, { status: 400 })
+      }
     }
+
+    // Skip órdenes de garantía que ya existen (re-subida del mismo archivo)
+    await marcarDuplicados(parsed)
 
     // Separate valid and invalid rows
     const valid = parsed.filter(r => r.mapped !== null)
     const invalid = parsed.filter(r => r.mapped === null)
+
+    // Dry run: solo preview (la UI lo usa para PDF, que no puede parsear en el browser)
+    if (dryRun) {
+      return NextResponse.json({
+        dryRun: true,
+        sheetName,
+        totalFilas: totalRawRows,
+        validas: valid.length,
+        invalidas: invalid.length,
+        preview: parsed.map(r => ({
+          fila: r.fila,
+          raw: r.raw,
+          mapped: r.mapped,
+          errors: r.errors,
+          warnings: r.warnings,
+        })),
+      })
+    }
 
     // Insert valid rows into Supabase
     const results: { fila: number; success: boolean; id?: string; error?: string }[] = []

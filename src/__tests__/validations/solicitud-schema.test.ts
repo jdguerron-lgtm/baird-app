@@ -15,6 +15,8 @@ import { pagoNetoTecnicoTarifaFija, MULTIPLICADOR_PARTICULAR, FACTOR_PAGO_TECNIC
 const VALID_DATA = {
   cliente_nombre: 'Maria Garcia Lopez',
   cliente_telefono: '57|3001234567',
+  // Obligatoria en particular desde 2026-09-02 (factura electrónica DIAN)
+  cliente_cedula: '1234567890',
   direccion: 'Calle 45 #12-30 Apt 301',
   ciudad_pueblo: 'Bogota',
   zona_servicio: 'Chapinero',
@@ -92,6 +94,29 @@ describe('solicitudFormSchema', () => {
 
   it('rejects short direccion', () => {
     const result = solicitudFormSchema.safeParse({ ...VALID_DATA, direccion: 'Cll' })
+    expect(result.success).toBe(false)
+  })
+
+  // Cédula/NIT obligatoria en particular (2026-09-02) — facturación DIAN
+  it('requires cliente_cedula when es_garantia is false', () => {
+    const sinCedula = solicitudFormSchema.safeParse({ ...VALID_DATA, cliente_cedula: '' })
+    expect(sinCedula.success).toBe(false)
+    const omitida = solicitudFormSchema.safeParse({ ...VALID_DATA, cliente_cedula: undefined })
+    expect(omitida.success).toBe(false)
+  })
+
+  it('accepts garantia without cliente_cedula (se factura a MABE)', () => {
+    const result = solicitudFormSchema.safeParse({
+      ...VALID_DATA,
+      es_garantia: true,
+      numero_serie_factura: 'SN-12345',
+      cliente_cedula: '',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects cliente_cedula with letters or symbols', () => {
+    const result = solicitudFormSchema.safeParse({ ...VALID_DATA, cliente_cedula: '12.345.678' })
     expect(result.success).toBe(false)
   })
 })

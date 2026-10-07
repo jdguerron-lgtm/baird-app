@@ -43,12 +43,27 @@ export async function POST(req: NextRequest) {
     // Estado actual para decidir destino del reenvío
     const { data: sol, error: solErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, horario_confirmado_at, horario_token')
+      .select('id, estado, horario_confirmado_at, horario_token, tecnico_asignado_id')
       .eq('id', solicitudId)
       .single()
 
     if (solErr || !sol) {
       return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })
+    }
+
+    // GUARD (2026-09-08): con técnico asignado no hay nada que "re-ofertar".
+    // Reenviar aquí volvía a notificar a todos los técnicos y degradaba el
+    // estado a 'notificada' dejando el técnico puesto (solicitudes invisibles
+    // en el portal del técnico). Para reasignar: cambiar estado / editar.
+    if (sol.tecnico_asignado_id) {
+      return NextResponse.json(
+        {
+          error:
+            `La solicitud ya tiene técnico asignado (estado "${sol.estado}"). ` +
+            'No se reenvía la oferta a técnicos. Si necesitas reasignar, quita el técnico o cambia el estado primero.',
+        },
+        { status: 409 },
+      )
     }
 
     // Estados terminales o no-revivibles — no tiene sentido reenviar nada.

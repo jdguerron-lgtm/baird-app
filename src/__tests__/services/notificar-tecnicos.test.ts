@@ -209,4 +209,36 @@ describe('notificarTecnicos', () => {
     expect(result.notificados).toBe(0)
     expect(result.matched).toBe(0)
   })
+
+  // Regresión 2026-09-08: admin pulsó "Notificar técnicos" sobre solicitudes
+  // ya asignadas; se re-ofertaron y el estado bajó a 'notificada' con el
+  // técnico puesto (invisibles en el portal del técnico).
+  it('does NOT re-notify nor touch estado when the solicitud already has a tecnico asignado', async () => {
+    const tablasTocadas: string[] = []
+    mockFrom.mockImplementation((table: string) => {
+      tablasTocadas.push(table)
+      if (table === 'solicitudes_servicio') {
+        return queryBuilder({
+          data: { ...SOLICITUD, estado: 'asignada', tecnico_asignado_id: 'tec-001' },
+          error: null,
+        })
+      }
+      if (table === 'especialidades_tecnico') {
+        return queryBuilder({ data: [{ tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' }], error: null })
+      }
+      if (table === 'tecnicos') {
+        return queryBuilder({ data: [TECNICO], error: null })
+      }
+      return queryBuilder({ data: null, error: null })
+    })
+
+    const result = await notificarTecnicos('sol-001')
+    expect(result.notificados).toBe(0)
+    expect(result.matched).toBe(0)
+    expect(result.errors[0]).toMatch(/ya tiene técnico asignado/)
+    // No se envió ningún WhatsApp ni se escribió en notificaciones_whatsapp
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(tablasTocadas).not.toContain('notificaciones_whatsapp')
+    expect(tablasTocadas).not.toContain('especialidades_tecnico')
+  })
 })

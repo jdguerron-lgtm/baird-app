@@ -80,6 +80,18 @@ export async function POST(req: NextRequest) {
 
       // ── Cliente ya confirmó, re-disparar oferta a técnicos ──
       case 'notificada': {
+        // Estado inconsistente (técnico puesto pero estado pre-aceptación):
+        // no re-ofertar — señalar al admin para que corrija el estado.
+        if (sol.tecnico_asignado_id) {
+          return NextResponse.json(
+            {
+              error:
+                'La solicitud está en "notificada" pero ya tiene técnico asignado. ' +
+                'Corrige el estado a "asignada" (o quita el técnico) antes de reenviar.',
+            },
+            { status: 409 },
+          )
+        }
         const r = await notificarTecnicos(solicitudId)
         return NextResponse.json({
           accion: 'notificar_tecnicos',
