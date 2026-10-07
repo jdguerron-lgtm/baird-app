@@ -32,8 +32,23 @@ interface Solicitud {
   saldo_pagado_at: string | null
 }
 
+interface ResultadoReenvio {
+  id: string
+  nombre: string
+  ok: boolean
+  mensaje: string
+  notificados?: number
+  matched?: number
+  accion?: 'tecnicos' | 'cliente_horario'
+}
+
+// Filtro virtual (no es un estado): ofertadas a técnicos que nadie ha tomado.
+// Es el conjunto que se re-oferta masivamente con "Reenviar a técnicos".
+const FILTRO_SIN_TECNICO = 'sin_tecnico'
+
 const ESTADOS = [
   { value: 'todos', label: 'Todos', color: 'bg-gray-100 text-gray-700' },
+  { value: FILTRO_SIN_TECNICO, label: '📣 Sin técnico', color: 'bg-orange-100 text-orange-800' },
   { value: 'pendiente_horario', label: 'Pendiente horario', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'notificada', label: 'Notificada', color: 'bg-blue-100 text-blue-800' },
   { value: 'asignada', label: 'Asignada', color: 'bg-green-100 text-green-800' },
@@ -52,6 +67,10 @@ export default function SolicitudesAdmin() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [exportando, setExportando] = useState(false)
   const [errorExport, setErrorExport] = useState<string | null>(null)
+  // Reenvío masivo de la oferta a técnicos (POST /api/whatsapp/notify por solicitud)
+  const [reenviando, setReenviando] = useState(false)
+  const [progresoReenvio, setProgresoReenvio] = useState<{ hecho: number; total: number } | null>(null)
+  const [resultadosReenvio, setResultadosReenvio] = useState<ResultadoReenvio[] | null>(null)
 
   useEffect(() => {
     const cargar = async () => {
@@ -63,7 +82,10 @@ export default function SolicitudesAdmin() {
           .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at')
           .order('created_at', { ascending: false })
 
-        if (filtro !== 'todos') {
+        if (filtro === FILTRO_SIN_TECNICO) {
+          // Ofertadas sin que ningún técnico haya aceptado
+          query = query.eq('estado', 'notificada').is('tecnico_asignado_id', null)
+        } else if (filtro !== 'todos') {
           query = query.eq('estado', filtro)
         }
 
@@ -212,6 +234,68 @@ export default function SolicitudesAdmin() {
     setEliminando(false)
   }
 
+  /**
+   * Reenvía la oferta a técnicos para cada solicitud seleccionada, una por
+   * una (secuencial para no saturar Meta ni Vercel). Reusa el endpoint
+   * existente, que ya decide por estado: `notificada` → re-notifica técnicos
+   * compatibles; `pendiente_horario`/`sin_agendar` → reenvía al cliente la
+   * selección de horario; con técnico asignado o estado terminal → 409 y se
+   * reporta como omitida. No cambia nada de la lógica de matching.
+   */
+  const handleReenviarTecnicos = async () => {
+    if (seleccionados.size === 0 || reenviando) return
+    setReenviando(true)
+    setResultadosReenvio(null)
+    const ids = [...seleccionados]
+    setProgresoReenvio({ hecho: 0, total: ids.length })
+    const resultados: ResultadoReenvio[] = []
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadosReenvio([{ id: '', nombre: '', ok: false, mensaje: 'Sesión expirada. Inicia sesión de nuevo.' }])
+        setReenviando(false)
+        setProgresoReenvio(null)
+        return
+      }
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i]
+        const sol = solicitudes.find(s => s.id === id)
+        const nombre = sol?.cliente_nombre ?? id.slice(0, 8)
+        try {
+          const res = await fetch('/api/whatsapp/notify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ solicitudId: id }),
+          })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) {
+            resultados.push({ id, nombre, ok: false, mensaje: data?.error ?? `Error ${res.status}` })
+          } else {
+            resultados.push({
+              id,
+              nombre,
+              ok: data?.success !== false,
+              mensaje: data?.mensaje ?? 'Sin detalle',
+              notificados: typeof data?.notificados === 'number' ? data.notificados : undefined,
+              matched: typeof data?.matched === 'number' ? data.matched : undefined,
+              accion: data?.accion,
+            })
+          }
+        } catch (e) {
+          resultados.push({ id, nombre, ok: false, mensaje: e instanceof Error ? e.message : 'Error de red' })
+        }
+        setProgresoReenvio({ hecho: i + 1, total: ids.length })
+      }
+    } finally {
+      setResultadosReenvio(resultados)
+      setReenviando(false)
+      setProgresoReenvio(null)
+    }
+  }
+
   const filtradas = busqueda
     ? solicitudes.filter(s => {
         const q = busqueda.toLowerCase()
@@ -315,6 +399,16 @@ export default function SolicitudesAdmin() {
           >
             {exportando ? 'Generando…' : '📥 Descargar selección'}
           </button>
+          <button
+            onClick={handleReenviarTecnicos}
+            disabled={reenviando}
+            title="Vuelve a enviar la oferta por WhatsApp a los técnicos compatibles de cada solicitud seleccionada. Las que ya tienen técnico o están cerradas se omiten."
+            className="px-4 py-1.5 bg-orange-600 text-white text-xs font-semibold rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors"
+          >
+            {reenviando && progresoReenvio
+              ? `Reenviando ${progresoReenvio.hecho}/${progresoReenvio.total}…`
+              : '📣 Reenviar a técnicos'}
+          </button>
           {!confirmDelete ? (
             <button
               onClick={() => setConfirmDelete(true)}
@@ -345,6 +439,35 @@ export default function SolicitudesAdmin() {
           >
             Deseleccionar todo
           </button>
+        </div>
+      )}
+
+      {/* Resultado del reenvío masivo a técnicos */}
+      {resultadosReenvio && (
+        <div className="mb-4 bg-white border border-orange-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-orange-800 uppercase tracking-wider">
+              Reenvío a técnicos — {resultadosReenvio.filter(r => r.ok).length}/{resultadosReenvio.length} OK
+            </h3>
+            <button
+              onClick={() => setResultadosReenvio(null)}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Cerrar
+            </button>
+          </div>
+          <ul className="space-y-1">
+            {resultadosReenvio.map((r, i) => (
+              <li key={`${r.id}-${i}`} className={`text-xs rounded px-2 py-1 ${r.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+                <span className="font-semibold">{r.nombre}</span>
+                {r.accion === 'tecnicos' && typeof r.notificados === 'number' && (
+                  <span className="ml-2 font-mono">{r.notificados}/{r.matched ?? '?'} técnicos</span>
+                )}
+                {r.accion === 'cliente_horario' && <span className="ml-2 italic">→ selección de horario al cliente</span>}
+                <span className="ml-2">{r.mensaje}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
