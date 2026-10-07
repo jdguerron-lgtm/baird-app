@@ -45,8 +45,15 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 
 ## Supabase Architecture
 
-### Cliente único + anon key
-Todo el código (tanto API routes server-side como páginas client-side) usa **un único Supabase client** con `NEXT_PUBLIC_SUPABASE_ANON_KEY` declarado en `src/lib/supabase.ts`. Nunca crees clientes nuevos con `createClient()`. Para operaciones privilegiadas usaríamos un client con `service_role` — actualmente no está configurado, así que todas las operaciones pasan por las políticas RLS (donde existen).
+### Dos clientes: anon (browser) y service_role (server)
+Desde RLS Fase 1 (2026-07-11, `docs/PLAN-RLS.md`) hay **dos clientes** y no se mezclan:
+
+| Dónde | Import | Key | RLS |
+|---|---|---|---|
+| Páginas `'use client'` (admin UI, portales con token, `/registro`, `/solicitar`) | `import { supabase } from '@/lib/supabase'` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Aplica — las policies gobiernan lo que el browser puede leer/escribir |
+| API routes, services, crons, webhooks, `lib/auth/supervisor.ts` | `import { supabaseAdmin as supabase } from '@/lib/supabase-admin'` | `SUPABASE_SERVICE_ROLE_KEY` (sin `NEXT_PUBLIC`) | **Bypass** (`rolbypassrls=true`) — la autorización la hacen `verificarAdmin`, tokens UUID y los guards de cada route |
+
+`supabase-admin.ts` lanza si se importa en el browser o si falta la key. Única excepción server con anon: `src/lib/auth/admin.ts` (`auth.getUser` para validar el JWT del admin). Nunca crees clientes nuevos con `createClient()` fuera de esos dos archivos.
 
 ### Migraciones — orden y aplicación
 Todas las migraciones viven en `supabase/migrations/`. **No usamos el Supabase CLI**; se aplican manualmente en el SQL Editor del dashboard. Son idempotentes (`IF NOT EXISTS`, `DROP IF EXISTS` antes de `CREATE`).
@@ -78,24 +85,27 @@ Todas las migraciones viven en `supabase/migrations/`. **No usamos el Supabase C
 
 Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/README.md`.
 
-### RLS por tabla (estado actual — verificado 2026-05-22, auditoría 2026-06-24)
+### RLS por tabla (estado tras Fase 4.1 — aplicada en prod 2026-07-11, `20260711_rls_fase4_1_cierre_tablas_server.sql`; actualizado 2026-10-07)
 
-| Tabla | RLS | Acceso anon | Notas |
+El server escribe con service_role (bypass), así que "acceso anon" = lo que puede hacer el **browser** con el anon key del bundle.
+
+| Tabla | RLS | Acceso anon (browser) | Notas |
 |---|---|---|---|
-| `solicitudes_servicio` | ❌ | full (sin RLS) | **La tabla principal sigue sin RLS.** Toda la seguridad depende de tokens UUID en URLs. OJO: tiene policies `anon_*`/`service_role_*` definidas pero **inertes** (una POLICY no aplica con RLS off) |
-| `especialidades_tecnico` | ❌ | full | OK, datos no sensibles |
-| `tecnicos` | ✅ | full CRUD (`USING(true)`) | Policies anon abiertas — `portal_token` es el secret real |
-| `evidencias_servicio` | ✅ | abierto (`USING(true)`) | Token `confirmacion_token` para cliente |
-| `notificaciones_whatsapp` | ✅ | abierto (`USING(true)`) | Token único por notificación como secret |
-| `repuestos_pendientes` | ✅ | `SELECT true` | service_role = ALL (scoped a role `service_role`, initplan optimizado — `20260516`) |
-| `gps_pings` | ✅ | `INSERT true` | service_role = ALL (idem); SELECT requiere service_role |
-| `solicitud_eventos` | ✅ | `SELECT true`, `INSERT true` | service_role = ALL (idem) |
-| `cliente_historial` (20260510) | ✅ | service_role only | Tracking de no-shows / cancelaciones |
-| `supervisores` (20260529) | ✅ | full CRUD (`USING(true)`) | Autorización real la impone `verificarAdmin` en `/api/admin/supervisores`. Contiene WhatsApp interno, no PII de clientes |
-| `llamadas` (20260602) | ✅ | full CRUD (`USING(true)`) | + service_role = ALL |
-| `connection_errors` (20260516) | ✅ | insert-only vía `/api/log-error` | 2 policies |
+| `solicitudes_servicio` | ❌ | full (sin RLS) | **La tabla principal sigue sin RLS.** Toda la seguridad depende de tokens UUID en URLs. OJO: tiene policies `anon_*`/`service_role_*` definidas pero **inertes** (una POLICY no aplica con RLS off). Fase 4.2 |
+| `especialidades_tecnico` | ❌ | full | Datos no sensibles. Fase 4.2 |
+| `tecnicos` | ✅ | full CRUD (`USING(true)`) | **Pendiente Fase 2**: `/registro` y `/admin/tecnicos/[id]` escriben client-side. `portal_token` es el secret real |
+| `evidencias_servicio` | ✅ | abierto (`USING(true)`) | **Pendiente Fase 3**: `completar/[id]` inserta client-side |
+| `notificaciones_whatsapp` | ✅ | solo `SELECT` | Writes anon cerrados en 4.1; SELECT se conserva porque `/aceptar` lee client-side (Fase 3) |
+| `repuestos_pendientes` | ✅ | solo `SELECT` | Writes anon cerrados en 4.1; SELECT lo usan `/verificar-paso` y `/admin/repuestos` (Fase 3) |
+| `gps_pings` | ✅ | ninguno | INSERT anon cerrado en 4.1; escribe `/api/gps-ping` (service_role) |
+| `solicitud_eventos` | ✅ | ninguno (SELECT solo `authenticated`) | Audit append-only ya no falsificable desde el browser; lo lee el timeline de `/admin` con sesión |
+| `connection_errors` (20260516) | ✅ | ninguno (SELECT solo `authenticated`) | Inserta `/api/log-error` (service_role); lee `/admin/errores` |
+| `cliente_historial` (20260510) | ✅ | ninguno | service_role only. ⚠️ Ningún código la lee ni escribe hoy (spec PROTOCOLO-VISITA sin implementar) |
+| `supervisores` (20260529) | ✅ | ninguno | Cerrada en 4.1 (antes anon podía leer `portal_token` y hacer CRUD). Portal va por `/api/supervisor/*` |
+| `llamadas` (20260602) | ✅ | ninguno | Cerrada en 4.1. Solo `dapta.service` / webhook / `/api/admin/llamadas` |
+| `pagos` (20260818) | ✅ | ninguno | Nace cerrada: solo service_role (`pagos.service.ts`, webhook Wompi) |
 
-**El "✅" engaña** (hallazgo auditoría 2026-06-24): la mayoría de las policies de write son `USING(true)` para anon, así que con el `anon_key` (extraíble del bundle) cualquiera puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. La raíz es que la app escribe con anon (registro client-side + cliente singleton). **Fix real pendiente**: migrar writes a `service_role` server-side, luego endurecer policies y habilitar RLS en `solicitudes_servicio`. Ver `docs/SEGURIDAD.md`.
+Verificación post-4.1 (PLAN-RLS § 3bis): anon simulado ve 0 filas en las tablas cerradas y recibe `42501` al escribir. **Lo que falta** (Fases 2–4.2): mover a API routes server-side los writes client-side de `tecnicos` y `evidencias_servicio`, luego cerrar sus policies y habilitar RLS en `solicitudes_servicio` + `especialidades_tecnico`. Ver `docs/PLAN-RLS.md` y `docs/SEGURIDAD.md`.
 
 ### Storage buckets
 
@@ -188,7 +198,7 @@ DELETE FROM notificaciones_whatsapp
 ```
 
 ### CHECK constraints
-Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El vigente está en `20260529_supervisores_y_repuesto_recibido.sql` (**22 estados**, 1:1 con `EstadoSolicitud` en `src/types/solicitud.ts`). Si agregas un nuevo estado **debes**:
+Cada migración que agrega un nuevo `estado` reemplaza el constraint completo (`DROP CONSTRAINT IF EXISTS ... ADD CONSTRAINT`). El vigente está en `20260802_repuesto_en_camino_guia.sql` (**19 estados**, 1:1 con `ESTADOS_VALIDOS` en `src/lib/constants/estados.ts` y con el union `EstadoSolicitud` en `src/types/solicitud.ts`). Si agregas un nuevo estado **debes**:
 1. Sumarlo al union type en `solicitud.ts`.
 2. Crear nueva migración con el constraint completo (no `ADD ... IN (...)` parcial).
 3. Agregar label/color en `src/lib/constants/estados.ts`.

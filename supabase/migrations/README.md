@@ -14,7 +14,7 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 > están aplicadas.** Evidencia por artefacto: columnas de `20260506/07/08/10/13/23/29/0602/0609`
 > presentes (3/3, 5/5, 2/2, 8/8), `completado_at` sin DEFAULT, 0 filas sin
 > `horario_token` (backfill OK), función `normalizar_telefono_co` + 3 triggers,
-> CHECK de `estado` con los **22 estados** (incl. `repuesto_recibido`,
+> CHECK de `estado` con los **19 estados vigentes** (desde `20260802`; incl. `repuesto_recibido`, `repuesto_en_camino`,
 > `no_show_cliente`, `pendiente_pricing`), `tiempo_estimado` nullable, tablas
 > `llamadas`/`connection_errors`/`supervisores`/`cliente_historial` existentes,
 > policies de Storage con role `public` (`20260521`) y sin policy de listing
@@ -262,11 +262,11 @@ WHERE coalesce(array_length(ciudades_cobertura, 1), 0) = 0
 
 Las migraciones no traen rollback automático. Si necesitas revertir una columna, hazlo manualmente. **No revertir** mientras haya filas `pendiente_pricing` o `reagendamiento_pendiente` en producción.
 
-## Nota sobre RLS (actualizada 2026-07-05, auditoría 2026-06-24)
+## Nota sobre RLS (actualizada 2026-10-07 — estado tras Fase 4.1 del 2026-07-11)
 
 - Tablas con RLS habilitado: `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `solicitud_eventos`, `repuestos_pendientes`, `gps_pings`, `cliente_historial`, `supervisores` (desde `20260529`), `llamadas` (desde `20260602`), `connection_errors` (desde `20260516`), `pagos` (desde `20260818` — nace CERRADA: solo service_role, sin policy anon).
 - Tablas **sin** RLS: `solicitudes_servicio` (la principal) y `especialidades_tecnico`.
-- **Ojo**: tener RLS "on" no protege mucho hoy — las policies de write son `USING(true)` para `anon`, así que con el `anon_key` (extraíble del bundle) se puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. La raíz es que la app escribe con anon (registro client-side + cliente singleton). El fix real es migrar los writes a `service_role` server-side antes de endurecer policies. Ver `docs/SEGURIDAD.md`.
+- **Fase 4.1 (`20260711_rls_fase4_1_cierre_tablas_server.sql`, aplicada en prod)** cerró al anon `supervisores`, `llamadas`, `gps_pings`, `solicitud_eventos` (SELECT solo authenticated) y `connection_errors` (idem), y quitó los writes anon de `notificaciones_whatsapp` y `repuestos_pendientes` (conservan SELECT). El server entero escribe con `service_role` desde Fase 1. **Siguen con writes anon `USING(true)`**: `tecnicos` (`/registro` client-side) y `evidencias_servicio` (uploads client-side) — Fases 2–3 de `docs/PLAN-RLS.md`. Rollback exacto: `supabase/rls-rollback-snapshot-2026-07-11.sql`.
 
 ## Hallazgos del audit (2026-05-07) — backlog de migraciones futuras
 

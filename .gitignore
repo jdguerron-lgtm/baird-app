@@ -35,6 +35,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# La plantilla SÍ se versiona (solo placeholders): es lo que copia GUIA_RAPIDA a .env.local
+!.env.example
 
 # vercel
 .vercel

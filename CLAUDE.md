@@ -16,7 +16,7 @@ npm run test:watch # Vitest (watch mode)
 
 - **Framework:** Next.js 16 (App Router) + React 19 + TypeScript 5 (strict)
 - **Styling:** Tailwind CSS v4 (inline classes, no CSS modules)
-- **Database:** Supabase (PostgreSQL) — singleton client at `src/lib/supabase.ts`
+- **Database:** Supabase (PostgreSQL) — **dos clientes**: `src/lib/supabase.ts` (anon key, SOLO páginas client-side/browser) y `src/lib/supabase-admin.ts` (`supabaseAdmin`, service_role, TODO el código server-side: API routes, services, crons — desde RLS Fase 1, 2026-07-11). Ver `docs/PLAN-RLS.md`.
 - **AI:** Google Gemini 2.0 Flash (`@google/generative-ai`) — temporarily disabled
 - **Messaging:** WhatsApp Business API (Meta Cloud API v22.0)
 - **Validation:** Zod v4
@@ -35,18 +35,20 @@ stack, conventions, env vars). Todo el detalle vive en docs específicos:
 - **`docs/INDEX.md`** — **HUB DE NAVEGACIÓN.** Tabla de tareas comunes ↔ doc específico, mapa completo de docs, pipeline de actualización (qué docs tocar para cada tipo de cambio), tags útiles para grep, health check.
 - **`docs/ARQUITECTURA.md`** — Mapa de archivos: árbol de directorios completo, funciones de `whatsapp.service.ts`, API routes, páginas customer/technician/admin, exportación de resumen Excel.
 - **`docs/MAQUINA-DE-ESTADOS.md`** — Cómo se parte el sistema en dos flujos (`es_garantia`), diagramas warranty/particular, payment model, admin pricing gate, customer self-service y la state machine completa de `solicitudes_servicio`.
-- **`docs/SUPABASE.md`** — Capa de datos: tablas, columnas JSONB (`triaje_resultado`, `cotizacion`), cliente único, migraciones, RLS por tabla, storage buckets, patrones de query, tablas append-only, CHECK constraints, auth admin, auditoría.
+- **`docs/SUPABASE.md`** — Capa de datos: tablas, columnas JSONB (`triaje_resultado`, `cotizacion`), clientes anon vs service_role, migraciones, RLS por tabla, storage buckets, patrones de query, tablas append-only, CHECK constraints, auth admin, auditoría.
 - **`docs/GOTCHAS.md`** — Trampas conocidas. Léelo antes de tocar código sensible.
 - **`docs/TARIFAS.md`** — **Doc canónico de tarifas.** MABE garantía (Tipo D + bonos por días + encuesta + recargo weekend + margen Baird 22%) y particular multi-marca (técnico ingresa lo que quiere ganar; sistema multiplica × 1.13 utilidad Baird × 1.19 IVA = × 1.3447; visita de diagnóstico paga $35.000 fijos al técnico — cambio 2026-07-05). Apéndices: marco tributario 2026, pasarelas split-payment, decisión reseller vs marketplace. **Léelo antes de tocar cualquier cálculo de pago**.
-- **`docs/PROTOCOLO-VISITA.md`** — Protocolo de verificación T-24h / T-2h / llegada / no-show. Modelo "no-show: nadie paga" con evidencia obligatoria. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes.
+- **`docs/PROTOCOLO-VISITA.md`** — **Spec parcialmente implementada** (auditoría 2026-10-07: solo migración, `cumple_ta`, recargo weekend y estado `no_show_cliente` existen; recordatorios T-24h/T-2h, plantillas y UI de no-show siguen pendientes). Protocolo de verificación T-24h / T-2h / llegada / no-show. Modelo "no-show: nadie paga" con evidencia obligatoria.
 - **`docs/FLOWS.md`** — Flujos end-to-end (warranty + particular + side flows), todas las plantillas WhatsApp en contexto, puntos de decisión del cliente verificados línea-por-línea, gaps conocidos, plan de testing manual.
-- **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de las 25 plantillas + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en `scripts/upload-templates.mjs` + este doc → (3) subir a Meta para aprobación. Backlog de plantillas nuevas con JSON listo. **Léelo antes de tocar cualquier mensaje WhatsApp**.
+- **`docs/WHATSAPP_TEMPLATES.md`** — Catálogo canónico de las plantillas Meta (el conteo y el status reales salen de `node --env-file=.env.local scripts/upload-templates.mjs --check`; ojo: las 10 versiones bumpeadas por la migración de dominio viven en `scripts/upload-templates-v2.mjs`) + el **proceso obligatorio de cambio**: (1) revisar dónde está documentada → (2) actualizar en `scripts/upload-templates.mjs` + este doc → (3) subir a Meta para aprobación. Backlog de plantillas nuevas con JSON listo. **Léelo antes de tocar cualquier mensaje WhatsApp**.
 - **`docs/SEGURIDAD.md`** — Mapa de autenticación y autorización: frontend admin, endpoints API (admin/cliente/cron), tokens UUID, RLS, storage, histórico de incidentes, backlog de hardening.
 - **`docs/DAPTA.md`** — Segunda línea de voz IA (llamadas cuando WhatsApp no responde). Fase 0 desplegada pero apagada (`DAPTA_ENABLED=false`). Resume lo operativo; el doc de decisión/fases/costos es `docs/mejoras-futuras/segunda-linea-voz/README.md`.
 - **`docs/WOMPI.md`** — Pasarela de pagos (decisión 2026-08-18: Wompi única pasarela; Shopify solo repuestos). Anticipo de reserva post-aceptación del técnico, página `/pago/anticipo/{token}`, webhook, tabla `pagos`, reglas de seguridad y puesta en marcha. **Léelo antes de tocar cualquier cobro online**.
 - **`docs/FACTURACION.md`** — Facturación y contabilidad: qué documento contable genera cada servicio (FV cliente particular, FV consolidada a MABE, documento soporte del técnico, ledger de pagos Wompi), campos que pide Siigo y gaps, export `tipo: 'facturacion'` en `/admin/liquidaciones`, liquidación quincenal de técnicos, opciones para venderle repuestos al técnico y fases de integración con Siigo. **Léelo antes de tocar liquidaciones o proponer algo de contabilidad**.
+- **`docs/PLAN-RLS.md`** — Plan de cierre de la capa de datos (5 fases) + **bitácora de ejecución**: Fase 0, Fase 1 (server → service_role) y Fase 4.1 (cierre de `supervisores`, `llamadas`, `gps_pings`, `solicitud_eventos`, `connection_errors` + writes de `notificaciones`/`repuestos`) aplicadas en prod el 2026-07-11. Fases 2–4.2 pendientes (`tecnicos`, `evidencias_servicio`, `solicitudes_servicio`, `especialidades_tecnico`). **Léelo antes de tocar RLS o policies**.
+- **`docs/TEST_CARGA_MASIVA.md`** — Procedimiento de prueba de `/admin/carga-masiva`: Excel BITÁCORA y PDF de órdenes TALLER MABE (`pdf-orden-mapping.ts`), dedup por orden.
 - **`supabase/migrations/README.md`** — Orden de aplicación, verificación SQL, hallazgos del audit + backlog de migraciones.
-- **`docs/FLUJOS-USUARIO.md`** — DEPRECATED (state machine v1, marzo 2026). No actualizar.
+- **`docs/historico/`** — Snapshots deprecados (FLUJOS-USUARIO v1, COWORK, CONTEXTO, DIAGNOSTIC 2026-04-05). No actualizar.
 
 ## Architecture
 
@@ -94,7 +96,10 @@ Tablas, columnas JSONB, migraciones, RLS, storage buckets, patrones de query, CH
 
 ```
 NEXT_PUBLIC_SUPABASE_URL          # Supabase project URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY     # Supabase anon key (public)
+NEXT_PUBLIC_SUPABASE_ANON_KEY     # Supabase anon key (public) — browser / páginas client-side
+SUPABASE_SERVICE_ROLE_KEY         # OBLIGATORIA — service_role para TODO el server-side (src/lib/supabase-admin.ts
+                                  # lanza si falta; ~35 rutas API/services la usan desde RLS Fase 1, 2026-07-11).
+                                  # Nunca con prefijo NEXT_PUBLIC. Ver docs/PLAN-RLS.md.
 GEMINI_API_KEY                    # Google Generative AI
 WHATSAPP_API_TOKEN                # Meta WhatsApp Business permanent token
 WHATSAPP_PHONE_ID                 # WhatsApp phone number ID (1148716061648720)
@@ -112,6 +117,15 @@ BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. 
                                   # alertar a técnicos reales. Vacío/no definido = comportamiento
                                   # normal (envía a todos). La 2ª línea de voz (Dapta) reusa
                                   # esta misma whitelist vía isPhoneAllowed.
+
+# Admin, cron, mapas y analítica
+ADMIN_EMAILS                      # CSV de emails admin (server). Default jdguerron@bairdservice.com. Ver docs/SEGURIDAD.md.
+NEXT_PUBLIC_ADMIN_EMAILS          # Mismo CSV para el cliente (login + guard del layout /admin).
+CRON_SECRET                       # Bearer que exigen /api/cron/* (Vercel Cron) y /api/test-whatsapp.
+ENABLE_TEST_ENDPOINTS             # 'true' habilita /api/test-whatsapp en prod (default apagado).
+GOOGLE_MAPS_API_KEY               # Geocoding de direcciones para /admin/mapa (geocoding.service.ts).
+NEXT_PUBLIC_GA_MEASUREMENT_ID     # OPCIONAL — GA4 (default G-DXSC4J9RGF hardcodeado).
+NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL # OPCIONAL — label de conversión Ads (default hardcodeado en googleAds.ts).
 
 # Wompi — pasarela de pagos (anticipo de reserva + recaudo online). Ver docs/WOMPI.md.
 WOMPI_PUBLIC_KEY                  # pub_prod_… / pub_test_… (test → sandbox automático)
@@ -140,6 +154,7 @@ DAPTA_MAX_INTENTOS                # Tope de llamadas por solicitud (default 2)
 DAPTA_REINTENTO_COOLDOWN_HORAS    # Horas entre reintentos a la misma solicitud (default 4)
 DAPTA_HORARIO_INICIO              # Hora hábil inicio, TZ America/Bogota 0–23 (default 8)
 DAPTA_HORARIO_FIN                 # Hora hábil fin, TZ America/Bogota 0–23 (default 19)
+# RESERVADAS (Fase 1 del plan de voz) — hoy NINGÚN código las lee (auditoría 2026-10-07):
 DAPTA_SILENCIO_AGENDAR_HORAS      # Silencio WhatsApp antes de escalar — agendar (default 12)
 DAPTA_SILENCIO_CIERRE_HORAS       # Silencio WhatsApp antes de escalar — cierre (default 24)
 DAPTA_SILENCIO_COTIZACION_HORAS   # Silencio WhatsApp antes de escalar — cotización (default 24)
@@ -148,7 +163,7 @@ DAPTA_SILENCIO_REPUESTO_HORAS     # Silencio WhatsApp antes de escalar — repue
 
 ## Testing
 
-Vitest is configured but no tests exist yet. Test files should be colocated or in a `__tests__` directory.
+Vitest con **19 archivos de test (~320 casos) en `src/__tests__/`** (utils, validations, services, lib/wompi, pdf). `npm test` corre todo en ~1 s. Un fallo SÍ es regresión (verificado 2026-10-07). Tests nuevos van en `src/__tests__/<area>/`.
 
 ## Legal Framework
 
@@ -163,4 +178,4 @@ All legal documents are in the `legal/` directory as .docx files, in Spanish, al
 
 ## Current Status
 
-MVP deployed on Vercel with full dual-flow lifecycle — both warranty and non-warranty flows operational end-to-end. WhatsApp Cloud API v22.0 operational with permanent System User token and own number (+57 313 4951164); 32 plantillas en el script — 29 APPROVED y 3 PENDING (subidas 2026-07-05); gaps de comunicación 1, 3–6, 8, 9 y H1 cerrados el 2026-07-06 (catálogo y detalle en `docs/WHATSAPP_TEMPLATES.md`). Supervisores con avisos por cambio de estado + resumen semanal PDF (manual, cron pendiente). Particular con auto-agendamiento (2026-07-06): `/api/solicitar` confirma la opción 1 del formulario y notifica técnicos inline — `pendiente_horario` solo persiste en garantía o si ambas opciones quedaron sin cupo (ver `docs/MAQUINA-DE-ESTADOS.md` y `docs/FLOWS.md`). Segunda línea de voz IA en Fase 0 apagada (`docs/DAPTA.md`). RLS enabled on most tables but still **off** on `solicitudes_servicio` (main table) and `especialidades_tecnico`, y las policies de write son `USING(true)` — ver `docs/GOTCHAS.md` y `docs/SEGURIDAD.md`. See TODO.md for full roadmap.
+MVP deployed on Vercel with full dual-flow lifecycle — both warranty and non-warranty flows operational end-to-end. WhatsApp Cloud API v22.0 operational with permanent System User token and own number (+57 313 4951164); plantillas Meta: 46 definiciones en `scripts/upload-templates.mjs` + 10 versiones vigentes en `scripts/upload-templates-v2.mjs` (el código envía ~43 distintas; status real con `--check`, catálogo en `docs/WHATSAPP_TEMPLATES.md`). Supervisores con avisos por cambio de estado + resumen semanal PDF (manual, cron pendiente). Particular con auto-agendamiento (2026-07-06): `/api/solicitar` confirma la opción 1 del formulario y notifica técnicos inline — `pendiente_horario` solo persiste en garantía o si ambas opciones quedaron sin cupo (ver `docs/MAQUINA-DE-ESTADOS.md` y `docs/FLOWS.md`). Segunda línea de voz IA en Fase 0 apagada (`docs/DAPTA.md`). RLS (Fase 1 + 4.1 aplicadas 2026-07-11, ver `docs/PLAN-RLS.md`): todo el server-side escribe con service_role; `supervisores`, `llamadas`, `gps_pings`, `solicitud_eventos`, `connection_errors` y `pagos` cerradas al anon; `notificaciones_whatsapp` y `repuestos_pendientes` solo SELECT anon. Sigue **off** en `solicitudes_servicio` y `especialidades_tecnico`, y `tecnicos`/`evidencias_servicio` conservan writes anon (`/registro` y evidencias client-side) — Fases 2–4.2 pendientes. Admin de solicitudes con filtro "Sin técnico" + reenvío masivo de la oferta a técnicos (2026-10-07). See TODO.md for full roadmap.

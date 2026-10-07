@@ -6,7 +6,7 @@
 >
 > **Última actualización: 2026-05-10** (particular elimina admin pricing gate;
 > técnico ingresa costo directo y sistema calcula con IVA + margen Baird).
-> Reemplaza a `docs/FLUJOS-USUARIO.md` (obsoleto, state machine v1).
+> Reemplaza a `docs/historico/FLUJOS-USUARIO-v1.md` (obsoleto, state machine v1).
 
 > 🧭 **Ver también**:
 > - `docs/INDEX.md` — hub de navegación. Si llegaste acá sin contexto, empezá por ahí.

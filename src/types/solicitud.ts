@@ -73,7 +73,8 @@ export interface SolicitudFormData {
 // ESTADO_LABELS/ESTADO_ESTILOS mantienen aliases legacy para renderizarla.
 export type EstadoSolicitud =
   | 'pendiente_horario'            // cliente debe elegir horario antes de notificar técnicos
-  | 'sin_agendar'                  // cliente no confirmó horario tras 24h+12h recordatorio (terminal)
+  | 'sin_agendar'                  // cliente no confirmó horario tras los recordatorios (particular 24h+12h; garantía 3 recordatorios → 84h) (terminal)
+  | 'no_show_cliente'              // (2026-05-10) cliente no estuvo en la visita agendada (terminal). Hoy solo se alcanza vía /api/admin/cambiar-estado
   | 'notificada'
   | 'asignada'                     // técnico aceptó; visita pendiente (ambos flujos — antes particular usaba diagnostico_pendiente)
   | 'aprobacion_paso_pendiente'    // post-diagnóstico (garantía), cliente debe aprobar el siguiente paso propuesto (antes: verificacion_pendiente)
@@ -82,7 +83,7 @@ export type EstadoSolicitud =
   | 'esperando_repuesto'           // post-diagnóstico, repuesto pendiente (garantía entra DIRECTO desde el diagnóstico — 2026-08-02)
   | 'repuesto_en_camino'           // (2026-08-02): supervisor subió la guía de envío; cliente agenda la visita de finalización
   | 'repuesto_recibido'            // (2026-05-29): repuesto llegó; cliente debe reprogramar fecha (tentativa) antes de en_proceso
-  | 'pendiente_pricing'            // (2026-05-07): técnico envió diagnóstico con esperar_repuesto (garantía), admin fija tiempo_entrega
+  | 'pendiente_pricing'            // (2026-05-07): técnico envió diagnóstico con esperar_repuesto en PARTICULAR; admin fija precio/tiempo_entrega (garantía va directo a esperando_repuesto desde 2026-08-02)
   | 'finalizado_sin_reparacion'    // equipo no reparable (terminal)
   | 'reparacion_rechazada'         // cliente rechazó proceder con reparación tras diagnóstico (terminal) (antes: cancelada_cliente)
   | 'en_proceso'

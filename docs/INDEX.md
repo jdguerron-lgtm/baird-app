@@ -5,7 +5,7 @@
 > que corresponde y abre el doc específico**. Esto evita drift y
 > duplicación.
 >
-> **Última revisión: 2026-07-05** (auditoría general de docs: raíz deprecada → docs/ canónico, estado de salud refrescado).
+> **Última revisión: 2026-10-07** (auditoría de 47 docs contra el código en `8c6f442`: RLS Fase 4.1 reflejada, PLAN-RLS enlazado, env vars completas, raíz histórica movida a `docs/historico/`, conteos de plantillas corregidos). Pendiente tanda 2/3: FLOWS particular, MAQUINA-DE-ESTADOS, ARQUITECTURA, TARIFAS, TEST_CARGA_MASIVA — ver `TODO.md` § Documentación.
 
 ---
 
@@ -25,8 +25,15 @@
 | **Agregar un estado nuevo** a la state machine | `docs/MAQUINA-DE-ESTADOS.md` § "Solicitud State Machine" + `supabase/migrations/README.md` ("Cómo aplicar las pendientes") |
 | **Aplicar migración Supabase** | `supabase/migrations/README.md` | "Cómo aplicar las pendientes" |
 | **Ver qué columnas existen** en una tabla | `docs/SUPABASE.md` § "Database Tables" + última migración relevante |
-| **Entender RLS y storage** | `docs/SUPABASE.md` § "Supabase Architecture" |
+| **Entender RLS y storage** | `docs/SUPABASE.md` § "Supabase Architecture" + **`docs/PLAN-RLS.md`** (fases + bitácora: qué está cerrado y qué falta) |
+| **Elegir el cliente Supabase correcto** (anon vs service_role) | `docs/GOTCHAS.md` (primer ítem) + `docs/SUPABASE.md` § "Dos clientes" |
 | **Saber qué env vars necesita** | `CLAUDE.md` § "Environment Variables" |
+| **Entender por qué un técnico sí/no recibe una oferta** (matching ciudad/especialidad) | `docs/GOTCHAS.md` § Matching + `src/lib/utils/format.ts` (`normalizeForMatch`, `cityTokenForMatch`) + panel "Diagnóstico de matching" en `/admin/solicitudes/[id]` |
+| **Reenviar la oferta a técnicos de varias solicitudes a la vez** | `/admin/solicitudes` → filtro "Sin técnico" → seleccionar → "Reenviar a técnicos" (usa `POST /api/whatsapp/notify`) |
+| **Cargar órdenes MABE masivamente** (Excel BITÁCORA o PDF TALLER) | `docs/TEST_CARGA_MASIVA.md` + `src/lib/utils/pdf-orden-mapping.ts` |
+| **Tocar un cobro online** (anticipo, saldo, abono, webhook Wompi) | `docs/WOMPI.md` |
+| **Entender el portal de supervisores** (link mágico, OTP, alcance) | `docs/SEGURIDAD.md` § Supervisores + `src/lib/auth/supervisor.ts` |
+| **Encender o tocar la línea de voz IA** | `docs/DAPTA.md` |
 | **Probar el flujo end-to-end** | `docs/FLOWS.md` § "Para validar end-to-end (testing manual)" |
 | **Verificar que un cambio de RLS / Storage no rompió flujos** | `scripts/verify-flows.mjs` + `docs/SEGURIDAD.md` § 5.1 |
 | **Investigar un error de conexión del cliente** | `/admin/errores` panel + `docs/ARQUITECTURA.md` § "Observabilidad" |
@@ -50,14 +57,15 @@
 | **`docs/MAQUINA-DE-ESTADOS.md`** | Cómo se parte el sistema en dos flujos (`es_garantia`), diagramas warranty/particular, payment model, admin pricing gate, customer self-service, state machine completa. Complementa `FLOWS.md` (narrativo). | Antes de tocar la state machine, el pricing gate o el self-service. | Tras agregar un estado, cambiar una transición, modificar el pricing gate o el self-service. |
 | **`docs/SUPABASE.md`** | Capa de datos: tablas, columnas JSONB (`triaje_resultado`, `cotizacion`), cliente único, migraciones, RLS por tabla, storage buckets, patrones de query, tablas append-only, CHECK constraints, auth admin, auditoría. | Antes de tocar el schema, escribir una query, o entender RLS/storage. | Tras agregar tabla/columna, cambiar RLS, agregar bucket, o un patrón de query nuevo. |
 | **`docs/GOTCHAS.md`** | Trampas conocidas: Supabase client, atomic acceptance, phone format, WhatsApp 24h window, storage PII, RLS gap, pre-deploy, etc. | Antes de tocar código sensible. | Cuando detectás un patrón a evitar o una trampa nueva. |
-| **`docs/TARIFAS.md`** | Doc canónico de tarifas. MABE garantía (Tipo D + bonos + weekend + margen 22%) y particular multi-marca (× 1.19 IVA × 1.10 margen Baird). Apéndices: marco tributario 2026, pasarelas, decisión reseller vs marketplace. | Antes de tocar cualquier cálculo de pago, agregar bono/recargo, o cambiar margen. | Tras cambiar una tarifa, modificar el modelo de margen, agregar marca nueva al flujo garantía, o cambiar IVA por reforma DIAN. |
-| **`docs/PROTOCOLO-VISITA.md`** | Verificación T-24h / T-2h / llegada / no-show. Estados, columnas DB, plantillas WhatsApp pendientes, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
+| **`docs/TARIFAS.md`** | Doc canónico de tarifas. MABE garantía (Tipo D + bonos + weekend + margen 22%) y particular multi-marca (× 1.13 utilidad Baird × 1.19 IVA, + ½ comisión Wompi en cotizaciones ≈ × 1.3675). Apéndices: marco tributario 2026, pasarelas, decisión reseller vs marketplace. | Antes de tocar cualquier cálculo de pago, agregar bono/recargo, o cambiar margen. | Tras cambiar una tarifa, modificar el modelo de margen, agregar marca nueva al flujo garantía, o cambiar IVA por reforma DIAN. |
+| **`docs/PROTOCOLO-VISITA.md`** | **Spec parcialmente implementada** (solo migración, `cumple_ta`, recargo y estado `no_show_cliente`; recordatorios T-24h/T-2h, plantillas y UI de no-show pendientes). Verificación T-24h / T-2h / llegada / no-show, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
 | **`docs/FLOWS.md`** | Diagramas paso-a-paso de cada flujo end-to-end con cada plantilla WhatsApp en su contexto, puntos de decisión del cliente, gaps conocidos, plan de testing manual. | Cuando vas a tocar el state machine, agregar una página customer-facing, o entender dónde se manda qué WhatsApp. | Tras cambiar el state machine, agregar/cambiar una plantilla en el flujo, o mover un disparo de WhatsApp. |
-| **`docs/WHATSAPP_TEMPLATES.md`** | Catálogo de las 25 plantillas Meta, parámetros, disparo, copy completo. **Define el proceso obligatorio de cambio de plantilla.** Backlog de plantillas nuevas con JSON listo. | Antes de tocar cualquier mensaje WhatsApp. | Tras cambiar params de una plantilla, agregar una nueva, o subirla a Meta. |
+| **`docs/WHATSAPP_TEMPLATES.md`** | Catálogo de las plantillas Meta (conteo/status reales: `upload-templates.mjs --check`; 10 versiones vigentes viven en `upload-templates-v2.mjs`), parámetros, disparo, copy completo. **Define el proceso obligatorio de cambio de plantilla.** Backlog de plantillas nuevas con JSON listo. | Antes de tocar cualquier mensaje WhatsApp. | Tras cambiar params de una plantilla, agregar una nueva, o subirla a Meta. |
 | **`docs/SEGURIDAD.md`** | Mapa de autenticación y autorización: frontend admin, endpoints API (admin/cliente/cron), tokens UUID, RLS, storage, histórico de incidentes, backlog de hardening. | Antes de tocar cualquier endpoint admin, agregar uno nuevo, o auditar seguridad. | Tras agregar/quitar endpoint admin, cambiar el patrón de auth, habilitar RLS, o resolver un incidente. |
 | **`docs/DAPTA.md`** | Segunda línea de voz IA — resumen operativo de la Fase 0 (servicio, webhook, tabla `llamadas`, env vars, cómo encenderla). El doc de decisión/fases/costos vive en `mejoras-futuras/segunda-linea-voz/`. | Antes de tocar `dapta.service.ts`, el webhook o pensar en encender `DAPTA_ENABLED`. | Tras avanzar una fase, cambiar de proveedor o encender/apagar el kill-switch. |
 | **`docs/FACTURACION.md`** | Facturación y contabilidad: qué documento contable genera cada servicio (FV cliente, FV MABE, documento soporte técnico, ledger Wompi), qué campos pide Siigo y cuáles faltan, export `tipo: 'facturacion'` de `/admin/liquidaciones`, liquidación quincenal, opciones para venderle repuestos al técnico e integración por fases con Siigo. | Antes de tocar `/api/admin/liquidaciones`, `facturacion.ts`, o proponer algo de contabilidad/Siigo. | Tras cambiar un ID de Siigo, agregar una hoja al export, capturar un dato nuevo del cliente/técnico o decidir una opción de § 6/§ 7. |
 | **`docs/WOMPI.md`** | Pasarela de pagos (decisión 2026-08-18): anticipo de reserva, página `/pago/anticipo/{token}`, webhook, tabla `pagos`, reglas de seguridad del checkout firmado, env vars y puesta en marcha. | Antes de tocar cualquier cobro online, `src/lib/wompi.ts` o `pagos.service.ts`. | Tras agregar un cobro nuevo (saldo), cambiar % de anticipo, o activar split al técnico. |
+| **`docs/PLAN-RLS.md`** | Plan de cierre de la capa de datos en 5 fases + bitácora de ejecución (Fase 0, 1 y 4.1 aplicadas 2026-07-11; 2–4.2 pendientes). Snapshot de rollback en `supabase/rls-rollback-snapshot-2026-07-11.sql`. | Antes de tocar RLS, policies o el cliente Supabase de una página. | Tras aplicar una fase o mover un write client-side a server. |
 | **`supabase/migrations/README.md`** | Lista ordenada de migraciones, status (aplicada/pendiente), hotfixes, verificación SQL post-apply, backlog de migraciones futuras. | Antes de aplicar una migración o cuando hay drift schema↔código. | Tras crear nueva migración o aplicar una. |
 | **`docs/INDEX.md`** (este archivo) | Hub de navegación. Mapea tareas comunes a docs específicos. | Primero al iniciar una iteración. | Cuando creas un nuevo doc o cambias el rol de uno existente. |
 
@@ -65,7 +73,8 @@
 
 | Doc | Para qué sirve |
 |---|---|
-| `docs/TEST_CARGA_MASIVA.md` | Procedimiento de test del upload de Excel BITÁCORA (warranty bulk). |
+| `docs/TEST_CARGA_MASIVA.md` | Procedimiento de test de `/admin/carga-masiva`: Excel BITÁCORA y PDF de órdenes TALLER MABE (§ 7). ⚠️ El cuerpo (estado inicial, teléfono, duplicados) está desactualizado — tanda 3. |
+| `docs/pagos-tecnico.pdf` | Guía de pagos al técnico (PDF que se comparte por WhatsApp). La versión web es `public/guia-pagos.html`. |
 | `docs/flujos-servicio.html` | Mockup visual antiguo del flujo. No es referencia técnica. |
 | `legal/*.docx` | Documentos legales (T&C, política privacidad, contratos, etc.) — Colombian SAS compliance. |
 
@@ -84,12 +93,11 @@
 | [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a `lineablanca.bairdservice.com`. Runbook + rollback documentado. | 2026-05-23 |
 | [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Mapa admin de servicios geolocalizados en `/admin/mapa`. Pipeline geocoding + 9 mejoras UI. Fase 2 (GPS en vivo, heatmap, rutas) diferida. | 2026-05-23 |
 | [`docs/mejoras-futuras/supervisores-y-repuesto-recibido/`](mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md) | Supervisores con avisos WhatsApp por cambio de estado + estado `repuesto_recibido` + botón "pedir repuesto a supervisores". Desplegado en iteraciones sucesivas. | 2026-05-29 → 06-16 |
+| [`docs/mejoras-futuras/pagos-shopify/`](mejoras-futuras/pagos-shopify/README.md) | **ARCHIVADO 2026-08-18** — superseded por Wompi como pasarela única (`docs/WOMPI.md`). Shopify queda solo para repuestos. ⚠️ El CTA de anticipo Shopify en `/solicitar` sigue en el código (decisión pendiente, tanda 2). | archivado |
 
 ### Documentación deprecated (no actualizar)
 
-| Doc | Por qué está deprecado |
-|---|---|
-| `docs/FLUJOS-USUARIO.md` | State machine v1 (marzo 2026). Usar `FLOWS.md`. |
+Vive en [`docs/historico/`](historico/README.md) con su propio índice: `FLUJOS-USUARIO-v1.md` (state machine v1), `COWORK.md`, `CONTEXTO.md`, `DIAGNOSTIC_2026-04-05.md`. Los punteros de raíz `API.md` / `ARQUITECTURA.md` / `MODULOS.md` se eliminaron el 2026-10-07 (recuperables con `git log`).
 
 ---
 
@@ -140,7 +148,7 @@
 2. **Auth obligatorio**: `verificarAdmin` desde `@/lib/auth/admin` como primera línea del handler. Ver checklist completo en `docs/SEGURIDAD.md` § "Cómo agregar un endpoint admin nuevo"
 3. UI envía `Authorization: Bearer ${session.access_token}`
 4. `docs/ARQUITECTURA.md` § "API Routes" si el endpoint cambia de propósito
-5. `docs/FLOWS.md` § "Admin Pages" si cambia el rol del admin
+5. `docs/ARQUITECTURA.md` § "Admin Pages" si cambia el rol del admin (FLOWS.md no tiene esa sección)
 6. `docs/SEGURIDAD.md` § "Endpoints API → Admin" — agregar a la tabla
 
 ### Agregas una env var
@@ -190,7 +198,9 @@ Cuando busques referencias en código, estos son los identificadores estables:
 | `TIPO_A_ESPECIALIDAD` | Mapping tipo_equipo → especialidad técnico |
 | `calcularPagoTecnico` | Lógica de tarifa servicio (legacy) |
 | `calcularTarifaMABE` | Cálculo completo garantía MABE Tipo D — tarifa + bono + weekend + margen Baird 22% |
-| `calcularTarifaParticular` | Cálculo completo particular — costo técnico × 1.19 IVA × 1.10 margen Baird |
+| `calcularTarifaParticular` | Cálculo completo particular — costo técnico × 1.13 utilidad Baird × 1.19 IVA (+ ½ comisión Wompi en cotizaciones) |
+| `normalizeForMatch` / `cityTokenForMatch` | Pipeline de normalización para matching (ciudad, especialidad, marca): sin tildes, minúsculas, sin caracteres especiales; D.C. = Bogotá. Único criterio permitido — nunca `.ilike()` en BD para ciudad |
+| `supabaseAdmin` | Cliente service_role (`src/lib/supabase-admin.ts`) — TODO el server-side. Si ves `from '@/lib/supabase'` en una API route, es un bug |
 | `TARIFAS_MABE_TIPO_D` / `BONOS_CON_ENCUESTA` / `RECARGO_FIN_DE_SEMANA` | Constantes MABE |
 | `MARGEN_BAIRD_GARANTIA` / `MARGEN_BAIRD_PARTICULAR` | Constantes de margen |
 | `parseExcelData` | Mapeo BITÁCORA Excel → solicitud |
@@ -218,13 +228,13 @@ Verificación SQL post-migración: ver `supabase/migrations/README.md` § "Verif
 
 ---
 
-## 🚦 Estado de salud actual (2026-07-05 — verificado contra producción)
+## 🚦 Estado de salud actual (2026-10-07 — verificado contra producción)
 
-- **Código**: producción (Vercel `lineablanca.bairdservice.com`) corre el commit `1479c5f` = `origin/main`. `/api/health` responde `healthy`.
+- **Código**: producción (Vercel `lineablanca.bairdservice.com`) corre el commit `8c6f442` = `origin/main` (deploy READY 2026-10-07).
 - **Build / Typecheck / Lint / Tests**: verificar con los comandos del health check de arriba antes de deploy — no confiar en snapshots viejos de esta sección.
 - **Migraciones**: **todas las del repo verificadas APLICADAS contra la BD de producción (2026-07-05)** — detalle y evidencia en **`supabase/migrations/README.md`** (fuente de verdad; esta sección no duplica esa lista).
-- **Plantillas Meta (verificado 2026-07-06)**: **todas las que invoca el código desplegado están APPROVED** — incluidas las 3 subidas el 2026-07-05 (aprobaron el mismo día) y las `cotizacion_*_v3` del modelo de tarifas. Los gaps 1, 3–6, 8, 9 y H1 quedaron cerrados en producción. Única PENDING: `supervisor_acceso_v1` (subida 2026-07-06), que pertenece al portal de supervisores aún **sin deployar** — no bloquea nada en vivo. Sin redundancias de envío por destinatario. Ver `docs/WHATSAPP_TEMPLATES.md`.
-- **RLS**: sigue off en `solicitudes_servicio` y `especialidades_tecnico`; policies de write `USING(true)` en el resto — ver `docs/SEGURIDAD.md` (auditoría 2026-06-24).
+- **Plantillas Meta**: el código envía ~43 plantillas distintas; 46 definiciones en `scripts/upload-templates.mjs` + 10 versiones vigentes en `scripts/upload-templates-v2.mjs` (⚠️ los dos scripts están partidos — unificar es tanda 2). Status real: `--check`. El portal de supervisores está en prod desde 2026-07-06. Ver `docs/WHATSAPP_TEMPLATES.md`.
+- **RLS**: Fase 1 + 4.1 aplicadas 2026-07-11 (server con service_role; `supervisores`, `llamadas`, `gps_pings`, `solicitud_eventos`, `connection_errors`, `pagos` cerradas al anon). Sigue off en `solicitudes_servicio` y `especialidades_tecnico`; `tecnicos` y `evidencias_servicio` con writes anon por páginas client-side — ver `docs/PLAN-RLS.md`.
 - **Dapta (2ª línea de voz)**: Fase 0 desplegada pero apagada (`DAPTA_ENABLED=false`); decisión de proveedor pendiente — ver `docs/mejoras-futuras/segunda-linea-voz/README.md`.
 - **Resumen semanal a supervisores**: operativo pero manual (`scripts/enviar-resumen-supervisores.mjs` + `scripts/resumen-semanal-pdf.py`); automatización pendiente.
 

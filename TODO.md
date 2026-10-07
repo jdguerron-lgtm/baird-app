@@ -1,5 +1,5 @@
 # TODO — Baird Service
-**Última actualización:** 5 de julio de 2026
+**Última actualización:** 7 de octubre de 2026
 
 > Para el estado de salud (build/tests/migraciones) ver `docs/INDEX.md` § "Estado de salud actual". Para migraciones pendientes, la fuente de verdad es `supabase/migrations/README.md`.
 
@@ -10,7 +10,7 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 - Oath del técnico con firma digital antes de cada diagnóstico
 - Tracking GPS en 4 fases con flagging silencioso 30 min post-visita
 - Página pública de Términos y Condiciones (Ley 1480/2011, Ley 1581/2012)
-- 25 plantillas WhatsApp aprobadas en Meta (catálogo canónico en `docs/WHATSAPP_TEMPLATES.md`; 10 con versión incrementada por la migración de dominio 2026-05-23)
+- Plantillas WhatsApp en Meta: ~43 distintas enviadas por el código (46 definiciones en `scripts/upload-templates.mjs` + 10 vigentes en `scripts/upload-templates-v2.mjs`; catálogo canónico en `docs/WHATSAPP_TEMPLATES.md`, status real con `--check`)
 - UI admin para gestión de repuestos pendientes y alertas GPS
 
 **Novedades 2026-06/07:** supervisores con avisos WhatsApp por cambio de estado + botón "pedir repuesto a supervisores", resumen semanal PDF a supervisores (`resumen_semanal_supervisores_v1`), mapa admin `/admin/mapa` con geocoding, calendario de agenda con cupo por franja, reagendar/cancelar self-service del cliente, Fase 0 de segunda línea de voz IA (Dapta, apagada tras `DAPTA_ENABLED`), endpoint de diagnóstico `/api/test-whatsapp`, gtag de conversiones.
@@ -161,10 +161,13 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 ### 4. Token permanente (System User) ✅ COMPLETADO
 - [x] System User `baird-api` con token permanente activo
 
-### 5. RLS en Supabase — PARCIAL ⚠️ (revisado en auditoría 2026-06-24)
-- [x] RLS habilitado en 7 tablas: `tecnicos`, `notificaciones_whatsapp`, `evidencias_servicio`, `solicitud_eventos`, `repuestos_pendientes`, `gps_pings`, `cliente_historial`
-- [ ] **Pendiente**: habilitar RLS en `solicitudes_servicio` (tabla principal) y `especialidades_tecnico`
-- [ ] **Pendiente (raíz del problema)**: las policies de write de las tablas "con RLS" son `USING(true)` → con el `anon_key` (extraíble del bundle) cualquiera puede DELETE/UPDATE `tecnicos`/`supervisores`/`llamadas`. Fix real: migrar writes de anon → `service_role` server-side antes de endurecer policies. Ver `docs/SEGURIDAD.md`.
+### 5. RLS en Supabase — Fases 0, 1 y 4.1 HECHAS (2026-07-11), 2–4.2 PENDIENTES (plan en `docs/PLAN-RLS.md`)
+- [x] Fase 0/1: todo el server-side escribe con `service_role` (`supabaseAdmin`); self-signup apagado
+- [x] Fase 4.1: `supervisores`, `llamadas`, `gps_pings`, `solicitud_eventos`, `connection_errors` y `pagos` cerradas al anon; writes anon de `notificaciones_whatsapp`/`repuestos_pendientes` quitados
+- [ ] Fase 2: `/registro` y edición admin de técnicos → API route server-side; cerrar writes anon de `tecnicos`
+- [ ] Fase 3: insert de evidencias (`completar/[id]`) y lecturas de `/aceptar`, `/verificar-paso` → server; cerrar `evidencias_servicio` y los SELECT anon que quedan
+- [ ] Fase 4.2: habilitar RLS en `solicitudes_servicio` (tabla principal) y `especialidades_tecnico` con policies anon por token
+- [ ] Borrar la rama `seguridad/rls-fase1` (ya mergeada en `a32fdd3`) local y en origin
 
 ---
 
@@ -205,10 +208,33 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 
 | Área | Descripción | Impacto |
 |------|-------------|---------|
-| **Testing** | Vitest configurado con tests en `src/__tests__/` (utils, validations), pero cobertura delgada — sin integración ni e2e (Playwright pendiente). | Alto |
-| **RLS Supabase** | Parcial — off en `solicitudes_servicio` + `especialidades_tecnico`; policies write `USING(true)` en el resto. Ver pendiente §5. | Alto |
-| **Rate limiting** | In-memory per-isolate (best-effort en serverless). Fix real: Upstash/Vercel KV. Cubre `/solicitar` y `/log-error`. | Medio |
+| **Testing** | Vitest con 19 archivos / ~320 casos en `src/__tests__/` (utils, validations, services, lib/wompi, pdf) — sin integración real ni e2e (Playwright pendiente). | Medio |
+| **RLS Supabase** | Fases 0/1/4.1 hechas (server con service_role; 6 tablas cerradas al anon). Off en `solicitudes_servicio` + `especialidades_tecnico`; writes anon en `tecnicos`/`evidencias_servicio`. Ver pendiente §5 y `docs/PLAN-RLS.md`. | Alto |
+| **Rate limiting** | In-memory per-isolate (best-effort en serverless). Fix real: Upstash/Vercel KV. Cubre 10 paths en `middleware.ts` (solicitar, log-error, triaje, notify, accept, carga-masiva, OTP supervisor…). `/api/notificar-registro` sigue sin auth ni límite. | Medio |
 | **Gestión estado global** | Solo hooks locales. Evaluar Zustand si la app crece. | Bajo |
 | **Phone utilities** | ~~Resuelto~~ — consolidadas en `src/lib/utils/phone.ts` + trigger BD `normalizar_telefono_co()` (2026-05-13). | ✅ |
 | **Excel mapper** | Hardcoded para formato BITÁCORA Mabe/GE. No flexible para otros proveedores. | Medio |
 | **Paginación** | Queries sin LIMIT — costosas cuando haya volumen. | Futuro |
+
+---
+
+## Documentación — pendientes de la auditoría 2026-10-07
+
+Auditoría de 47 `.md` contra el código (`8c6f442`). La **tanda 1** (hecha 2026-10-07) cerró: env vars completas en `CLAUDE.md`/`.env.example`/`GUIA_RAPIDA`, guía del cliente Supabase (anon vs service_role), estado RLS post-Fase 4.1 en 6 docs, `PLAN-RLS.md` enlazado, conteos de plantillas, raíz histórica → `docs/historico/`, `no_show_cliente` en `EstadoSolicitud`.
+
+### Tanda 2 — requieren decisión de negocio
+- [ ] **CTA Shopify "Pagar anticipo $42.000" en `/solicitar`** (`src/app/solicitar/page.tsx` ~l.249): contradice "Wompi pasarela única" y permite doble cobro (Shopify + link Wompi tras aceptación). Quitar / gatear por `wompiHabilitado()` / documentar que sigue vivo. Luego alinear `docs/WOMPI.md`, `docs/TARIFAS.md` § pendiente 5 y `pagos-shopify/README.md`.
+- [ ] **Unificar scripts de plantillas**: las 10 versiones vigentes viven solo en `scripts/upload-templates-v2.mjs`; el canónico conserva las superseded. Mover las vigentes al principal (o borrar las viejas) y corregir los "En script ✅" de `docs/WHATSAPP_TEMPLATES.md`.
+- [ ] **`/api/notificar-registro`**: público, sin auth ni rate limit, dispara WhatsApp para cualquier `tecnicoId`. Acotar (token del registro, rate limit o verificación server-side).
+
+### Tanda 3 — reescritura de docs con drift funcional
+- [ ] `docs/FLOWS.md` § particular (l. ~387–520, 686–751, 845–864): Wompi anticipo v2 + saldo + abono 50%, cotización discriminada (diagnóstico + servicio), fórmula × 1.3675, `esperar_repuesto → pendiente_pricing`, plantillas `_v3` y `paso_*`, camino del supervisor `repuesto-entregado`. Header fecha.
+- [ ] `docs/MAQUINA-DE-ESTADOS.md`: l. 308 (`esperar_repuesto → pendiente_pricing`), transición supervisor `repuesto-entregado`, timeout garantía 84h (l. 42/296/329), modelo de pago (l. 17/172) + saldo/abono, JSONB `cotizacion` con `diagnostico_cliente`/`servicio_cliente`/`base_venta`/`iva_venta`/`comision_pasarela`.
+- [ ] `docs/ARQUITECTURA.md`: 11 rutas API sin documentar (`/api/admin/llamadas`, `/api/admin/supervisores/enviar-acceso`, `/api/supervisor/*` ×6, `/api/tecnico/llamada-intento`, `/api/wompi/webhook`), páginas `/pago/*` y `/supervisor/*`, 15 funciones de `whatsapp.service.ts`, crons son diarios (no 1h/10min), `cotizacion_aprobada_tecnico_v3`.
+- [ ] `docs/TARIFAS.md`: l. 221 pricing gate invertido (es particular, no garantía), recargo en cotizaciones $7.261 (no $7.140), anticipo tras aceptación (l. 257), `calcularTarifaGarantia` no existe (l. 341), pendiente 5 y l. 472 pre-Wompi. Comentario `mabe.ts:93-96` (recargo 90% al técnico, incluye festivos).
+- [ ] `docs/TEST_CARGA_MASIVA.md` cuerpo: estado inicial `pendiente_horario`, teléfono en dígitos, PDF aceptado, duplicados rechazados (§ 5.1, 5.5, l. 179–181, 236–237).
+- [ ] `docs/SUPABASE.md` + `supabase/migrations/README.md`: 7 migraciones sin documentar (`20260711_rls_fase4_1`, `20260807_llamadas_y_recordatorios`, `20260807_mensaje_cliente`, `20260811_comprobante_envio`, `20260818_wompi_pagos`, `20260819_saldo_pagado`, `20260825_cliente_cedula`) y columnas `cliente_cedula`, `anticipo_pagado_at`, `saldo_pagado_at`, `horario_recordatorio_*`, `repuesto_recordatorio_*`; queries de verificación #2/#10 con estados purgados; refs a `aprobar-cotizacion/route.ts:57-80` → `transiciones.service.ts`.
+- [ ] `docs/SEGURIDAD.md` § 2: 4 rutas admin faltantes, rutas con token de supervisor/técnico/reprogramar, webhook Wompi, tabla de crons (3 diarios, falta `repuesto-recordatorio`).
+- [ ] `docs/PROTOCOLO-VISITA.md`: marcar como spec no implementada, l. 130 (migración aplicada), puntero al backlog de plantillas. `docs/WHATSAPP_TEMPLATES.md`: status contradictorios (l. 48 vs 280/423/173/182/189), triggers l. 103/113/274/282, entradas `supervisor_acceso_v1` y `resumen_semanal_supervisores_v1`.
+- [ ] `docs/WOMPI.md` (agregar `/pago/saldo` + 20260819), `docs/FACTURACION.md` (5 hojas, env vars Resend), `docs/PLAN-RLS.md` (header de estado, § 4 resuelto), `segunda-linea-voz/README.md` (migraciones aplicadas), `segunda-visita/README.md` (flujo actual sin pricing gate garantía). Anclas rotas: `INDEX` → FLOWS "Admin Pages", FLOWS:832 → "Estado de cobertura", `estados.ts:97` → "Estados terminales".
+- [ ] Código menor: `cliente_historial` y `requiere_confirmacion_llamada` sin uso (documentar o quitar); comentario `1.3447` en `transiciones.service.ts:419`.

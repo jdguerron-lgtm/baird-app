@@ -49,7 +49,12 @@ Archivo: `.env.local` (nunca commitear)
 | Variable | Alcance | Descripción |
 |----------|---------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Cliente + Servidor | URL del proyecto Supabase |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente + Servidor | Clave pública anónima de Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cliente (browser) | Clave pública anónima de Supabase — páginas client-side |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Solo servidor — OBLIGATORIA** | service_role para API routes/services (`src/lib/supabase-admin.ts` lanza si falta → sin ella TODAS las rutas API dan 500 en local). Dashboard → Settings → API → service_role |
+| `CRON_SECRET` | **Solo servidor** | Bearer de `/api/cron/*` y `/api/test-whatsapp` |
+| `ADMIN_EMAILS` / `NEXT_PUBLIC_ADMIN_EMAILS` | Servidor / Cliente | CSV de emails admin (default `jdguerron@bairdservice.com`) |
+| `GOOGLE_MAPS_API_KEY` | **Solo servidor** | Geocoding para `/admin/mapa` (opcional en local) |
+| `WOMPI_PUBLIC_KEY` / `WOMPI_INTEGRITY_SECRET` / `WOMPI_EVENTS_SECRET` | **Solo servidor** | Pasarela de pagos; sin ellas Wompi es no-op (ver `docs/WOMPI.md`) |
 | `GEMINI_API_KEY` | **Solo servidor** | Clave API de Google Gemini (triaje temporalmente deshabilitado) |
 | `WHATSAPP_API_TOKEN` | **Solo servidor** | Token permanente WhatsApp Business API (System User) |
 | `WHATSAPP_PHONE_ID` | **Solo servidor** | ID del número de teléfono en Meta |

@@ -56,4 +56,4 @@ Ver [GUIA_RAPIDA.md](./GUIA_RAPIDA.md) para setup completo y [CLAUDE.md](./CLAUD
 
 ## Estado del proyecto
 
-MVP en producción con ciclo de vida dual completo (garantía + particular). WhatsApp Cloud API operativa con token permanente y número propio (+57 313 4951164), 25 plantillas Meta aprobadas. Ver [TODO.md](./TODO.md) para el roadmap.
+MVP en producción con ciclo de vida dual completo (garantía + particular). WhatsApp Cloud API operativa con token permanente y número propio (+57 313 4951164); plantillas Meta catalogadas en `docs/WHATSAPP_TEMPLATES.md` (status real con `scripts/upload-templates.mjs --check`). Ver [TODO.md](./TODO.md) para el roadmap.

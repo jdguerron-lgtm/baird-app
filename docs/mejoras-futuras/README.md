@@ -1,12 +1,11 @@
 # Mejoras futuras
 
-Backlog de iniciativas en discusión que **aún no están implementadas**. Cada proyecto vive en su subcarpeta con un `README.md` que captura: contexto, factibilidad, costos, decisiones pendientes y esfuerzo estimado.
+Backlog de iniciativas en discusión que **aún no están implementadas**, más el registro histórico de las que ya se completaron o se descartaron. Cada proyecto vive en su subcarpeta con un `README.md` que captura: contexto, factibilidad, costos, decisiones pendientes y esfuerzo estimado.
 
 ## Inventario actual
 
 | Iniciativa | Estado | Notas |
 |---|---|---|
-| [Pagos vía tienda Shopify](pagos-shopify/README.md) | **planeado — Fase 0 ya en producción** | Recaudo online con la tienda (control total verificado 2026-07-06: draft order de prueba creado/borrado vía API, scopes completos). Fase 0 (CTA anticipo $42.000 en `/solicitar`) desplegada. Faltan: token Admin API propio de la app (15 min manual), link de pago automático por cotización vía draft orders (½ día), sync de precios (2-3 h), webhook `orders/paid` + tabla `pagos` (½–1 día). **NO resuelve** split al técnico ni factura DIAN. |
 | [Segunda visita (reprogramación sin repuesto)](segunda-visita/README.md) | **en discusión — opciones para revisar** | Gap verificado 2026-06-02: la llegada de repuesto (segunda visita CON pieza) ya funciona end-to-end; pero NO hay camino para agendar una segunda visita cuando la reparación necesita otro día y **no** requiere repuesto (`reparar` cierra en la misma visita; `esperar_repuesto` exige SKU). 4 opciones evaluadas (A: nuevo `siguiente_paso`; B: generalizar máquina; C: disparar desde portal; D: solo admin). Recomendación tentativa: Opción A. |
 | [Segunda línea de voz IA](segunda-linea-voz/README.md) | **Fase 0 código completo (apagada), decisión de proveedor pendiente** | Llamadas automáticas cuando WhatsApp no responde (agendar, verificar citas ya aceptadas T-24h/T-2h, cierre + encuesta). Infra agnóstica al proveedor ya construida tras kill-switch `DAPTA_ENABLED=false` (extracción a `transiciones.service`, webhook idempotente, tabla `llamadas`). **Hallazgo 2026-06-03:** Dapta $99/mes es piso fijo úsalo-o-piérdelo (sin PAYG); a <100 llamadas/mes conviene pago-por-uso (**Retell ~$8–25/mes** vs $99). **Costo dev:** Fase 0 hecha, Fases 1–4 ~4-5 días (+0.5-1 día si se pivota a Retell). **Costo operativo:** $99/mes (Dapta) vs ~$8–25/mes (Retell PAYG). |
 
@@ -16,6 +15,13 @@ Backlog de iniciativas en discusión que **aún no están implementadas**. Cada 
 |---|---|---|
 | [Migración a dominio propio](migracion-dominio/README.md) | 2026-05-23 | Cutover ejecutado a `lineablanca.bairdservice.com`. Runbook + plan de rollback en `migracion-dominio/runbook-cutover-2026-05-23.md`. `baird-app.vercel.app` queda vivo como alias del mismo deployment. |
 | [Mapa admin de servicios](mapa-admin/README.md) | 2026-05-23 | Implementado en `/admin/mapa`. Leaflet + OSM + clusters + 9 mejoras UI. Pipeline geocoding Google Maps en `/api/solicitar` y `editar-solicitud`. Fase 2 (GPS técnicos en vivo, heatmap, rutas) diferida. |
+| [Supervisores + repuesto recibido](supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md) | 2026-05-29 → 06-16 | Supervisores con avisos WhatsApp por cambio de estado, estado `repuesto_recibido`, botón "pedir repuesto a supervisores". Luego portal de supervisores (2026-07-06) y ciclo de repuestos v3 (2026-08-25). El plan de despliegue quedó como registro; su línea "nada aplicado todavía" es histórica. |
+
+## Proyectos descartados / superseded
+
+| Iniciativa | Fecha | Por qué |
+|---|---|---|
+| [Pagos vía tienda Shopify](pagos-shopify/README.md) | archivado 2026-08-18 | Superseded por **Wompi como pasarela única** (`docs/WOMPI.md`): anticipo, saldo y abono van por Wompi; Shopify queda solo para repuestos. ⚠️ El CTA "Pagar anticipo $42.000" de Shopify en `/solicitar` sigue en el código sin gate — decisión pendiente (quitar / gatear / documentar). |
 
 ## Convenciones
 
