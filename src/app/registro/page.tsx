@@ -6,15 +6,10 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { uploadFotoPerfil, uploadFotoDocumento } from '@/lib/uploadHelpers'
 import { PhoneInput, phoneToDigits } from '@/components/ui/PhoneInput'
+import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialidades'
+import { aplicarDeclaracionTecnico } from '@/lib/constants/certificaciones'
 
-const ESPECIALIDADES = ['Lavadoras', 'Neveras y Nevecones', 'Hornos y Estufas', 'Aires Acondicionados']
-
-const ESPECIALIDAD_ICONS: Record<string, string> = {
-  'Lavadoras': '🫧',
-  'Neveras y Nevecones': '❄️',
-  'Hornos y Estufas': '🔥',
-  'Aires Acondicionados': '💨',
-}
+type SiNo = '' | 'si' | 'no'
 
 const BENEFITS = [
   { icon: '📲', label: 'Solicitudes directo a tu WhatsApp' },
@@ -34,7 +29,12 @@ export default function RegistroTecnico() {
     tipo_documento: 'CC',
     numero_documento: '',
     especialidades: [] as string[],
-    tiene_arl: '' as '' | 'si' | 'no',
+    tiene_arl: '' as SiNo,
+    // Gasodomésticos: intervenir un artefacto a gas exige certificado de
+    // competencia laboral (Res. 90902/2013). Se pregunta explícito para
+    // poder exigirlo después en el matching. Ver docs/CERTIFICACIONES.md.
+    cubre_gasodomesticos: '' as SiNo,
+    tiene_cert_gas: '' as SiNo,
     acepta_garantias: true
   })
 
@@ -120,6 +120,18 @@ export default function RegistroTecnico() {
       if (formData.tiene_arl !== 'si' && formData.tiene_arl !== 'no') {
         throw new Error('Indica si estás afiliado a una ARL')
       }
+      if (formData.cubre_gasodomesticos !== 'si' && formData.cubre_gasodomesticos !== 'no') {
+        throw new Error('Indica si atiendes equipos a gas (gasodomésticos)')
+      }
+      if (formData.cubre_gasodomesticos === 'si' && formData.tiene_cert_gas !== 'si' && formData.tiene_cert_gas !== 'no') {
+        throw new Error('Indica si tienes el certificado de competencia laboral en gas')
+      }
+
+      const cubreGas = formData.cubre_gasodomesticos === 'si'
+      // Solo siembra "declarada"/"sin_revisar"; verificar es tarea del admin.
+      const certificaciones = cubreGas
+        ? aplicarDeclaracionTecnico({}, { competencia_gas: formData.tiene_cert_gas === 'si' }, 'registro')
+        : {}
 
       // 1. Insertar técnico inicial
       const { data: tecnicoData, error: insertError } = await supabase
@@ -132,6 +144,8 @@ export default function RegistroTecnico() {
           numero_documento: formData.numero_documento,
           especialidad_principal: formData.especialidades[0],
           tiene_arl: formData.tiene_arl === 'si',
+          cubre_gasodomesticos: cubreGas,
+          certificaciones,
           acepta_garantias: formData.acepta_garantias,
           estado_verificacion: 'pendiente'
         }])
@@ -203,6 +217,8 @@ export default function RegistroTecnico() {
         numero_documento: '',
         especialidades: [],
         tiene_arl: '',
+        cubre_gasodomesticos: '',
+        tiene_cert_gas: '',
         acepta_garantias: true
       })
       setFotoPerfil(null)
@@ -437,25 +453,32 @@ export default function RegistroTecnico() {
                 {/* ── Sección: Especialidades ── */}
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Especialidades</p>
-                  <p className="text-sm text-gray-500 mb-3">Selecciona todos los equipos que sabes reparar</p>
+                  <p className="text-sm text-gray-500 mb-3">Selecciona todos los equipos que sabes reparar. La primera que marques será tu especialidad principal.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {ESPECIALIDADES.map((especialidad) => {
                       const selected = formData.especialidades.includes(especialidad)
+                      const info = ESPECIALIDADES_INFO[especialidad]
                       return (
                         <button
                           key={especialidad}
                           type="button"
+                          aria-pressed={selected}
                           onClick={() => handleEspecialidadToggle(especialidad)}
-                          className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                          className={`flex items-start gap-3 p-3 rounded-xl border-2 text-left transition-all ${
                             selected
                               ? 'border-blue-500 bg-blue-50 text-blue-900'
                               : 'border-gray-200 hover:border-blue-300 text-gray-700'
                           }`}
                         >
-                          <span className="text-xl">{ESPECIALIDAD_ICONS[especialidad]}</span>
-                          <span className="text-sm font-medium">{especialidad}</span>
+                          <span className="text-xl leading-none mt-0.5">{info.icono}</span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-sm font-medium">{especialidad}</span>
+                            <span className={`block text-[11px] leading-snug mt-0.5 ${selected ? 'text-blue-700/80' : 'text-gray-400'}`}>
+                              {info.cubre}
+                            </span>
+                          </span>
                           {selected && (
-                            <span className="ml-auto w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                            <span className="ml-auto w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0 mt-0.5">
                               <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                               </svg>
@@ -467,6 +490,89 @@ export default function RegistroTecnico() {
                   </div>
                   {formData.especialidades.length === 0 && (
                     <p className="mt-2 text-xs text-red-500">* Selecciona al menos una especialidad</p>
+                  )}
+                </div>
+
+                {/* ── Sección: Gasodomésticos ── */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Gasodomésticos</p>
+                  <p className="text-sm font-semibold text-gray-700 mb-1.5">
+                    ¿Atiendes equipos a gas (estufas, hornos, calentadores, secadoras a gas)? <span className="text-red-500">*</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mb-3">
+                    En Colombia intervenir un artefacto a gas exige certificado de competencia laboral (Res. 90902 de 2013).
+                    Si marcas &ldquo;Sí&rdquo; te lo pediremos en la verificación.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { valor: 'si' as const, icono: '🔥', texto: 'Sí, atiendo gas' },
+                      { valor: 'no' as const, icono: '⚡', texto: 'Solo eléctricos' },
+                    ]).map(({ valor, icono, texto }) => {
+                      const selected = formData.cubre_gasodomesticos === valor
+                      return (
+                        <button
+                          key={valor}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setFormData(prev => ({ ...prev, cubre_gasodomesticos: valor, tiene_cert_gas: valor === 'no' ? '' : prev.tiene_cert_gas }))}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                            selected
+                              ? 'border-blue-500 bg-blue-50 text-blue-900'
+                              : 'border-gray-200 hover:border-blue-300 text-gray-700'
+                          }`}
+                        >
+                          <span className="text-xl">{icono}</span>
+                          <span className="text-sm font-medium">{texto}</span>
+                          {selected && (
+                            <span className="ml-auto w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {formData.cubre_gasodomesticos === '' && (
+                    <p className="mt-2 text-xs text-red-500">* Selecciona una opción</p>
+                  )}
+
+                  {formData.cubre_gasodomesticos === 'si' && (
+                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <p className="text-sm font-semibold text-amber-900 mb-1.5">
+                        ¿Tienes certificado de competencia laboral en gas vigente? <span className="text-red-500">*</span>
+                      </p>
+                      <p className="text-xs text-amber-800/80 mb-3">
+                        Lo expide el SENA o un organismo de certificación de personas acreditado por ONAC. Si todavía no lo tienes puedes registrarte igual.
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          { valor: 'si' as const, texto: 'Sí, lo tengo' },
+                          { valor: 'no' as const, texto: 'Todavía no' },
+                        ]).map(({ valor, texto }) => {
+                          const selected = formData.tiene_cert_gas === valor
+                          return (
+                            <button
+                              key={valor}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => setFormData(prev => ({ ...prev, tiene_cert_gas: valor }))}
+                              className={`p-2.5 rounded-xl border-2 text-sm font-medium text-left transition-all ${
+                                selected
+                                  ? 'border-amber-500 bg-white text-amber-900'
+                                  : 'border-amber-200 bg-white/60 hover:border-amber-400 text-gray-700'
+                              }`}
+                            >
+                              {texto}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {formData.tiene_cert_gas === '' && (
+                        <p className="mt-2 text-xs text-red-500">* Selecciona una opción</p>
+                      )}
+                    </div>
                   )}
                 </div>
 

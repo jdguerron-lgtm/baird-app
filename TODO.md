@@ -174,6 +174,7 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 ## Pendientes — Fase 2
 
 ### Alta prioridad
+- [ ] **Gate de gasodomésticos en el matching** (base lista 2026-10-08, ver `docs/CERTIFICACIONES.md` § 7): (1) `/solicitar` pregunta gas vs eléctrico para Estufa/Horno/Secadora/Lavadora Secadora; (2) `notificarTecnicos` filtra por `estadoGasTecnico === 'cubre_certificado'` cuando el equipo es a gas; (3) agregar `Calentador de agua` como `tipo_equipo`. Mientras tanto: pedir el certificado y marcarlo en `/admin/tecnicos/[id]`; enviar `tecnico_actualizar_perfil_v1` a los técnicos cuando esté APPROVED y el portal desplegado (`scripts/enviar-actualizar-perfil-tecnicos.mjs`).
 - [ ] **Segunda visita sin repuesto** — Gap verificado 2026-06-02. La segunda visita CON repuesto ya funciona end-to-end; falta el camino "la reparación necesita otro día pero no requiere pieza" (`reparar` cierra en la misma visita, `esperar_repuesto` exige SKU). 4 opciones para revisar en `docs/mejoras-futuras/segunda-visita/README.md` (recomendación tentativa: nuevo `siguiente_paso = agendar_segunda_visita`).
 - [ ] **Auto-cierre 24h** — Si el cliente no confirma en 24h, marcar automáticamente como completada (cron job o edge function)
 - [ ] **Seguimiento para el cliente** — página pública `/solicitud/{id}` con estado en tiempo real

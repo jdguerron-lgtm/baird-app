@@ -196,6 +196,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/whatsapp/accept` | GET | Aceptación 1-click del técnico desde la plantilla WhatsApp. Token único por notificación. Llama `procesarAceptacion()` — atomic update primer-técnico-gana. Redirige al portal del técnico tras aceptar. | Both |
 | `/api/whatsapp/notify` | POST | Admin re-notifica técnicos para una solicitud (volver a disparrar el broadcast a técnicos compatibles). Usa `notificarTecnicos()`. | Both |
 | `/api/notificar-registro` | POST | Post-registro del técnico: envía `registro_bienvenida_v3` con link al portal. | N/A |
+| `/api/tecnico/perfil` | POST | Autoservicio del técnico (auth por `portal_token`, service_role): especialidades (sync insert/delete en `especialidades_tecnico`), `cubre_gasodomesticos`, `tiene_arl` y **declaración** de certificaciones (solo siembra `declarada`/`sin_revisar`, nunca pisa una verificación del admin). Fija `perfil_actualizado_at`. Ver `docs/CERTIFICACIONES.md`. | N/A |
 | `/api/log-error` | POST | Telemetría fire-and-forget de errores de conexión del cliente. Inserta en `connection_errors` y loguea a stderr con prefijo `[ConnectionError]`. Siempre responde 200. | N/A |
 | `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
 | `/api/test-whatsapp` | GET | Diagnóstico de configuración WhatsApp (presencia/forma de token, phone ID, whitelist) — para descartar env vars rotas en Vercel sin enviar mensajes. Agregado tras el falso "no se envía" del 2026-07-01. | N/A |
@@ -225,7 +226,8 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 
 | Page | URL | Purpose |
 |------|-----|---------|
-| **Registro** | `/registro` | Onboarding del técnico: formulario con datos personales, foto, documento, especialidades, ciudad. Inserta en `tecnicos` con `estado_verificacion='pendiente'`. Al final llama `/api/notificar-registro` para mandar `registro_bienvenida_v3`. |
+| **Registro** | `/registro` | Onboarding del técnico: formulario con datos personales, foto, documento, especialidades (con descripción de alcance desde `ESPECIALIDADES_INFO`), ciudad, ARL, **gasodomésticos (obligatorio) + ¿tiene certificado de competencia en gas?** (siembra `certificaciones.competencia_gas` como `declarada`). Inserta en `tecnicos` con `estado_verificacion='pendiente'`. Al final llama `/api/notificar-registro` para mandar `registro_bienvenida_v3`. |
+| Perfil del técnico | `/tecnico/{token}/perfil` | Autoservicio: revisar especialidades, gasodomésticos, ARL y declarar certificaciones aplicables (+ nº). Guarda vía `POST /api/tecnico/perfil`. El portal muestra banner "Completa tu perfil" mientras `perfil_actualizado_at` sea NULL. `/tecnico/perfil/{token}` redirige aquí (destino del botón de `tecnico_actualizar_perfil_v1`). |
 | Accept service | `/aceptar/{token}` | 1-click acceptance from WhatsApp notification (la URL del botón apunta a `/api/whatsapp/accept?token=...` que redirige acá tras procesar) |
 | Portal (service list) | `/tecnico/{token}` | View assigned services and history. Auth: `portal_token` UUID en la URL. |
 | Diagnosis form | `/tecnico/{token}/diagnostico/{id}` | Oath modal + diagnosis + 4 next-step options + GPS. Fotos se comprimen client-side (`compressImageIfNeeded`) antes de subirlas en paralelo. **Productos necesarios** (`ProductosNecesariosForm`) admite **foto opcional por SKU** (ambos flujos): se sube al bucket `evidencias-servicio` y su URL pública se guarda en `imagen_url` dentro del JSONB (`triaje_resultado`/`cotizacion`). Visible en `/admin/cotizaciones-pendientes` y `/admin/solicitudes/{id}`. |
@@ -241,8 +243,8 @@ Todas requieren login Supabase Auth en `/admin/login` y validación server-side 
 | Dashboard | `/admin` | KPIs and recent activity |
 | Solicitudes | `/admin/solicitudes` | Service requests list/detail. Toggle **Lista \| Calendario**: el calendario (`src/components/admin/AgendaCalendario.tsx`) muestra por día+franja el conteo `n/cupo` de servicios agendados (semana = detalle por franja con los servicios; mes = resumen por día). `n` y `cupo` espejan `agenda.service` (no-terminales con ese `fecha_visita_at`, tope `MAX_RESERVAS_POR_FRANJA`). Solo lectura. |
 | Solicitud detalle | `/admin/solicitudes/[id]` | Detalle + edit + reenviar último mensaje + **cambiar estado manualmente** (escape hatch, ver `docs/MAQUINA-DE-ESTADOS.md`). |
-| Técnicos | `/admin/tecnicos` | Listado de técnicos con estado de verificación |
-| Técnico detalle | `/admin/tecnicos/[id]` | Detalle del técnico: documento, foto, especialidades, historial de servicios, toggle de verificación. |
+| Técnicos | `/admin/tecnicos` | Listado de técnicos con estado de verificación + badge `🔥 gas` / `gas: ?` (gasodomésticos declarados / no informado) |
+| Técnico detalle | `/admin/tecnicos/[id]` | Detalle del técnico: documento, foto, **especialidades editables**, ciudades de cobertura, **gasodomésticos (sí/no/no informado) con alerta si cubre gas sin certificado**, **checklist manual de certificaciones** (estado, entidad, nº, vencimiento, nota, link "Verificar" a la entidad — `docs/CERTIFICACIONES.md`), toggle de verificación. |
 | **Repuestos** | `/admin/repuestos` | Pending parts — mark as received |
 | **Cotizaciones pendientes** | `/admin/cotizaciones-pendientes` | **Admin pricing gate** — solicitudes en estado `pendiente_pricing` esperando que el admin fije precios + tiempo de entrega antes de notificar al cliente. UI dispara `/api/cotizacion-precios`. |
 | **Alertas GPS** | `/admin/gps-alertas` | Silent flagged services (post-visit GPS within 100m) |

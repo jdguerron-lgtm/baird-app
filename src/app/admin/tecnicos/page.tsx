@@ -18,6 +18,8 @@ interface Tecnico {
   estado_verificacion: string
   created_at: string
   portal_token: string | null
+  cubre_gasodomesticos: boolean | null
+  perfil_actualizado_at: string | null
   especialidades: string[]
 }
 
@@ -52,7 +54,7 @@ export default function TecnicosAdmin() {
 
       let query = supabase
         .from('tecnicos')
-        .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token')
+        .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token, cubre_gasodomesticos, perfil_actualizado_at')
         .order('created_at', { ascending: false })
 
       if (filtro !== 'todos') {
@@ -220,6 +222,17 @@ export default function TecnicosAdmin() {
                         ))}
                         {t.especialidades.length === 0 && (
                           <span className="text-xs text-gray-300">Sin especialidades</span>
+                        )}
+                        {/* Gasodomésticos declarados (null = registro previo a la pregunta) */}
+                        {t.cubre_gasodomesticos === true && (
+                          <span className="text-[10px] font-semibold bg-amber-50 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200" title="Declara atender equipos a gas">
+                            🔥 gas
+                          </span>
+                        )}
+                        {t.cubre_gasodomesticos === null && (
+                          <span className="text-[10px] text-gray-400 px-2 py-0.5 rounded-full border border-dashed border-gray-200" title="Aún no indicó si atiende gas (perfil sin completar)">
+                            gas: ?
+                          </span>
                         )}
                       </div>
                     </td>

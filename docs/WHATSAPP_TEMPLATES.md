@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-07-11 (nueva `supervisor_actualizaciones_v1` — canal de novedades a supervisores con botón a la Guía del Supervisor).
+> Última actualización: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
 
 > 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
 
@@ -356,6 +356,14 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Body** (3 params): `nombre`, `ciudad`, `especialidad`
 - **Sin botón**
 - **Propósito**: bienvenida + indicar que falta verificación admin.
+
+#### `tecnico_actualizar_perfil_v1` **En script** ✅ APPROVED (subida y aprobada 2026-10-08)
+- **Disparo**: manual — `node --env-file=.env.local scripts/enviar-actualizar-perfil-tecnicos.mjs` (`--dry` para listar). No está cableada en el código de la app.
+- **Destino**: **todos** los técnicos con `portal_token` y celular válido (pendientes, verificados y los que ya completaron el perfil), omitiendo solo `rechazado` (decisión 2026-10-08; flags `--incluir-rechazados` / `--solo-sin-completar` para re-envíos). Respeta `BAIRD_TEST_PHONE_WHITELIST`.
+- **Header**: "Actualiza tu perfil de técnico" · **Body** (1 param): `primer nombre` · **Footer**: "Baird Service — Técnicos"
+- **Botón URL dinámico**: `/tecnico/perfil/{{1}}` con `portal_token` → redirige a `/tecnico/{token}/perfil`. ⚠️ Meta exige que el `{{1}}` vaya **al final** de la URL (error 2388052 "formato de URL no válido" si va en medio) — por eso existe la ruta de redirección `src/app/tecnico/perfil/[token]/page.tsx`.
+- **Propósito**: pedirle al técnico que complete especialidades, si atiende gasodomésticos y qué certificaciones declara. Ver `docs/CERTIFICACIONES.md`.
+- **Prerrequisito de envío**: la página `/tecnico/{token}/perfil` debe estar desplegada en prod (si no, el botón da 404).
 
 ### Supervisión
 

@@ -7,6 +7,20 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { normalizeForMatch } from '@/lib/utils/format'
 import { CIUDADES_SUGERIDAS } from '@/lib/constants/ciudades'
+import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialidades'
+import {
+  CERTIFICACIONES,
+  ESTADOS_CERTIFICACION,
+  ESTADO_CERTIFICACION_LABELS,
+  ESTADO_GAS_LABELS,
+  certificacionesAplicables,
+  estadoGasTecnico,
+  parseCertificaciones,
+  type CertificacionId,
+  type CertificacionTecnico,
+  type CertificacionesTecnico,
+  type EstadoCertificacion,
+} from '@/lib/constants/certificaciones'
 
 interface Tecnico {
   id: string
@@ -24,6 +38,10 @@ interface Tecnico {
   nota_verificacion: string | null
   acepta_garantias: boolean
   tiene_arl: boolean | null
+  // Gasodomésticos + certificaciones (migración 20261008). Ver docs/CERTIFICACIONES.md
+  cubre_gasodomesticos: boolean | null
+  certificaciones: unknown
+  perfil_actualizado_at: string | null
   created_at: string
 }
 
@@ -41,12 +59,22 @@ export default function TecnicoDetalle() {
   const [ciudades, setCiudades] = useState<string[]>([])
   const [nuevaCiudad, setNuevaCiudad] = useState('')
   const [guardandoCiudades, setGuardandoCiudades] = useState(false)
+  // Especialidades editables (la lista guardada vive en `especialidades`)
+  const [espEdit, setEspEdit] = useState<string[]>([])
+  const [guardandoEsp, setGuardandoEsp] = useState(false)
+  // Gasodomésticos + certificaciones (verificación MANUAL del admin)
+  const [guardandoGas, setGuardandoGas] = useState(false)
+  const [certs, setCerts] = useState<CertificacionesTecnico>({})
+  const [guardandoCerts, setGuardandoCerts] = useState(false)
+  const [mostrarNoAplicables, setMostrarNoAplicables] = useState(false)
+  const [adminEmail, setAdminEmail] = useState<string>('admin')
 
   useEffect(() => {
     const cargar = async () => {
-      const [tecRes, espRes] = await Promise.all([
+      const [tecRes, espRes, userRes] = await Promise.all([
         supabase.from('tecnicos').select('*').eq('id', id).single(),
         supabase.from('especialidades_tecnico').select('especialidad').eq('tecnico_id', id),
+        supabase.auth.getUser(),
       ])
 
       if (tecRes.data) {
@@ -56,13 +84,133 @@ export default function TecnicoDetalle() {
           ? tecRes.data.ciudades_cobertura
           : (tecRes.data.ciudad_pueblo ? [tecRes.data.ciudad_pueblo] : [])
         setCiudades(cob)
+        setCerts(parseCertificaciones(tecRes.data.certificaciones))
       }
-      setEspecialidades(espRes.data?.map((e: { especialidad: string }) => e.especialidad) ?? [])
+      const esp = espRes.data?.map((e: { especialidad: string }) => e.especialidad) ?? []
+      setEspecialidades(esp)
+      setEspEdit(esp)
+      if (userRes.data.user?.email) setAdminEmail(userRes.data.user.email)
       setCargando(false)
     }
 
     cargar()
   }, [id])
+
+  const toggleEspEdit = (esp: string) => {
+    setEspEdit(prev => (prev.includes(esp) ? prev.filter(e => e !== esp) : [...prev, esp]))
+  }
+
+  const guardarEspecialidades = async () => {
+    if (espEdit.length === 0) {
+      setMensaje({ texto: 'El técnico debe tener al menos una especialidad', tipo: 'error' })
+      return
+    }
+    setGuardandoEsp(true)
+    setMensaje(null)
+
+    // Insertar nuevas y borrar quitadas (sin ventana con cero filas). El admin
+    // escribe como `authenticated` → policy full access en especialidades_tecnico.
+    const toAdd = espEdit.filter(e => !especialidades.includes(e))
+    const toRemove = especialidades.filter(e => !espEdit.includes(e))
+
+    if (toAdd.length > 0) {
+      const { error } = await supabase
+        .from('especialidades_tecnico')
+        .insert(toAdd.map(e => ({ tecnico_id: id, especialidad: e })))
+      if (error) {
+        setMensaje({ texto: 'Error al agregar especialidades: ' + error.message, tipo: 'error' })
+        setGuardandoEsp(false)
+        return
+      }
+    }
+    if (toRemove.length > 0) {
+      const { data: borradas, error } = await supabase
+        .from('especialidades_tecnico')
+        .delete()
+        .eq('tecnico_id', id)
+        .in('especialidad', toRemove)
+        .select('especialidad')
+      if (error || !borradas || borradas.length !== toRemove.length) {
+        setMensaje({
+          texto: 'Error al quitar especialidades: ' + (error?.message ?? 'no se borraron todas las filas (¿permisos RLS?)'),
+          tipo: 'error',
+        })
+        setGuardandoEsp(false)
+        return
+      }
+    }
+
+    // Principal: se conserva si sigue marcada; si no, la primera de la lista.
+    const principal = tecnico && espEdit.includes(tecnico.especialidad_principal ?? '')
+      ? tecnico.especialidad_principal
+      : espEdit[0]
+    if (principal && principal !== tecnico?.especialidad_principal) {
+      await supabase.from('tecnicos').update({ especialidad_principal: principal }).eq('id', id)
+      setTecnico(prev => prev ? { ...prev, especialidad_principal: principal } : prev)
+    }
+
+    setEspecialidades(espEdit)
+    setMensaje({ texto: 'Especialidades actualizadas', tipo: 'exito' })
+    setGuardandoEsp(false)
+  }
+
+  const guardarGas = async (valor: boolean | null) => {
+    setGuardandoGas(true)
+    setMensaje(null)
+    const { data: updated, error } = await supabase
+      .from('tecnicos')
+      .update({ cubre_gasodomesticos: valor })
+      .eq('id', id)
+      .select('cubre_gasodomesticos')
+    if (error || !updated || updated.length === 0) {
+      setMensaje({ texto: 'Error al guardar gasodomésticos: ' + (error?.message ?? 'la fila no se actualizó'), tipo: 'error' })
+      setGuardandoGas(false)
+      return
+    }
+    setTecnico(prev => prev ? { ...prev, cubre_gasodomesticos: valor } : prev)
+    setMensaje({ texto: 'Gasodomésticos actualizado', tipo: 'exito' })
+    setGuardandoGas(false)
+  }
+
+  const setCert = (cid: CertificacionId, patch: Partial<CertificacionTecnico>) => {
+    setCerts(prev => ({
+      ...prev,
+      [cid]: { estado: 'sin_revisar', ...(prev[cid] ?? {}), ...patch },
+    }))
+  }
+
+  const guardarCertificaciones = async () => {
+    setGuardandoCerts(true)
+    setMensaje(null)
+    const ahora = new Date().toISOString()
+    // Limpia entradas vacías (sin_revisar y sin ningún dato) y sella autor/fecha
+    // de las que cambiaron respecto a lo guardado.
+    const guardadas = parseCertificaciones(tecnico?.certificaciones)
+    const limpias: CertificacionesTecnico = {}
+    for (const [k, v] of Object.entries(certs) as [CertificacionId, CertificacionTecnico | undefined][]) {
+      if (!v) continue
+      const vacia = v.estado === 'sin_revisar' && !v.entidad && !v.numero && !v.vence && !v.nota
+      if (vacia) continue
+      const prev = guardadas[k]
+      const cambio = !prev || prev.estado !== v.estado || prev.entidad !== v.entidad || prev.numero !== v.numero || prev.vence !== v.vence || prev.nota !== v.nota
+      limpias[k] = cambio ? { ...v, actualizado_en: ahora, actualizado_por: adminEmail } : v
+    }
+
+    const { data: updated, error } = await supabase
+      .from('tecnicos')
+      .update({ certificaciones: limpias })
+      .eq('id', id)
+      .select('certificaciones')
+    if (error || !updated || updated.length === 0) {
+      setMensaje({ texto: 'Error al guardar certificaciones: ' + (error?.message ?? 'la fila no se actualizó'), tipo: 'error' })
+      setGuardandoCerts(false)
+      return
+    }
+    setCerts(limpias)
+    setTecnico(prev => prev ? { ...prev, certificaciones: limpias } : prev)
+    setMensaje({ texto: 'Certificaciones actualizadas', tipo: 'exito' })
+    setGuardandoCerts(false)
+  }
 
   const cambiarEstado = async (nuevoEstado: 'verificado' | 'rechazado' | 'pendiente') => {
     if (nuevoEstado === 'rechazado' && !nota.trim()) {
@@ -184,6 +332,19 @@ export default function TecnicoDetalle() {
 
   const cfg = estadoConfig[tecnico.estado_verificacion] ?? estadoConfig.pendiente
 
+  const estadoGas = estadoGasTecnico(tecnico.cubre_gasodomesticos, certs)
+  const gasBadge: Record<typeof estadoGas, string> = {
+    no_informado: 'bg-gray-100 text-gray-600 border-gray-200',
+    no_cubre: 'bg-slate-100 text-slate-600 border-slate-200',
+    cubre_sin_certificado: 'bg-amber-100 text-amber-800 border-amber-200',
+    cubre_certificado: 'bg-green-100 text-green-800 border-green-200',
+  }
+  const aplicables = certificacionesAplicables(especialidades, tecnico.cubre_gasodomesticos)
+  const aplicablesIds = new Set(aplicables.map(c => c.id))
+  const noAplicables = CERTIFICACIONES.filter(c => !aplicablesIds.has(c.id))
+  const verificadas = Object.values(certs).filter(c => c?.estado === 'verificada').length
+  const declaradas = Object.values(certs).filter(c => c?.estado === 'declarada').length
+
   return (
     <div className="p-6 lg:p-8 max-w-4xl">
       {/* Breadcrumb */}
@@ -239,6 +400,9 @@ export default function TecnicoDetalle() {
               <h1 className="text-xl font-bold text-slate-900">{tecnico.nombre_completo}</h1>
               <span className={`text-xs font-bold px-3 py-1 rounded-full ${cfg.bg} ${cfg.text} border ${cfg.border}`}>
                 {tecnico.estado_verificacion.toUpperCase()}
+              </span>
+              <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${gasBadge[estadoGas]}`} title="Gasodomésticos">
+                🔥 {ESTADO_GAS_LABELS[estadoGas]}
               </span>
             </div>
             <p className="text-sm text-gray-500 mt-1">{tecnico.ciudad_pueblo}</p>
@@ -368,19 +532,96 @@ export default function TecnicoDetalle() {
             </button>
           </div>
 
-          {/* Especialidades */}
+          {/* Especialidades (editables) */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Especialidades</h2>
-            {especialidades.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {especialidades.map(esp => (
-                  <span key={esp} className="text-sm font-medium bg-blue-50 text-blue-700 px-3 py-1.5 rounded-xl border border-blue-100">
-                    {esp}
-                  </span>
-                ))}
-              </div>
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Especialidades</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Categorías en las que el técnico recibe solicitudes (el matching compara con estas etiquetas).
+              Principal: <span className="font-semibold text-gray-500">{tecnico.especialidad_principal ?? '—'}</span>.
+            </p>
+            <div className="space-y-2 mb-4">
+              {ESPECIALIDADES.map(esp => {
+                const on = espEdit.includes(esp)
+                const info = ESPECIALIDADES_INFO[esp]
+                return (
+                  <label key={esp} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${on ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleEspEdit(esp)}
+                      className="h-4 w-4 mt-0.5 text-blue-600 border-gray-300 rounded"
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-slate-900">{info.icono} {esp}</span>
+                      <span className="block text-[11px] text-gray-500 leading-snug">{info.cubre}{info.gas ? ' · incluye equipos a gas' : ''}</span>
+                    </span>
+                  </label>
+                )
+              })}
+              {especialidades.some(e => !(ESPECIALIDADES as readonly string[]).includes(e)) && (
+                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                  ⚠️ Etiquetas fuera del catálogo en BD: {especialidades.filter(e => !(ESPECIALIDADES as readonly string[]).includes(e)).join(', ')}. Se borrarán al guardar.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={guardarEspecialidades}
+              disabled={guardandoEsp || (espEdit.length === especialidades.length && espEdit.every(e => especialidades.includes(e)))}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {guardandoEsp ? 'Guardando...' : 'Guardar especialidades'}
+            </button>
+          </div>
+
+          {/* Gasodomésticos */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Gasodomésticos</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              ¿Atiende estufas, hornos, calentadores y secadoras <span className="font-semibold">a gas</span>? Intervenir un artefacto a gas exige
+              certificado de competencia laboral (Res. 90902/2013). Declarado por el técnico; el admin puede corregirlo.
+            </p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {([
+                { v: true, t: '🔥 Sí, atiende gas' },
+                { v: false, t: '⚡ Solo eléctricos' },
+                { v: null, t: 'No informado' },
+              ] as { v: boolean | null; t: string }[]).map(({ v, t }) => {
+                const on = tecnico.cubre_gasodomesticos === v
+                return (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    disabled={guardandoGas || on}
+                    onClick={() => guardarGas(v)}
+                    className={`p-2.5 rounded-xl border-2 text-xs font-semibold transition-all disabled:cursor-default ${
+                      on ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-gray-200 hover:border-blue-300 text-gray-600'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                )
+              })}
+            </div>
+            {estadoGas === 'cubre_sin_certificado' && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                ⚠️ Declara atender gasodomésticos pero <span className="font-semibold">no tiene verificada</span> la competencia laboral en gas.
+                Pídele el certificado y márcalo abajo en Certificaciones antes de asignarle equipos a gas.
+              </p>
+            )}
+            {estadoGas === 'cubre_certificado' && (
+              <p className="text-xs text-green-800 bg-green-50 border border-green-200 rounded-lg p-3">
+                ✅ Competencia laboral en gas verificada y vigente.
+              </p>
+            )}
+            {tecnico.perfil_actualizado_at ? (
+              <p className="text-[11px] text-gray-400 mt-3">
+                Perfil completado por el técnico: {new Date(tecnico.perfil_actualizado_at).toLocaleString('es-CO')}
+              </p>
             ) : (
-              <p className="text-sm text-gray-400">Sin especialidades registradas</p>
+              <p className="text-[11px] text-gray-400 mt-3">
+                El técnico aún no ha completado su perfil desde el portal (<code className="text-[10px]">/tecnico/&#123;token&#125;/perfil</code>).
+              </p>
             )}
           </div>
         </div>
@@ -483,6 +724,146 @@ export default function TecnicoDetalle() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Certificaciones y acreditaciones — verificación MANUAL (ancho completo) */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mt-6">
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Certificaciones y acreditaciones</h2>
+          <span className="text-[11px] text-gray-400">
+            {verificadas} verificada{verificadas !== 1 ? 's' : ''} · {declaradas} declarada{declaradas !== 1 ? 's' : ''} por el técnico
+          </span>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">
+          Checklist manual: pide el soporte al técnico, consúltalo en la entidad (link &ldquo;Verificar&rdquo;) y marca el estado.
+          Las que aplican dependen de sus especialidades y de si atiende gas. Detalle normativo en <code className="text-[10px]">docs/CERTIFICACIONES.md</code>.
+          ARL: <span className={`font-semibold ${tecnico.tiene_arl === null ? 'text-gray-400' : tecnico.tiene_arl ? 'text-green-700' : 'text-amber-700'}`}>
+            {tecnico.tiene_arl === null ? 'no informado' : tecnico.tiene_arl ? 'sí' : 'no'}
+          </span>.
+        </p>
+
+        <div className="space-y-3">
+          {aplicables.map(def => {
+            const c = certs[def.id] ?? { estado: 'sin_revisar' as EstadoCertificacion }
+            const requerida = def.requeridaParaGas && tecnico.cubre_gasodomesticos === true
+            const estadoColor: Record<EstadoCertificacion, string> = {
+              sin_revisar: 'border-gray-200',
+              declarada: 'border-blue-200 bg-blue-50/40',
+              verificada: 'border-green-300 bg-green-50/40',
+              vencida: 'border-amber-300 bg-amber-50/40',
+              rechazada: 'border-red-300 bg-red-50/40',
+              no_aplica: 'border-gray-200 bg-gray-50 opacity-70',
+            }
+            return (
+              <div key={def.id} className={`rounded-xl border p-4 ${estadoColor[c.estado]}`}>
+                <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {def.nombre}
+                      {requerida && (
+                        <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 align-middle">Requerida para gas</span>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      {def.entidad}
+                      {def.vigenciaMeses ? ` · vigencia ~${def.vigenciaMeses} meses` : ' · no vence'}
+                      {def.normativa ? ` · ${def.normativa}` : ''}
+                    </p>
+                  </div>
+                  {def.verificarEn && (
+                    <a
+                      href={def.verificarEn}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-xs font-semibold text-blue-600 hover:text-blue-800"
+                    >
+                      Verificar ↗
+                    </a>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mb-3">{def.descripcion}</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                  <select
+                    value={c.estado}
+                    onChange={e => setCert(def.id, { estado: e.target.value as EstadoCertificacion })}
+                    className="sm:col-span-3 border border-gray-200 rounded-xl py-2 px-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    {ESTADOS_CERTIFICACION.map(s => (
+                      <option key={s} value={s}>{ESTADO_CERTIFICACION_LABELS[s]}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={c.entidad ?? ''}
+                    onChange={e => setCert(def.id, { entidad: e.target.value || undefined })}
+                    placeholder="Entidad emisora"
+                    className="sm:col-span-3 border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={c.numero ?? ''}
+                    onChange={e => setCert(def.id, { numero: e.target.value || undefined })}
+                    placeholder="Nº certificado / matrícula"
+                    className="sm:col-span-3 border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  <input
+                    type="date"
+                    value={c.vence ?? ''}
+                    onChange={e => setCert(def.id, { vence: e.target.value || undefined })}
+                    title="Fecha de vencimiento"
+                    className="sm:col-span-3 border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={c.nota ?? ''}
+                    onChange={e => setCert(def.id, { nota: e.target.value || undefined })}
+                    placeholder="Nota (qué soporte se revisó, observaciones)"
+                    className="sm:col-span-12 border border-gray-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  />
+                </div>
+                {c.actualizado_en && (
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    Última actualización: {new Date(c.actualizado_en).toLocaleString('es-CO')}{c.actualizado_por ? ` · ${c.actualizado_por}` : ''}
+                  </p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {noAplicables.length > 0 && (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setMostrarNoAplicables(v => !v)}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+            >
+              {mostrarNoAplicables ? '▾' : '▸'} {noAplicables.length} certificación{noAplicables.length !== 1 ? 'es' : ''} que no aplica{noAplicables.length !== 1 ? 'n' : ''} a sus especialidades
+              {noAplicables.some(d => certs[d.id] && certs[d.id]!.estado !== 'sin_revisar') ? ' (hay datos guardados)' : ''}
+            </button>
+            {mostrarNoAplicables && (
+              <ul className="mt-2 space-y-1">
+                {noAplicables.map(d => (
+                  <li key={d.id} className="text-xs text-gray-500">
+                    • {d.nombre}
+                    {certs[d.id] && certs[d.id]!.estado !== 'sin_revisar' ? ` — ${ESTADO_CERTIFICACION_LABELS[certs[d.id]!.estado]}` : ''}
+                    {d.aplicaA !== 'todos' ? ` (${d.aplicaA.join(', ')})` : d.soloGas ? ' (solo si atiende gas)' : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={guardarCertificaciones}
+          disabled={guardandoCerts}
+          className="mt-4 w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {guardandoCerts ? 'Guardando...' : 'Guardar certificaciones'}
+        </button>
       </div>
     </div>
   )

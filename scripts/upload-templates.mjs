@@ -1253,6 +1253,51 @@ const TEMPLATES = [
     ],
   },
 
+  // 19e. Pedir al TÉCNICO que complete su perfil en el portal (2026-10-08):
+  //      especialidades revisadas, si atiende gasodomésticos y qué
+  //      certificaciones declara (gas Res. 90902, refrigerantes, CONTE, SENA).
+  //      Botón URL dinámico → /tecnico/perfil/{portal_token} (Meta exige que
+  //      el {{1}} vaya AL FINAL de la URL — error 2388052 si va en medio —
+  //      por eso existe la ruta de redirección src/app/tecnico/perfil/[token]
+  //      → /tecnico/{token}/perfil).
+  //      Envío masivo: scripts/enviar-actualizar-perfil-tecnicos.mjs
+  //      (sin cableado en el código de la app). Ver docs/CERTIFICACIONES.md.
+  //      Body param {{1}} = primer nombre · button url param = portal_token.
+  {
+    name: 'tecnico_actualizar_perfil_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Actualiza tu perfil de técnico',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋, en Baird Service ampliamos tu perfil de técnico. Ahora puedes indicar qué equipos atiendes, ' +
+          'si trabajas con gasodomésticos (estufas, hornos, secadoras y calentadores a gas) y qué certificaciones tienes ' +
+          '(competencia en gas, manejo de refrigerantes, CONTE, SENA).\n\n' +
+          'Con esto te asignamos los servicios correctos y, pronto, los técnicos certificados tendrán prioridad. Te toma 2 minutos.\n\n' +
+          'Toca el botón para completarlo. El enlace es personal, no lo compartas.',
+        example: { body_text: [['Carlos']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Técnicos' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Completar mi perfil',
+            url: `${APP_URL}/tecnico/perfil/{{1}}`,
+            example: [`${APP_URL}/tecnico/perfil/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
   // 20. Espera de repuesto aprobada — notificar al TÉCNICO (solo GARANTÍA).
   //     v1 (2026-06-12): incluye los datos de gestión del repuesto ante la marca:
   //     No. de garantía (numero_serie_factura), SKU(s) y dirección del cliente
