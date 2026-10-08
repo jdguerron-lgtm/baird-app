@@ -191,6 +191,28 @@ export default function SolicitudDetalle() {
   const [actualizandoValor, setActualizandoValor] = useState(false)
   const [descargandoFicha, setDescargandoFicha] = useState(false)
   const [errorFicha, setErrorFicha] = useState<string | null>(null)
+  // Repuestos ESPECIFICADOS (con SKU, no cancelados) de esta solicitud. Sin
+  // ninguno, el pedido a supervisores queda bloqueado (regla 2026-10-08).
+  const [repuestosRegistrados, setRepuestosRegistrados] = useState<
+    Array<{ sku: string; descripcion: string | null; cantidad: number | null; estado: string | null }>
+  >([])
+
+  useEffect(() => {
+    let activo = true
+    supabase
+      .from('repuestos_pendientes')
+      .select('sku, descripcion, cantidad, estado')
+      .eq('solicitud_id', id)
+      .neq('estado', 'cancelado')
+      .order('solicitado_at', { ascending: true })
+      .then(({ data }) => {
+        if (!activo) return
+        setRepuestosRegistrados(
+          (data ?? []).filter((r: { sku: string | null }) => typeof r.sku === 'string' && r.sku.trim().length > 0),
+        )
+      })
+    return () => { activo = false }
+  }, [id])
 
   // Ficha de facturación por servicio (docs/FACTURACION.md § 3): la venta al
   // cliente es un registro independiente por servicio — mismo Excel del
@@ -2139,7 +2161,8 @@ export default function SolicitudDetalle() {
                 }
                 setPidiendoRepuesto(false)
               }}
-              disabled={pidiendoRepuesto}
+              disabled={pidiendoRepuesto || repuestosRegistrados.length === 0}
+              title={repuestosRegistrados.length === 0 ? 'Sin repuesto especificado: el técnico debe registrarlo en el diagnóstico' : undefined}
               className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {pidiendoRepuesto ? 'Enviando...' : '📦 Pedir repuesto a supervisores'}
@@ -2148,6 +2171,24 @@ export default function SolicitudDetalle() {
               Los SKU se toman de los repuestos registrados en la solicitud.
             </span>
           </div>
+
+          {repuestosRegistrados.length === 0 ? (
+            <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              ⛔ <strong>Sin repuesto especificado.</strong> No se puede enviar el pedido a supervisores hasta
+              que el técnico registre el repuesto (SKU) en su diagnóstico con &quot;esperar repuesto&quot;.
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-1">
+              {repuestosRegistrados.map((r, i) => (
+                <li key={`${r.sku}-${i}`} className="text-xs text-slate-700 bg-slate-50 rounded px-3 py-1.5">
+                  <span className="font-mono font-semibold">{r.sku}</span>
+                  {Number(r.cantidad) > 1 && <span className="ml-1">x{r.cantidad}</span>}
+                  {r.descripcion && <span className="ml-2 text-gray-600">{r.descripcion}</span>}
+                  {r.estado && <span className="ml-2 text-[10px] uppercase text-gray-400">{r.estado}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
 
           {resultadoRepuesto && (
             <div className={`mt-3 rounded-lg p-3 text-sm ${

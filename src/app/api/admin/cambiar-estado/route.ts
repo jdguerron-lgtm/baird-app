@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { verificarAdmin } from '@/lib/auth/admin'
 import { ESTADOS_VALIDOS } from '@/lib/constants/estados'
-import { notificarCambioEstado } from '@/lib/services/whatsapp.service'
+import {
+  notificarCambioEstado,
+  obtenerRepuestosEspecificados,
+  MSG_SIN_REPUESTO_ESPECIFICADO,
+} from '@/lib/services/whatsapp.service'
 
 export const maxDuration = 30
 
@@ -53,6 +57,16 @@ export async function POST(req: NextRequest) {
       .single()
     if (readErr || !actual) {
       return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })
+    }
+
+    // REGLA (2026-10-08): no se puede poner una solicitud "esperando repuesto"
+    // sin un repuesto especificado (SKU en repuestos_pendientes). Forzarlo a
+    // mano generaba un pedido a supervisores sin saber qué pieza pedir.
+    if (nuevoEstado === 'esperando_repuesto') {
+      const repuestos = await obtenerRepuestosEspecificados(id)
+      if (repuestos.length === 0) {
+        return NextResponse.json({ error: MSG_SIN_REPUESTO_ESPECIFICADO }, { status: 400 })
+      }
     }
 
     if (actual.estado === nuevoEstado) {

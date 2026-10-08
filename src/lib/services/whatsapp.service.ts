@@ -1434,23 +1434,37 @@ export async function notificarTecnicoVisitaReprogramada(
  * supervisor reciba el pedido completo sin entrar al portal.
  */
 async function listarSkusSolicitud(solicitudId: string): Promise<string> {
+  const items = (await obtenerRepuestosEspecificados(solicitudId)).map(r => {
+    const cant = Number(r.cantidad) > 1 ? ` x${r.cantidad}` : ''
+    const desc = (r.descripcion ?? '').replace(/\s+/g, ' ').trim()
+    return desc ? `${r.sku}${cant} (${desc.substring(0, 60)})` : `${r.sku}${cant}`
+  })
+  const linea = items.join(', ')
+  // Tope defensivo: los params de Meta rechazan textos muy largos.
+  return linea ? linea.substring(0, 500) : '—'
+}
+
+/**
+ * Repuestos ESPECIFICADOS (con SKU) de una solicitud, excluyendo cancelados.
+ * Es la única fuente que autoriza enviar un "pedido de repuesto" a supervisores:
+ * sin filas acá NO hay repuesto que pedir (regla 2026-10-08).
+ */
+export async function obtenerRepuestosEspecificados(
+  solicitudId: string,
+): Promise<Array<{ sku: string; descripcion: string | null; cantidad: number | null }>> {
   const { data } = await supabase
     .from('repuestos_pendientes')
     .select('sku, descripcion, cantidad')
     .eq('solicitud_id', solicitudId)
     .neq('estado', 'cancelado')
     .order('solicitado_at', { ascending: true })
-  const items = (data ?? [])
-    .filter(r => r.sku)
-    .map(r => {
-      const cant = Number(r.cantidad) > 1 ? ` x${r.cantidad}` : ''
-      const desc = (r.descripcion ?? '').replace(/\s+/g, ' ').trim()
-      return desc ? `${r.sku}${cant} (${desc.substring(0, 60)})` : `${r.sku}${cant}`
-    })
-  const linea = items.join(', ')
-  // Tope defensivo: los params de Meta rechazan textos muy largos.
-  return linea ? linea.substring(0, 500) : '—'
+  return (data ?? []).filter(r => typeof r.sku === 'string' && r.sku.trim().length > 0)
 }
+
+/** Mensaje único para todos los puntos que rechazan un pedido sin repuesto. */
+export const MSG_SIN_REPUESTO_ESPECIFICADO =
+  'No hay ningún repuesto especificado (SKU) en esta solicitud. ' +
+  'El técnico debe registrarlo en el diagnóstico con "esperar repuesto" antes de pedirlo a supervisores.'
 
 /** Dirección completa del cliente en una línea (dirección, zona, ciudad). */
 function direccionUnaLinea(sol: {
@@ -1634,7 +1648,16 @@ export async function notificarCambioEstado(
     const esEventoRepuestoGarantia =
       sol.es_garantia &&
       (estadoNuevo === 'esperando_repuesto' || estadoNuevo === 'repuesto_en_camino' || estadoNuevo === 'repuesto_recibido')
-    const detalleRepuesto = esEventoRepuestoGarantia
+    // REGLA (2026-10-08): el mensaje de repuesto a supervisores SOLO sale con un
+    // repuesto especificado (SKU en repuestos_pendientes). Si el estado se forzó
+    // sin repuesto (p.ej. cambio manual del admin), el supervisor recibe el aviso
+    // genérico de cambio de estado, nunca un "Repuesto requerido" con SKU "—".
+    const skusLinea = esEventoRepuestoGarantia ? await listarSkusSolicitud(solicitudId) : '—'
+    const tieneRepuesto = skusLinea !== '—'
+    if (esEventoRepuestoGarantia && !tieneRepuesto) {
+      console.warn(`[notificarCambioEstado] ${solicitudId} → ${estadoNuevo} sin repuesto especificado: se envía aviso genérico, no el pedido de repuesto`)
+    }
+    const detalleRepuesto = esEventoRepuestoGarantia && tieneRepuesto
       ? {
           novedad:
             estadoNuevo === 'esperando_repuesto'
@@ -1643,7 +1666,7 @@ export async function notificarCambioEstado(
                 ? 'Repuesto en camino (guía de envío cargada)'
                 : 'Repuesto entregado al cliente',
           garantia: sol.numero_serie_factura ?? '—',
-          skus: await listarSkusSolicitud(solicitudId),
+          skus: skusLinea,
           direccion: direccionUnaLinea(sol),
           modelo: modeloDeNovedades(sol.novedades_equipo),
           diagnostico: diagnosticoDeTriaje(sol.triaje_resultado),
@@ -1733,6 +1756,13 @@ export async function notificarRepuestoSupervisores(
       return { enviados: 0, total: 0, error: 'El pedido de repuesto a supervisores es solo para servicios en garantía' }
     }
 
+    // REGLA (2026-10-08): sin repuesto especificado NO se envía nada. Aplica al
+    // botón del admin y al cron de recordatorios (ambos entran por acá).
+    const skusLinea = await listarSkusSolicitud(solicitudId)
+    if (skusLinea === '—') {
+      return { enviados: 0, total: 0, error: MSG_SIN_REPUESTO_ESPECIFICADO }
+    }
+
     const { data: supervisores } = await supabase
       .from('supervisores')
       .select('nombre, whatsapp, ambito, marca')
@@ -1757,7 +1787,7 @@ export async function notificarRepuestoSupervisores(
     const detalle = {
       novedad: 'Repuesto requerido',
       garantia: sol.numero_serie_factura ?? '—',
-      skus: await listarSkusSolicitud(solicitudId),
+      skus: skusLinea,
       direccion: direccionUnaLinea(sol),
       modelo: modeloDeNovedades(sol.novedades_equipo),
       diagnostico: diagnosticoDeTriaje(sol.triaje_resultado),
