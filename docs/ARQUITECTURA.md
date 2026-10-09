@@ -57,7 +57,7 @@ src/
 │       ├── carga-masiva/           # Bulk Excel upload processing (POST + DELETE)
 │       ├── admin/                  # Endpoints admin (export, editar/cambiar-estado, notas, supervisores, etc.)
 │       └── whatsapp/               # notify (admin-only), accept, webhook
-├── components/ui/              # Reusable UI: Button, InputField, PhoneInput, etc.
+├── components/ui/              # Reusable UI: Button, InputField, PhoneInput, SelectorFoto (cámara en vivo + galería), etc.
 ├── components/icons/
 │   ├── index.tsx               # Iconos genéricos (UserIcon, PhoneIcon, ...)
 │   └── equipos.tsx             # Siluetas de línea blanca — reemplazan los emoji en home y /servicios

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { compressImageIfNeeded, inferExtension } from '@/lib/utils/media'
+import SelectorFoto from '@/components/ui/SelectorFoto'
 import { formatCOP } from '@/lib/utils/format'
 import { DESCUENTO_REPUESTO_TECNICO } from '@/lib/constants/pagos'
 import type { ProductoNecesario } from '@/types/solicitud'
@@ -351,20 +352,20 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
                 </button>
               </div>
             ) : (
-              <label className={`inline-flex items-center gap-2 rounded-lg border-2 border-dashed border-fuchsia-300 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 ${subiendo[idx] ? 'opacity-60' : 'cursor-pointer hover:border-fuchsia-500'} transition`}>
-                {subiendo[idx] ? '⏳ Subiendo…' : '📷 Agregar foto'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={subiendo[idx]}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) subirImagen(idx, file)
-                    e.target.value = ''
-                  }}
+              subiendo[idx] ? (
+                <span className="inline-flex items-center gap-2 rounded-lg border-2 border-dashed border-fuchsia-300 bg-white px-3 py-2 text-xs font-semibold text-fuchsia-700 opacity-60">
+                  ⏳ Subiendo…
+                </span>
+              ) : (
+                // Cámara trasera para fotografiar el repuesto + galería para una foto ya tomada.
+                <SelectorFoto
+                  variant="buttons"
+                  capture="environment"
+                  labelCamara="📷 Tomar foto"
+                  labelGaleria="🖼️ Foto guardada"
+                  onFiles={(files) => subirImagen(idx, files[0])}
                 />
-              </label>
+              )
             )}
             {errorImg[idx] && (
               <p className="text-[11px] text-red-600 mt-1">{errorImg[idx]}</p>

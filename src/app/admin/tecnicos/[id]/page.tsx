@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { CONTRATO_TECNICO_VERSION } from '@/lib/constants/legal'
+import SelectorFoto from '@/components/ui/SelectorFoto'
 import { supabase } from '@/lib/supabase'
 import { uploadContratoFirmado, urlContratoFirmado } from '@/lib/uploadHelpers'
 import { normalizeForMatch } from '@/lib/utils/format'
@@ -825,11 +826,13 @@ export default function TecnicoDetalle() {
                 <p className="text-xs text-gray-500">Aún no hay copia escaneada. Sube el PDF o la foto del contrato firmado.</p>
               )}
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="file"
-                  accept="application/pdf,image/jpeg,image/png"
-                  onChange={(e) => setArchivoContrato(e.target.files?.[0] ?? null)}
-                  className="block text-xs text-gray-600 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-gray-700 hover:file:bg-gray-200"
+                <SelectorFoto
+                  capture="environment"
+                  acceptGaleria="application/pdf,image/jpeg,image/png"
+                  labelCamara="📷 Tomar foto"
+                  labelGaleria="📁 PDF o foto guardada"
+                  archivoSeleccionado={archivoContrato}
+                  onFiles={(files) => setArchivoContrato(files[0] ?? null)}
                 />
                 <button
                   type="button"

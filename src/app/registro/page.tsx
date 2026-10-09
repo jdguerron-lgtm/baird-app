@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { uploadFotoPerfil, uploadFotoDocumento } from '@/lib/uploadHelpers'
 import { prepararFoto } from '@/lib/utils/foto-registro'
+import SelectorFoto from '@/components/ui/SelectorFoto'
 import { PhoneInput, phoneToDigits } from '@/components/ui/PhoneInput'
 import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialidades'
 import { aplicarDeclaracionTecnico } from '@/lib/constants/certificaciones'
@@ -63,10 +64,8 @@ export default function RegistroTecnico() {
     }))
   }
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, tipo: 'perfil' | 'documento') => {
-    const file = e.target.files?.[0]
-    // Permite volver a elegir el mismo archivo tras un error
-    e.target.value = ''
+  // Entrada única para la cámara en vivo y la galería (SelectorFoto).
+  const procesarFoto = async (file: File | undefined, tipo: 'perfil' | 'documento') => {
     if (!file) return
 
     setProcesandoFoto(tipo)
@@ -409,29 +408,38 @@ export default function RegistroTecnico() {
                           <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-blue-500">
                             <Image src={previewPerfil} alt="Perfil" fill className="object-cover" />
                           </div>
-                          <div className="flex gap-2">
-                            <label className="text-xs font-semibold text-blue-700 underline cursor-pointer">
-                              Cambiar
-                              <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, 'perfil')} className="hidden" />
-                            </label>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            <SelectorFoto
+                              variant="links"
+                              capture="user"
+                              labelCamara="📷 Tomar otra"
+                              labelGaleria="🖼️ Elegir guardada"
+                              disabled={procesandoFoto === 'perfil'}
+                              onFiles={(files) => procesarFoto(files[0], 'perfil')}
+                            />
                             <button type="button" onClick={() => quitarFoto('perfil')} className="text-xs font-semibold text-red-600 underline">
                               Quitar
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer min-h-[120px]">
-                          <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 min-h-[120px] gap-2">
+                          <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                           </svg>
-                          <span className="text-xs font-semibold text-blue-600">{procesandoFoto === 'perfil' ? 'Preparando foto…' : 'Subir foto de perfil'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleFileChange(e, 'perfil')}
-                            className="hidden"
-                          />
-                        </label>
+                          {procesandoFoto === 'perfil' ? (
+                            <span className="text-xs font-semibold text-blue-600">Preparando foto…</span>
+                          ) : (
+                            // Cámara FRONTAL (capture="user"): es una selfie de identificación.
+                            <SelectorFoto
+                              variant="tiles"
+                              capture="user"
+                              labelCamara="📷 Tomar foto"
+                              labelGaleria="🖼️ Foto guardada"
+                              onFiles={(files) => procesarFoto(files[0], 'perfil')}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -446,29 +454,38 @@ export default function RegistroTecnico() {
                           <div className="relative w-full h-20 rounded-lg overflow-hidden border-2 border-blue-500">
                             <Image src={previewDocumento} alt="Documento" fill className="object-cover" />
                           </div>
-                          <div className="flex gap-2">
-                            <label className="text-xs font-semibold text-blue-700 underline cursor-pointer">
-                              Cambiar
-                              <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, 'documento')} className="hidden" />
-                            </label>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            <SelectorFoto
+                              variant="links"
+                              capture="environment"
+                              labelCamara="📷 Tomar otra"
+                              labelGaleria="🖼️ Elegir guardada"
+                              disabled={procesandoFoto === 'documento'}
+                              onFiles={(files) => procesarFoto(files[0], 'documento')}
+                            />
                             <button type="button" onClick={() => quitarFoto('documento')} className="text-xs font-semibold text-red-600 underline">
                               Quitar
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer min-h-[120px]">
-                          <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 min-h-[120px] gap-2">
+                          <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
-                          <span className="text-xs font-semibold text-blue-600">{procesandoFoto === 'documento' ? 'Preparando foto…' : 'Subir documento'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleFileChange(e, 'documento')}
-                            className="hidden"
-                          />
-                        </label>
+                          {procesandoFoto === 'documento' ? (
+                            <span className="text-xs font-semibold text-blue-600">Preparando foto…</span>
+                          ) : (
+                            // Cámara TRASERA: foto de la cédula sobre la mesa.
+                            <SelectorFoto
+                              variant="tiles"
+                              capture="environment"
+                              labelCamara="📷 Tomar foto"
+                              labelGaleria="🖼️ Foto guardada"
+                              onFiles={(files) => procesarFoto(files[0], 'documento')}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
 

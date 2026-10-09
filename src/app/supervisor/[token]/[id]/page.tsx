@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useParams } from 'next/navigation'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
+import SelectorFoto from '@/components/ui/SelectorFoto'
 import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
@@ -745,11 +746,14 @@ function GuiaEnvioSeccion({ sol, token }: { sol: Solicitud; token: string }) {
               Al subirla se notifica al cliente (para agendar la visita de finalización) y al
               técnico de que el producto va en camino.
             </p>
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={e => setArchivo(e.target.files?.[0] ?? null)}
-              className="block w-full text-xs text-gray-600 mb-2 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-sky-700"
+            <SelectorFoto
+              className="mb-2"
+              capture="environment"
+              acceptGaleria="image/*,application/pdf"
+              labelCamara="📷 Tomar foto de la guía"
+              labelGaleria="📁 Foto o PDF guardado"
+              archivoSeleccionado={archivo}
+              onFiles={files => setArchivo(files[0] ?? null)}
             />
             <input
               type="text"
@@ -910,12 +914,15 @@ function ComprobantesEnvioSeccion({ sol, token, eventos }: { sol: Solicitud; tok
               Recibo de la transportadora, pantallazo de tracking o remisión (foto o PDF).
               No cambia el estado del caso — queda como evidencia en el historial.
             </p>
-            <input
+            <SelectorFoto
               key={inputKey}
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={e => setArchivo(e.target.files?.[0] ?? null)}
-              className="block w-full text-xs text-gray-600 mb-2 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-800"
+              className="mb-2"
+              capture="environment"
+              acceptGaleria="image/*,application/pdf"
+              labelCamara="📷 Tomar foto del recibo"
+              labelGaleria="📁 Foto o PDF guardado"
+              archivoSeleccionado={archivo}
+              onFiles={files => setArchivo(files[0] ?? null)}
             />
             <input
               type="text"
