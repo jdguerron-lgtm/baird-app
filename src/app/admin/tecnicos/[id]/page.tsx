@@ -9,6 +9,7 @@ import SelectorFoto from '@/components/ui/SelectorFoto'
 import { supabase } from '@/lib/supabase'
 import { uploadContratoFirmado, urlContratoFirmado } from '@/lib/uploadHelpers'
 import { normalizeForMatch } from '@/lib/utils/format'
+import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { CIUDADES_SUGERIDAS } from '@/lib/constants/ciudades'
 import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialidades'
 import {
@@ -263,6 +264,52 @@ export default function TecnicoDetalle() {
       setMensaje({ texto: firmado ? 'Contrato firmado registrado' : 'Contrato desmarcado', tipo: 'exito' })
     }
     setGuardandoContrato(false)
+  }
+
+  // ── Edición del WhatsApp del técnico (2026-10-09) ──
+  // Toda la coordinación (ofertas, portal, OTP) llega a este número; si el
+  // técnico lo digitó mal en /registro quedaba incontactable y sin forma de
+  // corregirlo. Se exige celular colombiano válido (573XXXXXXXXX tras
+  // normalizar) y se bloquea si otro técnico ya usa ese número.
+  const [editandoWhatsapp, setEditandoWhatsapp] = useState(false)
+  const [nuevoWhatsapp, setNuevoWhatsapp] = useState('')
+  const [guardandoWhatsapp, setGuardandoWhatsapp] = useState(false)
+
+  const guardarWhatsapp = async () => {
+    if (!tecnico) return
+    const digits = phoneToDigits(nuevoWhatsapp)
+    if (!isMobileColombiano(digits)) {
+      setMensaje({ texto: 'Debe ser un celular colombiano válido: 10 dígitos que empiezan por 3 (ej. 3001234567).', tipo: 'error' })
+      return
+    }
+    if (digits === phoneToDigits(tecnico.whatsapp)) {
+      setEditandoWhatsapp(false)
+      return
+    }
+    setGuardandoWhatsapp(true)
+    setMensaje(null)
+    try {
+      const { data: otro } = await supabase
+        .from('tecnicos')
+        .select('id, nombre_completo')
+        .eq('whatsapp', digits)
+        .neq('id', id)
+        .limit(1)
+        .maybeSingle()
+      if (otro) {
+        setMensaje({ texto: `Ese número ya está registrado por ${otro.nombre_completo}. Un número solo puede pertenecer a un técnico.`, tipo: 'error' })
+        return
+      }
+      const { error } = await supabase.from('tecnicos').update({ whatsapp: digits }).eq('id', id)
+      if (error) throw new Error(error.message)
+      setTecnico(prev => prev ? { ...prev, whatsapp: digits } : prev)
+      setEditandoWhatsapp(false)
+      setMensaje({ texto: `WhatsApp actualizado a +${digits}`, tipo: 'exito' })
+    } catch (e) {
+      setMensaje({ texto: 'Error al guardar el WhatsApp: ' + (e instanceof Error ? e.message : String(e)), tipo: 'error' })
+    } finally {
+      setGuardandoWhatsapp(false)
+    }
   }
 
   // Copia escaneada del contrato firmado (PDF/JPG/PNG ≤ 10 MB) al bucket
@@ -521,7 +568,55 @@ export default function TecnicoDetalle() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-xs text-gray-400">WhatsApp</p>
-                  <p className="text-sm font-semibold text-slate-900">{tecnico.whatsapp}</p>
+                  {editandoWhatsapp ? (
+                    <div className="flex flex-col gap-1.5">
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        autoFocus
+                        value={nuevoWhatsapp}
+                        onChange={(e) => setNuevoWhatsapp(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') guardarWhatsapp(); if (e.key === 'Escape') setEditandoWhatsapp(false) }}
+                        placeholder="3001234567"
+                        maxLength={20}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={guardarWhatsapp}
+                          disabled={guardandoWhatsapp}
+                          className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {guardandoWhatsapp ? 'Guardando…' : 'Guardar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditandoWhatsapp(false)}
+                          disabled={guardandoWhatsapp}
+                          className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-slate-900 font-mono">{tecnico.whatsapp}</p>
+                      {!isMobileColombiano(phoneToDigits(tecnico.whatsapp)) && (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700" title="No es un celular colombiano válido: los WhatsApp no le llegan">
+                          ⚠️ inválido
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setNuevoWhatsapp(tecnico.whatsapp ?? ''); setEditandoWhatsapp(true) }}
+                        className="text-xs font-semibold text-blue-700 underline"
+                      >
+                        ✏️ Editar
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">Ciudad</p>
