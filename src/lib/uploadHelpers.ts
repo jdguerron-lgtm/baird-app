@@ -79,3 +79,42 @@ export async function deleteImage(bucket: string, path: string): Promise<void> {
         throw new Error('Error al eliminar la imagen')
     }
 }
+
+// ──────────────────────────────────────────────────────────
+// Contrato de prestación de servicios firmado en físico (escaneado).
+// Bucket PRIVADO `tecnicos-contratos`: solo el admin autenticado sube y lee
+// (policies en 20261009_tecnicos_contrato_archivo.sql). Se guarda la RUTA en
+// tecnicos.contrato_archivo_path y se lee con signed URL de corta duración.
+// ──────────────────────────────────────────────────────────
+import {
+    CONTRATO_ARCHIVO_BUCKET,
+    rutaArchivoContrato,
+    validarArchivoContrato,
+} from './utils/contrato-archivo'
+
+export async function uploadContratoFirmado(file: File, tecnicoId: string, version: string): Promise<string> {
+    const header = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+    const v = validarArchivoContrato(file.size, header)
+    if (!v.ok) throw new Error(v.error)
+
+    const path = rutaArchivoContrato(tecnicoId, version, v.tipo)
+    const contentType = v.tipo === 'pdf' ? 'application/pdf' : v.tipo === 'png' ? 'image/png' : 'image/jpeg'
+    const { error } = await supabase.storage
+        .from(CONTRATO_ARCHIVO_BUCKET)
+        .upload(path, file, { cacheControl: '3600', upsert: false, contentType })
+    if (error) {
+        throw new Error('Error al subir el contrato: ' + error.message)
+    }
+    return path
+}
+
+/** URL temporal (1 h) para ver/descargar el contrato escaneado. */
+export async function urlContratoFirmado(path: string): Promise<string> {
+    const { data, error } = await supabase.storage
+        .from(CONTRATO_ARCHIVO_BUCKET)
+        .createSignedUrl(path, 60 * 60)
+    if (error || !data?.signedUrl) {
+        throw new Error('No se pudo generar el enlace del contrato' + (error ? ': ' + error.message : ''))
+    }
+    return data.signedUrl
+}

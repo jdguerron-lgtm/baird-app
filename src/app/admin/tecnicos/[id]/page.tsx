@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { CONTRATO_TECNICO_VERSION } from '@/lib/constants/legal'
 import { supabase } from '@/lib/supabase'
+import { uploadContratoFirmado, urlContratoFirmado } from '@/lib/uploadHelpers'
 import { normalizeForMatch } from '@/lib/utils/format'
 import { CIUDADES_SUGERIDAS } from '@/lib/constants/ciudades'
 import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialidades'
@@ -52,6 +53,9 @@ interface Tecnico {
   contrato_firmado_version: string | null
   contrato_firmado_at: string | null
   contrato_registrado_por: string | null
+  // Copia escaneada del contrato firmado (migración 20261009_tecnicos_contrato_archivo)
+  contrato_archivo_path: string | null
+  contrato_archivo_subido_at: string | null
   created_at: string
 }
 
@@ -80,6 +84,9 @@ export default function TecnicoDetalle() {
   const [adminEmail, setAdminEmail] = useState<string>('admin')
   const [fechaFirma, setFechaFirma] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [guardandoContrato, setGuardandoContrato] = useState(false)
+  const [archivoContrato, setArchivoContrato] = useState<File | null>(null)
+  const [subiendoContrato, setSubiendoContrato] = useState(false)
+  const [abriendoContrato, setAbriendoContrato] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -255,6 +262,41 @@ export default function TecnicoDetalle() {
       setMensaje({ texto: firmado ? 'Contrato firmado registrado' : 'Contrato desmarcado', tipo: 'exito' })
     }
     setGuardandoContrato(false)
+  }
+
+  // Copia escaneada del contrato firmado (PDF/JPG/PNG ≤ 10 MB) al bucket
+  // privado tecnicos-contratos. Se guarda la ruta; se lee con signed URL.
+  const subirContrato = async () => {
+    if (!tecnico || !archivoContrato) return
+    setSubiendoContrato(true)
+    setMensaje(null)
+    try {
+      const version = tecnico.contrato_firmado_version ?? CONTRATO_TECNICO_VERSION
+      const path = await uploadContratoFirmado(archivoContrato, id, version)
+      const cambios = { contrato_archivo_path: path, contrato_archivo_subido_at: new Date().toISOString() }
+      const { error } = await supabase.from('tecnicos').update(cambios).eq('id', id)
+      if (error) throw new Error(error.message)
+      setTecnico(prev => prev ? { ...prev, ...cambios } : prev)
+      setArchivoContrato(null)
+      setMensaje({ texto: 'Contrato escaneado guardado', tipo: 'exito' })
+    } catch (e) {
+      setMensaje({ texto: e instanceof Error ? e.message : 'Error al subir el contrato', tipo: 'error' })
+    } finally {
+      setSubiendoContrato(false)
+    }
+  }
+
+  const verContrato = async () => {
+    if (!tecnico?.contrato_archivo_path) return
+    setAbriendoContrato(true)
+    try {
+      const url = await urlContratoFirmado(tecnico.contrato_archivo_path)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (e) {
+      setMensaje({ texto: e instanceof Error ? e.message : 'No se pudo abrir el contrato', tipo: 'error' })
+    } finally {
+      setAbriendoContrato(false)
+    }
   }
 
   const cambiarEstado = async (nuevoEstado: 'verificado' | 'rechazado' | 'pendiente') => {
@@ -762,6 +804,44 @@ export default function TecnicoDetalle() {
                 </label>
               </div>
             )}
+            {/* Copia escaneada del contrato firmado (bucket privado, signed URL) */}
+            <div className="mt-4 pt-4 border-t border-gray-200 space-y-2 text-sm">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Copia escaneada</p>
+              {tecnico.contrato_archivo_path ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={verContrato}
+                    disabled={abriendoContrato}
+                    className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {abriendoContrato ? 'Abriendo…' : '📄 Ver contrato escaneado'}
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    Subido {tecnico.contrato_archivo_subido_at ? new Date(tecnico.contrato_archivo_subido_at).toLocaleDateString('es-CO') : '—'}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">Aún no hay copia escaneada. Sube el PDF o la foto del contrato firmado.</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  onChange={(e) => setArchivoContrato(e.target.files?.[0] ?? null)}
+                  className="block text-xs text-gray-600 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-gray-700 hover:file:bg-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={subirContrato}
+                  disabled={!archivoContrato || subiendoContrato}
+                  className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {subiendoContrato ? 'Subiendo…' : tecnico.contrato_archivo_path ? 'Reemplazar' : 'Subir'}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400">PDF, JPG o PNG · máx. 10 MB · solo visible para administradores.</p>
+            </div>
             <p className="mt-3 text-xs text-gray-400">
               Registro: T&amp;C {tecnico.tyc_version ?? 'no aceptados'} · Datos {tecnico.datos_version ?? 'no autorizados'}
             </p>
