@@ -267,11 +267,14 @@ El sistema acepta el PDF de órdenes de servicio que MABE envía por taller
 | COLONIA | `zona_servicio` |
 | DELEGACIÓN O MUNICIPIO | `ciudad_pueblo` |
 | MODELO | `modelo_equipo` (embebido en novedades) |
-| DESCRIPCIÓN PRODUCTO | `tipo_equipo` (vía `mapFamilia`, ej. "LAVADORA AUT 18 KG…" → Lavadora) |
+| DESCRIPCIÓN PRODUCTO | `tipo_equipo` (vía `mapDescripcionProducto`: primero `mapFamilia`, luego abreviaturas MABE como token completo — `REF`/`REFRIG` → Nevera, `LAV` → Lavadora, `SEC` → Secadora, `EST`/`COC`/`CUB` → Estufa, `HOR`/`MICRO` → Horno, `AA` → Aire. Ej. "MANUFAC REF MABE NF 2P 400L" → Nevera, 2026-10-09) |
+| ENTRE CALLES | complemento de `direccion` (conjunto/barrio). Si es **solo un número** (2º celular) va a `novedades_equipo` como "Tel. alterno" y sirve de fallback si no hay otro teléfono (2026-10-09) |
 | NO. DE SERIE, LUGAR DE COMPRA | embebidos en `novedades_equipo` |
 | FALLA REPORTADA/QUIÉN REPORTA | `novedades_equipo` |
 
 Marca siempre `MABE`, `pago_tecnico: 0` (tarifa por complejidad post-diagnóstico).
+Los valores se recortan del texto **original** del PDF (no del normalizado), así
+que nombres y direcciones conservan ñ y tildes ("PEÑA", no "PENA") — fix 2026-10-09.
 
 ### Flujo de prueba
 

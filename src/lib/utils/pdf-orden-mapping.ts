@@ -1,4 +1,5 @@
 import { mapFamilia, type ExcelRow, type MappedSolicitud, type ParsedRow } from '@/lib/utils/excel-mapping'
+import type { TipoEquipo } from '@/types/solicitud'
 import { FRANJAS_HORARIO, type FranjaHorario } from '@/lib/constants/franjas'
 import { formatearFechaLargaCO, fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 
@@ -58,12 +59,23 @@ export function reconstruirLineas(items: PdfTextItem[]): string[] {
   )
 }
 
-/** Quita tildes y pasa a mayúsculas para matching de etiquetas. */
+/**
+ * Quita tildes y pasa a mayúsculas para matching de etiquetas, carácter por
+ * carácter, de modo que el resultado tenga EXACTAMENTE la misma longitud que
+ * la entrada: así los índices hallados en el texto normalizado sirven para
+ * recortar el texto original y conservar ñ/tildes en nombres y direcciones
+ * ("PEÑA" no se degrada a "PENA").
+ */
 function normalizar(texto: string): string {
   return texto
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
+    .split('')
+    .map(c => {
+      const sinTilde = c.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      const base = sinTilde.length === 1 ? sinTilde : c
+      const upper = base.toUpperCase()
+      return upper.length === 1 ? upper : base
+    })
+    .join('')
 }
 
 /**
@@ -133,7 +145,8 @@ export function extraerOrdenes(lineas: string[]): OrdenCruda[] {
     for (let i = 0; i < hits.length; i++) {
       const hit = hits[i]
       const finValor = i + 1 < hits.length ? hits[i + 1].inicio : lineaNorm.length
-      const valor = lineaNorm.slice(hit.finEtiqueta, finValor).trim()
+      // lineaNorm y linea tienen la misma longitud → recortamos el original
+      const valor = linea.slice(hit.finEtiqueta, finValor).trim()
 
       if (hit.campo === 'orden') {
         if (actual) ordenes.push(actual)
@@ -206,7 +219,48 @@ function complementoDireccion(orden: OrdenCruda): string {
   const restos = [orden.tel_cel, orden.tel_casa, orden.tel_oficina]
     .map(r => separarTelefono(r).resto)
     .filter(Boolean)
-  return [...restos, orden.entre_calles ?? ''].filter(Boolean).join(' - ')
+  const entreCalles = telefonoAlterno(orden) ? '' : (orden.entre_calles ?? '')
+  return [...restos, entreCalles].filter(Boolean).join(' - ')
+}
+
+/**
+ * DESCRIPCIÓN PRODUCTO de MABE viene abreviada y sin la familia explícita
+ * ("MANUFAC REF MABE NF 2P 400L BP RETIQ", "LAVADORA AUT 18 KG MABE MET").
+ * Primero se intenta el mapeo general de familias; si falla, se buscan
+ * abreviaturas conocidas como token completo (no como substring).
+ */
+const ABREVIATURAS_PRODUCTO: { patron: RegExp; tipo: TipoEquipo }[] = [
+  { patron: /\bNEVECON\b/, tipo: 'Nevecón' },
+  { patron: /\b(REF|REFRIG|REFRI|NEV|NEVERA)\b/, tipo: 'Nevera' },
+  { patron: /\bLAVAVAJILLAS?\b/, tipo: 'Lavavajillas' },
+  { patron: /\b(LAV|LAVADORA)\b/, tipo: 'Lavadora' },
+  { patron: /\b(SEC|SECADORA)\b/, tipo: 'Secadora' },
+  { patron: /\b(EST|ESTUFA|COC|COCINA|CUB|CUBIERTA)\b/, tipo: 'Estufa' },
+  { patron: /\b(HOR|HORNO|MICRO|MICROONDAS)\b/, tipo: 'Horno' },
+  { patron: /\b(AA|AIRE|MINISPLIT)\b/, tipo: 'Aire Acondicionado' },
+]
+
+export function mapDescripcionProducto(descripcion: string): TipoEquipo | null {
+  const directo = mapFamilia(descripcion)
+  if (directo) return directo
+  const key = normalizar(descripcion).replace(/[^A-Z0-9]+/g, ' ').trim()
+  if (!key) return null
+  for (const { patron, tipo } of ABREVIATURAS_PRODUCTO) {
+    if (patron.test(key)) return tipo
+  }
+  return null
+}
+
+/**
+ * ENTRE CALLES a veces trae un segundo celular en vez de un barrio/conjunto
+ * (orden real 9415679144: "ENTRE CALLES: 3143270625"). Si el valor es solo
+ * un número de ≥7 dígitos, se trata como teléfono alterno y NO como parte
+ * de la dirección.
+ */
+function telefonoAlterno(orden: OrdenCruda): string {
+  const { digits, resto } = separarTelefono(orden.entre_calles)
+  if (resto || digits.length < 7 || /^0+$/.test(digits)) return ''
+  return digits
 }
 
 function mapOrden(orden: OrdenCruda, defaultHorario2: string): ParsedRow {
@@ -215,7 +269,8 @@ function mapOrden(orden: OrdenCruda, defaultHorario2: string): ParsedRow {
 
   const numeroOrden = (orden.orden ?? '').replace(/\D/g, '')
   const nombre = orden.cliente_nombre ?? ''
-  const telefono = elegirTelefono(orden)
+  const telAlterno = telefonoAlterno(orden)
+  const telefono = elegirTelefono(orden) || telAlterno
   const direccionBase = orden.direccion ?? ''
   const complemento = complementoDireccion(orden)
   const direccion = [direccionBase, complemento].filter(Boolean).join(' - ')
@@ -227,7 +282,7 @@ function mapOrden(orden: OrdenCruda, defaultHorario2: string): ParsedRow {
   const falla = orden.falla ?? ''
   const tipoServicio = orden.tipo_servicio ?? 'GARANTIA DE FABRICA'
   const esGarantia = normalizar(tipoServicio).includes('GARANTIA')
-  const tipoEquipo = mapFamilia(descripcion)
+  const tipoEquipo = mapDescripcionProducto(descripcion)
   const fechaProg = parseFechaProg(orden.fecha_prog)
 
   if (!numeroOrden) errors.push('NO. ORDEN vacío o inválido')
@@ -265,6 +320,7 @@ function mapOrden(orden: OrdenCruda, defaultHorario2: string): ParsedRow {
     serie ? `Serie: ${serie}` : '',
     descripcion ? `Producto: ${descripcion}` : '',
     orden.lugar_compra ? `Compra: ${orden.lugar_compra}` : '',
+    telAlterno && telAlterno !== telefono ? `Tel. alterno: ${telAlterno}` : '',
   ].filter(Boolean)
   let novedades = `[${detalles.join(' | ')}] ${falla || 'Falla reportada en orden MABE'}`
   if (novedades.length < 20) novedades = `${novedades} - Orden MABE ${numeroOrden}`

@@ -3,6 +3,7 @@ import {
   reconstruirLineas,
   extraerOrdenes,
   parsePdfTallerData,
+  mapDescripcionProducto,
   horaAFranja,
   separarTelefono,
 } from '@/lib/utils/pdf-orden-mapping'
@@ -183,5 +184,68 @@ describe('apto pegado al teléfono', () => {
     expect(m.cliente_telefono).toBe('573208041857')
     expect(m.direccion).toBe('CR 7A 3 80 TORRE 29 - APTO 102 - CAMPO CAMPESTRE ETAPA 12')
     expect(m.tipo_equipo).toBe('Nevera')
+  })
+})
+
+// PDF real "BAIRD 08.10.2026" (3 órdenes de SOACHA): (1) DESCRIPCIÓN
+// PRODUCTO abreviada "MANUFAC REF ..." no mapeaba a Nevera, (2) ENTRE CALLES
+// traía un 2º celular que caía dentro de la dirección, (3) la ñ de "PEÑA" se
+// degradaba a "PENA" porque los valores se recortaban del texto normalizado.
+describe('PDF 2026-10-08 — abreviaturas, teléfono alterno y tildes', () => {
+  const LINEAS = [
+    'TALLER: CSATDEABTA9P',
+    'NO. ORDEN: 9415679144 TIPO SERVICIO: GARANTÍA DE FÁBRICA FECHA PROG: 15.10.2026 09:00:00',
+    'NOMBRE DEL CLIENTE: ORLANDO SUAREZ DELEGACIÓN O MUNICIPIO: SOACHA',
+    'DIRECCIÓN: CL 17 39 99 COD. POSTAL: 250054',
+    'COLONIA: ZONA VERDE ENTRE CALLES: 3143270625',
+    'TEL. CASA: 0000000000 TEL. CEL.: 3104428652 CONJ LAVANDA TR 11 APTO 102',
+    'TEL. OFICINA: EXT.: 13',
+    'ASIGNADO A: BAIRD SERVICE SAS LUGAR DE COMPRA: MEGAMARCAS',
+    'NO. TÉCNICO: 101015938 MODELO: RMP421FGCC_AA',
+    'BASE: CSATDEABTA9P DESCRIPCIÓN PRODUCTO: MANUFAC REF MABE NF 2P 400L BP RETIQ',
+    'FALLA REPORTADA/QUIÉN NO ENFRIA',
+    'REPORTA:',
+    'NO. ORDEN: 9415679415 TIPO SERVICIO: GARANTÍA DE FÁBRICA FECHA PROG: 21.10.2026 08:00:00',
+    'NOMBRE DEL CLIENTE: LAURA DANIELA PEÑA SIERRA DELEGACIÓN O MUNICIPIO: SOACHA',
+    'DIRECCIÓN: CR 32 13 81 COD. POSTAL: 250054',
+    'COLONIA: ZONA VERDE ENTRE CALLES: BR CIUDAD VERDE',
+    'TEL. CASA: 00000 TEL. CEL.: 3236696445',
+    'BASE: CSATDEABTA9P DESCRIPCIÓN PRODUCTO: LAVADORA AUT MABE SIL',
+    'FALLA REPORTADA/QUIÉN NO FUNCIONA -LLAMAR ANTES DE ACUDIR',
+    'REPORTA:',
+  ]
+  const { parsed } = parsePdfTallerData(LINEAS)
+
+  it('mapDescripcionProducto entiende abreviaturas MABE como token completo', () => {
+    expect(mapDescripcionProducto('MANUFAC REF MABE NF 2P 400L BP RETIQ')).toBe('Nevera')
+    expect(mapDescripcionProducto('LAVADORA AUT 18 KG MABE MET')).toBe('Lavadora')
+    expect(mapDescripcionProducto('SEC GAS MABE 20KG')).toBe('Secadora')
+    expect(mapDescripcionProducto('CUB EMPOTRE 60 CM')).toBe('Estufa')
+    // "REFLECTOR" no es REF; "ESTANTE" no es EST
+    expect(mapDescripcionProducto('REFLECTOR LED')).toBeNull()
+    expect(mapDescripcionProducto('ESTANTE METALICO')).toBeNull()
+  })
+
+  it('orden 9415679144: Nevera, 2º celular fuera de la dirección y en novedades', () => {
+    const m = parsed[0].mapped!
+    expect(parsed[0].errors).toEqual([])
+    expect(m.tipo_equipo).toBe('Nevera')
+    expect(m.cliente_telefono).toBe('573104428652')
+    expect(m.direccion).toBe('CL 17 39 99 - CONJ LAVANDA TR 11 APTO 102')
+    expect(m.novedades_equipo).toContain('Tel. alterno: 3143270625')
+  })
+
+  it('ENTRE CALLES numérico sirve de fallback si no hay otro teléfono', () => {
+    const sinCel = LINEAS.map(l => l.replace('TEL. CEL.: 3104428652', 'TEL. CEL.: 0'))
+    const { parsed: p } = parsePdfTallerData(sinCel)
+    expect(p[0].mapped!.cliente_telefono).toBe('573143270625')
+    expect(p[0].mapped!.novedades_equipo).not.toContain('Tel. alterno')
+  })
+
+  it('conserva ñ y tildes del nombre y del tipo de servicio', () => {
+    expect(parsed[1].mapped!.cliente_nombre).toBe('LAURA DANIELA PEÑA SIERRA')
+    expect(parsed[1].raw.tipo_servicio).toBe('GARANTÍA DE FÁBRICA')
+    expect(parsed[1].mapped!.es_garantia).toBe(true)
+    expect(parsed[1].mapped!.horario_visita_1).toBe('miércoles, 21 de octubre · 8am-12pm')
   })
 })
