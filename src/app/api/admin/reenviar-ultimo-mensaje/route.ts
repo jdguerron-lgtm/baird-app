@@ -9,6 +9,7 @@ import {
   enviarRepuestoEnCaminoCliente,
   enviarRepuestoRecibidoCliente,
   enviarFinalizadoSinReparacion,
+  enviarServicioAsignadoTecnico,
   notificarTecnicos,
   enviarPlantilla,
 } from '@/lib/services/whatsapp.service'
@@ -26,7 +27,11 @@ export const maxDuration = 30
  * BAIRD_TEST_PHONE_WHITELIST (silenciado), por ventana 24h cerrada de
  * texto libre, o por error transitorio de Meta.
  *
- * Body: { solicitudId: string }
+ * Body: { solicitudId: string, destinatario?: 'tecnico' }
+ *   destinatario 'tecnico' (2026-10-09): en vez del último mensaje al cliente,
+ *   reenvía al TÉCNICO asignado `servicio_asignado_tecnico_v4` (datos del
+ *   cliente + botón "Abrir portal"). Recupera el acceso al portal cuando el
+ *   envío original falló (Meta 132018) y el técnico no puede diagnosticar.
  *
  * Mapeo estado → plantilla (último mensaje "natural" del flujo):
  *   pendiente_horario, sin_agendar  → cliente_seleccion_horario_v2 (cliente)
@@ -60,6 +65,22 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error || !sol) return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })
+
+    if (body?.destinatario === 'tecnico') {
+      if (!sol.tecnico_asignado_id) {
+        return NextResponse.json({ error: 'La solicitud no tiene técnico asignado' }, { status: 409 })
+      }
+      const r = await enviarServicioAsignadoTecnico(solicitudId)
+      return NextResponse.json({
+        accion: 'servicio_asignado_tecnico_v4',
+        destinatario: 'tecnico',
+        ok: r.ok,
+        error: r.error,
+        mensaje: r.ok
+          ? 'Datos del servicio + enlace al portal reenviados al técnico'
+          : `No se pudo reenviar al técnico: ${r.error ?? 'desconocido'}`,
+      })
+    }
 
     // Tabla de despacho según estado actual
     switch (sol.estado) {

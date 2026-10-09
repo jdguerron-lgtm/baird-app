@@ -235,6 +235,41 @@ export interface EnvioResult {
   messageId?: string
 }
 
+/**
+ * Limpia un parámetro de texto de plantilla según las reglas de Meta: sin
+ * saltos de línea ni tabs y sin más de 4 espacios consecutivos (error 132018
+ * "Param text cannot have new-line/tab characters or more than 4 consecutive
+ * spaces"). Caso real 2026-10-09: la dirección "…recodo, 9.     502" (5
+ * espacios) tumbó `servicio_asignado_tecnico_v4` y el técnico quedó sin su
+ * enlace al portal. Se aplica a TODOS los parámetros en `enviarPlantilla`,
+ * así ningún texto libre (dirección, novedades, nombres) vuelve a romper un
+ * envío. Un parámetro vacío también lo rechaza Meta → se reemplaza por "-".
+ */
+export function sanitizarParametroPlantilla(texto: unknown): string {
+  const limpio = String(texto ?? '')
+    .replace(/[\r\n\t\u2028\u2029]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  return limpio || '-'
+}
+
+/** Aplica `sanitizarParametroPlantilla` a cada parámetro `{type:'text'}` de los componentes. */
+function sanitizarComponentes(components?: Record<string, unknown>[]): Record<string, unknown>[] | undefined {
+  if (!components) return components
+  return components.map(c => {
+    const params = c.parameters
+    if (!Array.isArray(params)) return c
+    return {
+      ...c,
+      parameters: params.map(p =>
+        p && typeof p === 'object' && (p as { type?: string }).type === 'text'
+          ? { ...(p as Record<string, unknown>), text: sanitizarParametroPlantilla((p as { text?: unknown }).text) }
+          : p,
+      ),
+    }
+  })
+}
+
 export async function enviarPlantilla(para: string, templateName: string, languageCode: string, components?: Record<string, unknown>[]): Promise<EnvioResult> {
   const phoneId = process.env.WHATSAPP_PHONE_ID
   const token = process.env.WHATSAPP_API_TOKEN
@@ -261,7 +296,8 @@ export async function enviarPlantilla(para: string, templateName: string, langua
     name: templateName,
     language: { code: languageCode },
   }
-  if (components) template.components = components
+  const componentsLimpios = sanitizarComponentes(components)
+  if (componentsLimpios) template.components = componentsLimpios
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -2437,6 +2473,73 @@ export async function enviarAnticipoConfirmadoCliente(
     } catch (err2) {
       return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
     }
+  }
+}
+
+/**
+ * (Re)envía al TÉCNICO asignado la plantilla `servicio_asignado_tecnico_v4`
+ * de una solicitud: datos del cliente + botón "Abrir portal"
+ * (/tecnico/{portal_token}). Es el mismo mensaje del paso 4 de
+ * `procesarAceptacion`, expuesto para recuperación: si aquel envío falló (p.ej.
+ * Meta 132018 por un parámetro con espacios/saltos — caso 2026-10-09) el
+ * técnico queda sin enlace al portal y no puede registrar el diagnóstico.
+ * Usado por /api/admin/reenviar-ultimo-mensaje (destinatario 'tecnico') y
+ * /api/admin/tecnicos/reenviar-portal (masivo). Se envía sin importar si el
+ * cliente ya pagó el anticipo: el portal del técnico no depende del pago.
+ */
+export async function enviarServicioAsignadoTecnico(
+  solicitudId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura, direccion, zona_servicio, pago_tecnico, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('id, nombre_completo, whatsapp, portal_token')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+
+  if (!tecnico?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  // Self-heal: técnicos viejos pueden no tener portal_token.
+  let portalToken = tecnico.portal_token as string | null
+  if (!portalToken) {
+    const nuevo = crypto.randomUUID()
+    const { error: tokErr } = await supabase.from('tecnicos').update({ portal_token: nuevo }).eq('id', tecnico.id).is('portal_token', null)
+    if (tokErr) return { ok: false, error: `No se pudo generar portal_token: ${tokErr.message}` }
+    const { data: re } = await supabase.from('tecnicos').select('portal_token').eq('id', tecnico.id).single()
+    portalToken = re?.portal_token ?? nuevo
+  }
+
+  const pago = sol.es_garantia
+    ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
+    : `$${formatCOP(sol.pago_tecnico)} COP`
+
+  try {
+    const r = await enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v4', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: tecnico.nombre_completo.split(' ')[0] },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: equipoConGarantia(sol) },
+          { type: 'text', text: `${sol.direccion}, ${sol.zona_servicio}` },
+          { type: 'text', text: pago },
+          { type: 'text', text: `+${phoneToDigits(sol.cliente_telefono)}` },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: portalToken }] },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
 

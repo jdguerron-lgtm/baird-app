@@ -40,6 +40,38 @@ export default function TecnicosAdmin() {
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // Reenvío masivo del portal (2026-10-09): a cada técnico con servicios
+  // activos le llega servicio_asignado_tecnico_v4 de su servicio más reciente
+  // (trae el botón "Abrir portal"). Recupera el acceso cuando el envío de
+  // asignación falló y el técnico no puede avanzar con el diagnóstico.
+  const [reenviandoPortal, setReenviandoPortal] = useState(false)
+  const [resultadoPortal, setResultadoPortal] = useState<{ ok: boolean; texto: string } | null>(null)
+
+  const reenviarPortalATodos = async () => {
+    if (!window.confirm('¿Reenviar por WhatsApp el enlace al portal a TODOS los técnicos con servicios activos? (un mensaje por técnico)')) return
+    setReenviandoPortal(true)
+    setResultadoPortal(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Sesión expirada. Inicia sesión de nuevo.')
+      const res = await fetch('/api/admin/tecnicos/reenviar-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Error reenviando')
+      const fallos = (data.detalles ?? []).filter((d: { ok: boolean }) => !d.ok)
+      const detalleFallos = fallos.length
+        ? ' · Fallaron: ' + fallos.map((d: { tecnico: string; error?: string }) => `${d.tecnico} (${d.error ?? 'sin detalle'})`).join('; ')
+        : ''
+      setResultadoPortal({ ok: fallos.length === 0, texto: `${data.mensaje}${detalleFallos}` })
+    } catch (e) {
+      setResultadoPortal({ ok: false, texto: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setReenviandoPortal(false)
+    }
+  }
 
   const copyPortalLink = (tecnico: Tecnico) => {
     if (!tecnico.portal_token) return
@@ -121,11 +153,29 @@ export default function TecnicosAdmin() {
   return (
     <div className="p-6 lg:p-8 max-w-6xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Técnicos</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {tecnicos.length} técnico{tecnicos.length !== 1 ? 's' : ''} registrado{tecnicos.length !== 1 ? 's' : ''}
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Técnicos</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {tecnicos.length} técnico{tecnicos.length !== 1 ? 's' : ''} registrado{tecnicos.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={reenviarPortalATodos}
+            disabled={reenviandoPortal}
+            className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Envía a cada técnico con servicios activos el WhatsApp de su servicio más reciente con el botón Abrir portal"
+          >
+            {reenviandoPortal ? 'Enviando…' : '📲 Reenviar portal a técnicos con servicios activos'}
+          </button>
+          {resultadoPortal && (
+            <p className={`text-xs max-w-md text-right ${resultadoPortal.ok ? 'text-green-700' : 'text-amber-700'}`}>
+              {resultadoPortal.texto}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

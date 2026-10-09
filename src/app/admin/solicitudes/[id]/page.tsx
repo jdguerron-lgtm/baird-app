@@ -2025,6 +2025,41 @@ export default function SolicitudDetalle() {
           >
             {reenviandoUltimo ? 'Reenviando...' : '↻ Reenviar último mensaje'}
           </button>
+          {solicitud.tecnico_asignado_id && (
+            <button
+              onClick={async () => {
+                // Reenvía al TÉCNICO sus datos + botón "Abrir portal" (2026-10-09):
+                // si el envío de asignación falló, sin esto no puede diagnosticar.
+                setReenviandoUltimo(true)
+                setUltimoResult(null)
+                try {
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (!session) {
+                    setUltimoResult({ error: 'Sesión expirada. Inicia sesión de nuevo.' })
+                    setReenviandoUltimo(false)
+                    return
+                  }
+                  const res = await fetch('/api/admin/reenviar-ultimo-mensaje', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({ solicitudId: id, destinatario: 'tecnico' }),
+                  })
+                  setUltimoResult(await res.json())
+                } catch (e) {
+                  setUltimoResult({ error: e instanceof Error ? e.message : String(e) })
+                }
+                setReenviandoUltimo(false)
+              }}
+              disabled={reenviandoUltimo}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Reenvía al técnico asignado los datos del cliente y el botón Abrir portal (servicio_asignado_tecnico_v4)"
+            >
+              📲 Reenviar portal al técnico
+            </button>
+          )}
           <span className="text-xs text-gray-500">Estado actual: <span className="font-mono">{solicitud.estado}</span></span>
         </div>
 
