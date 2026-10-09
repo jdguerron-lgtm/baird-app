@@ -20,6 +20,10 @@ import { formatearFechaLargaCO, fechaColombiaYMD } from '@/lib/utils/fecha-visit
  * hora ya acordadas por MABE con el cliente) → se convierte al formato
  * canónico parseable "martes, 26 de agosto · 8am-12pm" en horario_visita_1,
  * que parsearFechaVisita() entiende y cuenta contra el cupo por franja.
+ *
+ * Documentación paso a paso (pipeline, reglas de teléfono/ENTRE CALLES,
+ * abreviaturas de producto, errores vs warnings, casos reales y cómo hacer
+ * un dry-run): docs/TEST_CARGA_MASIVA.md § 7.1 y § 7.2.
  */
 
 /** Item de texto posicionado, como lo entrega pdf.js getTextContent(). */

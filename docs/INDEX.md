@@ -75,7 +75,7 @@
 
 | Doc | Para qué sirve |
 |---|---|
-| `docs/TEST_CARGA_MASIVA.md` | Procedimiento de test de `/admin/carga-masiva`: Excel BITÁCORA y PDF de órdenes TALLER MABE (§ 7). ⚠️ El cuerpo (estado inicial, teléfono, duplicados) está desactualizado — tanda 3. |
+| `docs/TEST_CARGA_MASIVA.md` | Procedimiento de test de `/admin/carga-masiva`: Excel BITÁCORA y PDF de órdenes TALLER MABE (§ 7; § 7.1 explica el parser paso a paso y § 7.2 los casos reales corregidos, último 2026-10-09). ⚠️ El cuerpo (estado inicial, teléfono, duplicados) está desactualizado — tanda 3. |
 | `docs/pagos-tecnico.pdf` | Guía de pagos al técnico (PDF que se comparte por WhatsApp). La versión web es `public/guia-pagos.html`. |
 | `docs/flujos-servicio.html` | Mockup visual antiguo del flujo. No es referencia técnica. |
 | `legal/*.docx` | Documentos legales (T&C, política privacidad, contratos, etc.) — Colombian SAS compliance. |

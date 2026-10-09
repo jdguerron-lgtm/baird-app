@@ -293,3 +293,86 @@ que nombres y direcciones conservan ñ y tildes ("PEÑA", no "PENA") — fix 202
 Parser: `src/lib/utils/pdf-orden-mapping.ts` (tests en
 `src/__tests__/utils/pdf-orden-mapping.test.ts`). Extracción de texto:
 `unpdf` (serverless-safe), reconstrucción de líneas por coordenadas x/y.
+
+### 7.1 Cómo funciona el parser, paso a paso
+
+Todo vive en `src/lib/utils/pdf-orden-mapping.ts`. El objetivo es que el PDF
+produzca el **mismo** `ParsedRow[]` que el Excel, para que la API y la UI no
+distingan formatos.
+
+```
+PDF (bytes)
+  │  unpdf.getTextContent() → items { str, x, y } por página   [route.ts: extraerLineasPdf]
+  ▼
+reconstruirLineas(items)      agrupa por Y (±2.5pt), ordena arriba→abajo y
+  │                           dentro del renglón izquierda→derecha
+  ▼
+extraerOrdenes(lineas)        busca las ETIQUETAS ("NO. ORDEN:", "TEL. CEL.:" …)
+  │                           en cada renglón; el valor de una etiqueta es el
+  │                           texto hasta la siguiente etiqueta del mismo renglón.
+  │                           Cada "NO. ORDEN:" abre una orden nueva.
+  ▼
+mapOrden(orden)               valida y arma MappedSolicitud (ver tabla de § 7)
+  ▼
+parsePdfTallerData()          → { parsed: ParsedRow[], totalRawRows }
+```
+
+Detalles que importan:
+
+- **Matching de etiquetas sin tildes, valores con tildes.** `normalizar()`
+  convierte el renglón a mayúsculas sin tildes **carácter por carácter**, así
+  el texto normalizado mide exactamente lo mismo que el original. Las
+  etiquetas se buscan en el normalizado ("DIRECCIÓN:" ≡ "DIRECCION:") pero el
+  valor se recorta del **original** con esos mismos índices. Por eso "PEÑA" se
+  conserva. Si alguna vez se cambia `normalizar()`, debe seguir siendo
+  1 char → 1 char.
+- **Teléfono.** `elegirTelefono()` prefiere TEL. CEL., luego CASA, luego
+  OFICINA; descarta placeholders de MABE (`0`, `00000`, `0000000000`) y
+  números de menos de 7 dígitos. `separarTelefono()` corta en la primera
+  letra porque pdf.js pega al teléfono el texto de la columna de al lado
+  (ENTRE CALLES: "3208041857 APTO 102" → teléfono `3208041857`, resto
+  `APTO 102`). Ese resto se anexa a la dirección.
+- **ENTRE CALLES.** Normalmente trae conjunto/barrio y se anexa a la
+  dirección. Si es **solo dígitos** (≥7, no todo ceros) MABE puso ahí un
+  segundo celular: `telefonoAlterno()` lo saca de la dirección, lo deja en
+  `novedades_equipo` como `Tel. alterno: …` y lo usa como teléfono principal
+  únicamente si CEL/CASA/OFICINA no sirvieron.
+- **Tipo de equipo.** `mapDescripcionProducto()` primero intenta
+  `mapFamilia()` (tabla general de familias, también usada por el Excel). Si
+  no hay match, busca abreviaturas de MABE **como palabra completa** (`\b`):
+  `REF`/`REFRIG`/`REFRI`/`NEV` → Nevera, `NEVECON` → Nevecón, `LAV` →
+  Lavadora, `SEC` → Secadora, `EST`/`COC`/`CUB` → Estufa, `HOR`/`MICRO` →
+  Horno, `AA`/`AIRE`/`MINISPLIT` → Aire Acondicionado. Palabra completa evita
+  que "REFLECTOR" o "ESTANTE" mapeen. Para agregar una abreviatura nueva:
+  sumar una entrada a `ABREVIATURAS_PRODUCTO` y un caso en el test.
+- **FECHA PROG → franja.** `parseFechaProg()` lee `dd.mm.yyyy HH:MM:SS`;
+  `horaAFranja()` convierte la hora a la franja canónica (`<12` → 8am-12pm,
+  `<15` → 12pm-3pm, `<18` → 3pm-6pm, resto 6pm-8pm) y
+  `formatearFechaLargaCO()` arma `"miércoles, 21 de octubre · 8am-12pm"`, que
+  `parsearFechaVisita()` entiende y cuenta contra el cupo por franja.
+- **Errores vs warnings.** Error (la fila no se inserta): sin N° orden,
+  nombre < 3, sin teléfono, sin dirección, tipo de equipo no mapeable,
+  duplicado. Warning (se inserta igual): FECHA PROG ilegible o ya pasada,
+  municipio vacío (default BOGOTA).
+
+### 7.2 Caso real 2026-10-09 — "BAIRD 08.10.2026.pdf"
+
+Tres órdenes de SOACHA. Antes del fix el preview daba 2 válidas y 1 error;
+después, 3 válidas sin warnings. Lo que falló y cómo se corrigió:
+
+| Orden | Síntoma | Causa | Fix |
+|-------|---------|-------|-----|
+| 9415679144 (Orlando Suárez) | "MANUFAC REF MABE NF 2P 400L BP RETIQ no tiene mapeo a tipo de equipo" | `mapFamilia` solo conocía REFRIGERADORES/REFRIG/REFRIS; "REF" solo no matcheaba | `mapDescripcionProducto` con abreviaturas MABE por palabra completa → Nevera |
+| 9415679144 | Dirección terminaba en "- 3143270625" | ENTRE CALLES traía un 2º celular y se anexaba como si fuera un conjunto | `telefonoAlterno()` → va a novedades como "Tel. alterno", fuera de la dirección |
+| 9415679415 (Laura Daniela Peña Sierra) | Nombre guardado como "PENA" | Los valores se recortaban del renglón normalizado (sin tildes) | `normalizar()` alineado 1:1 y slice del renglón original |
+
+Commit `ee91e36`. Tests de regresión con las líneas reales del PDF en
+`src/__tests__/utils/pdf-orden-mapping.test.ts` (describe
+`'PDF 2026-10-08 — abreviaturas, teléfono alterno y tildes'`).
+
+**Cómo reproducir un dry-run sin tocar la BD** (útil para un PDF nuevo que
+falle en el preview): crear temporalmente un test en `src/__tests__/` que lea
+el PDF con `unpdf`, pase los items por `reconstruirLineas` y luego por
+`parsePdfTallerData`, e imprima `lineas` y el resultado con `console.log`.
+Las líneas impresas son exactamente lo que ve el parser y sirven para armar
+el caso de test definitivo.
