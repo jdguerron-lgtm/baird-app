@@ -78,7 +78,7 @@
 | `docs/TEST_CARGA_MASIVA.md` | Procedimiento de test de `/admin/carga-masiva`: Excel BITÁCORA y PDF de órdenes TALLER MABE (§ 7; § 7.1 explica el parser paso a paso y § 7.2 los casos reales corregidos, último 2026-10-09). ⚠️ El cuerpo (estado inicial, teléfono, duplicados) está desactualizado — tanda 3. |
 | `docs/pagos-tecnico.pdf` | Guía de pagos al técnico (PDF que se comparte por WhatsApp). La versión web es `public/guia-pagos.html`. |
 | `docs/flujos-servicio.html` | Mockup visual antiguo del flujo. No es referencia técnica. |
-| `legal/*.docx` | Documentos legales (T&C, política privacidad, contratos, etc.) — Colombian SAS compliance. |
+| `legal/*.docx` | Borradores legales originales (2026-04-13). ⚠️ **Desactualizados desde 2026-10-09**: la fuente vigente son `/terminos`, `/politica-privacidad` y `/contrato-tecnico` (código en `src/app/*/page.tsx`, datos en `src/lib/constants/legal.ts`). Ver `legal/README.md`. |
 
 ### Backlog de mejoras futuras (ideas en discusión, aún no implementadas)
 

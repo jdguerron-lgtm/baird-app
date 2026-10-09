@@ -205,6 +205,16 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 
 ---
 
+## Legal y onboarding de técnicos (2026-10-09)
+
+Desplegado: T&C v2026.10.09, Política de privacidad v2026.10.09, `/contrato-tecnico` (firma en físico), aceptación en `/registro`, gate `contrato_firmado` en admin y copia escaneada en bucket privado `tecnicos-contratos` (migraciones `20261009_tecnicos_aceptacion_legal` + `20261009_tecnicos_contrato_archivo`, aplicadas en prod).
+
+- [ ] **Recoger la firma física de los 4 técnicos ya verificados** — quedaron con `contrato_firmado = false` (badge "sin contrato" en `/admin/tecnicos`). Imprimir `/contrato-tecnico`, firmar, marcar en la ficha y subir el escaneado.
+- [ ] **Regenerar o retirar los `.docx` de `legal/`** — `03-contrato-tecnico.docx` todavía dice cobro directo al cliente y no competencia (ambos reemplazados por pago vía Baird + no desvío de clientes). Juan va a subir el contrato actualizado en Word: cruzarlo contra `/contrato-tecnico` y subir `CONTRATO_TECNICO_VERSION` si cambia el texto.
+- [ ] **Decidir si el anticipo bloquea el flujo** — T&C §5 lo describe como requisito para reservar; la app envía el link (`pago_anticipo_cliente_v1`) pero no detiene la transición si no se paga (`docs/WOMPI.md`). Wompi está activo (3 anticipos APPROVED al 2026-10-02).
+- [ ] `/registro` client-side: los writes de `tyc_version`/`datos_version` van con anon (igual que el resto del INSERT) — se cierran en la Fase 2 de RLS junto con el resto de `tecnicos`.
+- [ ] Opcional: exigir la copia escaneada (`contrato_archivo_path`) además de la marca `contrato_firmado` para verificar. Hoy el escaneado es recomendado, no obligatorio.
+
 ## Deuda técnica
 
 | Área | Descripción | Impacto |
