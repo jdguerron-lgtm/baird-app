@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enviarMensajeTexto, verificarFirmaWebhook } from '@/lib/services/whatsapp.service'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 // Número que recibe la alerta de cada mensaje entrante a la línea (2026-08-23).
 // Mensaje libre (no plantilla): solo llega si este número tiene ventana de 24h
@@ -18,6 +19,40 @@ type WebhookMessage = {
   video?: { caption?: string }
   document?: { caption?: string; filename?: string }
   location?: { latitude?: number; longitude?: number; name?: string; address?: string }
+}
+
+/**
+ * Un status=failed de Meta (número sin WhatsApp, mal digitado, bloqueado…)
+ * se registra en el historial de la solicitud ACTIVA más reciente de ese
+ * cliente (tipo 'mensaje_cliente', payload.entrega='failed'), para que el
+ * admin lo vea en /admin/solicitudes/[id] en vez de solo en los logs de
+ * Vercel (2026-10-09). Best-effort: nunca rompe el webhook.
+ */
+const ESTADOS_TERMINALES = ['completada', 'cancelada', 'en_disputa', 'reparacion_rechazada', 'finalizado_sin_reparacion', 'no_show_cliente']
+
+async function registrarEntregaFallida(recipient: string, wamid: string, detalle: string): Promise<void> {
+  try {
+    const { data: sol } = await supabaseAdmin
+      .from('solicitudes_servicio')
+      .select('id, estado')
+      .eq('cliente_telefono', recipient)
+      .not('estado', 'in', `(${ESTADOS_TERMINALES.join(',')})`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!sol) return
+    await supabaseAdmin.from('solicitud_eventos').insert({
+      solicitud_id: sol.id,
+      tipo: 'mensaje_cliente',
+      estado_previo: sol.estado,
+      estado_nuevo: sol.estado,
+      actor: 'sistema',
+      motivo: `⚠️ WhatsApp NO entregado al cliente (+${recipient}): ${detalle || 'sin detalle de Meta'}. Verifica el número o contáctalo por otro medio.`,
+      payload: { canal: 'whatsapp', entrega: 'failed', wamid, detalle },
+    })
+  } catch (err) {
+    console.error('[Webhook] No se pudo registrar la entrega fallida en el historial:', err)
+  }
 }
 
 function describirContenido(msg: WebhookMessage): string {
@@ -151,6 +186,7 @@ export async function POST(req: NextRequest) {
               `[Webhook] ⚠️ UNDELIVERED — mensaje ${st.id} a ${st.recipient_id} FALLÓ: ${errores || 'sin detalle'}. ` +
               `Revisar cliente_telefono/whatsapp del destinatario en la BD (¿número incompleto o sin WhatsApp?).`,
             )
+            if (st.recipient_id) await registrarEntregaFallida(String(st.recipient_id), String(st.id ?? ''), errores)
           }
         }
       }

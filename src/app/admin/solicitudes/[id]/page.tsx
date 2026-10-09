@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -821,6 +821,36 @@ export default function SolicitudDetalle() {
     setDiagnostics(steps)
   }
 
+  // Eventos del audit log: notas (tipo nota_admin) + llamadas + historial de
+  // cambios de estado. Separado de cargar() para poder refrescarlo solo
+  // (p.ej. tras "Reenviar último mensaje") sin recargar toda la página.
+  const recargarEventos = useCallback(async () => {
+    const { data: eventosData } = await supabase
+      .from('solicitud_eventos')
+      .select('id, tipo, estado_previo, estado_nuevo, actor, motivo, payload, ocurrido_at')
+      .eq('solicitud_id', id)
+      .order('ocurrido_at', { ascending: false })
+    const eventos: EventoSolicitud[] = eventosData ?? []
+    setNotas(eventos.filter(e => e.tipo === 'nota_admin'))
+    // Llamadas: manuales del equipo (llamada_admin) + intenciones de
+    // llamada del técnico desde su portal (llamada_tecnico).
+    setLlamadas(eventos.filter(e => e.tipo === 'llamada_admin' || e.tipo === 'llamada_tecnico'))
+    // Historial consolidado (2026-08-07): transiciones reales + recordatorios
+    // de agendamiento + llamadas (equipo y técnico) + ediciones de campos del
+    // admin (nota_admin con payload.campos_modificados). Un solo lugar con
+    // TODO lo que le pasó al servicio, en orden cronológico.
+    setHistorial(eventos.filter(e =>
+      e.tipo === 'recordatorio_horario' ||
+      e.tipo === 'mensaje_cliente' ||
+      e.tipo === 'llamada_admin' ||
+      e.tipo === 'llamada_tecnico' ||
+      e.tipo === 'comprobante_envio' ||
+      e.tipo === 'pago_registrado' ||
+      (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
+      (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.tipo !== 'pago_registrado' && e.estado_previo !== e.estado_nuevo),
+    ))
+  }, [id])
+
   useEffect(() => {
     const cargar = async () => {
       setCargando(true)
@@ -894,32 +924,8 @@ export default function SolicitudDetalle() {
 
       if (evData) setEvidencia(evData)
 
-      // 5. Eventos del audit log: notas (tipo nota_admin) + historial de
-      //    cambios de estado (resto de tipos con transición real).
-      const { data: eventosData } = await supabase
-        .from('solicitud_eventos')
-        .select('id, tipo, estado_previo, estado_nuevo, actor, motivo, payload, ocurrido_at')
-        .eq('solicitud_id', id)
-        .order('ocurrido_at', { ascending: false })
-      const eventos: EventoSolicitud[] = eventosData ?? []
-      setNotas(eventos.filter(e => e.tipo === 'nota_admin'))
-      // Llamadas: manuales del equipo (llamada_admin) + intenciones de
-      // llamada del técnico desde su portal (llamada_tecnico).
-      setLlamadas(eventos.filter(e => e.tipo === 'llamada_admin' || e.tipo === 'llamada_tecnico'))
-      // Historial consolidado (2026-08-07): transiciones reales + recordatorios
-      // de agendamiento + llamadas (equipo y técnico) + ediciones de campos del
-      // admin (nota_admin con payload.campos_modificados). Un solo lugar con
-      // TODO lo que le pasó al servicio, en orden cronológico.
-      setHistorial(eventos.filter(e =>
-        e.tipo === 'recordatorio_horario' ||
-        e.tipo === 'mensaje_cliente' ||
-        e.tipo === 'llamada_admin' ||
-        e.tipo === 'llamada_tecnico' ||
-        e.tipo === 'comprobante_envio' ||
-        e.tipo === 'pago_registrado' ||
-        (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
-        (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.tipo !== 'pago_registrado' && e.estado_previo !== e.estado_nuevo),
-      ))
+      // 5. Eventos del audit log (notas + llamadas + historial consolidado).
+      await recargarEventos()
 
       // 6. Run matching diagnostics
       await runDiagnostics(sol)
@@ -928,7 +934,7 @@ export default function SolicitudDetalle() {
     }
 
     cargar()
-  }, [id])
+  }, [id, recargarEventos])
 
   // Polling mientras esperamos acción del cliente: si la solicitud está en
   // pendiente_horario (o sin_agendar tras timeout) y admin tiene la página
@@ -2005,6 +2011,10 @@ export default function SolicitudDetalle() {
                 })
                 const data = await res.json()
                 setUltimoResult(data)
+                // El envío ya quedó en solicitud_eventos (se registra con
+                // await desde 2026-10-09): refrescar el historial para que el
+                // admin vea el WhatsApp sin recargar la página.
+                await recargarEventos()
               } catch (e) {
                 setUltimoResult({ error: e instanceof Error ? e.message : String(e) })
               }

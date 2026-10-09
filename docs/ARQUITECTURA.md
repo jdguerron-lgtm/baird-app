@@ -200,7 +200,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/notificar-registro` | POST | Post-registro del técnico: envía `registro_bienvenida_v3` con link al portal. | N/A |
 | `/api/tecnico/perfil` | POST | Autoservicio del técnico (auth por `portal_token`, service_role): especialidades (sync insert/delete en `especialidades_tecnico`), `cubre_gasodomesticos`, `tiene_arl` y **declaración** de certificaciones (solo siembra `declarada`/`sin_revisar`, nunca pisa una verificación del admin). Fija `perfil_actualizado_at`. Ver `docs/CERTIFICACIONES.md`. | N/A |
 | `/api/log-error` | POST | Telemetría fire-and-forget de errores de conexión del cliente. Inserta en `connection_errors` y loguea a stderr con prefijo `[ConnectionError]`. Siempre responde 200. | N/A |
-| `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events | N/A |
+| `/api/whatsapp/webhook` | GET/POST | Meta webhook handshake + events. POST: alerta al admin por cada mensaje entrante, log `UNDELIVERED` por cada `status=failed` y, desde 2026-10-09, ese fallo queda como evento `mensaje_cliente` (payload `entrega:'failed'`) en la solicitud activa del cliente | N/A |
 | `/api/test-whatsapp` | GET | Diagnóstico de configuración WhatsApp (presencia/forma de token, phone ID, whitelist) — para descartar env vars rotas en Vercel sin enviar mensajes. Agregado tras el falso "no se envía" del 2026-07-01. | N/A |
 | `/api/dapta/webhook` | POST | Webhook POST-CALL de la segunda línea de voz IA. Firma HMAC (`DAPTA_WEBHOOK_SECRET`) + idempotencia por `dapta_call_id`. Fase 0 — apagada tras `DAPTA_ENABLED`. Ver `docs/DAPTA.md`. | N/A |
 | `/api/triaje` | POST | AI diagnosis (disabled) | N/A |

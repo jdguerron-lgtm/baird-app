@@ -85,6 +85,12 @@ async function registrarMensajeCliente(
   plantilla: string,
   descripcion: string,
 ): Promise<void> {
+  // ⚠️ SIEMPRE con `await` (2026-10-09). Antes se llamaba con `void` (fire-and-
+  // forget): en Vercel la función se congela al responder y el INSERT quedaba
+  // pendiente — el evento aparecía minutos después (al reusar la instancia) o
+  // nunca. El admin no veía en el historial que el WhatsApp ya había salido y
+  // lo reenviaba, duplicando mensajes al cliente (caso real: 3 órdenes MABE,
+  // 2026-10-09). Cuesta ~50 ms por envío; vale la pena.
   try {
     const { data: sol } = await supabase
       .from('solicitudes_servicio')
@@ -103,6 +109,24 @@ async function registrarMensajeCliente(
     if (error) console.error(`[registrarMensajeCliente] insert falló (${plantilla}):`, error.message)
   } catch (err) {
     console.error(`[registrarMensajeCliente] threw (${plantilla}):`, err)
+  }
+}
+
+/**
+ * Variante para envíos cuya promesa ya se logueó con `logEnvio`: registra el
+ * evento solo si Meta aceptó el mensaje (`r.sent`). Nunca lanza.
+ */
+async function registrarSiEnviado(
+  envio: Promise<EnvioResult>,
+  solicitudId: string,
+  plantilla: string,
+  descripcion: string,
+): Promise<void> {
+  try {
+    const r = await envio
+    if (r.sent) await registrarMensajeCliente(solicitudId, plantilla, descripcion)
+  } catch {
+    // logEnvio ya reportó el error del envío
   }
 }
 
@@ -900,10 +924,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       },
     ])
     await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_cliente_v6')
-    void envioCliente.then(r => {
-      if (r.sent) registrarMensajeCliente(sol.id, 'tecnico_asignado_cliente_v6',
-        `Se confirmó al cliente su servicio: técnico asignado y visita ${horarioServicio}`)
-    }).catch(() => {})
+    await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_cliente_v6',
+      `Se confirmó al cliente su servicio: técnico asignado y visita ${horarioServicio}`)
   } else {
     // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
     // Aquí mostramos al CLIENTE lo que él paga (precio de catálogo / total
@@ -933,10 +955,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       },
     ])
     await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_particular_v1')
-    void envioCliente.then(r => {
-      if (r.sent) registrarMensajeCliente(sol.id, 'tecnico_asignado_particular_v1',
-        `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
-    }).catch(() => {})
+    await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_particular_v1',
+      `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
 
     // ── Cobro del anticipo para CONFIRMAR LA RESERVA (Wompi, 2026-08-18) ──
     //
@@ -976,7 +996,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       try {
         const r = await enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v2', 'es', paramsV2)
         if (r.sent) {
-          void registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v2',
+          await registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v2',
             `Se confirmó la disponibilidad del técnico para ${horarioServicio} y se envió el link de pago del anticipo ($${anticipo}) para asegurar la reserva`)
         }
       } catch (v2Err) {
@@ -992,10 +1012,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
             },
           ])
           await logEnvio(envioAnticipo, 'procesarAceptacion → pago_anticipo_cliente_v1 (fallback)')
-          void envioAnticipo.then(r => {
-            if (r.sent) registrarMensajeCliente(sol.id, 'pago_anticipo_cliente_v1',
-              `Se envió al cliente el link de pago del anticipo ($${anticipo}) para confirmar su servicio`)
-          }).catch(() => {})
+          await registrarSiEnviado(envioAnticipo, sol.id, 'pago_anticipo_cliente_v1',
+            `Se envió al cliente el link de pago del anticipo ($${anticipo}) para confirmar su servicio`)
         }
       }
     }
@@ -1125,7 +1143,7 @@ export async function enviarSeleccionHorarioCliente(solicitudId: string): Promis
       },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'cliente_seleccion_horario_v2',
+    await registrarMensajeCliente(solicitudId, 'cliente_seleccion_horario_v2',
       'Se envió al cliente el link para reservar el horario de su visita (2 opciones propuestas)')
     return { ok: true }
   } catch (err) {
@@ -1358,7 +1376,7 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
       },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'repuesto_recibido_cliente_v2',
+    await registrarMensajeCliente(solicitudId, 'repuesto_recibido_cliente_v2',
       'Se avisó al cliente que el repuesto llegó, con link para reservar la fecha de la visita final')
     return { ok: true }
   } catch (err) {
@@ -2206,7 +2224,7 @@ export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promis
         botonReprogramar,
       ])
       if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-      void registrarMensajeCliente(solicitudId, 'repuesto_en_camino_cliente_v1',
+      await registrarMensajeCliente(solicitudId, 'repuesto_en_camino_cliente_v1',
         'Se avisó al cliente que el repuesto va en camino, con link para reservar la visita final')
       return { ok: true }
     } catch (err) {
@@ -2227,7 +2245,7 @@ export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promis
         botonReprogramar,
       ])
       if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-      void registrarMensajeCliente(solicitudId, 'repuesto_recibido_cliente_v2',
+      await registrarMensajeCliente(solicitudId, 'repuesto_recibido_cliente_v2',
         'Se avisó al cliente sobre el repuesto (fallback), con link para reservar la visita final')
       return { ok: true }
     }
@@ -2335,7 +2353,7 @@ export async function enviarHorarioConfirmadoCliente(solicitudId: string, horari
       { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'horario_confirmado_cliente_v1',
+    await registrarMensajeCliente(solicitudId, 'horario_confirmado_cliente_v1',
       `Se envió al cliente la confirmación de su horario: ${horario}`)
     return { ok: true }
   } catch (err) {
@@ -2400,7 +2418,7 @@ export async function enviarAnticipoConfirmadoCliente(
 
     const r = await enviarPlantilla(sol.cliente_telefono, 'anticipo_confirmado_cliente_v1', 'es', componentes)
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'anticipo_confirmado_cliente_v1',
+    await registrarMensajeCliente(solicitudId, 'anticipo_confirmado_cliente_v1',
       `Se confirmó al cliente el pago del anticipo ($${formatCOP(montoPagado)}) y su reserva para ${horario}`)
     return { ok: true }
   } catch (err) {
@@ -2413,7 +2431,7 @@ export async function enviarAnticipoConfirmadoCliente(
         `🔧 Equipo: ${equipo}\n👨‍🔧 Técnico: ${nombreTecnico}\n🕐 Visita: ${horario}\n\n` +
         `El anticipo se abona al total del servicio. Te avisaremos ante cualquier novedad.\n\n🔧 Baird Service`
       )
-      void registrarMensajeCliente(solicitudId, 'anticipo_confirmado_cliente_v1 (texto libre)',
+      await registrarMensajeCliente(solicitudId, 'anticipo_confirmado_cliente_v1 (texto libre)',
         `Se confirmó al cliente el pago del anticipo ($${formatCOP(montoPagado)}) y su reserva para ${horario}`)
       return { ok: true }
     } catch (err2) {
@@ -2526,7 +2544,7 @@ export async function enviarPagoSaldoCliente(
       { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'pago_saldo_cliente_v1',
+    await registrarMensajeCliente(solicitudId, 'pago_saldo_cliente_v1',
       `Se envió al cliente el link de pago del saldo ($${formatCOP(saldo)}) tras aprobar la cotización`)
     return { ok: true }
   } catch (err) {
@@ -2540,7 +2558,7 @@ export async function enviarPagoSaldoCliente(
         `💳 Si quieres, puedes pagar el saldo de $${formatCOP(saldo)} COP en línea de forma segura:\n${APP_URL}/pago/saldo/${sol.cliente_token}\n\n` +
         `También puedes pagarlo al finalizar el servicio con el QR de Baird. Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`
       )
-      void registrarMensajeCliente(solicitudId, 'pago_saldo_cliente_v1 (texto libre)',
+      await registrarMensajeCliente(solicitudId, 'pago_saldo_cliente_v1 (texto libre)',
         `Se envió al cliente el link de pago del saldo ($${formatCOP(saldo)}) tras aprobar la cotización`)
       return { ok: true }
     } catch (err2) {
@@ -2577,7 +2595,7 @@ export async function enviarAbonoRepuestosCliente(
   const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
   const boton = { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] }
   const registrar = (plantilla: string) =>
-    void registrarMensajeCliente(solicitudId, plantilla,
+    registrarMensajeCliente(solicitudId, plantilla,
       `Se envió al cliente el cobro del abono de repuestos ($${formatCOP(abono)} — 50% del saldo) tras aprobar la cotización`)
 
   try {
@@ -2594,7 +2612,7 @@ export async function enviarAbonoRepuestosCliente(
       boton,
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    registrar('abono_repuestos_cliente_v1')
+    await registrar('abono_repuestos_cliente_v1')
     return { ok: true }
   } catch (err) {
     // Fallback 1: plantilla del saldo (APPROVED) con el monto del abono —
@@ -2614,7 +2632,7 @@ export async function enviarAbonoRepuestosCliente(
         boton,
       ])
       if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-      registrar('pago_saldo_cliente_v1 (abono repuestos)')
+      await registrar('pago_saldo_cliente_v1 (abono repuestos)')
       return { ok: true }
     } catch (err2) {
       console.error('[abono] pago_saldo_cliente_v1 falló, fallback a texto libre:', err2)
@@ -2627,7 +2645,7 @@ export async function enviarAbonoRepuestosCliente(
           `💳 Págalo en línea de forma segura:\n${APP_URL}/pago/saldo/${sol.cliente_token}\n\n` +
           `El resto lo pagas al finalizar el servicio. Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`
         )
-        registrar('abono_repuestos_cliente_v1 (texto libre)')
+        await registrar('abono_repuestos_cliente_v1 (texto libre)')
         return { ok: true }
       } catch (err3) {
         return { ok: false, error: `Error WhatsApp: ${err3 instanceof Error ? err3.message : String(err3)}` }
@@ -2714,7 +2732,7 @@ export async function enviarSaldoConfirmadoCliente(
     }
     const r = await enviarPlantilla(sol.cliente_telefono, 'saldo_confirmado_cliente_v1', 'es', componentes)
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1',
+    await registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1',
       `Se confirmó al cliente el pago del saldo ($${formatCOP(montoPagado)}) — servicio totalmente pagado`)
     return { ok: true }
   } catch (err) {
@@ -2725,7 +2743,7 @@ export async function enviarSaldoConfirmadoCliente(
         `✅ ¡Listo ${nombre}! Recibimos tu pago de $${formatCOP(montoPagado)} COP.\n\n` +
         `Tu servicio de ${equipo} quedó totalmente pagado. Gracias por confiar en Baird Service. 🔧`
       )
-      void registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1 (texto libre)',
+      await registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1 (texto libre)',
         `Se confirmó al cliente el pago del saldo ($${formatCOP(montoPagado)}) — servicio totalmente pagado`)
       return { ok: true }
     } catch (err2) {
@@ -2797,7 +2815,7 @@ export async function enviarSolicitudExpiradaCliente(solicitudId: string): Promi
       },
     ])
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
-    void registrarMensajeCliente(solicitudId, 'solicitud_expirada_cliente_v1',
+    await registrarMensajeCliente(solicitudId, 'solicitud_expirada_cliente_v1',
       'Se avisó al cliente que su solicitud expiró por no reservar horario (con link para crear una nueva)')
     return { ok: true }
   } catch (err) {
@@ -3707,7 +3725,7 @@ export async function procesarReagendamientoAdmin(
       `Hola ${clienteNombre} 👋 Reprogramamos tu servicio de ${equipo}. 📅 Nueva fecha: ${horarioLimpio}. ${tieneTecnico ? 'Ya le avisamos al técnico asignado.' : 'Estamos buscando un técnico verificado y te avisamos cuando alguno acepte.'}`,
     )
     clienteNotificado = true
-    void registrarMensajeCliente(solicitudId, 'texto_libre',
+    await registrarMensajeCliente(solicitudId, 'texto_libre',
       `Se avisó al cliente la reprogramación de su servicio — nueva fecha: ${horarioLimpio}`)
   } catch (err) {
     console.error('[procesarReagendamientoAdmin] error notificando cliente:', err)
