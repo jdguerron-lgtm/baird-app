@@ -23,6 +23,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
     { path: '/terminos', priority: 0.3, changeFrequency: 'yearly' as const },
     { path: '/politica-privacidad', priority: 0.3, changeFrequency: 'yearly' as const },
+    { path: '/contrato-tecnico', priority: 0.3, changeFrequency: 'yearly' as const },
     { path: '/eliminacion-datos', priority: 0.3, changeFrequency: 'yearly' as const },
   ]
 

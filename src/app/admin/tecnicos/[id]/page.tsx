@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { CONTRATO_TECNICO_VERSION } from '@/lib/constants/legal'
 import { supabase } from '@/lib/supabase'
 import { normalizeForMatch } from '@/lib/utils/format'
 import { CIUDADES_SUGERIDAS } from '@/lib/constants/ciudades'
@@ -42,6 +43,15 @@ interface Tecnico {
   cubre_gasodomesticos: boolean | null
   certificaciones: unknown
   perfil_actualizado_at: string | null
+  // Aceptación legal (migración 20261009). Contrato se firma en físico.
+  tyc_version: string | null
+  tyc_aceptados_at: string | null
+  datos_version: string | null
+  datos_autorizados_at: string | null
+  contrato_firmado: boolean | null
+  contrato_firmado_version: string | null
+  contrato_firmado_at: string | null
+  contrato_registrado_por: string | null
   created_at: string
 }
 
@@ -68,6 +78,8 @@ export default function TecnicoDetalle() {
   const [guardandoCerts, setGuardandoCerts] = useState(false)
   const [mostrarNoAplicables, setMostrarNoAplicables] = useState(false)
   const [adminEmail, setAdminEmail] = useState<string>('admin')
+  const [fechaFirma, setFechaFirma] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [guardandoContrato, setGuardandoContrato] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -212,7 +224,44 @@ export default function TecnicoDetalle() {
     setGuardandoCerts(false)
   }
 
+  // Contrato de prestación de servicios firmado en físico: el admin lo marca
+  // al recibir el original. Es requisito para verificar (habilitar).
+  const guardarContrato = async (firmado: boolean) => {
+    if (!tecnico) return
+    if (!firmado && tecnico.estado_verificacion === 'verificado' &&
+        !window.confirm('El técnico está verificado. ¿Desmarcar el contrato? Quedará sin contrato firmado registrado (no se cambia su estado).')) {
+      return
+    }
+    setGuardandoContrato(true)
+    setMensaje(null)
+    const cambios = firmado
+      ? {
+          contrato_firmado: true,
+          contrato_firmado_version: CONTRATO_TECNICO_VERSION,
+          contrato_firmado_at: new Date(`${fechaFirma}T12:00:00-05:00`).toISOString(),
+          contrato_registrado_por: adminEmail,
+        }
+      : {
+          contrato_firmado: false,
+          contrato_firmado_version: null,
+          contrato_firmado_at: null,
+          contrato_registrado_por: adminEmail,
+        }
+    const { error } = await supabase.from('tecnicos').update(cambios).eq('id', id)
+    if (error) {
+      setMensaje({ texto: 'Error al guardar el contrato: ' + error.message, tipo: 'error' })
+    } else {
+      setTecnico(prev => prev ? { ...prev, ...cambios } : prev)
+      setMensaje({ texto: firmado ? 'Contrato firmado registrado' : 'Contrato desmarcado', tipo: 'exito' })
+    }
+    setGuardandoContrato(false)
+  }
+
   const cambiarEstado = async (nuevoEstado: 'verificado' | 'rechazado' | 'pendiente') => {
+    if (nuevoEstado === 'verificado' && !tecnico?.contrato_firmado) {
+      setMensaje({ texto: 'Primero marca el contrato firmado en físico', tipo: 'error' })
+      return
+    }
     if (nuevoEstado === 'rechazado' && !nota.trim()) {
       setMensaje({ texto: 'Debes ingresar una nota explicando el rechazo', tipo: 'error' })
       return
@@ -665,6 +714,59 @@ export default function TecnicoDetalle() {
             </div>
           </div>
 
+          {/* Contrato físico — requisito para verificar */}
+          <div className={`rounded-xl border shadow-sm p-5 ${tecnico.contrato_firmado ? 'bg-white border-gray-200' : 'bg-amber-50 border-amber-200'}`}>
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contrato de prestación de servicios</h2>
+            {tecnico.contrato_firmado ? (
+              <div className="space-y-1 text-sm text-gray-700">
+                <p className="font-semibold text-green-700">✅ Firmado en físico</p>
+                <p>Versión: {tecnico.contrato_firmado_version ?? '—'}{tecnico.contrato_firmado_version && tecnico.contrato_firmado_version !== CONTRATO_TECNICO_VERSION && (
+                  <span className="ml-1 text-amber-700">(vigente: {CONTRATO_TECNICO_VERSION})</span>
+                )}</p>
+                <p>Fecha de firma: {tecnico.contrato_firmado_at ? new Date(tecnico.contrato_firmado_at).toLocaleDateString('es-CO') : '—'}</p>
+                <p className="text-xs text-gray-400">Registrado por {tecnico.contrato_registrado_por ?? '—'}</p>
+                <button
+                  type="button"
+                  onClick={() => guardarContrato(false)}
+                  disabled={guardandoContrato}
+                  className="mt-2 text-xs text-red-600 underline disabled:opacity-50"
+                >
+                  Desmarcar
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p className="text-amber-900">
+                  ⚠️ Sin contrato firmado. Imprime el{' '}
+                  <a href="/contrato-tecnico" target="_blank" rel="noopener noreferrer" className="underline font-semibold">contrato (v{CONTRATO_TECNICO_VERSION})</a>,
+                  recoge la firma y los documentos (RUT, salud, pensión, ARL, certificación bancaria) y márcalo aquí.
+                </p>
+                <label className="block text-xs font-semibold text-gray-500">
+                  Fecha de firma
+                  <input
+                    type="date"
+                    value={fechaFirma}
+                    onChange={(e) => setFechaFirma(e.target.value)}
+                    className="mt-1 block w-full border border-gray-200 rounded-lg py-2 px-3 text-sm"
+                  />
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    disabled={guardandoContrato}
+                    onChange={() => guardarContrato(true)}
+                    className="h-5 w-5 mt-0.5 rounded border-gray-300"
+                  />
+                  <span className="font-semibold text-gray-900">Recibí el contrato firmado en físico y los documentos</span>
+                </label>
+              </div>
+            )}
+            <p className="mt-3 text-xs text-gray-400">
+              Registro: T&amp;C {tecnico.tyc_version ?? 'no aceptados'} · Datos {tecnico.datos_version ?? 'no autorizados'}
+            </p>
+          </div>
+
           {/* Verification actions */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Verificación</h2>
@@ -688,7 +790,8 @@ export default function TecnicoDetalle() {
               {tecnico.estado_verificacion !== 'verificado' && (
                 <button
                   onClick={() => cambiarEstado('verificado')}
-                  disabled={accion === 'procesando'}
+                  disabled={accion === 'procesando' || !tecnico.contrato_firmado}
+                  title={!tecnico.contrato_firmado ? 'Requiere contrato firmado en físico' : undefined}
                   className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {accion === 'procesando' ? 'Procesando...' : '✅ Verificar técnico'}

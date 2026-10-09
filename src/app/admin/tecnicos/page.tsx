@@ -20,6 +20,7 @@ interface Tecnico {
   portal_token: string | null
   cubre_gasodomesticos: boolean | null
   perfil_actualizado_at: string | null
+  contrato_firmado: boolean | null
   especialidades: string[]
 }
 
@@ -54,7 +55,7 @@ export default function TecnicosAdmin() {
 
       let query = supabase
         .from('tecnicos')
-        .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token, cubre_gasodomesticos, perfil_actualizado_at')
+        .select('id, nombre_completo, whatsapp, ciudad_pueblo, ciudades_cobertura, tipo_documento, numero_documento, foto_perfil_url, estado_verificacion, created_at, portal_token, cubre_gasodomesticos, perfil_actualizado_at, contrato_firmado')
         .order('created_at', { ascending: false })
 
       if (filtro !== 'todos') {
@@ -238,6 +239,11 @@ export default function TecnicosAdmin() {
                     </td>
                     <td className="px-5 py-3">
                       {estadoBadge(t.estado_verificacion)}
+                      {!t.contrato_firmado && (
+                        <span className="ml-1 text-[10px] font-semibold bg-amber-50 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200" title="No ha entregado el contrato firmado en físico">
+                          sin contrato
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <span className="text-xs text-gray-400">

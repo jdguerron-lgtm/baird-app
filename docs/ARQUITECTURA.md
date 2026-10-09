@@ -19,7 +19,9 @@ src/
 │   ├── horario/[token]/        # Customer schedule selection (after creating request)
 │   ├── verificar-paso/[token]/ # Customer approval of next-step (post-diagnosis, warranty)
 │   ├── reprogramar-repuesto/[token]/ # Customer picks new tentative date after part arrived
-│   ├── terminos/               # Public Terms & Conditions page
+│   ├── terminos/               # Public Terms & Conditions page (v2026.10.09, dictámenes CJI)
+│   ├── politica-privacidad/    # Política de privacidad y tratamiento de datos (v2026.10.09)
+│   ├── contrato-tecnico/       # Contrato de prestación de servicios para técnicos — imprimible, se firma en físico
 │   ├── admin/                  # Admin panel (auth-guarded)
 │   │   ├── solicitudes/        # Solicitudes list + detail (with evidence view) + calendario de agenda por franja
 │   │   ├── tecnicos/           # Technician management
@@ -219,7 +221,8 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | **Reprogramar tras repuesto** | `/reprogramar-repuesto/{reprogramacion_token}` | Cliente elige nueva fecha tentativa cuando el repuesto llegó (estado `repuesto_recibido`). POST a `/api/reprogramar-repuesto` → `en_proceso`. |
 | Service confirmation | `/confirmar/{confirmacion_token}` | Customer confirms service was completed satisfactorily |
 | **Terms & Conditions** | `/terminos` | Public T&C page (Colombian law-compliant) |
-| Privacy Policy | `/politica-privacidad` | Existing |
+| Privacy Policy | `/politica-privacidad` | Política de privacidad y tratamiento de datos (Ley 1581/2012), versión `PRIVACIDAD_VERSION` en `src/lib/constants/legal.ts`. |
+| **Contrato técnico** | `/contrato-tecnico` | Contrato de prestación de servicios para técnicos, versión `CONTRATO_TECNICO_VERSION`. Se imprime y firma en físico; el admin lo marca en `/admin/tecnicos/[id]` (`contrato_firmado`), requisito para verificar. |
 | **Eliminación de datos** | `/eliminacion-datos` | Página pública con formulario / instrucciones para que el cliente solicite la eliminación de sus datos (Ley 1581 de 2012). |
 
 ## Technician-Facing Pages

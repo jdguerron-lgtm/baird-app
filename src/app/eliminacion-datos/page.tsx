@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { EMPRESA } from '@/lib/constants/legal';
 
 export const metadata: Metadata = {
   title: 'Eliminacion de Datos | Baird Service S.A.S',
@@ -34,7 +36,7 @@ export default function EliminacionDatosPage() {
         <section className="mb-8">
           <h2 className="mb-3 text-xl font-semibold text-gray-800">Opcion 2: Por WhatsApp</h2>
           <p className="text-gray-700 leading-relaxed">
-            Escribenos a nuestro numero de WhatsApp de soporte solicitando la eliminacion de tus datos.
+            Escribenos al WhatsApp de soporte {EMPRESA.whatsappSoporte} solicitando la eliminacion de tus datos.
           </p>
         </section>
 
@@ -62,6 +64,10 @@ export default function EliminacionDatosPage() {
           <p className="text-gray-700 leading-relaxed">
             Algunos datos podran ser retenidos cuando exista una obligacion legal o contractual que lo
             requiera, como registros contables o fiscales exigidos por la legislacion colombiana.
+          </p>
+          <p className="mt-3 text-gray-700 leading-relaxed">
+            Mas informacion en nuestra{' '}
+            <Link href="/politica-privacidad" className="text-blue-600 underline">Politica de Privacidad y Tratamiento de Datos</Link>.
           </p>
         </section>
       </div>

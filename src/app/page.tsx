@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import { EMPRESA } from '@/lib/constants/legal'
 import Link from 'next/link'
 import MenuMovil from '@/components/MenuMovil'
 import { EQUIPOS_HOME } from '@/lib/constants/equipos-home'
@@ -114,8 +115,8 @@ const CONTENIDO = {
   footer: {
     copyright: '© 2026 Baird Service S.A.S. — Colombia',
     tagline: 'Empresa certificada ISO 9001 · Técnicos verificados · Todo por WhatsApp',
-    // Verificados en bairdservice.com el 2026-08-05. El NIT no está publicado
-    // ahí; cuando se tenga, añadirlo a este bloque (lo pide Ley 1480 art. 50).
+    // Verificados en bairdservice.com el 2026-08-05. Razón social y NIT
+    // (Ley 1480 art. 50) se muestran desde src/lib/constants/legal.ts.
     direccion: 'Cra 80C # 24D-74, Bogotá, Colombia',
     telefono: '+57 314 241 1888',
     telefonoTel: '+573142411888',
@@ -698,8 +699,10 @@ export default function Home() {
               {/* Identificación del proveedor. El Estatuto del Consumidor
                   (Ley 1480 de 2011, art. 50) la exige visible en comercio
                   electrónico. Dirección y teléfono verificados en
-                  bairdservice.com; falta el NIT, que no está publicado ahí. */}
+                  bairdservice.com; razón social y NIT desde src/lib/constants/legal.ts (2026-10-09). */}
               <address className="not-italic text-white/60 text-xs leading-relaxed text-center md:text-left">
+                {EMPRESA.razonSocial} · NIT {EMPRESA.nit}
+                <br />
                 {CONTENIDO.footer.direccion}
                 <br />
                 <a href={`tel:${CONTENIDO.footer.telefonoTel}`} className="hover:text-white transition-colors">
@@ -726,6 +729,7 @@ export default function Home() {
               <div className="flex flex-wrap gap-x-6 gap-y-2 justify-center md:justify-end text-xs text-white/60">
                 <Link href="/terminos" className="hover:text-white transition-colors">Términos y condiciones</Link>
                 <Link href="/politica-privacidad" className="hover:text-white transition-colors">Política de privacidad</Link>
+                <Link href="/contrato-tecnico" className="hover:text-white transition-colors">Contrato para técnicos</Link>
                 <Link href="/eliminacion-datos" className="hover:text-white transition-colors">Eliminación de datos</Link>
               </div>
             </div>

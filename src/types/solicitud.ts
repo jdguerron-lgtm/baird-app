@@ -134,7 +134,7 @@ export interface ProductoRecomendado {
 // Versión vigente de los Términos y Condiciones.
 // Bump al cambiar texto de /terminos. Se persiste en
 // solicitudes_servicio.tyc_version al confirmar horario.
-export const TYC_VERSION = '2026.05.10'
+export const TYC_VERSION = '2026.10.09'
 
 // ──────────────────────────────────────────────────────────
 // Self-service (cliente cancela / reagenda desde WhatsApp)

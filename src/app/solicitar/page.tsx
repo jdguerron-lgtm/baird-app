@@ -699,7 +699,7 @@ export default function SolicitarServicio() {
                     className="mt-1 h-5 w-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
                   />
                   <span className="text-sm text-gray-700">
-                    He leído y acepto los <Link href="/terminos" target="_blank" className="text-green-700 underline">Términos y Condiciones</Link> y la <Link href="/politica-privacidad" target="_blank" className="text-green-700 underline">Política de Privacidad</Link>.
+                    He leído y acepto los <Link href="/terminos" target="_blank" className="text-green-700 underline">Términos y Condiciones</Link> y autorizo el tratamiento de mis datos personales y el envío de mensajes de mi servicio por WhatsApp, conforme a la <Link href="/politica-privacidad" target="_blank" className="text-green-700 underline">Política de Privacidad y Tratamiento de Datos</Link>.
                   </span>
                 </label>
 

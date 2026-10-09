@@ -1,5 +1,15 @@
 # Documentos Legales - Baird Service SAS
 
+> ⚠️ **2026-10-09: los `.docx` de esta carpeta están DESACTUALIZADOS.** La fuente
+> vigente son las páginas públicas: `/terminos` (TYC_VERSION), `/politica-privacidad`
+> (PRIVACIDAD_VERSION) y `/contrato-tecnico` (CONTRATO_TECNICO_VERSION), ajustadas a
+> los dictámenes del Centro Jurídico Internacional (órdenes 492185, 492186 y 458593).
+> En particular, `03-contrato-tecnico.docx` dice que el técnico cobra directo al
+> cliente y tiene cláusula de no competencia: ambas cosas fueron reemplazadas
+> (pago vía Baird + liquidación quincenal; no desvío de clientes, sin exclusividad).
+> El contrato se FIRMA EN FÍSICO: imprimir /contrato-tecnico; el admin marca "contrato firmado" en /admin/tecnicos/[id] y sin eso no puede verificar.
+> Datos de la empresa: `src/lib/constants/legal.ts`.
+
 Generados: 13 de abril de 2026
 
 ## Archivos Incluidos

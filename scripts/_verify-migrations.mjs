@@ -22,10 +22,13 @@ const checks = [
   ['20260508_fix_cotizacion_column', 'solicitudes_servicio', 'cotizacion'],
   ['20260508_fix_tecnicos_columns', 'tecnicos', 'acepta_garantias'],
   ['20260508_fix_tecnicos_columns', 'tecnicos', 'especialidad_principal'],
-  ['20260510_no_show_protocolo', 'solicitudes_servicio', 'evidencia_no_show'],
+  // evidencia_no_show vive en evidencias_servicio (no en solicitudes_servicio) — fix 2026-10-08
+  ['20260510_no_show_protocolo', 'evidencias_servicio', 'evidencia_no_show'],
   ['20260510_no_show_protocolo', 'solicitudes_servicio', 'dias_solucion_efectivos'],
   ['20260513_tracking_ta', 'solicitudes_servicio', 'diagnosticado_at'],
   ['20260513_tracking_ta', 'solicitudes_servicio', 'cumple_ta'],
+  ['20261009_tecnicos_aceptacion_legal', 'tecnicos', 'tyc_version'],
+  ['20261009_tecnicos_aceptacion_legal', 'tecnicos', 'contrato_firmado'],
 ]
 
 console.log('=== Columnas (pending migrations) ===')

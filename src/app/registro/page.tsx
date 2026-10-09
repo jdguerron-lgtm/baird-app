@@ -8,6 +8,8 @@ import { uploadFotoPerfil, uploadFotoDocumento } from '@/lib/uploadHelpers'
 import { PhoneInput, phoneToDigits } from '@/components/ui/PhoneInput'
 import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialidades'
 import { aplicarDeclaracionTecnico } from '@/lib/constants/certificaciones'
+import { PRIVACIDAD_VERSION } from '@/lib/constants/legal'
+import { TYC_VERSION } from '@/types/solicitud'
 
 type SiNo = '' | 'si' | 'no'
 
@@ -38,6 +40,12 @@ export default function RegistroTecnico() {
     acepta_garantias: true
   })
 
+  // Aceptaciones legales requeridas para enviar el registro: Términos +
+  // autorización de datos (Ley 1581/2012). El contrato de prestación de
+  // servicios NO se acepta aquí: se firma en físico y el admin lo marca en
+  // /admin/tecnicos/[id]. Ver supabase/migrations/20261009_tecnicos_aceptacion_legal.sql
+  const [aceptaContrato, setAceptaContrato] = useState(false)
+  const [autorizaDatos, setAutorizaDatos] = useState(false)
   const [fotoPerfil, setFotoPerfil] = useState<File | null>(null)
   const [fotoDocumento, setFotoDocumento] = useState<File | null>(null)
   const [previewPerfil, setPreviewPerfil] = useState<string | null>(null)
@@ -127,6 +135,13 @@ export default function RegistroTecnico() {
         throw new Error('Indica si tienes el certificado de competencia laboral en gas')
       }
 
+      if (!aceptaContrato) {
+        throw new Error('Debes aceptar los Términos y Condiciones')
+      }
+      if (!autorizaDatos) {
+        throw new Error('Debes autorizar el tratamiento de tus datos personales')
+      }
+
       const cubreGas = formData.cubre_gasodomesticos === 'si'
       // Solo siembra "declarada"/"sin_revisar"; verificar es tarea del admin.
       const certificaciones = cubreGas
@@ -147,6 +162,10 @@ export default function RegistroTecnico() {
           cubre_gasodomesticos: cubreGas,
           certificaciones,
           acepta_garantias: formData.acepta_garantias,
+          tyc_version: TYC_VERSION,
+          tyc_aceptados_at: new Date().toISOString(),
+          datos_version: PRIVACIDAD_VERSION,
+          datos_autorizados_at: new Date().toISOString(),
           estado_verificacion: 'pendiente'
         }])
         .select()
@@ -221,6 +240,8 @@ export default function RegistroTecnico() {
         tiene_cert_gas: '',
         acepta_garantias: true
       })
+      setAceptaContrato(false)
+      setAutorizaDatos(false)
       setFotoPerfil(null)
       setFotoDocumento(null)
       setPreviewPerfil(null)
@@ -641,6 +662,45 @@ export default function RegistroTecnico() {
                       </p>
                     </div>
                   </div>
+                </div>
+
+                {/* ── Aceptaciones legales (obligatorias) ── */}
+                <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={aceptaContrato}
+                      onChange={(e) => setAceptaContrato(e.target.checked)}
+                      className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer shrink-0 mt-0.5"
+                    />
+                    <span className="text-sm text-gray-700">
+                      He leído y acepto los{' '}
+                      <Link href="/terminos" target="_blank" className="text-blue-600 underline">Términos y Condiciones</Link>.
+                      Entiendo que me vinculo como contratista independiente, sin relación laboral, y que para quedar
+                      habilitado debo <strong>firmar en físico</strong> el{' '}
+                      <Link href="/contrato-tecnico" target="_blank" className="text-blue-600 underline font-semibold">
+                        Contrato de Prestación de Servicios
+                      </Link>{' '}
+                      y acreditar RUT y afiliación a salud, pensión y ARL.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autorizaDatos}
+                      onChange={(e) => setAutorizaDatos(e.target.checked)}
+                      className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer shrink-0 mt-0.5"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Autorizo a Baird Service S.A.S. a tratar mis datos personales, incluidos los sensibles
+                      (fotografía de mi rostro y documento, ubicación GPS durante los servicios e información de
+                      seguridad social), conforme a la{' '}
+                      <Link href="/politica-privacidad" target="_blank" className="text-blue-600 underline">
+                        Política de Privacidad y Tratamiento de Datos
+                      </Link>
+                      . Sé que la autorización de datos sensibles es facultativa.
+                    </span>
+                  </label>
                 </div>
 
                 {/* Botón de envío */}
