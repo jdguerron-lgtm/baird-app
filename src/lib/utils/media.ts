@@ -45,6 +45,13 @@ export interface CompressOptions {
   quality?: number
   /** Si el archivo ya es JPEG/PNG/WebP y pesa menos que esto, se devuelve tal cual. */
   skipThresholdBytes?: number
+  /**
+   * Devolver SIEMPRE el JPEG re-encodeado aunque pese más que el original.
+   * Útil cuando lo que importa es el formato (WebP/HEIC → JPEG universal), no
+   * el peso: una imagen plana en WebP puede ser más liviana que su JPEG y la
+   * defensa por tamaño devolvería el WebP original. Default false.
+   */
+  forceReencode?: boolean
 }
 
 /**
@@ -97,6 +104,7 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
     maxDimension = 2560,
     quality = 0.9,
     skipThresholdBytes = SKIP_COMPRESSION_THRESHOLD_BYTES,
+    forceReencode = false,
   } = opts
 
   // Videos no se comprimen client-side.
@@ -145,7 +153,7 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
 
     // Defensa: si por algún motivo el "comprimido" es más grande (raro, fotos
     // muy pequeñas que ya estaban súper optimizadas), devolvemos el original.
-    return compressed.size < file.size ? compressed : file
+    return forceReencode || compressed.size < file.size ? compressed : file
   } catch (err) {
     console.warn('[compressImageIfNeeded] decode falló, subiendo original:', err)
     return file

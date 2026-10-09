@@ -1,10 +1,15 @@
 import { supabase } from './supabase'
 
-const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png'])
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/jpg'])
 
 /**
- * Sube una imagen a Supabase Storage con validaciones de seguridad
+ * Sube una imagen a Supabase Storage con validaciones de seguridad.
+ *
+ * Las fotos de /registro pasan antes por `prepararFoto()` (utils/foto-registro.ts),
+ * que las comprime a JPEG en el navegador; por eso aquí ya no se exige la
+ * extensión del nombre (la cámara a veces no pone ninguna) y el tope de 5 MB
+ * es solo una red de seguridad — el contenido real se valida por magic bytes
+ * y la extensión final se deriva de ellos, nunca del nombre del archivo.
  */
 export async function uploadImage(
     file: File,
@@ -12,7 +17,7 @@ export async function uploadImage(
     path: string
 ): Promise<string> {
     // Validar tamanho del archivo
-    const maxSize = bucket === 'tecnicos-documentos' ? 5 * 1024 * 1024 : 2 * 1024 * 1024
+    const maxSize = 5 * 1024 * 1024
     if (file.size > maxSize) {
         throw new Error(`El archivo excede el tamanho maximo de ${maxSize / 1024 / 1024}MB`)
     }
@@ -20,13 +25,6 @@ export async function uploadImage(
     // Validar MIME type
     if (!ALLOWED_MIME_TYPES.has(file.type)) {
         throw new Error('Solo se permiten imagenes JPG o PNG')
-    }
-
-    // Extraer y validar extension de forma segura
-    const nameParts = file.name.split('.')
-    const fileExt = (nameParts.length > 1 ? nameParts.pop() : '')?.toLowerCase() ?? ''
-    if (!ALLOWED_EXTENSIONS.has(fileExt)) {
-        throw new Error('Extension de archivo no permitida. Solo JPG o PNG.')
     }
 
     // Validar magic bytes del archivo
@@ -51,7 +49,9 @@ export async function uploadImage(
         })
 
     if (uploadError) {
-        throw new Error('Error al subir la imagen. Intenta de nuevo.')
+        // Incluimos el detalle de Supabase (policy, bucket, tamaño) para poder
+        // diagnosticar desde el mensaje que ve el técnico / el admin.
+        throw new Error('Error al subir la imagen. Intenta de nuevo. (' + uploadError.message + ')')
     }
 
     // Obtener URL publica
