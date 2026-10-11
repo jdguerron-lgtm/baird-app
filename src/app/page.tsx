@@ -660,9 +660,9 @@ export default function Home() {
             {MARCAS_CON_LOGO.map((m) => (
               <li
                 key={m.slug}
-                className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-5 flex flex-col items-center justify-center gap-2 hover:border-green-200 hover:shadow-sm transition-all duration-200"
+                className="bg-white border border-slate-200 rounded-2xl px-5 py-5 flex flex-col items-center justify-center gap-3 hover:border-green-300 hover:shadow-md transition-all duration-200"
               >
-                <div className="relative h-12 w-full flex items-center justify-center">
+                <div className="relative h-12 w-full max-w-[150px] flex items-center justify-center">
                   {m.logo ? (
                     <Image
                       src={m.logo}
