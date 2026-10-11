@@ -122,8 +122,8 @@ const CONTENIDO = {
       },
     ],
     garantia: {
-      titulo: '¿Tu equipo MABE está en garantía?',
-      texto: 'Pagas $0. Hoy atendemos garantías únicamente de productos MABE: la marca cubre el servicio y le paga a Baird Service. Solo necesitas el número de orden o serie de tu equipo. Otras marcas se atienden como servicio particular.',
+      titulo: '¿Tu equipo está en garantía?',
+      texto: 'Servicio particular: todas las marcas. Garantía: por ahora únicamente de productos MABE — pagas $0, la marca cubre el servicio y le paga a Baird Service; solo necesitas el número de orden o serie de tu equipo. Si tu equipo de otra marca está en garantía, contáctate con la marca.',
     },
   },
   // Los equipos viven en EQUIPOS_HOME (src/lib/constants/equipos-home.ts):
@@ -152,8 +152,8 @@ const CONTENIDO = {
     },
     {
       icon: '📋',
-      titulo: 'Garantía MABE sin costo',
-      texto: 'Solo para productos MABE: ingresa el número de orden o serie y gestionamos la garantía directamente con la marca, sin costo para ti.',
+      titulo: 'Todas las marcas · Garantía MABE',
+      texto: 'Reparamos todas las marcas como servicio particular. En garantía, por ahora solo productos MABE: ingresa el número de orden o serie y lo gestionamos con la marca sin costo para ti.',
     },
     {
       icon: '🎯',
