@@ -86,6 +86,7 @@
 |---|---|
 | [`docs/mejoras-futuras/`](mejoras-futuras/README.md) | Hub: inventario de proyectos en discusión + convenciones para agregar/promover/descartar. |
 | [`docs/mejoras-futuras/segunda-visita/`](mejoras-futuras/segunda-visita/README.md) | Segunda visita técnica sin repuesto. Gap verificado 2026-06-02: la repuesto-arrival ya funciona; falta el camino "reparar requiere otro día sin pieza". 4 opciones para revisar. |
+| [`docs/mejoras-futuras/pagos-aislamiento/`](mejoras-futuras/pagos-aislamiento/README.md) | Auditoría del flujo de pagos (2026-10-11) + plan para congelar el módulo: trigger de resumen en `pagos`, `auditar_pagos()` diaria, conciliación cada 5 min vía `pg_cron`, `CRON_SECRET`, frontera de archivos y tests de contrato. Nada aplicado. |
 | [`docs/mejoras-futuras/segunda-linea-voz/`](mejoras-futuras/segunda-linea-voz/README.md) | Segunda línea de voz IA (llamadas cuando WhatsApp no responde). Fase 0 código completo apagada tras `DAPTA_ENABLED=false`; decisión de proveedor pendiente (Dapta $99/mes fijo vs Retell PAYG ~$8–25/mes). |
 
 ### Proyectos completados (registro histórico, no actualizar)
