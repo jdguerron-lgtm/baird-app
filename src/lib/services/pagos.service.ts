@@ -1,6 +1,9 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import {
   parseReferenciaPago,
+  referenciaPago,
+  listarTransaccionesPorReferencia,
+  wompiConciliacionHabilitada,
   type TipoPago,
   type TransaccionWompi,
 } from '@/lib/wompi'
@@ -171,9 +174,11 @@ export async function cargarSolicitudPagoPorClienteToken(
  *
  * @param origen de dónde vino la confirmación — queda en el payload de auditoría.
  */
+export type OrigenRegistroPago = 'webhook' | 'redirect' | 'conciliacion'
+
 export async function registrarPagoWompi(
   tx: TransaccionWompi,
-  origen: 'webhook' | 'redirect',
+  origen: OrigenRegistroPago,
 ): Promise<ResultadoRegistro> {
   const ref = parseReferenciaPago(tx.reference)
   if (!ref) {
@@ -362,6 +367,139 @@ async function registrarEventoPago(
   } catch (err) {
     console.error('[pagos] evento pago_registrado threw:', err)
   }
+}
+
+// ─────────────────────────────────────────
+// Conciliación por cron (2026-10-11)
+// ─────────────────────────────────────────
+
+export interface ResultadoConciliacion {
+  /** false si no hay WOMPI_PRIVATE_KEY (no-op, nada consultado). */
+  habilitada: boolean
+  /** Solicitudes revisadas (con al menos un cobro pendiente). */
+  revisadas: number
+  /** Consultas hechas al API de Wompi (una por referencia pendiente). */
+  consultas: number
+  /** Pagos APPROVED nuevos registrados en esta corrida. */
+  registrados: number
+  /** Pagos que ya estaban en `pagos` (idempotencia). */
+  duplicados: number
+  errores: string[]
+}
+
+/** Estados terminales: no tiene sentido buscar cobros para ellos. */
+const ESTADOS_SIN_COBRO = new Set([
+  'sin_agendar',
+  'no_show_cliente',
+  'cotizacion_rechazada',
+  'finalizado_sin_reparacion',
+  'reparacion_rechazada',
+  'cancelada',
+])
+
+type SolicitudConciliable = SolicitudPago & {
+  created_at: string
+  tecnico_asignado_id: string | null
+}
+
+/**
+ * Decide qué referencias de cobro siguen pendientes para una solicitud —
+ * espejo de los momentos en que la app manda un link de pago:
+ *   - anticipo: técnico asignado y `anticipo_pagado_at` vacío.
+ *   - abono:    cotización aprobada con repuestos y sin abono APPROVED.
+ *   - saldo:    cotización con total, `saldo_pagado_at` vacío y servicio
+ *               cerrado (`completada`) — el link sale al completar.
+ */
+async function tiposPendientes(sol: SolicitudConciliable): Promise<TipoPago[]> {
+  const tipos: TipoPago[] = []
+  if (sol.tecnico_asignado_id && !sol.anticipo_pagado_at && calcularMontoAnticipo(sol) > 0) {
+    tipos.push('anticipo')
+  }
+  const cot = sol.cotizacion as { total?: number; aprobado_at?: string } | null
+  if (cot?.aprobado_at && cotizacionTieneRepuestos(cot) && !(await abonoRepuestosPagado(sol.id))) {
+    tipos.push('abono')
+  }
+  if (sol.estado === 'completada' && !sol.saldo_pagado_at && (cot?.total ?? 0) > 0) {
+    tipos.push('saldo')
+  }
+  return tipos
+}
+
+/**
+ * Conciliación contra Wompi para cobros que el webhook/redirect no alcanzaron
+ * a registrar (ver `listarTransaccionesPorReferencia` para el porqué).
+ *
+ * Recorre las solicitudes PARTICULARES vivas de los últimos `diasAtras` días
+ * con algún cobro pendiente, pregunta a Wompi por cada referencia y pasa las
+ * transacciones APPROVED por `registrarPagoWompi(tx, 'conciliacion')` — la
+ * misma función del webhook, con la misma validación de monto, idempotencia
+ * por `transaccion_id` y WhatsApp de confirmación una sola vez.
+ *
+ * Solo lee de Wompi (nunca crea ni anula transacciones). Sin
+ * WOMPI_PRIVATE_KEY devuelve `habilitada: false` sin tocar nada.
+ */
+export async function conciliarPagosWompi(opts: { diasAtras?: number } = {}): Promise<ResultadoConciliacion> {
+  const resultado: ResultadoConciliacion = {
+    habilitada: wompiConciliacionHabilitada(),
+    revisadas: 0,
+    consultas: 0,
+    registrados: 0,
+    duplicados: 0,
+    errores: [],
+  }
+  if (!resultado.habilitada) return resultado
+
+  const dias = Math.min(Math.max(opts.diasAtras ?? 45, 1), 180)
+  const desde = new Date(Date.now() - dias * 24 * 3600 * 1000).toISOString()
+
+  const { data: candidatas, error } = await supabase
+    .from('solicitudes_servicio')
+    .select(`${CAMPOS_SOLICITUD_PAGO}, created_at, tecnico_asignado_id`)
+    .eq('es_garantia', false)
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(500)
+
+  if (error) {
+    resultado.errores.push(`lectura solicitudes: ${error.message}`)
+    return resultado
+  }
+
+  for (const sol of (candidatas ?? []) as SolicitudConciliable[]) {
+    if (ESTADOS_SIN_COBRO.has(sol.estado)) continue
+    let tipos: TipoPago[]
+    try {
+      tipos = await tiposPendientes(sol)
+    } catch (err) {
+      resultado.errores.push(`${sol.id}: ${err instanceof Error ? err.message : String(err)}`)
+      continue
+    }
+    if (tipos.length === 0) continue
+    resultado.revisadas++
+
+    for (const tipo of tipos) {
+      resultado.consultas++
+      const txs = await listarTransaccionesPorReferencia(referenciaPago(tipo, sol.id))
+      for (const tx of txs) {
+        if (tx.status !== 'APPROVED') continue
+        try {
+          const r = await registrarPagoWompi(tx, 'conciliacion')
+          if (!r.ok) {
+            resultado.errores.push(`${tx.id}: ${r.error ?? 'registro falló'}`)
+          } else if (r.duplicado) {
+            resultado.duplicados++
+          } else {
+            resultado.registrados++
+            console.log(`[pagos] conciliación registró ${tipo} ${tx.id} de la solicitud ${sol.id}`)
+          }
+        } catch (err) {
+          resultado.errores.push(`${tx.id}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+    }
+  }
+
+  return resultado
 }
 
 /** Tipos exportados para los callers (route handlers / páginas). */

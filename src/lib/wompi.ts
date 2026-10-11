@@ -132,10 +132,32 @@ export interface TransaccionWompi {
   created_at?: string
 }
 
+/** Llave privada (server-only). undefined si no está configurada. */
+function wompiPrivateKey(): string | undefined {
+  const k = process.env.WOMPI_PRIVATE_KEY?.trim()
+  return k ? k : undefined
+}
+
+/** true si hay llave privada → se pueden consultar transacciones por referencia. */
+export function wompiConciliacionHabilitada(): boolean {
+  return Boolean(wompiPrivateKey())
+}
+
 /**
- * Consulta una transacción por id contra el API de Wompi (endpoint público —
- * el id es no adivinable). Se usa en el redirect de vuelta del checkout para
- * confirmar el pago sin esperar el webhook. null si falla o no existe.
+ * Headers para el API REST. Si hay WOMPI_PRIVATE_KEY se manda como Bearer:
+ * Wompi anunció que las consultas sin autenticación (o con llave pública)
+ * dejarán de responder (docs § Transacciones). Sin llave se sigue consultando
+ * sin header, como hasta ahora.
+ */
+function headersApi(): HeadersInit {
+  const key = wompiPrivateKey()
+  return key ? { Authorization: `Bearer ${key}` } : {}
+}
+
+/**
+ * Consulta una transacción por id contra el API de Wompi (el id es no
+ * adivinable). Se usa en el redirect de vuelta del checkout para confirmar el
+ * pago sin esperar el webhook. null si falla o no existe.
  */
 export async function consultarTransaccion(transactionId: string): Promise<TransaccionWompi | null> {
   const id = transactionId.trim()
@@ -144,6 +166,7 @@ export async function consultarTransaccion(transactionId: string): Promise<Trans
   try {
     const res = await fetch(`${wompiApiBase()}/transactions/${encodeURIComponent(id)}`, {
       cache: 'no-store',
+      headers: headersApi(),
     })
     if (!res.ok) {
       console.error(`[wompi] consultarTransaccion(${id}) HTTP ${res.status}`)
@@ -156,6 +179,50 @@ export async function consultarTransaccion(transactionId: string): Promise<Trans
   } catch (err) {
     console.error(`[wompi] consultarTransaccion(${id}) error:`, err)
     return null
+  }
+}
+
+/**
+ * Lista las transacciones de Wompi con una referencia dada
+ * (`GET /v1/transactions?reference=…`, requiere la llave PRIVADA como Bearer).
+ *
+ * Es la base de la conciliación por cron (2026-10-11): la URL de eventos del
+ * comercio en Wompi la ocupa la integración de Shopify (Conexa) y Wompi solo
+ * admite UNA, así que el webhook de la app nunca recibe nada. Si el cliente
+ * paga (típico PSE) y no vuelve al redirect, nadie registra el pago — el cron
+ * pregunta por referencia y cierra el hueco.
+ *
+ * Devuelve [] si no hay llave privada, si la referencia no es nuestra o si el
+ * API falla (el caller loguea; nunca lanza). Solo devuelve transacciones cuya
+ * `reference` coincide EXACTAMENTE con la pedida (defensa contra matching
+ * parcial del API).
+ */
+export async function listarTransaccionesPorReferencia(referencia: string): Promise<TransaccionWompi[]> {
+  const key = wompiPrivateKey()
+  if (!key) return []
+  const ref = referencia.trim()
+  if (!parseReferenciaPago(ref)) return []
+  try {
+    const res = await fetch(
+      `${wompiApiBase()}/transactions?${new URLSearchParams({ reference: ref }).toString()}`,
+      { cache: 'no-store', headers: { Authorization: `Bearer ${key}` } },
+    )
+    if (!res.ok) {
+      console.error(`[wompi] listarTransaccionesPorReferencia(${ref}) HTTP ${res.status}`)
+      return []
+    }
+    const body = await res.json()
+    const data: unknown = body?.data
+    if (!Array.isArray(data)) return []
+    return data.filter(
+      (tx): tx is TransaccionWompi =>
+        Boolean(tx) &&
+        typeof (tx as TransaccionWompi).id === 'string' &&
+        (tx as TransaccionWompi).reference === ref,
+    )
+  } catch (err) {
+    console.error(`[wompi] listarTransaccionesPorReferencia(${ref}) error:`, err)
+    return []
   }
 }
 

@@ -48,6 +48,44 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 `registrarPagoWompi()` — índice único por `transaccion_id` + guard
 `anticipo_pagado_at IS NULL` garantizan que los WhatsApp salen UNA vez.
 
+> ⚠️ **El webhook NO recibe eventos en prod (hallazgo 2026-10-11).** Wompi
+> admite UNA sola "URL de Eventos" por comercio y en el panel está ocupada por
+> la integración de Shopify (Conexa):
+> `https://wompi-event-shopify.conexa.ai/api/v1/shopify/webhooks/event`.
+> `/api/wompi/webhook` no ha recibido ni un request (todas las filas de
+> `pagos` tienen `raw._origen = 'redirect'`). Hasta hoy funcionó solo porque
+> cada cliente volvió al redirect; el 2026-10-10 un anticipo PSE aprobado
+> ($42.000, `anticipo-6c7efe75…`) quedó sin registrar porque el cliente no
+> regresó (se registró a mano abriendo
+> `/pago/anticipo/{cliente_token}?id={transaccion_id}`). **No cambiar esa URL
+> en Wompi sin coordinar la tienda** — rompería la confirmación de pedidos
+> Shopify. El hueco lo cierra la **conciliación por cron** (abajo).
+
+### Conciliación por cron (tercer camino, 2026-10-11)
+
+```
+src/app/api/cron/wompi-conciliar/route.ts   ← GET, guard x-vercel-cron / Bearer CRON_SECRET
+pagos.service.ts → conciliarPagosWompi()    ← solicitudes particulares vivas (45 días)
+                                               con cobro pendiente → 1 consulta por referencia
+wompi.ts → listarTransaccionesPorReferencia ← GET /v1/transactions?reference=… (Bearer PRIVADA)
+```
+
+- Referencias que se consultan: `anticipo` (técnico asignado y
+  `anticipo_pagado_at` vacío), `abono` (cotización aprobada con repuestos y sin
+  abono APPROVED), `saldo` (`completada`, con total y `saldo_pagado_at` vacío).
+- Solo las transacciones **APPROVED** pasan por `registrarPagoWompi(tx,
+  'conciliacion')` — misma validación de monto, idempotencia y WhatsApp una
+  sola vez que el webhook. **Solo lee de Wompi**, nunca crea ni anula.
+- Kill-switch: sin `WOMPI_PRIVATE_KEY` responde `{ habilitada: false }` y no
+  consulta nada. La misma llave se manda como Bearer en `consultarTransaccion`
+  (Wompi anunció que las consultas sin autenticación dejarán de responder).
+- Programación: `*/15 * * * *` en `vercel.json` (pendiente de agregar — ver
+  "Puesta en marcha"). Prueba manual:
+  `curl -H "Authorization: Bearer $CRON_SECRET" https://lineablanca.bairdservice.com/api/cron/wompi-conciliar?dias=45`
+- Alternativa descartada por ahora: apuntar la URL de eventos a la app y que
+  `/api/wompi/webhook` reenvíe a Conexa los eventos ajenos (proxy). Vuelve a la
+  app punto único de falla de la tienda.
+
 ## Reglas de seguridad (no negociables)
 
 1. El monto NUNCA viene del cliente: checkout firmado
@@ -67,7 +105,8 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 WOMPI_PUBLIC_KEY        pub_prod_… (o pub_test_… → apunta solo a sandbox)
 WOMPI_INTEGRITY_SECRET  prod_integrity_…  (firma del checkout)
 WOMPI_EVENTS_SECRET     prod_events_…     (verificación del webhook)
-WOMPI_PRIVATE_KEY       prv_prod_… (OPCIONAL — reservada para API futura)
+WOMPI_PRIVATE_KEY       prv_prod_… (conciliación por cron + Bearer en consultas;
+                                    sin ella el cron es no-op — desde 2026-10-11)
 ```
 
 Sin las dos primeras: `wompiHabilitado()` = false y todo degrada al
@@ -78,8 +117,13 @@ Reparación; página de pago muestra "el equipo te contactará").
 
 1. Panel Wompi → Configuración → copiar llaves y secretos → pegarlos en
    `.env.local` y en Vercel (Production, como Sensitive).
-2. Panel Wompi → Eventos → URL:
-   `https://lineablanca.bairdservice.com/api/wompi/webhook`
+2. ~~Panel Wompi → Eventos → URL `https://lineablanca.bairdservice.com/api/wompi/webhook`~~
+   → **ocupada por Shopify/Conexa, no tocar** (ver advertencia arriba). En su
+   lugar: (a) Panel Wompi → Desarrollo → Programadores → "Llave privada" →
+   `WOMPI_PRIVATE_KEY` en Vercel (Production, Sensitive); (b) agregar en
+   `vercel.json` el cron `{ "path": "/api/cron/wompi-conciliar", "schedule": "*/15 * * * *" }`
+   (Hobby solo permite crons diarios — ahí usar `0 */1 * * *` no sirve; dejar
+   `30 9 * * *` o pasar a Pro).
 3. Subir las 3 plantillas nuevas a Meta:
    `node --env-file=.env.local scripts/upload-templates.mjs pago_anticipo_cliente_v2`
    (ídem `anticipo_confirmado_cliente_v1`, `anticipo_confirmado_tecnico_v1`).

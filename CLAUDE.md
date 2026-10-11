@@ -131,7 +131,10 @@ NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL # OPCIONAL — label de conversión Ads (defau
 WOMPI_PUBLIC_KEY                  # pub_prod_… / pub_test_… (test → sandbox automático)
 WOMPI_INTEGRITY_SECRET            # Firma SHA-256 del Web Checkout (Sensitive)
 WOMPI_EVENTS_SECRET               # Verificación del webhook /api/wompi/webhook (Sensitive)
-WOMPI_PRIVATE_KEY                 # OPCIONAL — reservada para API transaccional futura
+WOMPI_PRIVATE_KEY                 # Conciliación por cron /api/cron/wompi-conciliar (consulta por
+                                  # referencia) + Bearer en consultarTransaccion. Sin ella el cron
+                                  # es no-op. Necesaria porque la URL de eventos de Wompi la ocupa
+                                  # Shopify/Conexa y el webhook nunca llega (2026-10-11, docs/WOMPI.md).
                                   # Sin PUBLIC_KEY + INTEGRITY_SECRET todo Wompi es no-op
                                   # (kill-switch, mismo patrón que Dapta).
 
