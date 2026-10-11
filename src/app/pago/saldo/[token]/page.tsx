@@ -8,6 +8,7 @@ import {
   registrarPagoWompi,
 } from '@/lib/services/pagos.service'
 import { formatCOP } from '@/lib/utils/format'
+import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 
 /**
  * Página de pago del SALDO (pasarela Wompi) — el total cotizado menos los
@@ -91,7 +92,9 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
     diagnostico_cliente?: number
     servicio_cliente?: number
   } | null
-  const total = cot?.total ?? 0
+  // Total de la cotización, o precio de catálogo en Mantenimiento / Cambio de
+  // filtro (2026-10-11 — antes esos servicios veían "aún no hay saldo").
+  const total = totalClienteParaCobro(sol)
   const saldo = await calcularMontoSaldo(sol)
   // Modo ABONO: cotización con repuestos y sin abono registrado → se cobra
   // el 50% del saldo (0 = no aplica → modo saldo normal).

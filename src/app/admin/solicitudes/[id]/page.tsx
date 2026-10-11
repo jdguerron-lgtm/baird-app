@@ -15,7 +15,8 @@ import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/t
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
-import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
+import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
+import { etapaPagoCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
 import { codigoServicio } from '@/lib/utils/facturacion'
 
 interface Solicitud {
@@ -44,7 +45,10 @@ interface Solicitud {
   ultimo_reagendado_at: string | null
   // Capa paralela de pago (solo particular) — ver lib/constants/pago-cliente.ts
   anticipo_pagado_at: string | null
+  abono_pagado_at: string | null
   saldo_pagado_at: string | null
+  monto_pagado_online: number | null
+  ultimo_pago_at: string | null
 }
 
 interface Tecnico {
@@ -217,6 +221,71 @@ export default function SolicitudDetalle() {
   // Ficha de facturación por servicio (docs/FACTURACION.md § 3): la venta al
   // cliente es un registro independiente por servicio — mismo Excel del
   // paquete Siigo pero acotado a esta solicitud.
+  // "🔄 Verificar pagos en Wompi" (2026-10-11): registra AHORA los pagos de
+  // este servicio sin esperar el cron. Con el número de transacción del panel
+  // de Wompi (#1510245-…) funciona aun sin WOMPI_PRIVATE_KEY.
+  const [verificandoPagos, setVerificandoPagos] = useState(false)
+  const [txManual, setTxManual] = useState('')
+  const [resultadoVerificacion, setResultadoVerificacion] = useState<{ ok: boolean; texto: string } | null>(null)
+
+  const verificarPagosWompi = async () => {
+    setVerificandoPagos(true)
+    setResultadoVerificacion(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoVerificacion({ ok: false, texto: 'Sesión expirada — vuelve a iniciar sesión.' })
+        return
+      }
+      const res = await fetch('/api/admin/pagos/verificar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ solicitudId: id, transaccionId: txManual.trim() || undefined }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResultadoVerificacion({ ok: false, texto: body?.error ?? `Error ${res.status}` })
+        return
+      }
+      if (body.modo === 'transaccion') {
+        setResultadoVerificacion({
+          ok: body.estadoWompi === 'APPROVED',
+          texto: body.estadoWompi !== 'APPROVED'
+            ? `Wompi reporta la transacción como ${body.estadoWompi} — no se confirma nada.`
+            : body.yaEstaba
+              ? `Ese ${body.tipo} ($${formatCOP(body.monto)}) ya estaba registrado.`
+              : `✅ ${body.tipo} de $${formatCOP(body.monto)} registrado y notificado.`,
+        })
+        setTxManual('')
+      } else if (!body.habilitada) {
+        setResultadoVerificacion({
+          ok: false,
+          texto: 'La búsqueda automática necesita WOMPI_PRIVATE_KEY en Vercel. Mientras tanto, pega el número de transacción de Wompi (#1510245-…).',
+        })
+      } else {
+        setResultadoVerificacion({
+          ok: (body.errores ?? []).length === 0,
+          texto: body.registrados > 0
+            ? `✅ ${body.registrados} pago(s) nuevo(s) registrado(s).`
+            : `Sin pagos nuevos en Wompi (${body.consultas} referencias consultadas).` +
+              ((body.errores ?? []).length ? ` Errores: ${body.errores.join('; ')}` : ''),
+        })
+      }
+      // Trae los datos de pago y el historial frescos.
+      const { data: fresca } = await supabase
+        .from('solicitudes_servicio')
+        .select('anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, ultimo_pago_at')
+        .eq('id', id)
+        .single()
+      if (fresca) setSolicitud(prev => (prev ? { ...prev, ...fresca } : prev))
+      await recargarEventos()
+    } catch (err) {
+      setResultadoVerificacion({ ok: false, texto: err instanceof Error ? err.message : 'Error de red' })
+    } finally {
+      setVerificandoPagos(false)
+    }
+  }
+
   const descargarFichaFacturacion = async () => {
     setErrorFicha(null)
     setDescargandoFicha(true)
@@ -956,18 +1025,32 @@ export default function SolicitudDetalle() {
       'finalizado_sin_reparacion', 'cotizacion_rechazada', 'sin_agendar',
       'no_show_cliente',
     ])
-    if (estadosTerminales.has(solicitud.estado)) return
+    // Pagos (2026-10-11): el SALDO se cobra al completar, así que un servicio
+    // terminal con un cobro aún pendiente sigue polleando para mostrar el pago
+    // apenas entre (redirect de Wompi o cron de conciliación).
+    const etapa = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)?.etapa
+    const cobroPendiente = Boolean(etapa) &&
+      etapa !== 'pagado' && etapa !== 'cerrado_con_pago' && etapa !== 'sin_cobro' && etapa !== 'sin_pago_online'
+    if (estadosTerminales.has(solicitud.estado) && !cobroPendiente) return
 
     const intervalo = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return
       const { data: fresca } = await supabase
         .from('solicitudes_servicio')
-        .select('estado, horario_confirmado, horario_confirmado_at, tecnico_asignado_id, reagendamientos_count, ultimo_reagendado_at')
+        .select('estado, horario_confirmado, horario_confirmado_at, tecnico_asignado_id, reagendamientos_count, ultimo_reagendado_at, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, ultimo_pago_at, cotizacion')
         .eq('id', id)
         .single()
 
       if (!fresca) return
 
+      const pagoNuevo =
+        (fresca.monto_pagado_online ?? 0) !== (solicitud.monto_pagado_online ?? 0) ||
+        fresca.saldo_pagado_at !== solicitud.saldo_pagado_at ||
+        fresca.anticipo_pagado_at !== solicitud.anticipo_pagado_at ||
+        fresca.abono_pagado_at !== solicitud.abono_pagado_at
+
       const cambio =
+        pagoNuevo ||
         fresca.estado !== solicitud.estado ||
         fresca.horario_confirmado !== solicitud.horario_confirmado ||
         fresca.horario_confirmado_at !== solicitud.horario_confirmado_at ||
@@ -977,10 +1060,12 @@ export default function SolicitudDetalle() {
       if (cambio) {
         setSolicitud(prev => (prev ? { ...prev, ...fresca } : prev))
       }
+      // El pago trae su evento 💰 en el historial: refrescarlo también.
+      if (pagoNuevo) await recargarEventos()
     }, 10000)
 
     return () => clearInterval(intervalo)
-  }, [id, solicitud])
+  }, [id, solicitud, recargarEventos])
 
   if (cargando) {
     return (
@@ -1023,7 +1108,7 @@ export default function SolicitudDetalle() {
           >
             {exportando ? 'Generando…' : '📥 Descargar resumen'}
           </button>
-          <BadgePagoCliente solicitud={solicitud} size="md" />
+          <BadgePagoCliente solicitud={solicitud as unknown as SolicitudParaEtapaPago} size="md" />
           <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${ESTADO_ESTILOS[solicitud.estado] ?? 'bg-gray-100 text-gray-600'}`}>
             {ESTADO_LABELS[solicitud.estado] ?? solicitud.estado}
           </span>
@@ -1305,30 +1390,42 @@ export default function SolicitudDetalle() {
                 <Fila label="Pago al técnico (neto)" valor={pagoTec} />
                 <Fila label="Margen Baird (antes de IVA)" valor={margenBaird} bold />
               </div>
-              {/* Recaudo online (Wompi) — capa paralela: qué pagó ya el cliente.
-                  El pago en sitio con QR no se registra automáticamente. */}
-              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Anticipo (50% — reserva y diagnóstico)</span>
-                  {solicitud.anticipo_pagado_at ? (
-                    <span className="font-semibold text-emerald-700">
-                      ✅ Pagado el {new Date(solicitud.anticipo_pagado_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
-                    </span>
-                  ) : (
-                    <span className="font-semibold text-amber-600">Pendiente</span>
-                  )}
+              {/* Recaudo online (Wompi) — capa paralela: en qué cobro va el
+                  cliente (anticipo → abono → saldo). Se refresca solo cada
+                  10 s; el botón fuerza la verificación contra Wompi. */}
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 text-xs">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cobros al cliente</p>
+                <ProgresoPagoCliente solicitud={solicitud as unknown as SolicitudParaEtapaPago} />
+                {solicitud.ultimo_pago_at && (
+                  <p className="text-[11px] text-gray-500">
+                    Último pago recibido: {new Date(solicitud.ultimo_pago_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={txManual}
+                    onChange={e => setTxManual(e.target.value)}
+                    placeholder="N° transacción Wompi (opcional)"
+                    className="flex-1 min-w-[180px] text-xs border border-gray-300 rounded-lg px-2 py-1.5 font-mono"
+                    aria-label="Número de transacción de Wompi"
+                  />
+                  <button
+                    type="button"
+                    onClick={verificarPagosWompi}
+                    disabled={verificandoPagos}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    title="Consulta Wompi y registra los pagos de este servicio que falten (idempotente)"
+                  >
+                    {verificandoPagos ? 'Verificando…' : '🔄 Verificar pagos en Wompi'}
+                  </button>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Saldo (tras aprobar cotización)</span>
-                  {solicitud.saldo_pagado_at ? (
-                    <span className="font-semibold text-emerald-700">
-                      ✅ Pagado el {new Date(solicitud.saldo_pagado_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
-                    </span>
-                  ) : (
-                    <span className="font-semibold text-amber-600">Pendiente</span>
-                  )}
-                </div>
-                <p className="text-[11px] text-gray-400 pt-1">
+                {resultadoVerificacion && (
+                  <p className={`text-[11px] ${resultadoVerificacion.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {resultadoVerificacion.texto}
+                  </p>
+                )}
+                <p className="text-[11px] text-gray-400">
                   Solo pagos ONLINE (Wompi). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
                 </p>
               </div>

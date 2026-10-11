@@ -66,6 +66,11 @@ export default function SolicitarServicio() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
   const [, setSolicitudId] = useState<string | null>(null)
+  // Token del cliente de la solicitud recién creada: el CTA del anticipo lleva
+  // a /pago/anticipo/{token} (checkout Wompi propio, referencia anticipo-{id})
+  // para que el pago quede registrado en la app. Antes iba a la tienda
+  // Shopify y la app no se enteraba (caso Tatiana Moreno / Ana Prieto, 2026-10-10).
+  const [clienteTokenNuevo, setClienteTokenNuevo] = useState<string | null>(null)
   // Tras crear una solicitud particular de Diagnóstico/Reparación, mostramos el
   // CTA para pagar el anticipo ($42.000) en la tienda Shopify (recaudo online).
   const [mostrarPagoAnticipo, setMostrarPagoAnticipo] = useState(false)
@@ -161,6 +166,7 @@ export default function SolicitarServicio() {
 
       const id = data.id
       setSolicitudId(id)
+      setClienteTokenNuevo(typeof data.cliente_token === 'string' ? data.cliente_token : null)
 
       // Conversión Google Ads: el formulario se envió con éxito = lead.
       // Dispara SOLO el label del formulario del sitio (no toca la tienda).
@@ -246,8 +252,11 @@ export default function SolicitarServicio() {
               {mensaje && (
                 <div className="mb-6">
                   <Alert type={mensaje.tipo} message={mensaje.texto} onClose={() => setMensaje(null)} />
-                  {/* Recaudo del anticipo vía tienda Shopify (producto "Diagnostico
-                      Linea Blanca (Anticipo)", $42.000 = 50% de TARIFA_DIAGNOSTICO).
+                  {/* Recaudo del anticipo. Con cliente_token → checkout Wompi
+                      propio (/pago/anticipo/{token}): monto exacto calculado en
+                      el servidor (incluye recargo finde/festivo) y el pago queda
+                      registrado en la solicitud. Sin token (respuesta vieja) →
+                      producto de la tienda Shopify como respaldo.
                       Solo particular Diagnóstico/Reparación. */}
                   {mensaje.tipo === 'success' && mostrarPagoAnticipo && (
                     <div className="mt-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
@@ -255,16 +264,25 @@ export default function SolicitarServicio() {
                         💳 Asegura tu visita pagando el anticipo del diagnóstico
                       </p>
                       <p className="text-xs text-emerald-800 mb-3">
-                        Son $42.000 COP (el 50% de la tarifa de diagnóstico). Si apruebas la reparación, se abonan al total. Pago seguro en nuestra tienda oficial.
+                        Es el 50% de la tarifa de diagnóstico ($42.000 COP; un poco más si tu visita cae en fin de semana o festivo). Si apruebas la reparación, se abona al total. Pago seguro con Wompi.
                       </p>
-                      <a
-                        href={URL_PAGO_ANTICIPO_DIAGNOSTICO}
-                        target="_blank"
-                        rel="noopener"
-                        className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
-                      >
-                        Pagar anticipo $42.000 →
-                      </a>
+                      {clienteTokenNuevo ? (
+                        <a
+                          href={`/pago/anticipo/${clienteTokenNuevo}`}
+                          className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
+                        >
+                          Pagar anticipo →
+                        </a>
+                      ) : (
+                        <a
+                          href={URL_PAGO_ANTICIPO_DIAGNOSTICO}
+                          target="_blank"
+                          rel="noopener"
+                          className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
+                        >
+                          Pagar anticipo $42.000 →
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>

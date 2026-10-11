@@ -240,8 +240,29 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Destino**: cliente
 - **Body** (3 params): `cliente`, `monto`, `equipo`
 - **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` — display "Ver mi servicio"
-- **Propósito**: "servicio totalmente pagado — no entregues dinero al técnico". El técnico recibe el aviso equivalente por texto libre (`enviarSaldoConfirmadoTecnico`).
+- **Propósito**: "servicio totalmente pagado — no entregues dinero al técnico". El técnico recibe el aviso equivalente con `pago_recibido_tecnico_v1` (`enviarSaldoConfirmadoTecnico`).
 - **Fallback**: texto libre.
+
+#### `abono_confirmado_cliente_v1` (nueva 2026-10-11 — **subida a Meta, PENDING**)
+- **Disparo**: `pagos.service → enviarAbonoConfirmadoCliente()` cuando Wompi aprueba la transacción `abono-…` (una sola vez — guard `abono_pagado_at`). Antes de esta plantilla el cliente **no recibía nada** al pagar el abono.
+- **Destino**: cliente
+- **Body** (4 params): `cliente`, `monto abono`, `equipo`, `saldo restante`
+- **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` — display "Ver mi servicio"
+- **Fallback**: texto libre.
+
+#### `saldo_final_cliente_v1` (nueva 2026-10-11 — **subida a Meta, PENDING**)
+- **Disparo**: `confirmarServicioCliente → enviarPagoSaldoCliente(id, saldo, { momento: 'cierre' })` al completar el servicio si queda saldo. Cubre también **Mantenimiento / Cambio de filtro** (precio fijo, sin cotización), cuyo 50% restante antes nunca tenía link de pago.
+- **Destino**: cliente
+- **Body** (5 params): `cliente`, `equipo`, `total`, `ya abonado`, `saldo`
+- **Botón URL dinámica**: `{APP_URL}/pago/saldo/{{1}}` — display "Pagar saldo"
+- **Fallback**: con cotización → `pago_saldo_cliente_v1`; precio fijo → texto libre neutral con el link.
+
+#### `pago_recibido_tecnico_v1` (nueva 2026-10-11 — **subida a Meta, PENDING**)
+- **Disparo**: `enviarAbonoConfirmadoTecnico` (concepto "abono de repuestos") y `enviarSaldoConfirmadoTecnico` (concepto "saldo final"), desde `pagos.service`.
+- **Destino**: técnico asignado
+- **Body** (5 params): `tecnico`, `cliente`, `concepto`, `monto`, `equipo`
+- **Propósito**: antes estos avisos eran SOLO texto libre y Meta los rechazaba si el técnico no había escrito a la línea en 24h.
+- **Fallback**: el texto libre de siempre. Si ambos fallan, `pagos.service` deja un evento ⚠️ `pago_registrado` con `requiere_intervencion_admin` para avisar a mano.
 
 ### Post-diagnóstico (cliente decide)
 

@@ -29,8 +29,16 @@ interface Solicitud {
   tecnico_nombre?: string
   // Capa paralela de pago (solo particular) — ver lib/constants/pago-cliente.ts
   anticipo_pagado_at: string | null
+  abono_pagado_at: string | null
   saldo_pagado_at: string | null
+  monto_pagado_online: number | null
+  ultimo_pago_at: string | null
+  cotizacion: unknown
+  recargo_weekend_aplicado: number | null
 }
+
+/** Refresco silencioso del listado (pagos y estados casi en vivo). */
+const REFRESCO_LISTADO_MS = 30_000
 
 interface ResultadoReenvio {
   id: string
@@ -71,15 +79,27 @@ export default function SolicitudesAdmin() {
   const [reenviando, setReenviando] = useState(false)
   const [progresoReenvio, setProgresoReenvio] = useState<{ hecho: number; total: number } | null>(null)
   const [resultadosReenvio, setResultadosReenvio] = useState<ResultadoReenvio[] | null>(null)
+  // Refresco periódico (2026-10-11): cada 30 s, solo con la pestaña visible,
+  // se recarga el listado SIN el spinner — así un pago que entra por Wompi
+  // (redirect / cron de conciliación) aparece en el badge sin recargar.
+  const [refresco, setRefresco] = useState(0)
 
   useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') setRefresco(n => n + 1)
+    }, REFRESCO_LISTADO_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const silencioso = refresco > 0
     const cargar = async () => {
-      setCargando(true)
+      if (!silencioso) setCargando(true)
 
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, ultimo_pago_at')
           .order('created_at', { ascending: false })
 
         if (filtro === FILTRO_SIN_TECNICO) {
@@ -93,7 +113,8 @@ export default function SolicitudesAdmin() {
 
         if (error) {
           console.error('Error loading solicitudes:', error)
-          setSolicitudes([])
+          // En un refresco silencioso conservamos lo que ya se ve.
+          if (!silencioso) setSolicitudes([])
           setCargando(false)
           return
         }
@@ -130,13 +151,13 @@ export default function SolicitudesAdmin() {
         setSolicitudes(resultado)
       } catch (e) {
         console.error('Error loading solicitudes:', e)
-        setSolicitudes([])
+        if (!silencioso) setSolicitudes([])
       }
       setCargando(false)
     }
 
     cargar()
-  }, [filtro])
+  }, [filtro, refresco])
 
   const toggleSeleccion = (id: string) => {
     setSeleccionados(prev => {

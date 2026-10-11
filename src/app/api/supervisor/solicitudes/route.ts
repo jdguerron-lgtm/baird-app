@@ -7,6 +7,7 @@ import {
 } from '@/lib/auth/supervisor'
 import { precioClienteServicio } from '@/types/solicitud'
 import { campoFalla } from '@/lib/utils/falla'
+import { cotizacionTieneRepuestos } from '@/lib/constants/pagos'
 
 /**
  * Lista de solicitudes DENTRO DEL ALCANCE del supervisor (solo lectura).
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from('solicitudes_servicio')
     .select(
-      'id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado, triaje_resultado, anticipo_pagado_at, saldo_pagado_at',
+      'id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, created_at, tecnico_asignado_id, recargo_weekend_aplicado, triaje_resultado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online',
     )
     .order('created_at', { ascending: false })
 
@@ -73,9 +74,24 @@ export async function GET(req: NextRequest) {
     codigo_falla: campoFalla(s.triaje_resultado,'codigo_falla'),
     descripcion_falla: campoFalla(s.triaje_resultado,'descripcion_falla'),
     complejidad_falla: campoFalla(s.triaje_resultado,'complejidad_falla'),
-    // Capa paralela de pago del cliente (solo particular) — pago-cliente.ts
+    // Capa paralela de pago del cliente (solo particular) — pago-cliente.ts.
+    // Etapa de pago (2026-10-11): se manda una versión REDUCIDA de la
+    // cotización (total, aprobada, ¿lleva repuestos?) — nunca el JSONB
+    // completo, que trae el token de aprobación del cliente.
+    tipo_solicitud: s.tipo_solicitud,
+    tecnico_asignado_id: s.tecnico_asignado_id ?? null,
+    recargo_weekend_aplicado: s.recargo_weekend_aplicado ?? null,
+    cotizacion: s.cotizacion
+      ? {
+          total: (s.cotizacion as { total?: number }).total ?? 0,
+          aprobado_at: (s.cotizacion as { aprobado_at?: string }).aprobado_at ?? null,
+          repuestos: cotizacionTieneRepuestos(s.cotizacion) ? 1 : 0,
+        }
+      : null,
     anticipo_pagado_at: s.anticipo_pagado_at ?? null,
+    abono_pagado_at: s.abono_pagado_at ?? null,
     saldo_pagado_at: s.saldo_pagado_at ?? null,
+    monto_pagado_online: s.monto_pagado_online ?? 0,
   }))
 
   return NextResponse.json({

@@ -13,7 +13,7 @@ import { phoneToDigits } from '@/lib/utils/phone'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import QrPagosBaird from '@/components/ui/QrPagosBaird'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
-import { estadoPagoCliente } from '@/lib/constants/pago-cliente'
+import { estadoPagoCliente, esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import CarnetTecnico from '@/components/ui/CarnetTecnico'
 import {
@@ -54,7 +54,9 @@ interface Servicio {
   tiene_evidencia?: boolean
   // Capa paralela de pago del cliente (solo particular) — pago-cliente.ts
   anticipo_pagado_at: string | null
+  abono_pagado_at: string | null
   saldo_pagado_at: string | null
+  tipo_solicitud: string | null
 }
 
 export default function PortalTecnicoPage() {
@@ -98,7 +100,10 @@ export default function PortalTecnicoPage() {
       const { data: sols } = await querySupabase(() =>
         supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, anticipo_pagado_at, saldo_pagado_at')
+          // Sin cotizacion ni monto_pagado_online a propósito: el técnico no
+          // debe ver el precio al cliente (margen Baird). La etapa de pago se
+          // deriva solo de las fechas (sin montos).
+          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, tecnico_asignado_id, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at')
           .eq('tecnico_asignado_id', tec.id)
           .order('created_at', { ascending: false })
       )
@@ -132,7 +137,9 @@ export default function PortalTecnicoPage() {
           triaje_resultado: (s.triaje_resultado ?? null) as Servicio['triaje_resultado'],
           tiene_evidencia: completadoSet.has(s.id),
           anticipo_pagado_at: s.anticipo_pagado_at ?? null,
+          abono_pagado_at: s.abono_pagado_at ?? null,
           saldo_pagado_at: s.saldo_pagado_at ?? null,
+          tipo_solicitud: s.tipo_solicitud ?? null,
         })))
       }
 
@@ -410,8 +417,15 @@ function CarnetModal({ carnet, onClose }: { carnet: CarnetTecnicoData; onClose: 
 function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string }) {
   // El técnico puede iniciar diagnóstico tras aceptar (estado 'asignada',
   // ambos flujos — fusión 2026-07-09).
+  //
+  // TARIFA FIJA (2026-10-11): Mantenimiento / Cambio de filtro particulares
+  // NO se diagnostican ni cotizan — el pago al técnico ya está fijado por
+  // todo el servicio. Desde 'asignada' van directo a "Completar servicio"; el
+  // diagnóstico queda solo como "Reportar novedad" (no reparable / el
+  // cliente no quiso), que /api/diagnostico sí permite.
+  const precioFijo = esServicioPrecioFijo(s)
   const needsDiagnostic = s.estado === 'asignada'
-  const canComplete = s.estado === 'en_proceso' && !s.tiene_evidencia
+  const canComplete = (s.estado === 'en_proceso' || (precioFijo && s.estado === 'asignada')) && !s.tiene_evidencia
   // "Llamar" solo en servicios vivos — en el historial ya no hay a quién
   // coordinar y esconderlo evita llamadas por error a clientes cerrados.
   const esActivo = ![
@@ -467,8 +481,13 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
           {/* Estado de pago del CLIENTE (particular): el técnico sabe de una
               si la reserva/diagnóstico ya está pagada o si el servicio quedó
               totalmente pagado en línea (→ no cobrar nada en sitio). */}
-          <BadgePagoCliente solicitud={s} />
+          <BadgePagoCliente solicitud={s} mostrarMontos={false} />
         </div>
+        {precioFijo && esActivo && (
+          <p className="mb-3 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            🔒 Tarifa fija: recibes ${formatCOP(s.pago_tecnico)} por todo el {s.tipo_solicitud?.toLowerCase()}. No se cotiza — al terminar, toca &quot;Completar servicio&quot;.
+          </p>
+        )}
         {estadoPagoCliente(s) === 'pagado' && (
           <p className="mb-3 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
             ✅ El cliente ya pagó TODO en línea — no cobres nada en sitio.
@@ -499,12 +518,21 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
             <span className="text-[10px] text-gray-300">
               {new Date(s.created_at).toLocaleDateString('es-CO')}
             </span>
-            {needsDiagnostic && (
+            {needsDiagnostic && !precioFijo && (
               <Link
                 href={`/tecnico/${token}/diagnostico/${s.id}`}
                 className="bg-purple-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors"
               >
                 🔍 Diagnosticar
+              </Link>
+            )}
+            {needsDiagnostic && precioFijo && (
+              <Link
+                href={`/tecnico/${token}/diagnostico/${s.id}`}
+                className="text-[11px] text-gray-500 underline hover:text-gray-700"
+                title="Solo si el servicio no se pudo hacer (equipo no reparable o el cliente no quiso)"
+              >
+                Reportar novedad
               </Link>
             )}
             {canComplete && (

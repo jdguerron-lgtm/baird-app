@@ -27,8 +27,15 @@ interface Solicitud {
   descripcion_falla: string | null
   complejidad_falla: string | null
   /** Capa paralela de pago del cliente (solo particular) — pago-cliente.ts */
+  tipo_solicitud?: string | null
+  tecnico_asignado_id?: string | null
+  recargo_weekend_aplicado?: number | null
+  /** Versión reducida (sin token): total, aprobado_at, repuestos 0/1. */
+  cotizacion?: { total?: number; aprobado_at?: string | null; repuestos?: number } | null
   anticipo_pagado_at: string | null
+  abono_pagado_at?: string | null
   saldo_pagado_at: string | null
+  monto_pagado_online?: number | null
 }
 
 interface SupervisorInfo {

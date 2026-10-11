@@ -714,6 +714,114 @@ const TEMPLATES = [
     ],
   },
 
+  // 11c-quater. Confirmación del ABONO de repuestos al CLIENTE (2026-10-11).
+  // Llamado por: pagos.service → enviarAbonoConfirmadoCliente() cuando Wompi
+  // aprueba la transacción `abono-…` (una sola vez — guard abono_pagado_at).
+  // Antes el cliente no recibía NADA tras pagar el abono. Fallback: texto libre.
+  {
+    name: 'abono_confirmado_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Abono recibido',
+      },
+      {
+        type: 'BODY',
+        text:
+          '¡Listo {{1}}! Recibimos tu abono de {{2}} COP para los repuestos de tu {{3}}. ✅\n\n' +
+          'Tu técnico ya fue notificado para comprarlos y coordinar la instalación. El saldo restante de {{4}} COP lo pagas al finalizar el servicio.\n\n' +
+          'Recuerda: nunca pagues en efectivo directamente al técnico.',
+        example: {
+          body_text: [['Juan', '89.375', 'Lavadora Whirlpool', '89.375']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver mi servicio',
+            url: `${APP_URL}/servicio/{{1}}`,
+            example: [`${APP_URL}/servicio/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 11c-quinquies. Cobro del SALDO FINAL al completar el servicio (2026-10-11).
+  // Llamado por: confirmarServicioCliente → enviarPagoSaldoCliente(…, { momento: 'cierre' })
+  // cuando el cliente confirma el servicio y aún queda saldo. Sirve también
+  // para Mantenimiento / Cambio de filtro (sin cotización), donde
+  // `pago_saldo_cliente_v1` ("aprobaste la reparación") no aplica.
+  // Fallback: pago_saldo_cliente_v1 (con cotización) o texto libre.
+  {
+    name: 'saldo_final_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu servicio quedó terminado',
+      },
+      {
+        type: 'BODY',
+        text:
+          '¡Gracias {{1}}! Tu servicio de {{2}} quedó terminado. El valor total es {{3}} COP y ya abonaste {{4}} COP.\n\n' +
+          '💳 Puedes pagar el saldo de {{5}} COP en línea de forma segura con el botón de abajo.\n\n' +
+          'También puedes pagarlo con el QR de Baird. Recuerda: nunca pagues en efectivo directamente al técnico.',
+        example: {
+          body_text: [['Juan', 'Lavadora LG', '126.000', '63.000', '63.000']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Pagar saldo',
+            url: `${APP_URL}/pago/saldo/{{1}}`,
+            example: [`${APP_URL}/pago/saldo/abc-123`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 11c-sexies. Aviso al TÉCNICO de pago del cliente: abono o saldo (2026-10-11).
+  // Llamado por: enviarAbonoConfirmadoTecnico / enviarSaldoConfirmadoTecnico
+  // (pagos.service). Antes eran SOLO texto libre → fallaban si el técnico no
+  // había escrito a la línea en 24h. Fallback: el texto libre de siempre.
+  {
+    name: 'pago_recibido_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Pago del cliente recibido',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, el cliente {{2}} ya pagó en línea el {{3}} ({{4}} COP) de su servicio de {{5}}. 💰\n\n' +
+          'Si era el abono de repuestos, ya puedes comprarlos en la tienda con tu código de descuento. Si era el saldo final, el servicio quedó totalmente pagado.\n\n' +
+          'Recuerda: no cobres nada en sitio ni recibas efectivo del cliente.',
+        example: {
+          body_text: [['Carlos', 'Juan Guerrón', 'abono de repuestos', '89.375', 'Lavadora Whirlpool']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
+
   // 11d. Confirmación del anticipo al CLIENTE (2026-08-18).
   // Llamado por: pagos.service → enviarAnticipoConfirmadoCliente() cuando
   // Wompi aprueba la transacción (webhook o redirect, una sola vez).

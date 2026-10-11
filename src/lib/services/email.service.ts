@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { estadoPagoCliente, PAGO_CLIENTE_LABELS } from '@/lib/constants/pago-cliente'
+import { etapaPagoCliente, ETAPA_PAGO_LABELS } from '@/lib/constants/pago-cliente'
 import { precioClienteServicio } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
 
@@ -97,7 +97,7 @@ export async function enviarCorreoFacturacionServicio(solicitudId: string): Prom
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
     .select(
-      'id, cliente_nombre, cliente_telefono, cliente_cedula, direccion, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, es_garantia, numero_serie_factura, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, estado, horario_confirmado',
+      'id, cliente_nombre, cliente_telefono, cliente_cedula, direccion, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, es_garantia, numero_serie_factura, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, estado, horario_confirmado',
     )
     .eq('id', solicitudId)
     .single()
@@ -124,11 +124,13 @@ export async function enviarCorreoFacturacionServicio(solicitudId: string): Prom
   const pagadoOnline = aprobados.reduce((acc, p) => acc + (p.monto ?? 0), 0)
   const saldo = Math.max(0, totalCliente - pagadoOnline)
 
-  const estadoPago = estadoPagoCliente(sol)
+  // Etapa de pago (2026-10-11): la misma etiqueta que ve el admin, con el
+  // monto pagado sumado aquí desde el ledger (fuente de verdad).
+  const etapa = etapaPagoCliente({ ...sol, tecnico_asignado_id: 'asignado', monto_pagado_online: pagadoOnline })
   const estadoPagoTexto = sol.es_garantia
     ? 'Garantía — factura a la marca (el cliente no paga)'
-    : estadoPago
-      ? PAGO_CLIENTE_LABELS[estadoPago]
+    : etapa
+      ? `${ETAPA_PAGO_LABELS[etapa.etapa]}${etapa.porCobrar > 0 ? ` · $${formatCOP(etapa.porCobrar)}` : ''}`
       : 'Sin pago online registrado'
 
   const filasPagos = (pagos ?? [])

@@ -7,6 +7,7 @@ import {
   notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
 import type { CotizacionReparacion } from '@/types/solicitud'
+import { esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 
 export const maxDuration = 30
 
@@ -57,12 +58,22 @@ export async function POST(req: NextRequest) {
     // 1. Leer solicitud + cotización
     const { data: sol, error: readErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, es_garantia, cotizacion')
+      .select('id, estado, es_garantia, tipo_solicitud, cotizacion')
       .eq('id', id)
       .single()
     if (readErr || !sol) {
       return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })
     }
+    // TARIFA FIJA (2026-10-11): Mantenimiento / Cambio de filtro tienen el
+    // precio prometido al cliente y al técnico desde la solicitud — no se
+    // ajusta el valor (no hay cotización abierta).
+    if (esServicioPrecioFijo(sol)) {
+      return NextResponse.json(
+        { error: `Este servicio (${sol.tipo_solicitud}) tiene tarifa fija de catálogo: su valor no se ajusta.` },
+        { status: 400 },
+      )
+    }
+
     if (sol.es_garantia) {
       return NextResponse.json(
         { error: 'El ajuste de valor solo aplica para servicios particulares (en garantía paga la marca).' },

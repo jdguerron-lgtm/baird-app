@@ -67,7 +67,9 @@ export default async function PagoAnticipoPage({ params, searchParams }: Props) 
   }
 
   // ── Ya pagado (por webhook o por un intento previo) ──
-  if (sol.anticipo_pagado_at) {
+  // (2026-10-11) También si ya pagó el SALDO completo (p.ej. un precio fijo
+  // pagado entero desde /pago/saldo): no se cobra el anticipo encima.
+  if (sol.anticipo_pagado_at || sol.saldo_pagado_at) {
     return <ResultadoPago tipo="aprobado" solicitudToken={token} yaRegistrado />
   }
 

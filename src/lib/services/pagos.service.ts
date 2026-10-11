@@ -8,13 +8,17 @@ import {
   type TransaccionWompi,
 } from '@/lib/wompi'
 import { montoAnticipo, saldoPendiente, montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
+import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { precioClienteServicio } from '@/types/solicitud'
+import { formatCOP } from '@/lib/utils/format'
 import {
   enviarAnticipoConfirmadoCliente,
   enviarAnticipoConfirmadoTecnico,
   enviarSaldoConfirmadoCliente,
   enviarSaldoConfirmadoTecnico,
   enviarAbonoConfirmadoTecnico,
+  enviarAbonoConfirmadoCliente,
+  enviarMensajeTexto,
 } from '@/lib/services/whatsapp.service'
 
 /**
@@ -103,7 +107,10 @@ export function calcularMontoAnticipo(sol: {
  */
 export async function calcularMontoSaldo(sol: SolicitudPago): Promise<number> {
   if (sol.es_garantia) return 0
-  const total = (sol.cotizacion as { total?: number } | null)?.total ?? 0
+  // Total de la cotización; en Mantenimiento / Cambio de filtro (sin
+  // cotización) el precio de catálogo + recargo (2026-10-11 — antes el 50%
+  // restante de un precio fijo nunca tenía link de pago).
+  const total = totalClienteParaCobro(sol)
   if (!Number.isFinite(total) || total <= 0) return 0
 
   const { data: acreditados } = await supabase
@@ -164,17 +171,18 @@ export async function cargarSolicitudPagoPorClienteToken(
   return (data as SolicitudPago | null) ?? null
 }
 
+export type OrigenRegistroPago = 'webhook' | 'redirect' | 'conciliacion' | 'admin'
+
 /**
- * Registra una transacción de Wompi y, si fue aprobada y corresponde al
- * anticipo, confirma la reserva (marca `anticipo_pagado_at` + avisa por
- * WhatsApp a cliente y técnico).
+ * Registra una transacción de Wompi y, si fue aprobada, marca el momento de
+ * pago (anticipo / abono / saldo), actualiza el resumen de la solicitud y
+ * avisa por WhatsApp a cliente, técnico y equipo Baird.
  *
  * Idempotente: llamarla N veces con la misma transacción registra una vez y
  * notifica una vez.
  *
  * @param origen de dónde vino la confirmación — queda en el payload de auditoría.
  */
-export type OrigenRegistroPago = 'webhook' | 'redirect' | 'conciliacion'
 
 export async function registrarPagoWompi(
   tx: TransaccionWompi,
@@ -228,6 +236,12 @@ export async function registrarPagoWompi(
     return { ok: true, confirmado: false, solicitudId }
   }
 
+  // 1b. Resumen en la solicitud (monto_pagado_online / ultimo_pago_at) ANTES
+  //     de cualquier WhatsApp: el admin y los portales ven el pago al
+  //     instante aunque Meta tarde o falle (2026-10-11). Recalcula desde
+  //     `pagos` — idempotente, nunca suma a ciegas.
+  await actualizarResumenPago(solicitudId)
+
   // 2. Defensa en profundidad: el monto pagado debe cubrir lo esperado.
   //    La firma de integridad ya impide alterar el monto en el checkout, pero
   //    si por cualquier vía entra un pago corto NO confirmamos nada —
@@ -254,98 +268,141 @@ export async function registrarPagoWompi(
     return { ok: true, confirmado: false, solicitudId, error: 'Monto insuficiente' }
   }
 
-  if (tipo === 'abono') {
-    // Abono del 50% para repuestos (2026-08-25). No marca ninguna columna de
-    // la solicitud: el saldo restante se recalcula solo (calcularMontoSaldo
-    // descuenta abonos APPROVED). Idempotencia: el índice único sobre
-    // transaccion_id ya cortó los reintentos arriba (duplicado → return).
-    await registrarEventoPago(sol, {
-      motivo: `Abono para repuestos pagado por $${montoCOP} COP (${tx.payment_method_type ?? 'Wompi'}) — el técnico puede comprar los repuestos`,
-      payload: { transaccion_id: tx.id, monto: montoCOP, tipo, origen, metodo: tx.payment_method_type ?? null },
-    })
-
-    try {
-      const tec = await enviarAbonoConfirmadoTecnico(solicitudId, montoCOP)
-      if (!tec.ok) console.error('[pagos] enviarAbonoConfirmadoTecnico falló:', tec.error)
-    } catch (err) {
-      console.error('[pagos] enviarAbonoConfirmadoTecnico error:', err)
-    }
-
-    return { ok: true, confirmado: true, solicitudId }
-  }
-
-  if (tipo === 'saldo') {
-    // Marcar el saldo — guard IS NULL: una sola confirmación aunque webhook
-    // y redirect lleguen a la vez (espejo del anticipo).
-    const { data: marcadaSaldo } = await supabase
-      .from('solicitudes_servicio')
-      .update({ saldo_pagado_at: tx.finalized_at ?? new Date().toISOString() })
-      .eq('id', solicitudId)
-      .is('saldo_pagado_at', null)
-      .select('id')
-      .maybeSingle()
-
-    if (!marcadaSaldo) {
-      return { ok: true, duplicado: true, confirmado: false, solicitudId }
-    }
-
-    await registrarEventoPago(sol, {
-      motivo: `Saldo pagado por $${montoCOP} COP (${tx.payment_method_type ?? 'Wompi'}) — servicio totalmente pagado en línea`,
-      payload: { transaccion_id: tx.id, monto: montoCOP, tipo, origen, metodo: tx.payment_method_type ?? null },
-    })
-
-    try {
-      const cli = await enviarSaldoConfirmadoCliente(solicitudId, montoCOP)
-      if (!cli.ok) console.error('[pagos] enviarSaldoConfirmadoCliente falló:', cli.error)
-    } catch (err) {
-      console.error('[pagos] enviarSaldoConfirmadoCliente error:', err)
-    }
-    try {
-      const tec = await enviarSaldoConfirmadoTecnico(solicitudId, montoCOP)
-      if (!tec.ok) console.error('[pagos] enviarSaldoConfirmadoTecnico falló:', tec.error)
-    } catch (err) {
-      console.error('[pagos] enviarSaldoConfirmadoTecnico error:', err)
-    }
-
-    return { ok: true, confirmado: true, solicitudId }
-  }
-
-  // 3. Marcar el anticipo — guard IS NULL: si otro camino (webhook vs
-  //    redirect) ya lo marcó, este UPDATE no toca filas y NO re-notificamos.
+  // 3. Marcar el momento de pago — guard IS NULL en la columna de su tipo:
+  //    si otro camino (webhook / redirect / conciliación) ya lo marcó, este
+  //    UPDATE no toca filas y NO re-notificamos. Desde 2026-10-11 el ABONO
+  //    también tiene guard (`abono_pagado_at`) — antes cada transacción de
+  //    abono re-avisaba al técnico.
+  const columna = tipo === 'anticipo' ? 'anticipo_pagado_at' : tipo === 'abono' ? 'abono_pagado_at' : 'saldo_pagado_at'
   const { data: marcada } = await supabase
     .from('solicitudes_servicio')
-    .update({ anticipo_pagado_at: tx.finalized_at ?? new Date().toISOString() })
+    .update({ [columna]: tx.finalized_at ?? new Date().toISOString() })
     .eq('id', solicitudId)
-    .is('anticipo_pagado_at', null)
+    .is(columna, null)
     .select('id')
     .maybeSingle()
 
+  const metodo = tx.payment_method_type ?? 'Wompi'
+  const payloadBase = { transaccion_id: tx.id, monto: montoCOP, tipo, origen, metodo: tx.payment_method_type ?? null }
+
   if (!marcada) {
+    // Transacción NUEVA (el insert pasó) pero el momento ya estaba pagado:
+    // el cliente pagó DOS VECES el mismo cobro. Antes quedaba solo en `pagos`
+    // sin rastro en el historial — ahora se avisa para gestionar la devolución.
+    await registrarEventoPago(sol, {
+      motivo: `⚠️ Se recibió un SEGUNDO pago de ${tipo} por $${formatCOP(montoCOP)} COP (${metodo}) — el ${tipo} ya estaba pagado. Revisar devolución al cliente`,
+      payload: { ...payloadBase, requiere_intervencion_admin: true, pago_duplicado: true },
+    })
+    await alertarPagoEquipoBaird(sol,
+      `⚠️ Pago DUPLICADO de ${tipo}: ${sol.cliente_nombre} pagó otra vez $${formatCOP(montoCOP)} (${metodo}). Revisar devolución — servicio ${solicitudId.slice(0, 8)}`)
     return { ok: true, duplicado: true, confirmado: false, solicitudId }
   }
 
-  await registrarEventoPago(sol, {
-    motivo: `Anticipo pagado por $${montoCOP} COP (${tx.payment_method_type ?? 'Wompi'}) — reserva confirmada`,
-    payload: { transaccion_id: tx.id, monto: montoCOP, tipo, origen, metodo: tx.payment_method_type ?? null },
-  })
+  const MOTIVOS: Record<TipoPago, string> = {
+    anticipo: `Anticipo pagado por $${formatCOP(montoCOP)} COP (${metodo}) — reserva confirmada`,
+    abono: `Abono para repuestos pagado por $${formatCOP(montoCOP)} COP (${metodo}) — el técnico puede comprar los repuestos`,
+    saldo: `Saldo pagado por $${formatCOP(montoCOP)} COP (${metodo}) — servicio totalmente pagado en línea`,
+  }
+  await registrarEventoPago(sol, { motivo: MOTIVOS[tipo], payload: payloadBase })
 
-  // 4. Confirmar por WhatsApp a cliente y técnico. Best-effort: un fallo de
-  //    Meta no revierte el pago ya registrado.
-  try {
-    const cli = await enviarAnticipoConfirmadoCliente(solicitudId, montoCOP)
-    if (!cli.ok) console.error('[pagos] enviarAnticipoConfirmadoCliente falló:', cli.error)
-  } catch (err) {
-    console.error('[pagos] enviarAnticipoConfirmadoCliente error:', err)
+  // 4. Avisos por WhatsApp — cliente, técnico y equipo Baird. Best-effort: un
+  //    fallo de Meta no revierte el pago, pero queda en el historial como
+  //    evento con requiere_intervencion_admin para avisar a mano.
+  const fallas: string[] = []
+  const avisar = async (destino: string, envio: () => Promise<{ ok: boolean; error?: string }>) => {
+    try {
+      const r = await envio()
+      if (!r.ok) {
+        console.error(`[pagos] aviso de ${tipo} a ${destino} falló:`, r.error)
+        fallas.push(`${destino}: ${r.error ?? 'sin detalle'}`)
+      }
+    } catch (err) {
+      console.error(`[pagos] aviso de ${tipo} a ${destino} error:`, err)
+      fallas.push(`${destino}: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
-  try {
-    const tec = await enviarAnticipoConfirmadoTecnico(solicitudId)
-    if (!tec.ok) console.error('[pagos] enviarAnticipoConfirmadoTecnico falló:', tec.error)
-  } catch (err) {
-    console.error('[pagos] enviarAnticipoConfirmadoTecnico error:', err)
+  if (tipo === 'anticipo') {
+    await avisar('cliente', () => enviarAnticipoConfirmadoCliente(solicitudId, montoCOP))
+    await avisar('técnico', () => enviarAnticipoConfirmadoTecnico(solicitudId))
+  } else if (tipo === 'abono') {
+    const saldoRestante = await calcularMontoSaldo(sol)
+    await avisar('cliente', () => enviarAbonoConfirmadoCliente(solicitudId, montoCOP, saldoRestante))
+    await avisar('técnico', () => enviarAbonoConfirmadoTecnico(solicitudId, montoCOP))
+  } else {
+    await avisar('cliente', () => enviarSaldoConfirmadoCliente(solicitudId, montoCOP))
+    await avisar('técnico', () => enviarSaldoConfirmadoTecnico(solicitudId, montoCOP))
+  }
+
+  const ETIQUETA: Record<TipoPago, string> = { anticipo: 'ANTICIPO', abono: 'ABONO repuestos', saldo: 'SALDO final' }
+  await alertarPagoEquipoBaird(sol,
+    `💰 Pago recibido — ${ETIQUETA[tipo]} $${formatCOP(montoCOP)} (${metodo})\n` +
+    `Cliente: ${sol.cliente_nombre} · ${sol.tipo_solicitud} ${sol.tipo_equipo}\n` +
+    `Servicio ${solicitudId.slice(0, 8)} · origen ${origen}` +
+    (fallas.length ? `\n⚠️ No se pudo avisar a: ${fallas.map(f => f.split(':')[0]).join(', ')}` : ''))
+
+  if (fallas.length > 0) {
+    // Excluye los envíos filtrados por la whitelist de pruebas (no son fallas reales).
+    const reales = fallas.filter(f => !f.includes('BAIRD_TEST_PHONE_WHITELIST'))
+    if (reales.length > 0) {
+      await registrarEventoPago(sol, {
+        motivo: `⚠️ El ${tipo} quedó registrado pero NO se pudo avisar por WhatsApp a: ${reales.map(f => f.split(':')[0]).join(', ')} — avisar manualmente`,
+        payload: { ...payloadBase, requiere_intervencion_admin: true, fallas_aviso: reales },
+      })
+    }
   }
 
   return { ok: true, confirmado: true, solicitudId }
+}
+
+/**
+ * Recalcula el resumen de recaudo de la solicitud desde el ledger `pagos`
+ * (solo APPROVED): `monto_pagado_online` = suma, `ultimo_pago_at` = más
+ * reciente. Idempotente; nunca lanza (el pago ya quedó en `pagos`).
+ * Columnas de la migración 20261011_resumen_pago_solicitud.
+ */
+export async function actualizarResumenPago(solicitudId: string): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('pagos')
+      .select('monto, pagado_at')
+      .eq('solicitud_id', solicitudId)
+      .eq('estado', 'APPROVED')
+    if (error) {
+      console.error('[pagos] resumen: lectura de pagos falló:', error.message)
+      return
+    }
+    const filas = data ?? []
+    const total = filas.reduce((acc, p) => acc + (p.monto ?? 0), 0)
+    const ultimo = filas
+      .map(p => p.pagado_at as string | null)
+      .filter((f): f is string => Boolean(f))
+      .sort()
+      .pop() ?? null
+    const { error: updErr } = await supabase
+      .from('solicitudes_servicio')
+      .update({ monto_pagado_online: total, ultimo_pago_at: ultimo })
+      .eq('id', solicitudId)
+    if (updErr) console.error('[pagos] resumen: update falló:', updErr.message)
+  } catch (err) {
+    console.error('[pagos] resumen threw:', err)
+  }
+}
+
+/**
+ * Aviso al equipo de Baird de cada pago recibido (WHATSAPP_ALERT_PHONE,
+ * default 573153019192 — el mismo número que recibe las alertas de mensajes
+ * entrantes). Texto libre: solo llega si ese número tiene la ventana de 24h
+ * abierta con la línea. Best-effort, nunca lanza.
+ */
+async function alertarPagoEquipoBaird(_sol: SolicitudPago, texto: string): Promise<void> {
+  const destino = process.env.WHATSAPP_ALERT_PHONE ?? '573153019192'
+  if (!destino) return
+  try {
+    await enviarMensajeTexto(destino, texto)
+  } catch (err) {
+    console.warn('[pagos] alerta de pago al equipo no se entregó (¿ventana 24h cerrada?):', err instanceof Error ? err.message : err)
+  }
 }
 
 /** Evento append-only en el historial consolidado. Nunca bloquea. */
@@ -419,10 +476,63 @@ async function tiposPendientes(sol: SolicitudConciliable): Promise<TipoPago[]> {
   if (cot?.aprobado_at && cotizacionTieneRepuestos(cot) && !(await abonoRepuestosPagado(sol.id))) {
     tipos.push('abono')
   }
-  if (sol.estado === 'completada' && !sol.saldo_pagado_at && (cot?.total ?? 0) > 0) {
+  // Saldo: el link sale al aprobar una cotización SIN repuestos o al completar
+  // (incluye precio fijo — totalClienteParaCobro usa el catálogo ahí).
+  const saldoEnCurso = sol.estado === 'completada' || (Boolean(cot?.aprobado_at) && !cotizacionTieneRepuestos(cot))
+  if (saldoEnCurso && !sol.saldo_pagado_at && totalClienteParaCobro(sol) > 0) {
     tipos.push('saldo')
   }
   return tipos
+}
+
+/** Consulta en Wompi las referencias dadas de UNA solicitud y registra las APPROVED. */
+async function conciliarReferencias(
+  solicitudId: string,
+  tipos: TipoPago[],
+  resultado: ResultadoConciliacion,
+  origen: OrigenRegistroPago,
+): Promise<void> {
+  for (const tipo of tipos) {
+    resultado.consultas++
+    const txs = await listarTransaccionesPorReferencia(referenciaPago(tipo, solicitudId))
+    for (const tx of txs) {
+      if (tx.status !== 'APPROVED') continue
+      try {
+        const r = await registrarPagoWompi(tx, origen)
+        if (!r.ok) {
+          resultado.errores.push(`${tx.id}: ${r.error ?? 'registro falló'}`)
+        } else if (r.duplicado) {
+          resultado.duplicados++
+        } else {
+          resultado.registrados++
+          console.log(`[pagos] conciliación (${origen}) registró ${tipo} ${tx.id} de la solicitud ${solicitudId}`)
+        }
+      } catch (err) {
+        resultado.errores.push(`${tx.id}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+}
+
+/**
+ * Verificación bajo demanda de UNA solicitud (botón "Verificar pagos en
+ * Wompi" del admin). Consulta las TRES referencias (anticipo, abono, saldo)
+ * sin importar el estado — así también detecta pagos duplicados. Sin
+ * WOMPI_PRIVATE_KEY devuelve `habilitada: false`.
+ */
+export async function conciliarSolicitudWompi(solicitudId: string): Promise<ResultadoConciliacion> {
+  const resultado: ResultadoConciliacion = {
+    habilitada: wompiConciliacionHabilitada(),
+    revisadas: 0,
+    consultas: 0,
+    registrados: 0,
+    duplicados: 0,
+    errores: [],
+  }
+  if (!resultado.habilitada) return resultado
+  resultado.revisadas = 1
+  await conciliarReferencias(solicitudId, ['anticipo', 'abono', 'saldo'], resultado, 'admin')
+  return resultado
 }
 
 /**
@@ -476,27 +586,7 @@ export async function conciliarPagosWompi(opts: { diasAtras?: number } = {}): Pr
     }
     if (tipos.length === 0) continue
     resultado.revisadas++
-
-    for (const tipo of tipos) {
-      resultado.consultas++
-      const txs = await listarTransaccionesPorReferencia(referenciaPago(tipo, sol.id))
-      for (const tx of txs) {
-        if (tx.status !== 'APPROVED') continue
-        try {
-          const r = await registrarPagoWompi(tx, 'conciliacion')
-          if (!r.ok) {
-            resultado.errores.push(`${tx.id}: ${r.error ?? 'registro falló'}`)
-          } else if (r.duplicado) {
-            resultado.duplicados++
-          } else {
-            resultado.registrados++
-            console.log(`[pagos] conciliación registró ${tipo} ${tx.id} de la solicitud ${sol.id}`)
-          }
-        } catch (err) {
-          resultado.errores.push(`${tx.id}: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-    }
+    await conciliarReferencias(sol.id, tipos, resultado, 'conciliacion')
   }
 
   return resultado

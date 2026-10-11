@@ -8,7 +8,8 @@ import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import SelectorFoto from '@/components/ui/SelectorFoto'
 import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
-import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
+import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
+import type { SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
 
 interface Solicitud {
   id: string
@@ -47,7 +48,10 @@ interface Solicitud {
   motivo_cancelacion: string | null
   /** Capa paralela de pago del cliente (solo particular) — pago-cliente.ts */
   anticipo_pagado_at: string | null
+  abono_pagado_at?: string | null
   saldo_pagado_at: string | null
+  monto_pagado_online?: number | null
+  ultimo_pago_at?: string | null
 }
 
 interface RepuestoSolicitado {
@@ -290,18 +294,10 @@ export default function SupervisorDetalle() {
             {/* Recaudo online (Wompi) — solo particular. El pago en sitio con
                 QR no se registra automáticamente. */}
             {!sol.es_garantia && (
-              <>
-                <Campo label="Anticipo (50%)">
-                  {sol.anticipo_pagado_at
-                    ? `✅ Pagado el ${fechaHora(sol.anticipo_pagado_at)}`
-                    : 'Pendiente'}
-                </Campo>
-                <Campo label="Saldo">
-                  {sol.saldo_pagado_at
-                    ? `✅ Pagado el ${fechaHora(sol.saldo_pagado_at)}`
-                    : 'Pendiente'}
-                </Campo>
-              </>
+              <div className="col-span-2">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Cobros al cliente</p>
+                <ProgresoPagoCliente solicitud={sol as unknown as SolicitudParaEtapaPago} />
+              </div>
             )}
           </div>
         </Seccion>

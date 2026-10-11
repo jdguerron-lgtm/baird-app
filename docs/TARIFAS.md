@@ -286,6 +286,16 @@ Algunos servicios particulares tienen **precio fijo de catálogo definido al cre
 | **Cambio de filtro** | **$180.000 todo incluido** | **$107.087** | `TARIFA_CAMBIO_FILTRO` |
 | (cualquiera, garantía) | $0 (la marca paga) | $0 | — |
 
+> 🔒 **Tarifa fija, sin cotización (regla 2026-10-11).** En Mantenimiento y
+> Cambio de filtro el precio al cliente y el neto del técnico quedan
+> prometidos desde la solicitud: el técnico NO diagnostica ni cotiza, va
+> directo a "Completar servicio" (`esServicioPrecioFijo()` en
+> `src/lib/constants/pago-cliente.ts`; `/api/diagnostico` rechaza
+> `reparar`/`esperar_repuesto` y `/api/admin/actualizar-valor` rechaza el
+> ajuste). Cobro: anticipo 50% al aceptar + saldo (catálogo + recargo −
+> anticipo) al completar. Si el equipo necesita otra reparación, se abre un
+> servicio nuevo.
+
 Netos de mantenimiento por equipo (catálogo ÷ 1.3447 × 0.8, desde 2026-07-09): Estufa $62.467 · Horno $68.714 · Lavadora $74.961 · Secadora / Aire Acondicionado $81.208 · Nevera / Lavavajillas $87.454 · Nevecón $99.948 · Lavadora Secadora $112.441.
 
 Detalle en [public/guia-pagos.html](../public/guia-pagos.html) (guía del técnico, servida en `/guia-pagos.html`). El cliente nunca ve este desglose.

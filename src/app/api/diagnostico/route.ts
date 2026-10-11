@@ -11,6 +11,7 @@ import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico, TipoEquipo, TipoSolicitud } from '@/types/solicitud'
 import { calcularPagoTecnico } from '@/types/solicitud'
 import { calcularTarifaParticular, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
+import { esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 
 /**
  * POST /api/diagnostico
@@ -133,6 +134,21 @@ export async function POST(req: NextRequest) {
       .eq('tecnico_asignado_id', tecnico.id)
       .single()
     if (!sol) return NextResponse.json({ error: 'Servicio no encontrado' }, { status: 404 })
+
+    // TARIFA FIJA (2026-10-11): Mantenimiento / Cambio de filtro particulares
+    // tienen precio prometido al cliente y al técnico desde la solicitud — no
+    // se cotiza. Se bloquean los caminos que fijan precio (reparar /
+    // esperar_repuesto); quedan abiertos no_reparable y negativa_cliente como
+    // salida para reportar que el servicio no se pudo hacer.
+    if (esServicioPrecioFijo(sol) && (siguientePaso === 'reparar' || siguientePaso === 'esperar_repuesto')) {
+      return NextResponse.json(
+        {
+          error: `Este servicio (${sol.tipo_solicitud}) tiene tarifa fija: no se cotiza. Usa "Completar servicio" en tu portal. ` +
+            'Si el equipo necesita una reparación distinta, reporta la novedad para que Baird abra un servicio nuevo.',
+        },
+        { status: 400 },
+      )
+    }
 
     // Tracking TA: snapshot del momento del diagnóstico + cumplimiento del SLA
     // 24h desde horario_confirmado_at. Persistimos en columnas dedicadas (no

@@ -328,7 +328,10 @@ export async function confirmarServicioCliente(
       if (solPago && !solPago.es_garantia && !solPago.saldo_pagado_at) {
         const saldo = await calcularMontoSaldo(solPago)
         if (saldo > 0) {
-          const envioSaldo = await enviarPagoSaldoCliente(evidencia.solicitud_id, saldo)
+          // momento 'cierre' → plantilla saldo_final_cliente_v1 (sirve también
+          // para Mantenimiento / Cambio de filtro, que desde 2026-10-11 tienen
+          // saldo calculable vía totalClienteParaCobro).
+          const envioSaldo = await enviarPagoSaldoCliente(evidencia.solicitud_id, saldo, { momento: 'cierre' })
           if (!envioSaldo.ok) console.error('[confirmar-servicio] enviarPagoSaldoCliente falló:', envioSaldo.error)
         }
       }

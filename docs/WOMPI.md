@@ -61,6 +61,41 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 > en Wompi sin coordinar la tienda** — rompería la confirmación de pedidos
 > Shopify. El hueco lo cierra la **conciliación por cron** (abajo).
 
+### Momentos de cobro, avisos y etapa de pago (2026-10-11)
+
+| Momento | Link al cliente (cuándo) | Al pagar: cliente | Al pagar: técnico |
+|---|---|---|---|
+| **Anticipo** 50% | `pago_anticipo_cliente_v2` al aceptar el técnico; también el CTA de la pantalla de éxito de `/solicitar` (→ `/pago/anticipo/{token}`) | `anticipo_confirmado_cliente_v1` | `anticipo_confirmado_tecnico_v1` |
+| **Abono** repuestos (50% del saldo) | `abono_repuestos_cliente_v1` al aprobar cotización CON repuestos | `abono_confirmado_cliente_v1` (nueva) | `pago_recibido_tecnico_v1` (nueva) |
+| **Saldo** | `pago_saldo_cliente_v1` al aprobar cotización SIN repuestos; `saldo_final_cliente_v1` (nueva) al completar | `saldo_confirmado_cliente_v1` | `pago_recibido_tecnico_v1` (nueva) |
+
+- Cada pago APPROVED además: evento 💰 `pago_registrado` en el historial,
+  resumen en la solicitud (`monto_pagado_online`, `ultimo_pago_at`,
+  `abono_pagado_at` — migración `20261011_resumen_pago_solicitud`) y alerta
+  de texto libre al equipo (`WHATSAPP_ALERT_PHONE`, solo con ventana 24h).
+- Si un aviso de WhatsApp falla → evento ⚠️ con `requiere_intervencion_admin`.
+  Si el cliente paga DOS veces el mismo momento → evento ⚠️ "segundo pago,
+  revisar devolución" + alerta.
+- Si el anticipo ya estaba pagado cuando el técnico acepta (pagó desde el CTA
+  de `/solicitar`), `procesarAceptacion` NO reenvía el link: confirma la
+  reserva al cliente y avisa al técnico.
+- **Precio fijo** (Mantenimiento / Cambio de filtro): el saldo es el
+  catálogo + recargo − anticipo (`totalClienteParaCobro`), cobrado al completar.
+- **Etiqueta de etapa** (`etapaPagoCliente` en `src/lib/constants/pago-cliente.ts`,
+  componente `BadgePagoCliente` / `ProgresoPagoCliente`): sin cobro →
+  anticipo pendiente → anticipo pagado → abono pendiente → abono pagado →
+  saldo pendiente → pagado total (+ "sin pago online" y "pago parcial ·
+  cerrado"). Admin y supervisor ven montos; el técnico solo la etapa.
+- **Tiempo real**: el listado admin se refresca cada 30 s y la ficha cada
+  10 s (sigue polleando tras completar mientras haya cobro pendiente). Botón
+  "🔄 Verificar pagos en Wompi" en la ficha → `POST /api/admin/pagos/verificar`
+  (con el N° de transacción funciona sin llave privada).
+- **Pagos por la tienda Shopify** (referencia `r…` de Conexa) NO se concilian
+  solos: el CTA viejo de `/solicitar` mandaba el anticipo a la tienda. El
+  2026-10-11 se registraron a mano 2 (Tatiana Moreno, Ana Prieto) con
+  `_origen: 'tienda_shopify_manual'`. Desde ese día el CTA usa el checkout de
+  la app.
+
 ### Conciliación por cron (tercer camino, 2026-10-11)
 
 ```

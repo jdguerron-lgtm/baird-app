@@ -7,6 +7,7 @@ import { codigoServicio } from '@/lib/utils/facturacion'
 import { urlImagenCarnet } from '@/lib/utils/carnet'
 import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
+import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import {
@@ -1052,7 +1053,29 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // Fallback mientras `pago_anticipo_cliente_v2` esté PENDING en Meta:
     // se reintenta con `pago_anticipo_cliente_v1` (URL fija a la tienda), que
     // solo es correcta en Diagnóstico/Reparación — ahí el anticipo ES $42.000.
-    if (sol.cliente_token) {
+    //
+    // ANTICIPO YA PAGADO (2026-10-11): el cliente pudo pagarlo ANTES de que un
+    // técnico aceptara (CTA de la pantalla de éxito de /solicitar, o por la
+    // tienda — caso real Tatiana Moreno / Ana Prieto). En ese caso NO se le
+    // vuelve a cobrar: se le confirma la reserva y se le avisa al técnico que
+    // la visita está pagada.
+    if (sol.anticipo_pagado_at) {
+      const montoPagado = Number(sol.monto_pagado_online ?? 0) > 0
+        ? Number(sol.monto_pagado_online)
+        : Math.round(precioCliente * 0.5)
+      try {
+        const cli = await enviarAnticipoConfirmadoCliente(sol.id, montoPagado)
+        if (!cli.ok) console.error('[procesarAceptacion] anticipo ya pagado — confirmación al cliente falló:', cli.error)
+      } catch (err) {
+        console.error('[procesarAceptacion] anticipo ya pagado — confirmación al cliente error:', err)
+      }
+      try {
+        const tec = await enviarAnticipoConfirmadoTecnico(sol.id)
+        if (!tec.ok) console.error('[procesarAceptacion] anticipo ya pagado — aviso al técnico falló:', tec.error)
+      } catch (err) {
+        console.error('[procesarAceptacion] anticipo ya pagado — aviso al técnico error:', err)
+      }
+    } else if (sol.cliente_token) {
       const paramsV2 = [
         {
           type: 'body',
@@ -2656,21 +2679,72 @@ export async function enviarAnticipoConfirmadoTecnico(
 export async function enviarPagoSaldoCliente(
   solicitudId: string,
   saldo: number,
+  opts: { momento?: 'aprobacion' | 'cierre' } = {},
 ): Promise<{ ok: boolean; error?: string }> {
   if (!Number.isFinite(saldo) || saldo <= 0) return { ok: false, error: 'Sin saldo pendiente' }
 
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, cliente_token, cotizacion')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, tipo_solicitud, cliente_token, cotizacion, recargo_weekend_aplicado, monto_pagado_online')
     .eq('id', solicitudId)
     .single()
 
   if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
   if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
 
-  const total = (sol.cotizacion as { total?: number } | null)?.total ?? saldo
+  const totalCobro = totalClienteParaCobro({ ...sol, es_garantia: false })
+  const total = totalCobro > 0 ? totalCobro : saldo
   const nombre = sol.cliente_nombre.split(' ')[0]
   const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const tieneCotizacion = Number((sol.cotizacion as { total?: number } | null)?.total ?? 0) > 0
+
+  // Saldo FINAL al completar (2026-10-11): plantilla propia "tu servicio quedó
+  // terminado" — sirve también para Mantenimiento / Cambio de filtro (sin
+  // cotización), donde `pago_saldo_cliente_v1` ("aprobaste la reparación")
+  // no aplica. Si sigue PENDING en Meta cae al flujo de abajo.
+  if (opts.momento === 'cierre') {
+    const abonado = Math.max(0, Number(sol.monto_pagado_online ?? 0))
+    try {
+      const r = await enviarPlantilla(sol.cliente_telefono, 'saldo_final_cliente_v1', 'es', [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombre },
+            { type: 'text', text: equipo },
+            { type: 'text', text: formatCOP(total) },
+            { type: 'text', text: formatCOP(abonado) },
+            { type: 'text', text: formatCOP(saldo) },
+          ],
+        },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      await registrarMensajeCliente(solicitudId, 'saldo_final_cliente_v1',
+        `Se envió al cliente el link de pago del saldo final ($${formatCOP(saldo)}) al completar el servicio`)
+      return { ok: true }
+    } catch (err) {
+      console.error('[saldo] saldo_final_cliente_v1 falló, fallback:', err)
+      if (!tieneCotizacion) {
+        // Precio fijo: `pago_saldo_cliente_v1` habla de "aprobaste la
+        // reparación" — mejor texto libre neutral con el link.
+        try {
+          const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://lineablanca.bairdservice.com'
+          await enviarMensajeTexto(
+            sol.cliente_telefono,
+            `✅ ¡Gracias ${nombre}! Tu servicio de ${equipo} quedó terminado. Valor total: $${formatCOP(total)} COP; ya abonaste $${formatCOP(abonado)} COP.\n\n` +
+            `💳 Puedes pagar el saldo de $${formatCOP(saldo)} COP en línea de forma segura:\n${APP_URL}/pago/saldo/${sol.cliente_token}\n\n` +
+            `También puedes pagarlo con el QR de Baird. Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`
+          )
+          await registrarMensajeCliente(solicitudId, 'saldo_final_cliente_v1 (texto libre)',
+            `Se envió al cliente el link de pago del saldo final ($${formatCOP(saldo)}) al completar el servicio`)
+          return { ok: true }
+        } catch (err2) {
+          return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+        }
+      }
+      // Con cotización: sigue al envío clásico de abajo.
+    }
+  }
 
   try {
     const r = await enviarPlantilla(sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
@@ -2797,9 +2871,95 @@ export async function enviarAbonoRepuestosCliente(
 }
 
 /**
+ * Confirma al CLIENTE que su ABONO de repuestos se recibió (2026-10-11 —
+ * antes el cliente no recibía nada tras pagar el abono). Plantilla
+ * `abono_confirmado_cliente_v1` (4 params + botón /servicio/{token}) con
+ * fallback a texto libre.
+ */
+export async function enviarAbonoConfirmadoCliente(
+  solicitudId: string,
+  montoPagado: number,
+  saldoRestante: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, cliente_token')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  const nombre = sol.cliente_nombre.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const motivo = `Se confirmó al cliente el pago del abono de repuestos ($${formatCOP(montoPagado)}); saldo restante $${formatCOP(saldoRestante)}`
+
+  try {
+    const componentes: Record<string, unknown>[] = [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: formatCOP(montoPagado) },
+          { type: 'text', text: equipo },
+          { type: 'text', text: formatCOP(saldoRestante) },
+        ],
+      },
+    ]
+    if (sol.cliente_token) {
+      componentes.push({
+        type: 'button', sub_type: 'url', index: '0',
+        parameters: [{ type: 'text', text: sol.cliente_token }],
+      })
+    }
+    const r = await enviarPlantilla(sol.cliente_telefono, 'abono_confirmado_cliente_v1', 'es', componentes)
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    await registrarMensajeCliente(solicitudId, 'abono_confirmado_cliente_v1', motivo)
+    return { ok: true }
+  } catch (err) {
+    console.error('[abono] abono_confirmado_cliente_v1 falló, fallback a texto libre:', err)
+    try {
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `✅ ¡Listo ${nombre}! Recibimos tu abono de $${formatCOP(montoPagado)} COP para los repuestos de tu ${equipo}.\n\n` +
+        `Tu técnico ya fue notificado para comprarlos y coordinar la instalación. El saldo restante de $${formatCOP(saldoRestante)} COP lo pagas al finalizar el servicio.\n\n` +
+        `Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`
+      )
+      await registrarMensajeCliente(solicitudId, 'abono_confirmado_cliente_v1 (texto libre)', motivo)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
+  }
+}
+
+/**
+ * Plantilla genérica `pago_recibido_tecnico_v1` (2026-10-11): avisa al
+ * técnico que el cliente pagó el abono o el saldo. Antes esos avisos eran
+ * SOLO texto libre, que Meta rechaza si el técnico no escribió a la línea en
+ * las últimas 24h. Lanza si la plantilla falla (el caller cae a texto libre).
+ */
+async function enviarPagoRecibidoTecnicoPlantilla(
+  whatsappTecnico: string,
+  params: { tecnico: string; cliente: string; concepto: string; monto: number; equipo: string },
+): Promise<{ filtered?: boolean }> {
+  return enviarPlantilla(whatsappTecnico, 'pago_recibido_tecnico_v1', 'es', [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: params.tecnico },
+        { type: 'text', text: params.cliente },
+        { type: 'text', text: params.concepto },
+        { type: 'text', text: formatCOP(params.monto) },
+        { type: 'text', text: params.equipo },
+      ],
+    },
+  ])
+}
+
+/**
  * Avisa al TÉCNICO que el cliente pagó el ABONO de repuestos (50% del saldo)
- * — puede proceder con la compra de los repuestos. Texto libre (misma
- * lógica que enviarSaldoConfirmadoTecnico: la ventana suele estar abierta).
+ * — puede proceder con la compra de los repuestos. Plantilla
+ * `pago_recibido_tecnico_v1` con fallback a texto libre.
  */
 export async function enviarAbonoConfirmadoTecnico(
   solicitudId: string,
@@ -2820,6 +2980,20 @@ export async function enviarAbonoConfirmadoTecnico(
     .single()
 
   if (!tecnico?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  try {
+    const r = await enviarPagoRecibidoTecnicoPlantilla(tecnico.whatsapp, {
+      tecnico: tecnico.nombre_completo.split(' ')[0],
+      cliente: sol.cliente_nombre,
+      concepto: 'abono de repuestos',
+      monto: montoPagado,
+      equipo: `${sol.tipo_equipo} ${sol.marca_equipo}`,
+    })
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (errPlantilla) {
+    console.error('[abono] pago_recibido_tecnico_v1 falló, fallback a texto libre:', errPlantilla)
+  }
 
   try {
     await enviarMensajeTexto(
@@ -2896,8 +3070,9 @@ export async function enviarSaldoConfirmadoCliente(
 
 /**
  * Avisa al TÉCNICO asignado que el cliente pagó el saldo en línea — no debe
- * cobrar nada en sitio. Texto libre (la ventana del técnico suele estar
- * abierta; si falla solo se loguea — el evento 💰 queda en el historial).
+ * cobrar nada en sitio. Plantilla `pago_recibido_tecnico_v1` con fallback a
+ * texto libre (si ambos fallan, pagos.service deja un evento ⚠️ en el
+ * historial para avisar a mano).
  */
 export async function enviarSaldoConfirmadoTecnico(
   solicitudId: string,
@@ -2918,6 +3093,20 @@ export async function enviarSaldoConfirmadoTecnico(
     .single()
 
   if (!tecnico?.whatsapp) return { ok: false, error: 'Técnico sin WhatsApp' }
+
+  try {
+    const r = await enviarPagoRecibidoTecnicoPlantilla(tecnico.whatsapp, {
+      tecnico: tecnico.nombre_completo.split(' ')[0],
+      cliente: sol.cliente_nombre,
+      concepto: 'saldo final',
+      monto: montoPagado,
+      equipo: `${sol.tipo_equipo} ${sol.marca_equipo}`,
+    })
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    return { ok: true }
+  } catch (errPlantilla) {
+    console.error('[saldo] pago_recibido_tecnico_v1 falló, fallback a texto libre:', errPlantilla)
+  }
 
   try {
     await enviarMensajeTexto(
