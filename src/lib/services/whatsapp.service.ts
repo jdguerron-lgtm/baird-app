@@ -4,6 +4,7 @@ import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import { codigoServicio } from '@/lib/utils/facturacion'
+import { urlImagenCarnet } from '@/lib/utils/carnet'
 import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
@@ -850,7 +851,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   // 3. ¡Ganó! Obtener datos completos del técnico (incluyendo portal_token)
   const { data: tecnico } = await supabase
     .from('tecnicos')
-    .select('id, nombre_completo, whatsapp, foto_perfil_url, foto_documento_url, tipo_documento, numero_documento, portal_token')
+    .select('id, nombre_completo, whatsapp, portal_token')
     .eq('id', notif.tecnico_id)
     .single()
 
@@ -945,23 +946,49 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   const tecnicoDigits = phoneToDigits(tecnico?.whatsapp ?? '')
   const horarioServicio = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
 
+  // Carnet digital (2026-10-10): PNG público con foto de perfil + documento
+  // ENMASCARADO. Va como HEADER IMAGE de las plantillas _v7/_v2 (funciona
+  // fuera de la ventana 24h) y como imagen free-form best-effort más abajo.
+  const carnetUrl = tecnico ? urlImagenCarnet(tecnico.id) : null
+  const componentesCarnet = (bodyParams: Record<string, unknown>[]): Record<string, unknown>[] => [
+    { type: 'header', parameters: [{ type: 'image', image: { link: carnetUrl } }] },
+    { type: 'body', parameters: bodyParams },
+    { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+  ]
+
   if (sol.es_garantia) {
-    // ── WARRANTY FLOW: template v5 with schedule + no-pay warning + T&C link ──
-    const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-          { type: 'text', text: equipoConGarantia(sol) },
-          { type: 'text', text: horarioServicio },
-          { type: 'text', text: `+${tecnicoDigits}` },
-        ],
-      },
-    ])
-    await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_cliente_v6')
-    await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_cliente_v6',
-      `Se confirmó al cliente su servicio: técnico asignado y visita ${horarioServicio}`)
+    // ── WARRANTY FLOW ──
+    // Intenta `tecnico_asignado_cliente_v7` (header = carnet + botón "Ver mi
+    // servicio"); si Meta aún no la aprobó (o falla), cae a la `_v6` solo texto.
+    const bodyGarantia: Record<string, unknown>[] = [
+      { type: 'text', text: sol.cliente_nombre },
+      { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+      { type: 'text', text: equipoConGarantia(sol) },
+      { type: 'text', text: horarioServicio },
+      { type: 'text', text: `+${tecnicoDigits}` },
+    ]
+    let enviadoV7 = false
+    if (carnetUrl && sol.cliente_token) {
+      try {
+        const r = await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v7', 'es', componentesCarnet(bodyGarantia))
+        if (r.sent) {
+          await registrarMensajeCliente(sol.id, 'tecnico_asignado_cliente_v7',
+            `Se confirmó al cliente su servicio: técnico asignado (carnet digital) y visita ${horarioServicio}`)
+        }
+        // Filtrado por whitelist también cuenta como "resuelto": no insistir con v6.
+        enviadoV7 = r.sent || r.filtered === true
+      } catch (err) {
+        console.error('[procesarAceptacion] tecnico_asignado_cliente_v7 falló, fallback v6:', err instanceof Error ? err.message : err)
+      }
+    }
+    if (!enviadoV7) {
+      const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
+        { type: 'body', parameters: bodyGarantia },
+      ])
+      await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_cliente_v6')
+      await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_cliente_v6',
+        `Se confirmó al cliente su servicio: técnico asignado y visita ${horarioServicio}`)
+    }
   } else {
     // ── NON-WARRANTY (PARTICULAR) FLOW: template with diagnostic fee info ──
     // Aquí mostramos al CLIENTE lo que él paga (precio de catálogo / total
@@ -976,23 +1003,38 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     const tarifaDiagnostico = formatCOP(precioCliente)
     const anticipo = formatCOP(Math.round(precioCliente * 0.5))
 
-    const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sol.cliente_nombre },
-          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
-          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
-          { type: 'text', text: horarioServicio },
-          { type: 'text', text: `+${tecnicoDigits}` },
-          { type: 'text', text: tarifaDiagnostico },
-          { type: 'text', text: anticipo },
-        ],
-      },
-    ])
-    await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_particular_v1')
-    await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_particular_v1',
-      `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
+    const bodyParticular: Record<string, unknown>[] = [
+      { type: 'text', text: sol.cliente_nombre },
+      { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+      { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+      { type: 'text', text: horarioServicio },
+      { type: 'text', text: `+${tecnicoDigits}` },
+      { type: 'text', text: tarifaDiagnostico },
+      { type: 'text', text: anticipo },
+    ]
+    // Intenta `tecnico_asignado_particular_v2` (header = carnet digital +
+    // botón "Ver mi servicio"); si falla cae a la `_v1` solo texto.
+    let enviadoV2 = false
+    if (carnetUrl && sol.cliente_token) {
+      try {
+        const r = await enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v2', 'es', componentesCarnet(bodyParticular))
+        if (r.sent) {
+          await registrarMensajeCliente(sol.id, 'tecnico_asignado_particular_v2',
+            `Se confirmó al cliente su servicio: técnico asignado (carnet digital), visita ${horarioServicio} y tarifa informada`)
+        }
+        enviadoV2 = r.sent || r.filtered === true
+      } catch (err) {
+        console.error('[procesarAceptacion] tecnico_asignado_particular_v2 falló, fallback v1:', err instanceof Error ? err.message : err)
+      }
+    }
+    if (!enviadoV2) {
+      const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
+        { type: 'body', parameters: bodyParticular },
+      ])
+      await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_particular_v1')
+      await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_particular_v1',
+        `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
+    }
 
     // ── Cobro del anticipo para CONFIRMAR LA RESERVA (Wompi, 2026-08-18) ──
     //
@@ -1055,30 +1097,27 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     }
   }
 
-  // 6. Enviar foto de perfil y documento del técnico al cliente.
+  // 6. Enviar el carnet digital del técnico al cliente (imagen free-form).
+  //
+  // Hasta 2026-10-10 acá salían DOS imágenes: la foto de perfil y la FOTO DE
+  // LA CÉDULA del técnico. La cédula es PII sensible y ya no se envía ni se
+  // muestra al cliente en ningún lado — solo el carnet (foto de perfil +
+  // nombre + documento enmascarado), ver src/lib/utils/carnet.ts.
   //
   // ⚠️ Limitación Meta WhatsApp: los mensajes tipo `image` (free-form) requieren
   // que el cliente haya enviado un mensaje al negocio en las últimas 24h.
   // En el flujo customer-first el cliente solo interactúa vía botones URL
-  // (que NO abren la ventana 24h), así que estos envíos suelen fallar con
-  // error #131047 ("Re-engagement message"). Lo capturamos en el log para
-  // diagnóstico, pero la fuente de verdad para verificación de identidad
-  // del técnico es /servicio/{cliente_token}, que muestra ambas fotos sin
-  // depender de WhatsApp.
-  if (tecnico?.foto_perfil_url) {
+  // (que NO abren la ventana 24h), así que este envío suele fallar con
+  // error #131047 ("Re-engagement message"). El canal durable es el HEADER
+  // IMAGE de `tecnico_asignado_cliente_v7` / `tecnico_asignado_particular_v2`
+  // (paso 5) y el carnet en /servicio/{cliente_token}. Se mantiene best-effort
+  // solo para el caso en que la ventana sí esté abierta (cliente que escribió).
+  if (carnetUrl && tecnico) {
     await enviarImagen(
       sol.cliente_telefono,
-      tecnico.foto_perfil_url,
-      `📷 ${tecnico.nombre_completo} — Tu técnico asignado`
-    ).catch(err => console.error('[procesarAceptacion] foto perfil falló (24h?):', err))
-  }
-
-  if (tecnico?.foto_documento_url) {
-    await enviarImagen(
-      sol.cliente_telefono,
-      tecnico.foto_documento_url,
-      `🪪 ${tecnico.tipo_documento ?? 'Documento'}: ${tecnico.numero_documento ?? ''} — Identificación verificada`
-    ).catch(err => console.error('[procesarAceptacion] foto documento falló (24h?):', err))
+      carnetUrl,
+      `🪪 Carnet digital de ${tecnico.nombre_completo} — tu técnico Baird Service. Al llegar, pídele su cédula física y confirma que los últimos dígitos coincidan.`
+    ).catch(err => console.error('[procesarAceptacion] carnet digital falló (24h?):', err instanceof Error ? err.message : err))
   }
 
   // 7. Marcar este token como aceptado e invalidar los demás

@@ -150,19 +150,21 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │   Botón: "Ver portal" → /tecnico/{portal_token}                          │
 │                                                                           │
 │ Al cliente:                                                              │
-│ 📩 → CLIENTE: tecnico_asignado_cliente_v6                                │
+│ 📩 → CLIENTE: tecnico_asignado_cliente_v7 (2026-10-10)                   │
+│   Header IMAGE: carnet digital /api/carnet/{tecnico_id}                  │
 │   Body: cliente, técnico, equipo, horario, teléfono técnico              │
+│   Botón: "Ver mi servicio" → /servicio/{cliente_token}                   │
+│   Fallback (si _v7 no está APPROVED): tecnico_asignado_cliente_v6        │
 │                                                                           │
-│ 📷 → CLIENTE: imagen tecnico.foto_perfil_url                             │
-│      (caption: "📷 {nombre} — Tu técnico asignado")                      │
-│ 🪪 → CLIENTE: imagen tecnico.foto_documento_url                          │
-│      (caption: "🪪 CC {numero} — Identificación verificada")             │
+│ 🪪 → CLIENTE: imagen free-form del carnet digital (best-effort)          │
+│      (caption: "🪪 Carnet digital de {nombre} — tu técnico…")             │
 │                                                                           │
-│ ⚠️ Las 2 imágenes son free-form — Meta exige ventana 24h del cliente.    │
-│    En customer-first la ventana 24h NO está abierta (cliente solo tocó   │
-│    botones URL). Falla con error #131047 "Re-engagement message".        │
-│    MITIGACIÓN: las fotos también se renderizan en                        │
-│    /servicio/{cliente_token} (server-fetched, sin WhatsApp).             │
+│ ⚠️ La imagen free-form exige ventana 24h del cliente (en customer-first  │
+│    NO está abierta → error #131047). El canal durable es el HEADER de    │
+│    la plantilla _v7 + el carnet en /servicio/{cliente_token}.            │
+│ 🔒 La FOTO DE LA CÉDULA ya NO se envía ni se muestra al cliente (PII):   │
+│    el carnet trae el documento enmascarado "CC •••• 6789" y el cliente   │
+│    lo compara con la cédula física al llegar. Ver src/lib/utils/carnet.ts│
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼  (técnico llega al sitio)
@@ -532,7 +534,8 @@ Cliente abre `/servicio/{cliente_token}` (URL incluida en plantillas iniciales o
 │ Servidor (RSC) lee solicitud por cliente_token, muestra:                 │
 │   - Estado actual (badge + label)                                        │
 │   - Equipo, ubicación, horario_confirmado                                │
-│   - Datos del técnico asignado (nombre, foto perfil, foto documento)     │
+│   - Carnet digital del técnico asignado (foto perfil, nombre,            │
+│     especialidad, documento ENMASCARADO, código) — nunca la cédula       │
 │   - Botones según estado:                                                │
 │       Cancelar (si estado ∈ ESTADOS_CANCELABLES_POR_CLIENTE)             │
 │       Reagendar (si estado ∈ ESTADOS_REAGENDABLES_POR_CLIENTE            │
@@ -820,7 +823,7 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 | # | Momento | Hoy | Estado | Fix propuesto |
 |---|---|---|---|---|
 | 1 | ~~`sin_agendar` (timeout 36h)~~ | ✅ RESUELTO 2026-07-06 | — | `solicitud_expirada_cliente_v1` cableada en `/api/cron/horario-recordatorio` |
-| 2 | Aceptación: foto perfil + documento del técnico | `image` free-form | 🔴 mayor | Plantilla `tecnico_asignado_cliente_v6` con HEADER IMAGE (Backlog G) — mitigación actual: fotos también en `/servicio/{cliente_token}` |
+| 2 | ~~Aceptación: foto perfil + documento del técnico~~ | ✅ RESUELTO en código 2026-10-10 | 🟡 hasta APPROVED | Carnet digital: `tecnico_asignado_cliente_v7` / `tecnico_asignado_particular_v2` con HEADER IMAGE `/api/carnet/{id}` (pendiente subir a Meta; fallback `_v6`/`_v1`) + carnet en `/servicio/{cliente_token}`. La foto de la cédula dejó de enviarse. |
 | 3 | ~~Cliente aprueba `reparar` en /verificar-paso~~ | ✅ RESUELTO 2026-07-06 | — | `paso_aprobado_cliente_v1` cableada en `/api/verificar-paso` (fallback: texto libre previo) |
 | 4 | ~~Cliente aprueba `negativa_cliente`~~ | ✅ RESUELTO 2026-07-06 | — | `paso_aprobado_cliente_v1` — mismo template, parámetros distintos |
 | 5 | ~~Cliente RECHAZA siguiente paso~~ | ✅ RESUELTO 2026-07-06 | — | `paso_rechazado_cliente_v1` cableada (antes el cliente no recibía nada) |

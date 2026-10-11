@@ -157,16 +157,31 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL**: `/tecnico/{portal_token}` — display "Ver portal"
 - **Propósito**: confirmar asignación + datos del cliente al técnico.
 
+#### `tecnico_asignado_cliente_v7` (nueva 2026-10-10 — **en script, pendiente subir a Meta**) 🪪 carnet digital
+- **Disparo**: `procesarAceptacion()` cuando `es_garantia=true`. Se intenta PRIMERO; si falla (PENDING/rechazo) cae a `_v6`.
+- **Destino**: cliente
+- **Header IMAGE**: `{APP_URL}/api/carnet/{tecnico_id}` — PNG del **carnet digital** (foto de perfil + nombre + especialidad + documento ENMASCARADO `CC •••• 6789` + código). Reemplaza las 2 imágenes free-form (foto perfil + **foto de la cédula**) que fallaban por ventana 24h y exponían PII.
+- **Body** (5 params): iguales a `_v6` + párrafo "Arriba está su carnet digital. Al llegar, pídele su cédula física y confirma que los últimos dígitos coincidan."
+- **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` con `{{1}} = cliente_token` — display "Ver mi servicio"
+- **Subir**: necesita muestra `scripts/muestra-carnet.png` (ya incluida; regenerar con `curl -o scripts/muestra-carnet.png $APP_URL/api/carnet/<uuid>`). `node --env-file=.env.local scripts/upload-templates.mjs tecnico_asignado_cliente_v7`.
+
 #### `tecnico_asignado_cliente_v6`
 - **En script** ✅
-- **Disparo**: `procesarAceptacion()` cuando `es_garantia=true`
+- **Disparo**: `procesarAceptacion()` cuando `es_garantia=true` — desde 2026-10-10 solo como **fallback** de `_v7`.
 - **Destino**: cliente
 - **Body** (5 params): `cliente`, `tecnico`, `equipo`, `horario`, `telefono_tecnico`
 - **Sin botón** (info-only)
 - **Propósito**: avisar al cliente que ya tiene técnico asignado (warranty).
 
+#### `tecnico_asignado_particular_v2` (nueva 2026-10-10 — **en script, pendiente subir a Meta**) 🪪 carnet digital
+- **Disparo**: `procesarAceptacion()` cuando `es_garantia=false`. Se intenta PRIMERO; si falla cae a `_v1`.
+- **Destino**: cliente
+- **Header IMAGE**: carnet digital (mismo PNG que `tecnico_asignado_cliente_v7`).
+- **Body** (7 params): iguales a `_v1` + párrafo del carnet.
+- **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` con `{{1}} = cliente_token` — display "Ver mi servicio"
+
 #### `tecnico_asignado_particular_v1` **En script** ✅ (backfilled 2026-05-08)
-- **Disparo**: `procesarAceptacion()` cuando `es_garantia=false`
+- **Disparo**: `procesarAceptacion()` cuando `es_garantia=false` — desde 2026-10-10 solo como **fallback** de `_v2`.
 - **Destino**: cliente
 - **Body** (7 params): `cliente`, `tecnico`, `equipo`, `horario`, `telefono_tecnico`, `tarifa_diagnostico`, `anticipo`
 - **Propósito**: avisar al cliente + recordar tarifa diagnóstico + anticipo.
@@ -461,14 +476,13 @@ Algunos avisos se envían como **texto libre** (`enviarMensajeTexto`) en vez de 
 
 ## Imágenes (no son plantillas)
 
-`enviarImagen()` envía imágenes free-form (foto perfil técnico, foto documento, fotos de evidencia). **Sufren la misma restricción de ventana 24h** que el texto libre — y en customer-first la ventana NO se abre, así que estos envíos suelen fallar.
+`enviarImagen()` envía imágenes free-form. **Sufren la misma restricción de ventana 24h** que el texto libre — y en customer-first la ventana NO se abre, así que estos envíos suelen fallar.
 
 | Imagen | Origen | Mitigación si falla |
 |---|---|---|
-| Foto perfil técnico | `procesarAceptacion()` post-asignación | Visible en `/servicio/{cliente_token}` |
-| Foto documento técnico | Idem | Idem |
+| 🪪 Carnet digital del técnico (`/api/carnet/{tecnico_id}`) | `procesarAceptacion()` post-asignación (best-effort) | Va como HEADER IMAGE de `tecnico_asignado_cliente_v7` / `tecnico_asignado_particular_v2` (no requiere ventana) y se renderiza en `/servicio/{cliente_token}` |
 
-**Fix durable pendiente**: nueva plantilla con `HEADER` tipo `IMAGE` para que la foto vaya dentro de un mensaje template (no requiere ventana 24h). Ejemplo: `tecnico_asignado_cliente_v6` con foto en header.
+**Hasta 2026-10-10** acá salían DOS imágenes: la foto de perfil y la **foto de la cédula** del técnico. La cédula es PII sensible (Ley 1581/2012) y **ya no se envía ni se muestra al cliente en ningún canal** — solo el carnet con documento enmascarado (`src/lib/utils/carnet.ts`). La foto completa queda únicamente en `/admin/tecnicos/[id]`.
 
 ---
 
@@ -643,14 +657,8 @@ Ya no está en backlog: se agregó al script y al catálogo (sección "Post-deci
 
 ### Media prioridad (mejoran UX, no son bloqueantes)
 
-#### G. `tecnico_asignado_cliente_v7` con HEADER IMAGE
-**Gap**: las fotos del técnico (perfil + documento) se mandan como mensajes free-form `image` separados — fallan ~siempre por ventana 24h. La plantilla actual `_v6` es solo texto.
-**Solución**: nueva versión `_v7` con `HEADER` tipo `IMAGE` para incluir la foto en el mismo mensaje template. Requiere subir el media_id al endpoint de Meta primero.
-- Body params iguales que `_v6`. Header: `{ type: 'HEADER', format: 'IMAGE' }`.
-- Cuando se envía: `components: [{ type: 'header', parameters: [{ type: 'image', image: { link: foto_perfil_url } }] }, { type: 'body', ... }]`.
-- También agregar BUTTON URL al portal cliente.
-- Cuando Meta apruebe, deprecar `_v6` y mover invocaciones a `_v7`.
-- **Nota**: el slot `_v6` fue tomado por la migración de dominio del 2026-05-23 (text-only con URL nueva), por eso el siguiente salto es `_v7`.
+#### G. `tecnico_asignado_cliente_v7` con HEADER IMAGE — ✅ IMPLEMENTADO en código (2026-10-10), pendiente subir a Meta
+La `_v7` (garantía) y `tecnico_asignado_particular_v2` (particular) están en `scripts/upload-templates.mjs` con `HEADER IMAGE` = **carnet digital** (`/api/carnet/{tecnico_id}`, no la foto de la cédula) + botón "Ver mi servicio". `procesarAceptacion` ya las intenta primero con fallback a `_v6`/`_v1`. Falta: `node --env-file=.env.local scripts/upload-templates.mjs tecnico_asignado_cliente_v7` (y `tecnico_asignado_particular_v2`) y esperar APPROVED — el script sube la muestra `scripts/muestra-carnet.png` como `header_handle` vía Resumable Upload (mismo mecanismo que `_sampleDoc`). Ver catálogo § Asignación.
 
 #### H. `cotizacion_cliente_v3` — ✅ CERRADO (2026-07-06)
 La `_v3` fue subida, APPROVED por Meta y cableada en `enviarCotizacionCliente()` con fallback a `_v2`. El cliente ya recibe diagnóstico + total único con IVA + botón "Aprobar cotización". El mismo día se cableó `cotizacion_aprobada_tecnico_v3` (pago neto del técnico separado del total del cliente) en `notificarCotizacionAprobada()`.

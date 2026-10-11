@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
+import CarnetTecnico from '@/components/ui/CarnetTecnico'
+import type { CarnetTecnicoData } from '@/lib/utils/carnet'
 
 interface Solicitud {
   id: string
@@ -22,13 +23,9 @@ interface Solicitud {
   reagendamientos_count: number | null
 }
 
-interface TecnicoInfo {
-  nombre_completo: string
-  foto_perfil_url: string | null
-  foto_documento_url: string | null
-  tipo_documento: string | null
-  numero_documento: string | null
-}
+// Carnet digital (2026-10-10): el cliente ve foto de perfil + documento
+// enmascarado, nunca la foto de la cédula.
+type TecnicoInfo = CarnetTecnicoData
 
 interface Props {
   token: string
@@ -216,49 +213,13 @@ export default function ServicioPortal({
           </dl>
         </div>
 
-        {tecnico && (tecnico.foto_perfil_url || tecnico.foto_documento_url) && (
+        {tecnico && (
           <div className="rounded-2xl bg-white p-6 shadow-lg">
             <h2 className="font-semibold text-gray-900 mb-1">Verificación del técnico</h2>
             <p className="text-xs text-gray-500 mb-4">
-              Confirma estos datos cuando llegue para que estés seguro/a de que es la persona correcta.
+              Este es el carnet digital de la persona que Baird asignó a tu servicio. Confírmalo cuando llegue.
             </p>
-            <div className="grid grid-cols-2 gap-3">
-              {tecnico.foto_perfil_url && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-1.5">📷 Foto de perfil</p>
-                  <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
-                    <Image
-                      src={tecnico.foto_perfil_url}
-                      alt={`Foto de ${tecnico.nombre_completo}`}
-                      fill
-                      sizes="(max-width: 480px) 50vw, 200px"
-                      className="object-cover"
-                    />
-                  </div>
-                </div>
-              )}
-              {tecnico.foto_documento_url && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-1.5">
-                    🪪 {tecnico.tipo_documento ?? 'Documento'}
-                  </p>
-                  <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-100">
-                    <Image
-                      src={tecnico.foto_documento_url}
-                      alt="Documento de identidad del técnico"
-                      fill
-                      sizes="(max-width: 480px) 50vw, 200px"
-                      className="object-cover"
-                    />
-                  </div>
-                  {tecnico.numero_documento && (
-                    <p className="text-[10px] font-mono text-gray-500 mt-1">
-                      N°: {tecnico.numero_documento}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            <CarnetTecnico carnet={tecnico} ayuda="cliente" />
           </div>
         )}
 

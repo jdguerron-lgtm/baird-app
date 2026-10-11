@@ -15,6 +15,14 @@ import QrPagosBaird from '@/components/ui/QrPagosBaird'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 import { estadoPagoCliente } from '@/lib/constants/pago-cliente'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
+import CarnetTecnico from '@/components/ui/CarnetTecnico'
+import {
+  CARNET_TECNICO_SELECT,
+  construirCarnet,
+  urlImagenCarnet,
+  type CarnetTecnicoData,
+  type CarnetTecnicoRow,
+} from '@/lib/utils/carnet'
 
 interface Tecnico {
   id: string
@@ -56,6 +64,9 @@ export default function PortalTecnicoPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'activos' | 'historial'>('activos')
+  // Carnet digital (2026-10-10): el técnico lo muestra al cliente al llegar.
+  const [carnet, setCarnet] = useState<CarnetTecnicoData | null>(null)
+  const [verCarnet, setVerCarnet] = useState(false)
 
   useEffect(() => {
     const cargar = async () => {
@@ -64,7 +75,7 @@ export default function PortalTecnicoPage() {
       const { data: tec, error: tecErr } = await querySupabase(() =>
         supabase
           .from('tecnicos')
-          .select('id, nombre_completo, foto_perfil_url, perfil_actualizado_at, cubre_gasodomesticos')
+          .select(`${CARNET_TECNICO_SELECT}, perfil_actualizado_at, cubre_gasodomesticos`)
           .eq('portal_token', token)
           .single()
       )
@@ -81,6 +92,7 @@ export default function PortalTecnicoPage() {
       }
 
       setTecnico(tec)
+      setCarnet(construirCarnet(tec as unknown as CarnetTecnicoRow))
 
       // 2. Cargar servicios asignados a este técnico
       const { data: sols } = await querySupabase(() =>
@@ -225,6 +237,30 @@ export default function PortalTecnicoPage() {
             Se oculta solo si public/qr-pagos-baird.png no existe aún. */}
         <QrPagosBaird />
 
+        {/* Carnet digital (2026-10-10): reemplaza el envío de la foto de la
+            cédula al cliente. El técnico lo abre en pantalla completa al
+            llegar y puede compartirlo por WhatsApp si el cliente lo pide. */}
+        {carnet && (
+          <button
+            type="button"
+            onClick={() => setVerCarnet(true)}
+            className="w-full flex items-center gap-3 bg-slate-900 text-white rounded-xl p-4 mb-6 text-left hover:bg-slate-800 transition-colors"
+          >
+            <span className="text-2xl leading-none">🪪</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold">Mi carnet digital</span>
+              <span className="block text-xs text-slate-300">
+                Muéstralo al cliente al llegar · {carnet.codigo}
+              </span>
+            </span>
+            <span className="text-xs font-semibold bg-white/10 rounded-lg px-3 py-1.5">Ver</span>
+          </button>
+        )}
+
+        {verCarnet && carnet && (
+          <CarnetModal carnet={carnet} onClose={() => setVerCarnet(false)} />
+        )}
+
         {/* Aviso de perfil incompleto: gasodomésticos + certificaciones
             (2026-10-08). Desaparece cuando el técnico guarda desde /perfil. */}
         {tecnico && !tecnico.perfil_actualizado_at && (
@@ -307,6 +343,66 @@ export default function PortalTecnicoPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Carnet a pantalla completa: brillo máximo visual (fondo oscuro, tarjeta
+ * centrada) para enseñarlo en la puerta. "Compartir" usa el Web Share API
+ * con el PNG público (/api/carnet/{id}); si el navegador no lo soporta,
+ * abre la imagen en otra pestaña.
+ */
+function CarnetModal({ carnet, onClose }: { carnet: CarnetTecnicoData; onClose: () => void }) {
+  const [copiado, setCopiado] = useState(false)
+  const url = urlImagenCarnet(carnet.id)
+
+  const compartir = async () => {
+    const texto = `Carnet digital Baird Service — ${carnet.nombre_completo} (${carnet.codigo})`
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title: 'Carnet Baird Service', text: texto, url })
+        return
+      }
+    } catch {
+      // usuario canceló o share falló → fallback abajo
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 2500)
+    } catch {
+      window.open(url, '_blank', 'noopener')
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Carnet digital"
+    >
+      <CarnetTecnico carnet={carnet} ayuda="tecnico" />
+      <div className="mt-5 flex gap-3 w-full max-w-sm">
+        <button
+          type="button"
+          onClick={compartir}
+          className="flex-1 bg-white text-slate-900 text-sm font-semibold rounded-xl px-4 py-3"
+        >
+          {copiado ? '✅ Link copiado' : '📤 Compartir'}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex-1 bg-white/10 text-white text-sm font-semibold rounded-xl px-4 py-3 border border-white/20"
+        >
+          Cerrar
+        </button>
+      </div>
+      <p className="mt-4 text-[11px] text-slate-400 text-center max-w-sm">
+        El cliente ya recibió este carnet en su portal. Tu cédula completa nunca se le muestra: solo los últimos dígitos.
+      </p>
     </div>
   )
 }

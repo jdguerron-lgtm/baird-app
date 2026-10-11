@@ -1659,6 +1659,110 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // ──────────────────────────────────────────────────────────────────
+  // 33–34. Carnet digital del técnico (2026-10-10). Reemplazan las imágenes
+  // free-form (foto perfil + FOTO DE LA CÉDULA) que procesarAceptacion
+  // mandaba al cliente y que fallaban por ventana 24h. El HEADER IMAGE es el
+  // PNG público `${APP_URL}/api/carnet/{tecnico_id}` (foto de perfil + nombre
+  // + documento ENMASCARADO) — se adjunta en el ENVÍO como header.image.link;
+  // acá solo va una MUESTRA (`_sampleImage`) para que Meta apruebe.
+  //
+  // Muestra: descargar un carnet real de prod y guardarlo como
+  //   scripts/muestra-carnet.png  (curl -o scripts/muestra-carnet.png $APP_URL/api/carnet/<uuid>)
+  // Cuando estén APPROVED, procesarAceptacion las usa sola (fallback a
+  // _v6/_v1 mientras tanto). Ver docs/WHATSAPP_TEMPLATES.md.
+
+  // 33. Técnico asignado — CLIENTE garantía. Mismo body que _v6 + header
+  //     carnet + botón "Ver mi servicio" → /servicio/{cliente_token}.
+  {
+    name: 'tecnico_asignado_cliente_v7',
+    category: 'UTILITY',
+    language: 'es',
+    _sampleImage: 'scripts/muestra-carnet.png',
+    components: [
+      { type: 'HEADER', format: 'IMAGE' },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋, tu técnico verificado para el servicio de {{3}} es:\n\n' +
+          '👨‍🔧 {{2}}\n' +
+          '🕐 Horario: {{4}}\n' +
+          '📞 {{5}}\n\n' +
+          '🪪 Arriba está su carnet digital. Al llegar, pídele su cédula física y confirma que los últimos dígitos coincidan.\n\n' +
+          '🚨 RECUERDA:\n' +
+          '• NO realices pagos en efectivo o directos al técnico\n' +
+          '• Tras el diagnóstico DEBES aprobar la siguiente acción aquí en WhatsApp\n' +
+          '• Realizar el servicio fuera de la plataforma anula la garantía\n\n' +
+          '📋 Términos: ' + APP_URL + '/terminos',
+        example: {
+          body_text: [
+            ['María', 'Pedro Gómez', 'Lavadora LG', 'Lunes 8am-12pm', '+573001234567'],
+          ],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service - Reparaciones verificadas' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver mi servicio',
+            url: `${APP_URL}/servicio/{{1}}`,
+            example: [`${APP_URL}/servicio/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
+  // 34. Técnico asignado — CLIENTE particular. Mismo body que _v1 + header
+  //     carnet + botón "Ver mi servicio" → /servicio/{cliente_token}.
+  {
+    name: 'tecnico_asignado_particular_v2',
+    category: 'UTILITY',
+    language: 'es',
+    _sampleImage: 'scripts/muestra-carnet.png',
+    components: [
+      { type: 'HEADER', format: 'IMAGE' },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, ya tienes técnico asignado:\n\n' +
+          '👨‍🔧 Técnico: {{2}}\n' +
+          '🔧 Equipo: {{3}}\n' +
+          '🕐 Horario: {{4}}\n' +
+          '📞 Contacto: {{5}}\n\n' +
+          '💰 Tarifa diagnóstico: {{6}} COP\n' +
+          '💵 Anticipo (50%): {{7}} COP\n\n' +
+          '🪪 Arriba está su carnet digital. Al llegar, pídele su cédula física y confirma que los últimos dígitos coincidan.\n\n' +
+          'Tu técnico llegará en el horario acordado. Tras el diagnóstico recibirás la cotización para aprobar antes de cualquier reparación. Nunca pagues en efectivo al técnico — todo se factura via Baird Service.',
+        example: {
+          body_text: [[
+            'Juan',
+            'Carlos Pérez',
+            'Nevera LG',
+            'martes 7 de mayo · 2pm-5pm',
+            '+573001234567',
+            '80,000',
+            '40,000',
+          ]],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver mi servicio',
+            url: `${APP_URL}/servicio/{{1}}`,
+            example: [`${APP_URL}/servicio/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 async function listExisting() {
@@ -1681,13 +1785,14 @@ async function getAppId() {
 }
 
 // Resumable Upload API: sube un archivo de muestra y devuelve el header_handle
-// que exige Meta para aprobar plantillas con header de DOCUMENTO.
-async function getHeaderHandle(sampleFile) {
+// que exige Meta para aprobar plantillas con header de DOCUMENTO o IMAGEN.
+async function getHeaderHandle(sampleFile, mime = 'application/pdf') {
   if (!existsSync(sampleFile)) throw new Error('Falta archivo de muestra: ' + sampleFile)
   const appId = await getAppId()
   const buf = readFileSync(sampleFile)
   const size = statSync(sampleFile).size
-  const cs = await fetch(`${API_BASE}/${appId}/uploads?file_name=muestra.pdf&file_length=${size}&file_type=application%2Fpdf&access_token=${encodeURIComponent(TOKEN)}`, { method: 'POST' })
+  const fileName = mime === 'image/png' ? 'muestra.png' : mime === 'image/jpeg' ? 'muestra.jpg' : 'muestra.pdf'
+  const cs = await fetch(`${API_BASE}/${appId}/uploads?file_name=${fileName}&file_length=${size}&file_type=${encodeURIComponent(mime)}&access_token=${encodeURIComponent(TOKEN)}`, { method: 'POST' })
   const csb = await cs.json()
   if (!cs.ok || !csb.id) throw new Error('Crear sesión de subida falló: ' + JSON.stringify(csb))
   const up = await fetch(`${API_BASE}/${csb.id}`, { method: 'POST', headers: { Authorization: `OAuth ${TOKEN}`, file_offset: '0' }, body: buf })
@@ -1699,10 +1804,13 @@ async function getHeaderHandle(sampleFile) {
 async function uploadOne(tpl) {
   // Header de documento: generar un header_handle fresco desde el archivo de muestra.
   let payload = tpl
-  if (tpl._sampleDoc) {
-    const handle = await getHeaderHandle(tpl._sampleDoc)
+  if (tpl._sampleDoc || tpl._sampleImage) {
+    const handle = tpl._sampleDoc
+      ? await getHeaderHandle(tpl._sampleDoc, 'application/pdf')
+      : await getHeaderHandle(tpl._sampleImage, tpl._sampleImage.toLowerCase().endsWith('.jpg') || tpl._sampleImage.toLowerCase().endsWith('.jpeg') ? 'image/jpeg' : 'image/png')
     payload = JSON.parse(JSON.stringify(tpl))
     delete payload._sampleDoc
+    delete payload._sampleImage
     const header = payload.components.find(c => c.type === 'HEADER')
     if (header) header.example = { header_handle: [handle] }
   }

@@ -6,6 +6,12 @@ import {
   ESTADOS_REAGENDABLES_POR_CLIENTE,
   MAX_REAGENDAMIENTOS_CLIENTE,
 } from '@/types/solicitud'
+import {
+  CARNET_TECNICO_SELECT,
+  construirCarnet,
+  type CarnetTecnicoData,
+  type CarnetTecnicoRow,
+} from '@/lib/utils/carnet'
 import ServicioPortal from './ServicioPortal'
 
 interface Props {
@@ -49,22 +55,19 @@ export default async function ServicioPortalPage({ params }: Props) {
     notFound()
   }
 
-  let tecnicoInfo: {
-    nombre_completo: string
-    foto_perfil_url: string | null
-    foto_documento_url: string | null
-    tipo_documento: string | null
-    numero_documento: string | null
-  } | null = null
+  // Carnet digital del técnico (2026-10-10): al cliente NO se le muestra la
+  // foto de la cédula (PII sensible) — solo el carnet con documento
+  // enmascarado. Ver src/lib/utils/carnet.ts.
+  let carnet: CarnetTecnicoData | null = null
   if (sol.tecnico_asignado_id) {
     const { data: tec } = await querySupabase(() =>
       supabase
         .from('tecnicos')
-        .select('nombre_completo, foto_perfil_url, foto_documento_url, tipo_documento, numero_documento')
+        .select(CARNET_TECNICO_SELECT)
         .eq('id', sol.tecnico_asignado_id)
         .single()
     )
-    tecnicoInfo = tec ?? null
+    carnet = tec ? construirCarnet(tec as unknown as CarnetTecnicoRow) : null
   }
 
   const cancelable = ESTADOS_CANCELABLES_POR_CLIENTE.has(sol.estado)
@@ -77,7 +80,7 @@ export default async function ServicioPortalPage({ params }: Props) {
     <ServicioPortal
       token={token}
       solicitud={sol}
-      tecnico={tecnicoInfo}
+      tecnico={carnet}
       cancelable={cancelable}
       reagendable={reagendable}
       reagendamientosRestantes={MAX_REAGENDAMIENTOS_CLIENTE - reagendamientosCount}
