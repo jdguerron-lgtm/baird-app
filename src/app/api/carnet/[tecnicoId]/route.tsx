@@ -177,17 +177,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
             </div>
 
             <div style={{ display: 'flex', marginTop: 'auto', width: '100%' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', width: 240 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', width: 215 }}>
                 <span style={{ fontSize: 11, letterSpacing: 2, color: '#94a3b8', textTransform: 'uppercase' }}>Documento</span>
-                <span style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>{documento}</span>
+                <span style={{ fontSize: 20, fontWeight: 700, marginTop: 2 }}>{documento}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', width: 160 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', width: 150 }}>
                 <span style={{ fontSize: 11, letterSpacing: 2, color: '#94a3b8', textTransform: 'uppercase' }}>Carnet N°</span>
-                <span style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>{carnet.codigo}</span>
+                <span style={{ fontSize: 20, fontWeight: 700, marginTop: 2 }}>{carnet.codigo}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <span style={{ fontSize: 11, letterSpacing: 2, color: '#94a3b8', textTransform: 'uppercase' }}>Verificado el</span>
-                <span style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>
+                <span style={{ fontSize: 20, fontWeight: 700, marginTop: 2 }}>
                   {carnet.verificado ? (fecha ?? 'Sí') : 'Pendiente'}
                 </span>
               </div>
