@@ -12,12 +12,27 @@ import {
   TARIFAS_MANTENIMIENTO,
 } from '@/types/solicitud'
 import { ABONO_REPUESTOS_PORCENTAJE } from '@/lib/constants/pagos'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { LOGO_EXTENSIONES, MARCAS_DISTRIBUIDOR } from '@/lib/constants/marcas-distribuidor'
 import { formatCOP } from '@/lib/utils/format'
 
 // Montos que ve el cliente en "¿Qué pagas y cuándo?" — salen de las mismas
 // constantes que cobra /solicitar y /pago/*, así la home nunca queda
 // desalineada con la tarifa real (docs/TARIFAS.md).
 const COP = (n: number) => `$${formatCOP(n)}`
+
+// Logo de cada marca distribuida: se usa si existe public/img/marcas/<slug>.<ext>
+// (resuelto en el servidor en build/render; sin archivo → wordmark de texto).
+function logoMarca(slug: string): string | null {
+  for (const ext of LOGO_EXTENSIONES) {
+    if (existsSync(path.join(process.cwd(), 'public', 'img', 'marcas', `${slug}.${ext}`))) {
+      return `/img/marcas/${slug}.${ext}`
+    }
+  }
+  return null
+}
+const MARCAS_CON_LOGO = MARCAS_DISTRIBUIDOR.map(m => ({ ...m, logo: logoMarca(m.slug) }))
 const ANTICIPO_DIAGNOSTICO = Math.round(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)
 const MANTENIMIENTO_MIN = Math.min(...Object.values(TARIFAS_MANTENIMIENTO))
 const MANTENIMIENTO_MAX = Math.max(...Object.values(TARIFAS_MANTENIMIENTO))
@@ -624,6 +639,55 @@ export default function Home() {
               </Link>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── DISTRIBUIDORES MAYORISTAS OFICIALES ─────────────────────── */}
+      <section id="marcas" className="py-16 px-4 bg-white border-y border-slate-100">
+        <div className="max-w-5xl mx-auto text-center">
+          <span className="inline-block text-green-600 font-semibold text-xs tracking-[0.15em] uppercase bg-green-50 border border-green-100 rounded-full px-4 py-1.5 mb-4">
+            Repuestos 100% originales
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3">
+            Distribuidores mayoristas oficiales
+          </h2>
+          <p className="text-slate-500 text-base max-w-2xl mx-auto mb-10">
+            Somos distribuidores mayoristas oficiales de MABE, Whirlpool, Maytag, KitchenAid y Affresh.
+            Los repuestos que instala tu técnico son originales y con respaldo de la marca.
+          </p>
+
+          <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {MARCAS_CON_LOGO.map((m) => (
+              <li
+                key={m.slug}
+                className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-5 flex flex-col items-center justify-center gap-2 hover:border-green-200 hover:shadow-sm transition-all duration-200"
+              >
+                <div className="relative h-12 w-full flex items-center justify-center">
+                  {m.logo ? (
+                    <Image
+                      src={m.logo}
+                      alt={`Logo ${m.nombre}`}
+                      fill
+                      sizes="(max-width: 640px) 40vw, 160px"
+                      className="object-contain"
+                    />
+                  ) : (
+                    <span className="text-xl font-black tracking-tight text-slate-800">{m.nombre}</span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 leading-tight">{m.nota}</span>
+              </li>
+            ))}
+          </ul>
+
+          <a
+            href="https://tienda.bairdservice.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block mt-8 text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-4"
+          >
+            Ver repuestos originales en nuestra tienda ↗
+          </a>
         </div>
       </section>
 
