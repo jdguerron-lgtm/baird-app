@@ -101,7 +101,7 @@ export default function ServiciosIndexPage() {
           <div className="flex gap-6 text-xs text-white/30">
             <Link href="/" className="hover:text-white/60 transition-colors">Inicio</Link>
             <Link href="/solicitar" className="hover:text-white/60 transition-colors">Solicitar servicio</Link>
-            <Link href="/registro" className="hover:text-white/60 transition-colors">Soy técnico</Link>
+            <Link href="/registro" className="hover:text-white/60 transition-colors">Quiero hacer parte del equipo</Link>
           </div>
         </div>
       </footer>

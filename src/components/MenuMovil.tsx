@@ -16,7 +16,7 @@ import Link from 'next/link'
 const LINKS = [
   { href: '/#como-funciona', label: 'Cómo funciona' },
   { href: '/#equipos', label: 'Equipos' },
-  { href: '/registro', label: 'Soy técnico' },
+  { href: '/registro', label: 'Quiero hacer parte del equipo' },
 ]
 
 export default function MenuMovil() {

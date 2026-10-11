@@ -4,6 +4,23 @@ import Link from 'next/link'
 import MenuMovil from '@/components/MenuMovil'
 import { EQUIPOS_HOME } from '@/lib/constants/equipos-home'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
+import {
+  ANTICIPO_PORCENTAJE,
+  CANCELACION_CUTOFF_HORAS,
+  TARIFA_CAMBIO_FILTRO,
+  TARIFA_DIAGNOSTICO,
+  TARIFAS_MANTENIMIENTO,
+} from '@/types/solicitud'
+import { ABONO_REPUESTOS_PORCENTAJE } from '@/lib/constants/pagos'
+import { formatCOP } from '@/lib/utils/format'
+
+// Montos que ve el cliente en "¿Qué pagas y cuándo?" — salen de las mismas
+// constantes que cobra /solicitar y /pago/*, así la home nunca queda
+// desalineada con la tarifa real (docs/TARIFAS.md).
+const COP = (n: number) => `$${formatCOP(n)}`
+const ANTICIPO_DIAGNOSTICO = Math.round(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)
+const MANTENIMIENTO_MIN = Math.min(...Object.values(TARIFAS_MANTENIMIENTO))
+const MANTENIMIENTO_MAX = Math.max(...Object.values(TARIFAS_MANTENIMIENTO))
 
 // ── Imágenes propias de marca (generadas para Baird, servidas desde /public) ─
 const IMAGES = {
@@ -22,42 +39,92 @@ const CONTENIDO = {
     badge: '✦ Solo técnicos verificados por Baird',
     titulo: 'Tu técnico de confianza,\nen tu puerta hoy mismo',
     subtitulo:
-      'Describe el problema, el técnico recibe la oferta por WhatsApp y coordinas la visita en minutos. Sin llamadas, sin esperas.',
+      'Cuéntanos qué falla, mira el precio antes de pedir y un técnico verificado llega a tu casa. Todo por WhatsApp: sin llamadas, sin efectivo, sin sorpresas.',
     ctaCliente: 'Solicitar servicio',
-    ctaTecnico: 'Soy técnico',
+    ctaPagos: '¿Qué pagas y cuándo?',
+    ctaTecnico: 'Quiero hacer parte del equipo',
   },
   stats: [
     { numero: '8', label: 'Tipos de equipos cubiertos' },
     { numero: '100%', label: 'Técnicos con foto e ID verificados' },
-    { numero: '<15 min', label: 'Tiempo promedio de asignación' },
+    { numero: '0', label: 'Pagos en efectivo: todo en línea a Baird Service' },
   ],
   comoFunciona: {
-    overline: 'Simple y rápido',
-    titulo: '¿Cómo funciona?',
-    subtitulo: 'De la solicitud al técnico en tu puerta — sin apps, sin llamadas.',
+    overline: 'Paso a paso',
+    titulo: '¿Cómo funciona para ti?',
+    subtitulo: 'De la solicitud al equipo funcionando — sin apps, sin llamadas y sabiendo siempre cuánto pagas.',
     pasos: [
       {
         num: '01',
         emoji: '📝',
-        titulo: 'Describe el problema',
-        texto: 'Ingresa el equipo, la falla, tu dirección, dos horarios disponibles y el valor que ofreces al técnico.',
+        titulo: 'Describe el problema y ve el precio',
+        texto: 'Ingresa el equipo, la falla, tu dirección y dos horarios. Antes de enviar ves el valor del servicio con IVA incluido. Aún no pagas nada.',
         img: IMAGES.washingMachine,
       },
       {
         num: '02',
         emoji: '📲',
-        titulo: 'Un técnico acepta por WhatsApp',
-        texto: 'Los técnicos verificados de tu zona reciben la oferta. El primero en aceptar es asignado al instante.',
+        titulo: 'Un técnico verificado acepta',
+        texto: 'Te avisamos por WhatsApp quién va y a qué hora. Para reservar la cita pagas un anticipo del 50% en línea, a Baird Service.',
         img: IMAGES.repairMan,
       },
       {
         num: '03',
-        emoji: '🏠',
-        titulo: 'Técnico verificado en tu puerta',
-        texto: 'Recibes por WhatsApp la foto, nombre y documento del técnico antes de que llegue. Tú sabías quién venía.',
+        emoji: '🪪',
+        titulo: 'Recibes su carnet digital',
+        texto: 'Foto, nombre y últimos dígitos de su cédula llegan a tu WhatsApp. Al abrir la puerta, lo comparas con su documento físico.',
         img: IMAGES.plumberSink,
       },
+      {
+        num: '04',
+        emoji: '✅',
+        titulo: 'Apruebas la cotización y pagas al final',
+        texto: 'Tras el diagnóstico recibes la cotización por WhatsApp. Tú decides. Al terminar confirmas que quedó bien y pagas el saldo en línea.',
+        img: IMAGES.technicianWork,
+      },
     ],
+  },
+  // Momentos de pago del servicio PARTICULAR (el cliente paga a Baird).
+  // Montos derivados de las constantes de tarifas (ver arriba).
+  pagos: {
+    overline: 'Transparencia total',
+    titulo: '¿Qué pagas y cuándo?',
+    subtitulo:
+      'Así funciona el pago de un servicio particular (fuera de garantía). Siempre a Baird Service, siempre en línea, nunca en efectivo al técnico.',
+    momentos: [
+      {
+        paso: '1',
+        cuando: 'Al solicitar',
+        monto: '$0',
+        titulo: 'Ves el precio, no pagas nada',
+        texto: `Diagnóstico o reparación: ${COP(TARIFA_DIAGNOSTICO)} IVA incluido. Mantenimiento preventivo: entre ${COP(MANTENIMIENTO_MIN)} y ${COP(MANTENIMIENTO_MAX)} según el equipo. Cambio de filtro: ${COP(TARIFA_CAMBIO_FILTRO)} con el filtro incluido.`,
+      },
+      {
+        paso: '2',
+        cuando: 'Cuando un técnico acepta',
+        monto: `${Math.round(ANTICIPO_PORCENTAJE * 100)}%`,
+        titulo: 'Anticipo para reservar la cita',
+        texto: `Recibes un link de pago seguro (Wompi) por WhatsApp. En un diagnóstico son ${COP(ANTICIPO_DIAGNOSTICO)}. Puedes cancelar o reagendar sin costo hasta ${CANCELACION_CUTOFF_HORAS} horas antes de la visita.`,
+      },
+      {
+        paso: '3',
+        cuando: 'Después del diagnóstico',
+        monto: 'Tú decides',
+        titulo: 'Cotización por WhatsApp',
+        texto: `El técnico revisa el equipo y te llega una cotización con el total (diagnóstico + reparación, IVA incluido). Si apruebas y hay repuestos, abonas el ${Math.round(ABONO_REPUESTOS_PORCENTAJE * 100)}% del saldo antes de que los compre. Si no apruebas, solo pagas el diagnóstico.`,
+      },
+      {
+        paso: '4',
+        cuando: 'Al terminar',
+        monto: 'Saldo',
+        titulo: 'Confirmas y pagas lo que falta',
+        texto: 'Confirmas por WhatsApp que el equipo quedó funcionando y pagas el saldo restante con otro link seguro. Recibes factura de Baird Service. El técnico nunca te cobra en sitio.',
+      },
+    ],
+    garantia: {
+      titulo: '¿Tu equipo está en garantía?',
+      texto: 'Pagas $0. La marca cubre el servicio y le paga a Baird Service. Solo necesitas el número de orden o serie de tu equipo.',
+    },
   },
   // Los equipos viven en EQUIPOS_HOME (src/lib/constants/equipos-home.ts):
   // llevan icono propio y el slug de su landing SEO, validado contra
@@ -66,12 +133,12 @@ const CONTENIDO = {
     {
       icon: '🛡️',
       titulo: 'Técnicos 100% verificados',
-      texto: 'Foto, documento de identidad y especialidades confirmadas por Baird antes de atender servicios.',
+      texto: 'Foto, documento de identidad y especialidades confirmadas por Baird. Recibes su carnet digital antes de la visita.',
     },
     {
       icon: '💰',
-      titulo: 'Tú propones el precio',
-      texto: 'El valor del servicio lo defines tú. El pago se realiza a Baird Service, nunca en efectivo. Sin sorpresas.',
+      titulo: 'Precio claro desde el inicio',
+      texto: 'Ves el valor con IVA antes de pedir y apruebas cualquier reparación antes de que se haga. Pagas en línea a Baird Service, nunca en efectivo.',
     },
     {
       icon: '📲',
@@ -94,21 +161,17 @@ const CONTENIDO = {
       texto: 'Tu nevera la repara alguien que sabe de neveras. Cada técnico declara y verifica sus especialidades.',
     },
   ],
+  // La home está enfocada al CLIENTE (2026-10-10): la captación de técnicos
+  // queda en un banner compacto + /registro, no en una sección protagonista.
   tecnico: {
     overline: 'Para técnicos',
     titulo: '¿Eres técnico de electrodomésticos?',
-    subtitulo: 'Recibe trabajos directo en tu WhatsApp. Ves el pago y la dirección antes de aceptar.',
-    beneficios: [
-      { emoji: '📬', titulo: 'Trabajos en tu zona', texto: 'Filtramos por ciudad y especialidad. Solo recibes lo que sabes hacer.' },
-      { emoji: '💸', titulo: 'Ves el pago antes de aceptar', texto: 'El cliente define el valor. Baird Service te paga. Tú decides si vale la pena.' },
-      { emoji: '🚀', titulo: 'El primero que acepta, gana', texto: 'Sin subastas ni esperas. Toca el link que llega a tu WhatsApp y el trabajo es tuyo.' },
-      { emoji: '📵', titulo: 'Sin apps adicionales', texto: 'Todo en WhatsApp. Cero fricción para empezar a recibir clientes.' },
-    ],
-    cta: 'Registrarme como técnico',
+    subtitulo: 'Recibe trabajos en tu zona directo en WhatsApp. Ves el pago y la dirección antes de aceptar; Baird Service te paga.',
+    cta: 'Quiero hacer parte del equipo',
   },
   confianza: [
     { emoji: '🏅', titulo: 'Calidad certificada ISO 9001', texto: 'Somos una empresa certificada en gestión de calidad bajo la norma internacional ISO 9001.' },
-    { emoji: '🪪', titulo: 'Identidad verificada', texto: 'El cliente recibe la foto y el documento del técnico por WhatsApp al confirmarse el servicio.' },
+    { emoji: '🪪', titulo: 'Carnet digital del técnico', texto: 'Recibes por WhatsApp y en tu portal el carnet con foto, nombre y últimos dígitos de la cédula para cotejar en la puerta. Nunca compartimos su documento completo.' },
     { emoji: '🔒', titulo: 'Pago seguro a Baird Service', texto: 'El pago se realiza directamente a la empresa por medios electrónicos. No se acepta efectivo.' },
     { emoji: '🤝', titulo: 'Compromiso de calidad', texto: 'Solo técnicos que cumplen los estándares de Baird pueden recibir solicitudes.' },
   ],
@@ -152,50 +215,62 @@ function WhatsAppMockup() {
           {/* Fondo con patrón sutil */}
           <div className="flex-1 p-3 space-y-2" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'40\' height=\'40\' viewBox=\'0 0 40 40\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'1\' fill=\'%23000\' fill-opacity=\'.03\'/%3E%3C/g%3E%3C/svg%3E")' }}>
 
-            {/* Mensaje entrante */}
+            {/* Lo que ve el CLIENTE (2026-10-10): solicitud → técnico con
+                carnet digital → anticipo. Antes mostraba el lado del técnico. */}
+            {/* Mensaje 1: solicitud recibida */}
             <div className="max-w-[88%]">
               <div className="bg-white rounded-xl rounded-tl-sm px-3 py-2.5 shadow-sm">
                 <p className="text-[10px] font-bold text-[#075E54] mb-1.5">Baird Service</p>
                 <p className="text-[11px] text-gray-800 leading-relaxed">
-                  🔧 <span className="font-semibold">Nueva solicitud</span>
-                  <br />📋 Lavadora Samsung
-                  <br />🛠 Rodamiento desgastado
-                  <br />📍 Chapinero, Bogotá
+                  ✅ <span className="font-semibold">Solicitud recibida</span>
+                  <br />📋 Lavadora Samsung · Diagnóstico
                   <br /><span className="text-[10px] text-gray-500">🗓 Lun 24 Feb, 8am–12pm</span>
                 </p>
                 <div className="mt-2 pt-2 border-t border-gray-100">
-                  <p className="text-[13px] font-black text-green-700">💰 $180.000 COP</p>
+                  <p className="text-[12px] font-black text-green-700">💰 {COP(TARIFA_DIAGNOSTICO)} IVA incl.</p>
                 </div>
                 <p className="text-[10px] text-gray-400 text-right mt-1">10:23 AM ✓✓</p>
               </div>
-              {/* Botón de acción */}
+            </div>
+
+            {/* Mensaje 2: técnico asignado + carnet */}
+            <div className="max-w-[88%] mt-3">
+              <div className="bg-white rounded-xl rounded-tl-sm px-3 py-2.5 shadow-sm">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600">CR</div>
+                  <div className="leading-tight">
+                    <p className="text-[11px] font-semibold text-gray-800">Carlos R.</p>
+                    <p className="text-[9px] text-emerald-700 font-semibold">✓ Verificado · CC •••• 4521</p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-500 leading-relaxed">
+                  🪪 Carnet digital de tu técnico. Al llegar, pídele su cédula y confirma los últimos dígitos.
+                </p>
+                <p className="text-[10px] text-gray-400 text-right mt-1">10:41 AM ✓✓</p>
+              </div>
               <div className="bg-white rounded-xl rounded-tl-sm mt-0.5 shadow-sm overflow-hidden">
                 <div className="border-t border-gray-100 py-2 text-center">
-                  <span className="text-[11px] text-[#00a884] font-semibold">👉 Ver y Aceptar</span>
+                  <span className="text-[11px] text-[#00a884] font-semibold">👉 Ver mi servicio</span>
                 </div>
               </div>
             </div>
 
-            {/* Respuesta del técnico */}
-            <div className="flex justify-end mt-3">
-              <div className="bg-[#DCF8C6] rounded-xl rounded-tr-sm px-3 py-2 shadow-sm max-w-[65%]">
-                <p className="text-[12px] font-semibold text-gray-800">ACEPTO ✅</p>
-                <p className="text-[10px] text-gray-400 text-right mt-0.5">10:24 AM ✓✓</p>
-              </div>
-            </div>
-
-            {/* Mensaje de confirmación */}
-            <div className="max-w-[88%]">
+            {/* Mensaje 3: anticipo */}
+            <div className="max-w-[88%] mt-3">
               <div className="bg-white rounded-xl rounded-tl-sm px-3 py-2.5 shadow-sm">
                 <p className="text-[11px] text-gray-800 leading-relaxed">
-                  ✅ <span className="font-semibold text-green-700">¡Servicio asignado!</span>
+                  💳 <span className="font-semibold">Reserva tu cita</span>
                   <br />
                   <span className="text-[10px] text-gray-500">
-                    Tu técnico Carlos R. está confirmado.<br />
-                    WhatsApp: +57 312 *** ***
+                    Anticipo {Math.round(ANTICIPO_PORCENTAJE * 100)}%: <span className="font-semibold text-gray-700">{COP(ANTICIPO_DIAGNOSTICO)}</span> · pago seguro en línea
                   </span>
                 </p>
-                <p className="text-[10px] text-gray-400 text-right mt-1">10:24 AM ✓✓</p>
+                <p className="text-[10px] text-gray-400 text-right mt-1">10:41 AM ✓✓</p>
+              </div>
+              <div className="bg-white rounded-xl rounded-tl-sm mt-0.5 shadow-sm overflow-hidden">
+                <div className="border-t border-gray-100 py-2 text-center">
+                  <span className="text-[11px] text-[#00a884] font-semibold">👉 Pagar anticipo</span>
+                </div>
               </div>
             </div>
           </div>
@@ -223,7 +298,7 @@ export default function Home() {
           <nav className="hidden sm:flex items-center gap-6 text-sm text-slate-600">
             <Link href="/#como-funciona" className="hover:text-slate-900 transition-colors">Cómo funciona</Link>
             <Link href="/#equipos" className="hover:text-slate-900 transition-colors">Equipos</Link>
-            <Link href="/registro" className="hover:text-slate-900 transition-colors">Soy técnico</Link>
+            <Link href="/registro" className="hover:text-slate-900 transition-colors">Quiero hacer parte del equipo</Link>
           </nav>
 
           {/* CTAs */}
@@ -313,9 +388,9 @@ export default function Home() {
                     {CONTENIDO.hero.ctaCliente} →
                   </button>
                 </Link>
-                <Link href="/registro" className="w-full sm:w-auto">
+                <Link href="/#pagos" className="w-full sm:w-auto">
                   <button className="w-full bg-white/5 hover:bg-white/10 border border-white/15 hover:border-white/30 text-white font-semibold py-4 px-8 rounded-2xl text-base transition-all duration-200 hover:-translate-y-0.5">
-                    {CONTENIDO.hero.ctaTecnico}
+                    {CONTENIDO.hero.ctaPagos}
                   </button>
                 </Link>
               </div>
@@ -323,7 +398,7 @@ export default function Home() {
               {/* Trust micro-signals */}
               <div className="flex items-center gap-4 mt-8 text-white/70 text-xs">
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Certificados ISO 9001</span>
-                <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Gratis para clientes</span>
+                <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Precio antes de pedir</span>
                 <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Pago seguro a Baird Service</span>
               </div>
             </div>
@@ -341,7 +416,7 @@ export default function Home() {
                 <div className="hero-tecnico-foto absolute inset-0" aria-hidden="true" />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent" />
                 <p className="absolute bottom-4 left-4 right-4 text-white text-sm font-semibold leading-snug">
-                  Recibes su foto y documento por WhatsApp antes de que toque tu puerta.
+                  Recibes su carnet digital por WhatsApp antes de que toque tu puerta.
                 </p>
               </div>
             </div>
@@ -406,9 +481,9 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-            {/* Línea conectora */}
-            <div className="hidden md:block absolute top-20 left-[calc(16.66%+1rem)] right-[calc(16.66%+1rem)] h-px bg-gradient-to-r from-transparent via-green-300 to-transparent" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative">
+            {/* Línea conectora (solo cuando los 4 pasos van en una fila) */}
+            <div className="hidden lg:block absolute top-20 left-[calc(12.5%+1rem)] right-[calc(12.5%+1rem)] h-px bg-gradient-to-r from-transparent via-green-300 to-transparent" />
 
             {CONTENIDO.comoFunciona.pasos.map((p, i) => (
               <div key={i} className="relative flex flex-col items-center text-center group">
@@ -440,6 +515,75 @@ export default function Home() {
                 Solicitar un servicio ahora →
               </button>
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── QUÉ PAGAS Y CUÁNDO (servicio particular) ────────────────── */}
+      <section id="pagos" className="py-24 px-4 bg-slate-50 scroll-mt-16">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="inline-block text-green-600 font-semibold text-xs tracking-[0.15em] uppercase bg-white border border-green-100 rounded-full px-4 py-1.5 mb-4">
+              {CONTENIDO.pagos.overline}
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black text-slate-900 mb-4">
+              {CONTENIDO.pagos.titulo}
+            </h2>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              {CONTENIDO.pagos.subtitulo}
+            </p>
+          </div>
+
+          <ol className="relative grid grid-cols-1 md:grid-cols-2 gap-5">
+            {CONTENIDO.pagos.momentos.map((m) => (
+              <li
+                key={m.paso}
+                className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-green-200 transition-all duration-300 flex gap-5"
+              >
+                <div className="shrink-0 flex flex-col items-center">
+                  <span className="w-11 h-11 rounded-xl bg-slate-900 text-white font-black text-lg flex items-center justify-center shadow-md">
+                    {m.paso}
+                  </span>
+                  <span className="mt-2 text-[11px] font-bold text-green-700 bg-green-50 border border-green-100 rounded-full px-2.5 py-1 whitespace-nowrap">
+                    {m.monto}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 mb-1">{m.cuando}</p>
+                  <h3 className="font-bold text-slate-900 text-[17px] mb-1.5">{m.titulo}</h3>
+                  <p className="text-slate-500 text-sm leading-relaxed">{m.texto}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2 bg-emerald-600 text-white rounded-2xl p-6 flex gap-4 items-start shadow-md">
+              <span className="text-3xl leading-none">📋</span>
+              <div>
+                <h3 className="font-bold text-lg mb-1">{CONTENIDO.pagos.garantia.titulo}</h3>
+                <p className="text-emerald-50 text-sm leading-relaxed">{CONTENIDO.pagos.garantia.texto}</p>
+              </div>
+            </div>
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 mb-2">Regla de oro</p>
+              <p className="text-slate-700 text-sm leading-relaxed">
+                <span className="font-bold text-slate-900">Nunca pagues en efectivo ni directo al técnico.</span>{' '}
+                Todo pago va a Baird Service por link seguro; así tu servicio queda respaldado y con factura.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-center mt-12">
+            <Link href="/solicitar">
+              <button className="bg-green-500 hover:bg-green-400 text-white font-bold py-4 px-10 rounded-2xl text-base shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200">
+                Pedir mi diagnóstico →
+              </button>
+            </Link>
+            <p className="text-xs text-slate-400 mt-3">
+              Precios con IVA incluido. Detalle completo en los{' '}
+              <Link href="/terminos" className="underline hover:text-slate-600">Términos y Condiciones</Link>.
+            </p>
           </div>
         </div>
       </section>
@@ -534,51 +678,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── SECCIÓN TÉCNICOS ────────────────────────────────────────── */}
-      <section className="bg-slate-950 py-24 px-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600 rounded-full opacity-[0.06] blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-indigo-600 rounded-full opacity-[0.08] blur-[100px] pointer-events-none" />
-
-        <div className="relative z-10 max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <span className="inline-block text-blue-400 font-semibold text-xs tracking-[0.15em] uppercase bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-4">
-              {CONTENIDO.tecnico.overline}
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-              {CONTENIDO.tecnico.titulo}
-            </h2>
-            <p className="text-white/50 text-lg max-w-lg mx-auto">
-              {CONTENIDO.tecnico.subtitulo}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-12">
-            {CONTENIDO.tecnico.beneficios.map((b, i) => (
-              <div
-                key={i}
-                className="flex gap-4 bg-white/5 hover:bg-white/8 border border-white/8 hover:border-blue-400/30 rounded-2xl p-5 transition-all duration-200 group"
-              >
-                <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-xl flex-shrink-0 group-hover:bg-blue-500/10 transition-colors">
-                  {b.emoji}
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-[15px] mb-1">{b.titulo}</h3>
-                  <p className="text-white/50 text-sm leading-relaxed">{b.texto}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="text-center">
-            <Link href="/registro">
-              <button className="bg-blue-500 hover:bg-blue-400 active:bg-blue-600 text-white font-bold py-4 px-10 rounded-2xl text-base shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all duration-200">
-                {CONTENIDO.tecnico.cta} →
-              </button>
-            </Link>
-          </div>
-        </div>
-      </section>
-
       {/* ── IMAGE BREAK: Modern kitchen ──────────────────────────── */}
       <section className="relative h-48 sm:h-64 overflow-hidden">
         <Image
@@ -625,46 +724,30 @@ export default function Home() {
 
         <div className="relative z-10 max-w-4xl mx-auto text-center">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            ¿Listo para empezar?
+            ¿Tu electrodoméstico falló?
           </h2>
-          <p className="text-white/50 text-lg mb-14 max-w-lg mx-auto">
-            Elige cómo quieres usar Baird Service.
+          <p className="text-white/50 text-lg mb-10 max-w-lg mx-auto">
+            Pide tu diagnóstico ahora. Precio claro, técnico verificado y pago seguro en línea.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-5 justify-center items-stretch">
-            {/* Card cliente */}
-            <Link href="/solicitar" className="group flex-1 max-w-xs mx-auto sm:mx-0">
-              <div className="h-full bg-white rounded-3xl p-8 text-left shadow-2xl hover:-translate-y-1 transition-all duration-300">
-                <div className="w-14 h-14 bg-gradient-to-br from-green-400 to-green-600 rounded-2xl flex items-center justify-center text-2xl mb-5 shadow-lg shadow-green-200 group-hover:scale-110 transition-transform duration-300">
-                  🏠
-                </div>
-                <h3 className="text-xl font-black text-slate-900 mb-1">Soy cliente</h3>
-                <p className="text-slate-500 text-sm mb-6">Necesito reparar mi electrodoméstico</p>
-                <span className="bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-2.5 px-5 rounded-xl text-sm inline-block shadow-md">
-                  Solicitar servicio →
-                </span>
-              </div>
-            </Link>
+          <Link href="/solicitar" className="inline-block">
+            <button className="bg-green-500 hover:bg-green-400 active:bg-green-600 text-white font-bold py-4 px-12 rounded-2xl text-lg shadow-xl shadow-green-500/30 hover:shadow-green-500/50 hover:-translate-y-0.5 transition-all duration-200">
+              Solicitar servicio →
+            </button>
+          </Link>
 
-            {/* Divisor */}
-            <div className="flex sm:flex-col items-center justify-center gap-2 text-white/20 text-sm font-light">
-              <div className="flex-1 sm:w-px h-px sm:h-16 bg-white/10" />
-              o
-              <div className="flex-1 sm:w-px h-px sm:h-16 bg-white/10" />
+          {/* Captación de técnicos: banner compacto (la home es para el cliente). */}
+          <div className="mt-16 max-w-2xl mx-auto bg-white/5 border border-white/10 rounded-2xl px-6 py-5 flex flex-col sm:flex-row items-center gap-4 text-left">
+            <span className="text-3xl leading-none">🔧</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-300 mb-0.5">{CONTENIDO.tecnico.overline}</p>
+              <p className="text-white font-bold text-[15px] leading-snug">{CONTENIDO.tecnico.titulo}</p>
+              <p className="text-white/50 text-sm leading-relaxed mt-1">{CONTENIDO.tecnico.subtitulo}</p>
             </div>
-
-            {/* Card técnico */}
-            <Link href="/registro" className="group flex-1 max-w-xs mx-auto sm:mx-0">
-              <div className="h-full bg-white rounded-3xl p-8 text-left shadow-2xl hover:-translate-y-1 transition-all duration-300">
-                <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-blue-600 rounded-2xl flex items-center justify-center text-2xl mb-5 shadow-lg shadow-blue-200 group-hover:scale-110 transition-transform duration-300">
-                  🔧
-                </div>
-                <h3 className="text-xl font-black text-slate-900 mb-1">Soy técnico</h3>
-                <p className="text-slate-500 text-sm mb-6">Quiero recibir trabajos en mi zona</p>
-                <span className="bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-2.5 px-5 rounded-xl text-sm inline-block shadow-md">
-                  Registrarme →
-                </span>
-              </div>
+            <Link href="/registro" className="shrink-0">
+              <span className="inline-block bg-blue-500 hover:bg-blue-400 text-white font-semibold py-2.5 px-5 rounded-xl text-sm transition-colors">
+                {CONTENIDO.tecnico.cta} →
+              </span>
             </Link>
           </div>
         </div>
@@ -715,7 +798,7 @@ export default function Home() {
             <div className="flex flex-col gap-3 items-center md:items-end text-sm text-white/70">
               <div className="flex flex-wrap gap-x-8 gap-y-3 justify-center md:justify-end">
                 <Link href="/solicitar" className="hover:text-white transition-colors">Solicitar servicio</Link>
-                <Link href="/registro" className="hover:text-white transition-colors">Registrarse como técnico</Link>
+                <Link href="/registro" className="hover:text-white transition-colors">Quiero hacer parte del equipo</Link>
                 <Link href="/#como-funciona" className="hover:text-white transition-colors">Cómo funciona</Link>
                 <a
                   href="https://tienda.bairdservice.com/"
