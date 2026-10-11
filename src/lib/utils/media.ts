@@ -28,6 +28,17 @@
 /** Tamaño debajo del cual no vale la pena recomprimir si ya es JPEG/PNG/WebP. */
 const SKIP_COMPRESSION_THRESHOLD_BYTES = 500 * 1024
 
+/**
+ * Límite de tamaño para VIDEOS de evidencia (diagnóstico y pruebas de
+ * completación). Subido de 10 → 50 MB el 2026-10-10: los videos van directo
+ * del navegador a Supabase Storage (no pasan por Vercel, así que el tope de
+ * 4.5 MB por request no aplica) y el bucket `evidencias-servicio` no tiene
+ * `file_size_limit` propio — el techo real es el límite global del proyecto
+ * Supabase (50 MB). Las fotos siguen con su propio tope post-compresión.
+ */
+export const MAX_VIDEO_SIZE_MB = 50
+export const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024
+
 /** Tipos de imagen que ya son universalmente compatibles y no necesitan conversión. */
 const COMPATIBLE_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
 
@@ -175,10 +186,10 @@ export function videoSizeAdvice(): string {
   const isAndroid = /Android/.test(ua)
 
   if (isIPhone) {
-    return 'El video supera 10 MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de 20 segundos.'
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de 40 segundos.`
   }
   if (isAndroid) {
-    return 'El video supera 10 MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de 20 segundos.'
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de 40 segundos.`
   }
-  return 'El video supera 10 MB. Graba un clip más corto (10-15 s) o usa resolución 1080p en lugar de 4K.'
+  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (20-30 s) o usa resolución 1080p en lugar de 4K.`
 }

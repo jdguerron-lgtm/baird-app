@@ -114,8 +114,10 @@ export default function CarnetTecnico({ carnet, ayuda = 'ninguno', className = '
               <dd className="text-slate-900 mt-0.5">{carnet.verificado ? (fecha ?? 'Sí') : 'Pendiente'}</dd>
             </div>
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Contrato</dt>
-              <dd className="text-slate-900 mt-0.5">{carnet.contrato_firmado ? 'Firmado' : '—'}</dd>
+              <dt className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Estado</dt>
+              <dd className={`mt-0.5 font-semibold ${carnet.verificado ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {carnet.verificado ? 'Activo' : 'Pendiente'}
+              </dd>
             </div>
           </dl>
         </div>

@@ -22,7 +22,7 @@ import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
-import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
+import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
@@ -44,7 +44,6 @@ interface Servicio {
 }
 
 const MAX_EVIDENCIAS = 4
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB para fotos y videos
 
 export default function DiagnosticoPage() {
   const { token, id } = useParams<{ token: string; id: string }>()
@@ -230,9 +229,10 @@ export default function DiagnosticoPage() {
   // Handle file selection (photos/videos).
   // Las fotos se comprimen luego (en enviarDiagnostico), acá solo validamos tamaño
   // y tipo. El límite de 10 MB se aplica tras la compresión para imágenes (una
-  // foto HEIC iPhone 6 MB termina en ~700 KB), pero antes para videos (no se
-  // comprimen client-side). Por eso el mensaje accionable solo se muestra cuando
-  // el archivo grande es un video.
+  // foto HEIC iPhone 6 MB termina en ~700 KB); los videos tienen su propio tope
+  // (MAX_VIDEO_SIZE_BYTES, 50 MB desde 2026-10-10) y se validan antes porque no
+  // se comprimen client-side. Por eso el mensaje accionable solo se muestra
+  // cuando el archivo grande es un video.
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return
     const newFiles: File[] = []
@@ -247,7 +247,7 @@ export default function DiagnosticoPage() {
 
       // Solo rechazamos por tamaño *antes* si es video — las imágenes las comprime
       // compressImageIfNeeded antes del upload.
-      if (isVideo && file.size > MAX_FILE_SIZE) {
+      if (isVideo && file.size > MAX_VIDEO_SIZE_BYTES) {
         advice = videoSizeAdvice()
         continue
       }
@@ -946,7 +946,7 @@ export default function DiagnosticoPage() {
                 >
                   <span className="text-2xl mb-1">📷</span>
                   <span className="text-xs text-gray-500 font-medium">Tomar foto</span>
-                  <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">Se comprime sola</span>
                 </button>
                 {/* Video como tile de primer nivel (2026-08-12): antes era un
                     link chiquito debajo de la grilla y los técnicos no lo veían
@@ -957,7 +957,7 @@ export default function DiagnosticoPage() {
                 >
                   <span className="text-2xl mb-1">🎬</span>
                   <span className="text-xs text-purple-700 font-semibold">Grabar video</span>
-                  <span className="text-[10px] text-gray-400 mt-0.5">Max 10MB</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5">Máx {MAX_VIDEO_SIZE_MB} MB</span>
                 </button>
               </>
             )}

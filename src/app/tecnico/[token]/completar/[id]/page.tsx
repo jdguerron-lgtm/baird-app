@@ -9,12 +9,12 @@ import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
-import { compressImageIfNeeded, inferExtension, videoSizeAdvice } from '@/lib/utils/media'
+import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
-/** Límite de tamaño del archivo recibido (post-compresión para imágenes, original para videos). */
+/** Límite de tamaño para IMÁGENES (post-compresión). Los videos usan MAX_VIDEO_SIZE_BYTES (50 MB, 2026-10-10). */
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 /** Máximo de archivos adjuntables (igual al tope previo de "fotos", ahora también videos). */
 const MAX_ARCHIVOS = 6
@@ -177,7 +177,7 @@ export default function CompletarServicioPage() {
   // - Las imágenes se comprimen al hacer submit (no acá) — preserva la foto original
   //   en memoria para que el técnico pueda quitarla sin haber gastado decode.
   // - Los videos no se pueden comprimir client-side sin ffmpeg.wasm (~25 MB).
-  //   Si el video supera MAX_FILE_SIZE lo rechazamos acá con un mensaje accionable.
+  //   Si el video supera MAX_VIDEO_SIZE_BYTES lo rechazamos acá con un mensaje accionable.
   const handlePhotos = (files: FileList | null) => {
     if (!files) return
     const slots = MAX_ARCHIVOS - fotos.length
@@ -189,7 +189,7 @@ export default function CompletarServicioPage() {
       const isImage = file.type.startsWith('image/')
       const isVideo = file.type.startsWith('video/')
       if (!isImage && !isVideo) continue
-      if (isVideo && file.size > MAX_FILE_SIZE) {
+      if (isVideo && file.size > MAX_VIDEO_SIZE_BYTES) {
         advice = videoSizeAdvice()
         continue
       }
@@ -310,8 +310,16 @@ export default function CompletarServicioPage() {
           const file = await compressImageIfNeeded(rawFile, { maxDimension: 2560, quality: 0.9 })
           // Defensa post-compresión: si tras comprimir aún excede el límite (caso raro,
           // ej. un video grande adjuntado), no lo subimos.
-          if (file.size > MAX_FILE_SIZE) {
-            return { ok: false as const, idx: i, error: `Archivo ${i + 1}: excede 10 MB tras compresión` }
+          const esVideo = file.type.startsWith('video/')
+          const limite = esVideo ? MAX_VIDEO_SIZE_BYTES : MAX_FILE_SIZE
+          if (file.size > limite) {
+            return {
+              ok: false as const,
+              idx: i,
+              error: esVideo
+                ? `Archivo ${i + 1}: el video excede ${MAX_VIDEO_SIZE_MB} MB`
+                : `Archivo ${i + 1}: excede 10 MB tras compresión`,
+            }
           }
           const ext = inferExtension(file)
           const path = `${servicio.id}/${stamp}_${rand}_${i}.${ext}`
@@ -635,7 +643,7 @@ export default function CompletarServicioPage() {
           )}
 
           <p className="text-[10px] text-gray-400">
-            {fotos.length}/{MAX_ARCHIVOS} archivos · Fotos se comprimen al subir; video máx 10 MB.
+            {fotos.length}/{MAX_ARCHIVOS} archivos · Fotos se comprimen al subir; video máx {MAX_VIDEO_SIZE_MB} MB.
           </p>
 
           {/* Input cámara foto — capture="environment" abre la cámara trasera en modo foto. */}
