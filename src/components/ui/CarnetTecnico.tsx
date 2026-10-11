@@ -100,8 +100,8 @@ export default function CarnetTecnico({ carnet, ayuda = 'ninguno', className = '
             <div>
               <dt className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Documento</dt>
               <dd className="font-mono text-slate-900 mt-0.5">
-                {carnet.documento_enmascarado
-                  ? `${carnet.tipo_documento ?? 'CC'} ${carnet.documento_enmascarado}`
+                {carnet.documento
+                  ? `${carnet.tipo_documento ?? 'CC'} ${carnet.documento}`
                   : '—'}
               </dd>
             </div>
@@ -126,13 +126,13 @@ export default function CarnetTecnico({ carnet, ayuda = 'ninguno', className = '
             {ayuda === 'cliente' && (
               <>
                 <span className="font-semibold text-slate-700">Al llegar, pídele su cédula física</span> y confirma que
-                los últimos dígitos coincidan con este carnet. Nunca pagues en efectivo al técnico.
+                el número coincida con este carnet. Nunca pagues en efectivo al técnico.
               </>
             )}
             {ayuda === 'tecnico' && (
               <>
                 Muestra este carnet al cliente al llegar y ten tu cédula física a la mano: el cliente
-                comparará los últimos dígitos.
+                comparará el número con este carnet.
               </>
             )}
             {ayuda === 'ninguno' && <>Carnet emitido por Baird Service S.A.S. · lineablanca.bairdservice.com</>}

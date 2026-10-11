@@ -163,7 +163,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │    NO está abierta → error #131047). El canal durable es el HEADER de    │
 │    la plantilla _v7 + el carnet en /servicio/{cliente_token}.            │
 │ 🔒 La FOTO DE LA CÉDULA ya NO se envía ni se muestra al cliente (PII):   │
-│    el carnet trae el documento enmascarado "CC •••• 6789" y el cliente   │
+│    el carnet trae tipo + número de documento y el cliente lo              │
 │    lo compara con la cédula física al llegar. Ver src/lib/utils/carnet.ts│
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
@@ -535,7 +535,7 @@ Cliente abre `/servicio/{cliente_token}` (URL incluida en plantillas iniciales o
 │   - Estado actual (badge + label)                                        │
 │   - Equipo, ubicación, horario_confirmado                                │
 │   - Carnet digital del técnico asignado (foto perfil, nombre,            │
-│     especialidad, documento ENMASCARADO, código) — nunca la cédula       │
+│     especialidad, número de documento, código) — nunca la FOTO cédula   │
 │   - Botones según estado:                                                │
 │       Cancelar (si estado ∈ ESTADOS_CANCELABLES_POR_CLIENTE)             │
 │       Reagendar (si estado ∈ ESTADOS_REAGENDABLES_POR_CLIENTE            │

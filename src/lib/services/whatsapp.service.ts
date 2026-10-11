@@ -1116,7 +1116,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     await enviarImagen(
       sol.cliente_telefono,
       carnetUrl,
-      `🪪 Carnet digital de ${tecnico.nombre_completo} — tu técnico Baird Service. Al llegar, pídele su cédula física y confirma que los últimos dígitos coincidan.`
+      `🪪 Carnet digital de ${tecnico.nombre_completo} — tu técnico Baird Service. Al llegar, pídele su cédula física y confirma que el número coincida.`
     ).catch(err => console.error('[procesarAceptacion] carnet digital falló (24h?):', err instanceof Error ? err.message : err))
   }
 

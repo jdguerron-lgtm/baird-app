@@ -72,7 +72,7 @@ const CONTENIDO = {
         num: '03',
         emoji: '🪪',
         titulo: 'Recibes su carnet digital',
-        texto: 'Foto, nombre y últimos dígitos de su cédula llegan a tu WhatsApp. Al abrir la puerta, lo comparas con su documento físico.',
+        texto: 'Foto, nombre y número de cédula llegan a tu WhatsApp. Al abrir la puerta, lo comparas con su documento físico.',
         img: IMAGES.plumberSink,
       },
       {
@@ -171,7 +171,7 @@ const CONTENIDO = {
   },
   confianza: [
     { emoji: '🏅', titulo: 'Calidad certificada ISO 9001', texto: 'Somos una empresa certificada en gestión de calidad bajo la norma internacional ISO 9001.' },
-    { emoji: '🪪', titulo: 'Carnet digital del técnico', texto: 'Recibes por WhatsApp y en tu portal el carnet con foto, nombre y últimos dígitos de la cédula para cotejar en la puerta. Nunca compartimos su documento completo.' },
+    { emoji: '🪪', titulo: 'Carnet digital del técnico', texto: 'Recibes por WhatsApp y en tu portal el carnet con foto, nombre y número de cédula para cotejar en la puerta. La foto de su documento nunca se comparte.' },
     { emoji: '🔒', titulo: 'Pago seguro a Baird Service', texto: 'El pago se realiza directamente a la empresa por medios electrónicos. No se acepta efectivo.' },
     { emoji: '🤝', titulo: 'Compromiso de calidad', texto: 'Solo técnicos que cumplen los estándares de Baird pueden recibir solicitudes.' },
   ],
@@ -240,11 +240,11 @@ function WhatsAppMockup() {
                   <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600">CR</div>
                   <div className="leading-tight">
                     <p className="text-[11px] font-semibold text-gray-800">Carlos R.</p>
-                    <p className="text-[9px] text-emerald-700 font-semibold">✓ Verificado · CC •••• 4521</p>
+                    <p className="text-[9px] text-emerald-700 font-semibold">✓ Verificado · CC 80.123.456</p>
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-500 leading-relaxed">
-                  🪪 Carnet digital de tu técnico. Al llegar, pídele su cédula y confirma los últimos dígitos.
+                  🪪 Carnet digital de tu técnico. Al llegar, pídele su cédula y confirma que el número coincida.
                 </p>
                 <p className="text-[10px] text-gray-400 text-right mt-1">10:41 AM ✓✓</p>
               </div>

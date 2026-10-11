@@ -160,7 +160,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 #### `tecnico_asignado_cliente_v7` (nueva 2026-10-10 — **en script, pendiente subir a Meta**) 🪪 carnet digital
 - **Disparo**: `procesarAceptacion()` cuando `es_garantia=true`. Se intenta PRIMERO; si falla (PENDING/rechazo) cae a `_v6`.
 - **Destino**: cliente
-- **Header IMAGE**: `{APP_URL}/api/carnet/{tecnico_id}` — PNG del **carnet digital** (foto de perfil + nombre + especialidad + documento ENMASCARADO `CC •••• 6789` + código). Reemplaza las 2 imágenes free-form (foto perfil + **foto de la cédula**) que fallaban por ventana 24h y exponían PII.
+- **Header IMAGE**: `{APP_URL}/api/carnet/{tecnico_id}` — PNG del **carnet digital** (foto de perfil + nombre + especialidad + tipo y número de documento + código). Reemplaza las 2 imágenes free-form (foto perfil + **foto de la cédula**) que fallaban por ventana 24h y exponían PII.
 - **Body** (5 params): iguales a `_v6` + párrafo "Arriba está su carnet digital. Al llegar, pídele su cédula física y confirma que los últimos dígitos coincidan."
 - **Botón URL dinámica**: `{APP_URL}/servicio/{{1}}` con `{{1}} = cliente_token` — display "Ver mi servicio"
 - **Subir**: necesita muestra `scripts/muestra-carnet.png` (ya incluida; regenerar con `curl -o scripts/muestra-carnet.png $APP_URL/api/carnet/<uuid>`). `node --env-file=.env.local scripts/upload-templates.mjs tecnico_asignado_cliente_v7`.
@@ -482,7 +482,7 @@ Algunos avisos se envían como **texto libre** (`enviarMensajeTexto`) en vez de 
 |---|---|---|
 | 🪪 Carnet digital del técnico (`/api/carnet/{tecnico_id}`) | `procesarAceptacion()` post-asignación (best-effort) | Va como HEADER IMAGE de `tecnico_asignado_cliente_v7` / `tecnico_asignado_particular_v2` (no requiere ventana) y se renderiza en `/servicio/{cliente_token}` |
 
-**Hasta 2026-10-10** acá salían DOS imágenes: la foto de perfil y la **foto de la cédula** del técnico. La cédula es PII sensible (Ley 1581/2012) y **ya no se envía ni se muestra al cliente en ningún canal** — solo el carnet con documento enmascarado (`src/lib/utils/carnet.ts`). La foto completa queda únicamente en `/admin/tecnicos/[id]`.
+**Hasta 2026-10-10** acá salían DOS imágenes: la foto de perfil y la **foto de la cédula** del técnico. La cédula es PII sensible (Ley 1581/2012) y **ya no se envía ni se muestra al cliente en ningún canal** — solo el carnet (`src/lib/utils/carnet.ts`: foto de perfil, nombre, tipo y número de documento; la IMAGEN de la cédula no). La foto completa queda únicamente en `/admin/tecnicos/[id]`.
 
 ---
 

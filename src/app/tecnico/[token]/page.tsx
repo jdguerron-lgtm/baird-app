@@ -401,7 +401,7 @@ function CarnetModal({ carnet, onClose }: { carnet: CarnetTecnicoData; onClose: 
         </button>
       </div>
       <p className="mt-4 text-[11px] text-slate-400 text-center max-w-sm">
-        El cliente ya recibió este carnet en su portal. Tu cédula completa nunca se le muestra: solo los últimos dígitos.
+        El cliente ya recibió este carnet en su portal. La foto de tu cédula nunca se le muestra: solo tu nombre, foto de perfil y número de documento.
       </p>
     </div>
   )

@@ -70,8 +70,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
     .map(p => p[0]?.toUpperCase() ?? '')
     .join('')
 
-  const documento = carnet.documento_enmascarado
-    ? `${carnet.tipo_documento ?? 'CC'} ${carnet.documento_enmascarado}`
+  const documento = carnet.documento
+    ? `${carnet.tipo_documento ?? 'CC'} ${carnet.documento}`
     : '—'
 
   const img = new ImageResponse(
@@ -177,11 +177,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
             </div>
 
             <div style={{ display: 'flex', marginTop: 'auto', width: '100%' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', width: 180 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', width: 240 }}>
                 <span style={{ fontSize: 11, letterSpacing: 2, color: '#94a3b8', textTransform: 'uppercase' }}>Documento</span>
                 <span style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>{documento}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', width: 170 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', width: 160 }}>
                 <span style={{ fontSize: 11, letterSpacing: 2, color: '#94a3b8', textTransform: 'uppercase' }}>Carnet N°</span>
                 <span style={{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>{carnet.codigo}</span>
               </div>
@@ -206,7 +206,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
             color: '#475569',
           }}
         >
-          Pídele su cédula física y confirma que los últimos dígitos coincidan · Nunca pagues en efectivo al técnico
+          Pídele su cédula física y confirma que el número coincida · Nunca pagues en efectivo al técnico
         </div>
       </div>
     ),

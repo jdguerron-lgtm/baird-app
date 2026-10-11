@@ -2,35 +2,30 @@ import { describe, it, expect } from 'vitest'
 import {
   codigoCarnet,
   construirCarnet,
-  enmascararDocumento,
+  formatearDocumento,
   formatearFechaCarnet,
   urlImagenCarnet,
 } from '@/lib/utils/carnet'
 
-describe('enmascararDocumento', () => {
-  it('deja visibles solo los últimos 4 dígitos', () => {
-    expect(enmascararDocumento('1032456789')).toBe('•••• 6789')
+describe('formatearDocumento', () => {
+  it('agrega puntos de miles a un número de cédula', () => {
+    expect(formatearDocumento('1032456789')).toBe('1.032.456.789')
+    expect(formatearDocumento('80123456')).toBe('80.123.456')
   })
 
-  it('limpia puntos y espacios antes de enmascarar', () => {
-    expect(enmascararDocumento('1.032.456.789')).toBe('•••• 6789')
-    expect(enmascararDocumento(' 80 123 456 ')).toBe('•••• 3456')
+  it('limpia puntos y espacios antes de formatear', () => {
+    expect(formatearDocumento('1.032.456.789')).toBe('1.032.456.789')
+    expect(formatearDocumento(' 80 123 456 ')).toBe('80.123.456')
   })
 
-  it('oculta por completo documentos de 4 o menos caracteres', () => {
-    expect(enmascararDocumento('1234')).toBe('••••')
-    expect(enmascararDocumento('12')).toBe('••••')
+  it('devuelve pasaportes alfanuméricos limpios en mayúscula', () => {
+    expect(formatearDocumento('ab 123456')).toBe('AB123456')
   })
 
   it('devuelve null sin número', () => {
-    expect(enmascararDocumento(null)).toBeNull()
-    expect(enmascararDocumento('')).toBeNull()
-    expect(enmascararDocumento('---')).toBeNull()
-  })
-
-  it('nunca contiene el número completo', () => {
-    const num = '1032456789'
-    expect(enmascararDocumento(num)).not.toContain(num)
+    expect(formatearDocumento(null)).toBeNull()
+    expect(formatearDocumento('')).toBeNull()
+    expect(formatearDocumento('---')).toBeNull()
   })
 })
 
@@ -58,15 +53,14 @@ describe('construirCarnet', () => {
     contrato_firmado: true,
   }
 
-  it('arma el carnet verificado con documento enmascarado', () => {
+  it('arma el carnet verificado con el número de documento completo', () => {
     const c = construirCarnet(base)
     expect(c.verificado).toBe(true)
-    expect(c.documento_enmascarado).toBe('•••• 6789')
+    expect(c.documento).toBe('1.032.456.789')
+    expect(c.tipo_documento).toBe('CC')
     expect(c.fecha_verificacion).toBe(base.fecha_verificacion)
     expect(c.codigo).toBe('BS-3F2A9C1E')
     expect(c.contrato_firmado).toBe(true)
-    // El modelo NO transporta el número completo
-    expect(JSON.stringify(c)).not.toContain('1032456789')
   })
 
   it('un técnico pendiente no queda verificado ni con fecha', () => {
@@ -77,7 +71,7 @@ describe('construirCarnet', () => {
 
   it('tolera columnas ausentes (registros viejos)', () => {
     const c = construirCarnet({ id: base.id, nombre_completo: 'X' })
-    expect(c.documento_enmascarado).toBeNull()
+    expect(c.documento).toBeNull()
     expect(c.foto_perfil_url).toBeNull()
     expect(c.contrato_firmado).toBe(false)
   })

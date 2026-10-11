@@ -4,10 +4,10 @@
  * Reemplaza la exposición de la FOTO DE LA CÉDULA al cliente (portal
  * /servicio/{cliente_token} + imagen por WhatsApp en procesarAceptacion):
  * el cliente solo necesita confirmar que la persona que llega es la que Baird
- * asignó, y eso se logra con foto de perfil + nombre + documento ENMASCARADO
- * (últimos dígitos) que el cliente compara contra la cédula física que el
- * técnico muestra en la puerta. La imagen completa de la cédula es PII
- * sensible (Ley 1581/2012) y no vuelve a salir de /admin.
+ * asignó, y eso se logra con foto de perfil + nombre + tipo y NÚMERO de
+ * documento que el cliente compara contra la cédula física que el técnico
+ * muestra en la puerta (decisión 2026-10-10: el número sí se muestra; lo que
+ * no sale de /admin es la IMAGEN de la cédula, PII sensible, Ley 1581/2012).
  *
  * Tres superficies consumen el mismo modelo `CarnetTecnicoData`:
  *   - `src/components/ui/CarnetTecnico.tsx` → tarjeta React (portal cliente
@@ -23,8 +23,8 @@ export interface CarnetTecnicoData {
   nombre_completo: string
   foto_perfil_url: string | null
   tipo_documento: string | null
-  /** Documento ENMASCARADO (p.ej. "•••• 4567"). Nunca el número completo. */
-  documento_enmascarado: string | null
+  /** Número de documento formateado con puntos de miles (p.ej. "1.032.456.789"). */
+  documento: string | null
   especialidad_principal: string | null
   ciudad_pueblo: string | null
   verificado: boolean
@@ -52,21 +52,18 @@ export interface CarnetTecnicoRow {
   contrato_firmado?: boolean | null
 }
 
-/** Cuántos dígitos finales del documento se muestran en el carnet. */
-export const DIGITOS_VISIBLES_DOCUMENTO = 4
-
 /**
- * Enmascara el número de documento dejando visibles solo los últimos
- * `DIGITOS_VISIBLES_DOCUMENTO` dígitos: "1032456789" → "•••• 6789".
- * Documentos muy cortos (≤ 4 dígitos) se ocultan por completo. Devuelve null
- * si no hay número.
+ * Formatea el número de documento para el carnet: limpia puntos/espacios y,
+ * si es puramente numérico, agrega puntos de miles ("1032456789" →
+ * "1.032.456.789"). Pasaportes alfanuméricos se devuelven limpios tal cual.
+ * Devuelve null si no hay número.
  */
-export function enmascararDocumento(numero: string | null | undefined): string | null {
+export function formatearDocumento(numero: string | null | undefined): string | null {
   if (!numero) return null
-  const limpio = String(numero).replace(/[^0-9A-Za-z]/g, '')
+  const limpio = String(numero).replace(/[^0-9A-Za-z]/g, '').toUpperCase()
   if (!limpio) return null
-  if (limpio.length <= DIGITOS_VISIBLES_DOCUMENTO) return '••••'
-  return `•••• ${limpio.slice(-DIGITOS_VISIBLES_DOCUMENTO)}`
+  if (!/^\d+$/.test(limpio)) return limpio
+  return limpio.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
 
 /**
@@ -86,7 +83,7 @@ export function construirCarnet(row: CarnetTecnicoRow): CarnetTecnicoData {
     nombre_completo: row.nombre_completo,
     foto_perfil_url: row.foto_perfil_url ?? null,
     tipo_documento: row.tipo_documento ?? null,
-    documento_enmascarado: enmascararDocumento(row.numero_documento),
+    documento: formatearDocumento(row.numero_documento),
     especialidad_principal: row.especialidad_principal ?? null,
     ciudad_pueblo: row.ciudad_pueblo ?? null,
     verificado,
