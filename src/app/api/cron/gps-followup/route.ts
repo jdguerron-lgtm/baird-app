@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { cronAutorizado } from '@/lib/auth/cron'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { distanceMeters, FLAG_DISTANCE_METERS, POST_VISIT_DELAY_MINUTES } from '@/lib/utils/geo'
 
@@ -18,10 +19,7 @@ export const dynamic = 'force-dynamic'
  * Flagging es silencioso (no notifica al técnico). El admin lo ve en su UI.
  */
 export async function GET(req: Request) {
-  const isVercelCron = req.headers.get('x-vercel-cron') === '1'
-  const authHeader = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && !isVercelCron && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronAutorizado(req)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 

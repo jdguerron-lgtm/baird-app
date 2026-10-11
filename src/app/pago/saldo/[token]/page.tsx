@@ -1,3 +1,7 @@
+// 🔒 MÓDULO DE PAGOS (congelado 2026-10-11). Contrato e invariantes en
+// docs/mejoras-futuras/pagos-aislamiento/README.md § 6. No modificar sin
+// necesidad estricta; corre src/__tests__/services/pagos-contrato.test.ts y
+// etiqueta el commit con [pagos]. Guard: scripts/check-pagos-frontera.mjs.
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { construirCheckoutUrl, referenciaPago, consultarTransaccion, wompiHabilitado } from '@/lib/wompi'
@@ -236,6 +240,12 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
         >
           💳 Pagar ${formatCOP(montoACobrar)} COP
         </a>
+
+        <p className="text-[11px] text-gray-500 text-center leading-relaxed">
+          Al terminar, toca <strong>“Regresar al comercio”</strong> para ver tu confirmación.
+          Si cierras la ventana antes, no te preocupes: tu pago queda registrado en pocos minutos
+          y te confirmamos por WhatsApp.
+        </p>
 
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-xs text-gray-500 leading-relaxed">

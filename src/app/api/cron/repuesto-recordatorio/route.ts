@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { cronAutorizado } from '@/lib/auth/cron'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import {
   enviarRepuestoEnCaminoCliente,
@@ -45,10 +46,7 @@ const MAX_ESPERANDO = 3 // re-avisos a supervisores
 const MAX_EN_CAMINO = 2 // re-avisos al cliente
 
 export async function GET(req: Request) {
-  const isVercelCron = req.headers.get('x-vercel-cron') === '1'
-  const authHeader = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && !isVercelCron && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronAutorizado(req)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 

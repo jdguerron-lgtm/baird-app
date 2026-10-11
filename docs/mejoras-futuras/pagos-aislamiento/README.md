@@ -1,8 +1,16 @@
 # Auditoría del flujo de pagos y plan de aislamiento (2026-10-11)
 
-> Documento de **decisión**, no de implementación. Nada de lo aquí propuesto
-> está aplicado. El estado operativo vigente del recaudo está en
-> [`docs/WOMPI.md`](../../WOMPI.md). Léase junto con
+> **Estado 2026-10-11 (tarde): aplicado.** §§ 3–4 (trigger de resumen,
+> CHECKs, `auditar_pagos()`, `pg_cron` cada 5 min + auditoría diaria) y § 6
+> (tests de contrato `pagos-contrato.test.ts`, marcador 🔒, guard
+> `scripts/check-pagos-frontera.mjs` en `npm run lint` y `npm run check:pagos`)
+> están en prod. También el helper `cronAutorizado` (cierra el bypass
+> `x-vercel-cron`) y el aviso "Regresar al comercio" en las páginas de pago.
+> La primera corrida del job registró un pago real que llevaba 5 h sin
+> registrar. **Pendiente del user:** `CRON_SECRET` en Vercel con el valor de
+> Vault `cron_secret`. **Pendientes sin fecha:** mejora 6 (URL de eventos) y
+> mejora 7 (`/admin/pagos`). El estado operativo vigente del recaudo está en
+> [`docs/WOMPI.md`](../../WOMPI.md); léase junto con
 > [`docs/GOTCHAS.md`](../../GOTCHAS.md) § "El webhook de Wompi NO llega".
 
 ## 1. Qué pasó: ayer funcionó, hoy no

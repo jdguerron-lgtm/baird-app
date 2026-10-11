@@ -1,3 +1,7 @@
+// 🔒 MÓDULO DE PAGOS (congelado 2026-10-11). Contrato e invariantes en
+// docs/mejoras-futuras/pagos-aislamiento/README.md § 6. No modificar sin
+// necesidad estricta; corre src/__tests__/services/pagos-contrato.test.ts y
+// etiqueta el commit con [pagos]. Guard: scripts/check-pagos-frontera.mjs.
 import { createHash } from 'crypto'
 
 /**

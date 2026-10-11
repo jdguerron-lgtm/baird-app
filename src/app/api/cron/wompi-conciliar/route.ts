@@ -1,4 +1,9 @@
+// 🔒 MÓDULO DE PAGOS (congelado 2026-10-11). Contrato e invariantes en
+// docs/mejoras-futuras/pagos-aislamiento/README.md § 6. No modificar sin
+// necesidad estricta; corre src/__tests__/services/pagos-contrato.test.ts y
+// etiqueta el commit con [pagos]. Guard: scripts/check-pagos-frontera.mjs.
 import { NextResponse } from 'next/server'
+import { cronAutorizado } from '@/lib/auth/cron'
 import { conciliarPagosWompi } from '@/lib/services/pagos.service'
 
 export const dynamic = 'force-dynamic'
@@ -19,17 +24,15 @@ export const maxDuration = 60
  * `registrarPagoWompi` — misma validación de monto, idempotencia y WhatsApp
  * una sola vez que el webhook.
  *
- * Seguridad: mismo guard que los demás crons (`x-vercel-cron` o Bearer
- * CRON_SECRET). Sin WOMPI_PRIVATE_KEY responde `habilitada: false` y no hace
- * nada (kill-switch). Nunca escribe en Wompi: solo lee.
+ * Seguridad: `cronAutorizado` (Bearer CRON_SECRET; lo manda Vercel Cron y el
+ * job pg_cron `wompi-conciliar-5min` de Supabase, que lo lee de Vault). Sin
+ * WOMPI_PRIVATE_KEY responde `habilitada: false` y no hace nada
+ * (kill-switch). Nunca escribe en Wompi: solo lee.
  *
  * Query opcional: `?dias=N` (1–180, default 45) ventana de solicitudes.
  */
 export async function GET(req: Request) {
-  const isVercelCron = req.headers.get('x-vercel-cron') === '1'
-  const authHeader = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && !isVercelCron && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronAutorizado(req)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 

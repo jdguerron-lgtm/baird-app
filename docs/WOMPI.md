@@ -114,9 +114,22 @@ wompi.ts → listarTransaccionesPorReferencia ← GET /v1/transactions?reference
 - Kill-switch: sin `WOMPI_PRIVATE_KEY` responde `{ habilitada: false }` y no
   consulta nada. La misma llave se manda como Bearer en `consultarTransaccion`
   (Wompi anunció que las consultas sin autenticación dejarán de responder).
-- Programación: `*/15 * * * *` en `vercel.json` (pendiente de agregar — ver
-  "Puesta en marcha"). Prueba manual:
+- Programación (2026-10-11): **`pg_cron` + `pg_net` en Supabase cada 5 min**
+  (job `wompi-conciliar-5min`, migración `20261011_pg_cron_conciliacion_pagos`),
+  porque Vercel Hobby solo permite crons diarios. El Bearer sale de Vault
+  (`cron_secret`); la misma cadena debe estar en Vercel como `CRON_SECRET`
+  (`src/lib/auth/cron.ts`). Primera corrida real: registró el anticipo de
+  Eliana Muñoz ($63.000 Nequi) que llevaba 5 h sin regreso al redirect.
+  Verificar: `select * from cron.job_run_details order by start_time desc limit 5;`
+  y `select status_code, content::text from net._http_response order by id desc limit 3;`
+  Prueba manual:
   `curl -H "Authorization: Bearer $CRON_SECRET" https://lineablanca.bairdservice.com/api/cron/wompi-conciliar?dias=45`
+- Consistencia en la BD (misma fecha): trigger `pagos_resumen_aiud` recalcula
+  `monto_pagado_online`/`ultimo_pago_at` en cada INSERT/UPDATE/DELETE de
+  `pagos` (nunca `*_pagado_at`, que son los guards de "avisar una vez");
+  `auditar_pagos()` corre a diario (`auditar-pagos-diario`, 03:15 UTC) y deja
+  un evento ⚠️ por solicitud incoherente. Migración
+  `20261011_pagos_trigger_resumen_y_auditoria`.
 - Alternativa descartada por ahora: apuntar la URL de eventos a la app y que
   `/api/wompi/webhook` reenvíe a Conexa los eventos ajenos (proxy). Vuelve a la
   app punto único de falla de la tienda.
@@ -155,10 +168,10 @@ Reparación; página de pago muestra "el equipo te contactará").
 2. ~~Panel Wompi → Eventos → URL `https://lineablanca.bairdservice.com/api/wompi/webhook`~~
    → **ocupada por Shopify/Conexa, no tocar** (ver advertencia arriba). En su
    lugar: (a) Panel Wompi → Desarrollo → Programadores → "Llave privada" →
-   `WOMPI_PRIVATE_KEY` en Vercel (Production, Sensitive); (b) agregar en
-   `vercel.json` el cron `{ "path": "/api/cron/wompi-conciliar", "schedule": "*/15 * * * *" }`
-   (Hobby solo permite crons diarios — ahí usar `0 */1 * * *` no sirve; dejar
-   `30 9 * * *` o pasar a Pro).
+   `WOMPI_PRIVATE_KEY` en Vercel (Production, Sensitive) — hecho 2026-10-11;
+   (b) `CRON_SECRET` en Vercel con el MISMO valor que Vault `cron_secret`
+   (Supabase → Project Settings → Vault → revelar) y redeploy; (c) la
+   programación vive en Supabase (`pg_cron`), no en `vercel.json`.
 3. Subir las 3 plantillas nuevas a Meta:
    `node --env-file=.env.local scripts/upload-templates.mjs pago_anticipo_cliente_v2`
    (ídem `anticipo_confirmado_cliente_v1`, `anticipo_confirmado_tecnico_v1`).

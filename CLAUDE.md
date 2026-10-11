@@ -121,7 +121,9 @@ BAIRD_TEST_PHONE_WHITELIST        # OPCIONAL — CSV de digits con país (p.ej. 
 # Admin, cron, mapas y analítica
 ADMIN_EMAILS                      # CSV de emails admin (server). Default jdguerron@bairdservice.com. Ver docs/SEGURIDAD.md.
 NEXT_PUBLIC_ADMIN_EMAILS          # Mismo CSV para el cliente (login + guard del layout /admin).
-CRON_SECRET                       # Bearer que exigen /api/cron/* (Vercel Cron) y /api/test-whatsapp.
+CRON_SECRET                       # Bearer que exigen /api/cron/* (src/lib/auth/cron.ts) y /api/test-whatsapp.
+                                  # Debe ser el MISMO valor que Supabase Vault `cron_secret` (lo usa el job
+                                  # pg_cron wompi-conciliar-5min). Sin ella los crons quedan ABIERTOS (warning).
 ENABLE_TEST_ENDPOINTS             # 'true' habilita /api/test-whatsapp en prod (default apagado).
 GOOGLE_MAPS_API_KEY               # Geocoding de direcciones para /admin/mapa (geocoding.service.ts).
 NEXT_PUBLIC_GA_MEASUREMENT_ID     # OPCIONAL — GA4 (default G-DXSC4J9RGF hardcodeado).
