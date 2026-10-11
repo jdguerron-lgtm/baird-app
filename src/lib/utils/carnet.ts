@@ -4,10 +4,10 @@
  * Reemplaza la exposición de la FOTO DE LA CÉDULA al cliente (portal
  * /servicio/{cliente_token} + imagen por WhatsApp en procesarAceptacion):
  * el cliente solo necesita confirmar que la persona que llega es la que Baird
- * asignó, y eso se logra con foto de perfil + nombre + tipo y NÚMERO de
- * documento que el cliente compara contra la cédula física que el técnico
- * muestra en la puerta (decisión 2026-10-10: el número sí se muestra; lo que
- * no sale de /admin es la IMAGEN de la cédula, PII sensible, Ley 1581/2012).
+ * asignó, y eso se logra con foto de perfil + nombre + tipo y número de
+ * documento (con los 2 primeros dígitos ocultos) que el cliente compara contra
+ * la cédula física que el técnico muestra en la puerta. La IMAGEN de la cédula
+ * (PII sensible, Ley 1581/2012) no sale de /admin.
  *
  * Tres superficies consumen el mismo modelo `CarnetTecnicoData`:
  *   - `src/components/ui/CarnetTecnico.tsx` → tarjeta React (portal cliente
@@ -23,7 +23,7 @@ export interface CarnetTecnicoData {
   nombre_completo: string
   foto_perfil_url: string | null
   tipo_documento: string | null
-  /** Número de documento formateado con puntos de miles (p.ej. "1.032.456.789"). */
+  /** Número de documento con los 2 primeros dígitos ocultos y puntos de miles (p.ej. "••32.456.789"). */
   documento: string | null
   especialidad_principal: string | null
   ciudad_pueblo: string | null
@@ -52,18 +52,25 @@ export interface CarnetTecnicoRow {
   contrato_firmado?: boolean | null
 }
 
+/** Cuántos caracteres iniciales del documento se ocultan en el carnet. */
+export const DIGITOS_OCULTOS_DOCUMENTO = 2
+
 /**
- * Formatea el número de documento para el carnet: limpia puntos/espacios y,
- * si es puramente numérico, agrega puntos de miles ("1032456789" →
- * "1.032.456.789"). Pasaportes alfanuméricos se devuelven limpios tal cual.
- * Devuelve null si no hay número.
+ * Formatea el número de documento para el carnet ANONIMIZANDO los 2 primeros
+ * dígitos (decisión 2026-10-10): limpia puntos/espacios, oculta el inicio con
+ * "••" y agrega puntos de miles al resto ("1032456789" → "••32.456.789").
+ * Pasaportes alfanuméricos: mismos 2 primeros caracteres ocultos, sin puntos.
+ * Documentos de 2 o menos caracteres quedan como "••". Null si no hay número.
  */
 export function formatearDocumento(numero: string | null | undefined): string | null {
   if (!numero) return null
   const limpio = String(numero).replace(/[^0-9A-Za-z]/g, '').toUpperCase()
   if (!limpio) return null
-  if (!/^\d+$/.test(limpio)) return limpio
-  return limpio.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const mascara = '•'.repeat(DIGITOS_OCULTOS_DOCUMENTO)
+  const resto = limpio.slice(DIGITOS_OCULTOS_DOCUMENTO)
+  if (!resto) return mascara
+  if (!/^\d+$/.test(limpio)) return mascara + resto
+  return mascara + resto.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
 
 /**

@@ -255,7 +255,7 @@ function WhatsAppMockup() {
                   <div className="w-7 h-7 rounded-lg bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600">CR</div>
                   <div className="leading-tight">
                     <p className="text-[11px] font-semibold text-gray-800">Carlos R.</p>
-                    <p className="text-[9px] text-emerald-700 font-semibold">✓ Verificado · CC 80.123.456</p>
+                    <p className="text-[9px] text-emerald-700 font-semibold">✓ Verificado · CC ••123.456</p>
                   </div>
                 </div>
                 <p className="text-[10px] text-gray-500 leading-relaxed">

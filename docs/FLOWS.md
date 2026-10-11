@@ -163,7 +163,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │    NO está abierta → error #131047). El canal durable es el HEADER de    │
 │    la plantilla _v7 + el carnet en /servicio/{cliente_token}.            │
 │ 🔒 La FOTO DE LA CÉDULA ya NO se envía ni se muestra al cliente (PII):   │
-│    el carnet trae tipo + número de documento y el cliente lo              │
+│    el carnet trae tipo + número (2 primeros dígitos ocultos) y el cliente │
 │    lo compara con la cédula física al llegar. Ver src/lib/utils/carnet.ts│
 └──────────────────────────────────────────────────────────────────────────┘
                                   │

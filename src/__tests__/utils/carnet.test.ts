@@ -8,18 +8,28 @@ import {
 } from '@/lib/utils/carnet'
 
 describe('formatearDocumento', () => {
-  it('agrega puntos de miles a un número de cédula', () => {
-    expect(formatearDocumento('1032456789')).toBe('1.032.456.789')
-    expect(formatearDocumento('80123456')).toBe('80.123.456')
+  it('oculta los 2 primeros dígitos y agrega puntos de miles al resto', () => {
+    expect(formatearDocumento('1032456789')).toBe('••32.456.789')
+    expect(formatearDocumento('80123456')).toBe('••123.456')
   })
 
   it('limpia puntos y espacios antes de formatear', () => {
-    expect(formatearDocumento('1.032.456.789')).toBe('1.032.456.789')
-    expect(formatearDocumento(' 80 123 456 ')).toBe('80.123.456')
+    expect(formatearDocumento('1.032.456.789')).toBe('••32.456.789')
+    expect(formatearDocumento(' 80 123 456 ')).toBe('••123.456')
   })
 
-  it('devuelve pasaportes alfanuméricos limpios en mayúscula', () => {
-    expect(formatearDocumento('ab 123456')).toBe('AB123456')
+  it('nunca contiene el número completo', () => {
+    expect(formatearDocumento('1032456789')).not.toContain('1032456789')
+    expect(formatearDocumento('1032456789')?.startsWith('••')).toBe(true)
+  })
+
+  it('pasaportes alfanuméricos: 2 primeros caracteres ocultos, en mayúscula y sin puntos', () => {
+    expect(formatearDocumento('ab 123456')).toBe('••123456')
+  })
+
+  it('documentos muy cortos quedan totalmente ocultos', () => {
+    expect(formatearDocumento('12')).toBe('••')
+    expect(formatearDocumento('1')).toBe('••')
   })
 
   it('devuelve null sin número', () => {
@@ -53,10 +63,11 @@ describe('construirCarnet', () => {
     contrato_firmado: true,
   }
 
-  it('arma el carnet verificado con el número de documento completo', () => {
+  it('arma el carnet verificado con el documento anonimizado', () => {
     const c = construirCarnet(base)
     expect(c.verificado).toBe(true)
-    expect(c.documento).toBe('1.032.456.789')
+    expect(c.documento).toBe('••32.456.789')
+    expect(JSON.stringify(c)).not.toContain('1032456789')
     expect(c.tipo_documento).toBe('CC')
     expect(c.fecha_verificacion).toBe(base.fecha_verificacion)
     expect(c.codigo).toBe('BS-3F2A9C1E')
