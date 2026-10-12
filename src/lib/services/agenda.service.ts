@@ -1,7 +1,8 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
-import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA } from '@/lib/constants/franjas'
+import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { slotDesdeFechaVisita } from '@/lib/utils/agenda-slots'
 
 /**
  * agenda.service.ts — disponibilidad de slots (día + franja) para agendar.
@@ -88,23 +89,26 @@ export async function validarHorarioAgendable(
 }
 
 /**
- * ¿El técnico ya tiene una visita activa en ese slot exacto (día + franja)?
+ * Ocupación de UN técnico en un slot (día + franja): servicios Baird activos
+ * asignados con ese `fecha_visita_at` + bloqueos externos que registró en su
+ * agenda (`agenda_tecnico_bloqueos`, mismo día + franja). `cerrado` = algún
+ * bloqueo con `bloquea_franja`.
  *
- * El cupo de `validarHorarioAgendable` es GLOBAL (MAX_RESERVAS_POR_FRANJA para
- * toda la plataforma) y no mira quién atiende: con cupo 2, un mismo técnico
- * podía quedarse con las dos solicitudes de la franja y estar en dos casas a la
- * vez. Este chequeo es por técnico y se aplica al aceptar un servicio.
- *
- * Fail-open igual que el resto del módulo: ante error de BD devuelve false
- * (nunca bloquea una aceptación por una falla del conteo).
- *
- * @param excluirSolicitudId la propia solicitud no cuenta (reagendamientos).
+ * Fail-open por componente: si una de las dos consultas falla, ese componente
+ * cuenta 0 (nunca bloquea una aceptación por una falla del conteo).
  */
-export async function tecnicoOcupadoEnSlot(
+export interface OcupacionTecnicoSlot {
+  servicios: number
+  bloqueos: number
+  cerrado: boolean
+  total: number
+}
+
+export async function ocupacionTecnicoEnSlot(
   tecnicoId: string,
   fechaVisitaAt: string,
   excluirSolicitudId?: string,
-): Promise<boolean> {
+): Promise<OcupacionTecnicoSlot> {
   let query = supabase
     .from('solicitudes_servicio')
     .select('id', { count: 'exact', head: true })
@@ -114,11 +118,52 @@ export async function tecnicoOcupadoEnSlot(
   if (excluirSolicitudId) query = query.neq('id', excluirSolicitudId)
 
   const { count, error } = await query
-  if (error) {
-    console.error('[agenda] Error verificando agenda del técnico:', error.message)
-    return false
+  if (error) console.error('[agenda] Error verificando agenda del técnico:', error.message)
+  const servicios = error ? 0 : (count ?? 0)
+
+  let bloqueos = 0
+  let cerrado = false
+  const slot = slotDesdeFechaVisita(fechaVisitaAt)
+  if (slot) {
+    const { data, error: errB } = await supabase
+      .from('agenda_tecnico_bloqueos')
+      .select('bloquea_franja')
+      .eq('tecnico_id', tecnicoId)
+      .eq('fecha', slot.fecha)
+      .eq('franja', slot.franja)
+    if (errB) {
+      console.error('[agenda] Error leyendo bloqueos del técnico:', errB.message)
+    } else {
+      const filas = (data ?? []) as { bloquea_franja: boolean | null }[]
+      bloqueos = filas.length
+      cerrado = filas.some(f => f.bloquea_franja === true)
+    }
   }
-  return (count ?? 0) > 0
+
+  return { servicios, bloqueos, cerrado, total: servicios + bloqueos }
+}
+
+/**
+ * ¿El técnico ya NO cabe en ese slot exacto (día + franja)?
+ *
+ * El cupo de `validarHorarioAgendable` es GLOBAL (MAX_RESERVAS_POR_FRANJA para
+ * toda la plataforma) y no mira quién atiende. Este chequeo es por técnico y se
+ * aplica al aceptar un servicio: true si ya tiene
+ * MAX_SERVICIOS_TECNICO_POR_FRANJA compromisos (servicios Baird + bloqueos
+ * externos) en el slot, o si cerró la franja desde su agenda. Hasta el
+ * 2026-10-11 el tope era 1 (cualquier servicio activo en el slot bloqueaba).
+ *
+ * Fail-open igual que el resto del módulo (ver ocupacionTecnicoEnSlot).
+ *
+ * @param excluirSolicitudId la propia solicitud no cuenta (reagendamientos).
+ */
+export async function tecnicoOcupadoEnSlot(
+  tecnicoId: string,
+  fechaVisitaAt: string,
+  excluirSolicitudId?: string,
+): Promise<boolean> {
+  const o = await ocupacionTecnicoEnSlot(tecnicoId, fechaVisitaAt, excluirSolicitudId)
+  return o.cerrado || o.total >= MAX_SERVICIOS_TECNICO_POR_FRANJA
 }
 
 /**

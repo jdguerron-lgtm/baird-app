@@ -9,6 +9,7 @@ import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
+import { MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
@@ -774,11 +775,12 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     }
   }
 
-  // Doble agenda del MISMO técnico (2026-08-06): el cupo por franja es global
-  // (MAX_RESERVAS_POR_FRANJA para toda la plataforma) y no mira quién atiende,
-  // así que un técnico podía quedarse con las dos solicitudes de la franja y
-  // terminar en dos casas a la vez. Se corta antes de asignar, con reintentar:
-  // el servicio sigue disponible por si puede tomar el otro horario propuesto.
+  // Sobre-agenda del MISMO técnico (2026-08-06, cupo 3 desde 2026-10-11): el
+  // cupo por franja es global (MAX_RESERVAS_POR_FRANJA para toda la plataforma)
+  // y no mira quién atiende. tecnicoOcupadoEnSlot cuenta servicios Baird +
+  // bloqueos externos de su agenda contra MAX_SERVICIOS_TECNICO_POR_FRANJA.
+  // Se corta antes de asignar, con reintentar: el servicio sigue disponible
+  // por si puede tomar el otro horario propuesto.
   const slotEfectivo = horarioUpdate ? horarioUpdate.fecha_visita_at : solPrevia?.fecha_visita_at ?? null
   if (slotEfectivo) {
     const ocupado = await tecnicoOcupadoEnSlot(notif.tecnico_id, slotEfectivo, notif.solicitud_id)
@@ -786,7 +788,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       return {
         ganado: false,
         reintentar: true,
-        mensaje: 'Ya tienes un servicio agendado para esa franja horaria. Elige otro horario de los que propuso el cliente, o deja este servicio para otro técnico.',
+        mensaje: `Ya tienes el máximo de ${MAX_SERVICIOS_TECNICO_POR_FRANJA} compromisos para esa franja horaria (servicios Baird + los que registraste en tu agenda). Elige otro horario de los que propuso el cliente, o deja este servicio para otro técnico.`,
       }
     }
   }
@@ -2662,6 +2664,60 @@ export async function enviarAnticipoConfirmadoTecnico(
     } catch (err2) {
       return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
     }
+  }
+}
+
+/**
+ * (Re)envía al CLIENTE la encuesta de confirmación del servicio
+ * (`confirmar_servicio_v4`, botón → /confirmar/{confirmacion_token}) con la
+ * evidencia más reciente del técnico asignado. La dispara el admin desde
+ * "Cobro final" (2026-10-12) cuando el cliente aún no ha confirmado
+ * (estado `confirmacion_pendiente`): así el cliente recibe encuesta + link de
+ * pago juntos. El envío original lo hace /api/completar-servicio.
+ */
+export async function enviarEncuestaConfirmacionCliente(
+  solicitudId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'Solicitud sin técnico asignado' }
+
+  const [{ data: tecnico }, { data: evidencia }] = await Promise.all([
+    supabase.from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single(),
+    supabase
+      .from('evidencias_servicio')
+      .select('confirmacion_token, confirmado')
+      .eq('solicitud_id', solicitudId)
+      .eq('tecnico_id', sol.tecnico_asignado_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (!evidencia?.confirmacion_token) return { ok: false, error: 'El técnico aún no ha completado el servicio (sin evidencia)' }
+  if (evidencia.confirmado !== null) return { ok: false, error: 'El cliente ya respondió la encuesta' }
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v4', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'el técnico' },
+          { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: evidencia.confirmacion_token }] },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    await registrarMensajeCliente(solicitudId, 'confirmar_servicio_v4',
+      'Se reenvió al cliente la encuesta de confirmación del servicio (cobro final del admin)')
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
 

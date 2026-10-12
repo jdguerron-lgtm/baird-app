@@ -12,8 +12,9 @@ import {
   validarHorarioAgendable,
   franjasLlenasParaFecha,
   tecnicoOcupadoEnSlot,
+  ocupacionTecnicoEnSlot,
 } from '@/lib/services/agenda.service'
-import { MAX_RESERVAS_POR_FRANJA } from '@/lib/constants/franjas'
+import { MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
 
 const MESES = [
@@ -95,8 +96,7 @@ describe('franjasLlenasParaFecha', () => {
   it('marca llena solo la franja con cupo agotado', async () => {
     const ymd = fechaColombiaMasDias(3)
     const filas = [
-      { fecha_visita_at: isoSlot(ymd, 8) },
-      { fecha_visita_at: isoSlot(ymd, 8) },
+      ...Array.from({ length: MAX_RESERVAS_POR_FRANJA }, () => ({ fecha_visita_at: isoSlot(ymd, 8) })),
       { fecha_visita_at: isoSlot(ymd, 12) },
     ]
     mockFrom.mockReturnValue(queryBuilder({ data: filas, error: null }))
@@ -112,31 +112,79 @@ describe('franjasLlenasParaFecha', () => {
   })
 })
 
-describe('tecnicoOcupadoEnSlot', () => {
-  const SLOT = isoSlot(fechaColombiaMasDias(2), 8)
+describe('tecnicoOcupadoEnSlot (cupo por técnico = MAX_SERVICIOS_TECNICO_POR_FRANJA)', () => {
+  const YMD = fechaColombiaMasDias(2)
+  const SLOT = isoSlot(YMD, 8)
+  const CUPO = MAX_SERVICIOS_TECNICO_POR_FRANJA
+
+  /** Mock por tabla: servicios → count, bloqueos → filas. */
+  function mockTablas(servicios: number | null, bloqueos: { bloquea_franja: boolean }[] | null, errorServicios = false) {
+    const builders: Record<string, ReturnType<typeof queryBuilder>> = {
+      solicitudes_servicio: queryBuilder(
+        errorServicios ? { count: null, error: { message: 'boom' } } : { count: servicios, error: null },
+      ),
+      agenda_tecnico_bloqueos: queryBuilder(
+        bloqueos === null ? { data: null, error: { message: 'boom' } } : { data: bloqueos, error: null },
+      ),
+    }
+    mockFrom.mockImplementation((tabla: string) => builders[tabla])
+    return builders
+  }
 
   beforeEach(() => vi.clearAllMocks())
 
-  it('true cuando el técnico ya tiene una visita activa en ese slot', async () => {
-    mockFrom.mockReturnValue(queryBuilder({ count: 1, error: null }))
+  it('false con un solo servicio en el slot (ya no bloquea desde 2026-10-11)', async () => {
+    mockTablas(1, [])
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(false)
+  })
+
+  it('true cuando ya tiene el cupo completo de servicios Baird', async () => {
+    mockTablas(CUPO, [])
     expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(true)
   })
 
+  it('suma los bloqueos externos al conteo', async () => {
+    mockTablas(CUPO - 1, [{ bloquea_franja: false }])
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(true)
+  })
+
+  it('true si un bloqueo cierra la franja aunque haya cupo', async () => {
+    mockTablas(0, [{ bloquea_franja: true }])
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(true)
+  })
+
+  it('consulta los bloqueos por el día CO y la franja del slot', async () => {
+    const b = mockTablas(0, [])
+    await tecnicoOcupadoEnSlot('tec-1', SLOT)
+    expect(b.agenda_tecnico_bloqueos.eq).toHaveBeenCalledWith('tecnico_id', 'tec-1')
+    expect(b.agenda_tecnico_bloqueos.eq).toHaveBeenCalledWith('fecha', YMD)
+    expect(b.agenda_tecnico_bloqueos.eq).toHaveBeenCalledWith('franja', '8am-12pm')
+  })
+
   it('false cuando no tiene nada en ese slot', async () => {
-    mockFrom.mockReturnValue(queryBuilder({ count: 0, error: null }))
+    mockTablas(0, [])
     expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(false)
   })
 
   it('excluye la propia solicitud (reagendamientos)', async () => {
-    const builder = queryBuilder({ count: 0, error: null })
-    mockFrom.mockReturnValue(builder)
+    const b = mockTablas(0, [])
     await tecnicoOcupadoEnSlot('tec-1', SLOT, 'sol-1')
-    expect(builder.neq).toHaveBeenCalledWith('id', 'sol-1')
+    expect(b.solicitudes_servicio.neq).toHaveBeenCalledWith('id', 'sol-1')
   })
 
-  it('fail-open: ante error de BD no bloquea la aceptación', async () => {
-    mockFrom.mockReturnValue(queryBuilder({ count: null, error: { message: 'boom' } }))
+  it('fail-open: ante error de BD en servicios no bloquea la aceptación', async () => {
+    mockTablas(null, [], true)
     expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(false)
+  })
+
+  it('fail-open: ante error en bloqueos solo cuentan los servicios', async () => {
+    mockTablas(CUPO - 1, null)
+    expect(await tecnicoOcupadoEnSlot('tec-1', SLOT)).toBe(false)
+  })
+
+  it('ocupacionTecnicoEnSlot desglosa servicios, bloqueos y cierre', async () => {
+    mockTablas(2, [{ bloquea_franja: false }, { bloquea_franja: true }])
+    expect(await ocupacionTecnicoEnSlot('tec-1', SLOT)).toEqual({ servicios: 2, bloqueos: 2, cerrado: true, total: 4 })
   })
 })
 

@@ -10,7 +10,9 @@ import {
   calcularTotalGarantia,
   type ComplejidadServicio,
 } from '@/lib/constants/tarifas/mabe'
-import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
+import { calcularTarifaParticular, pagoNetoTecnicoTarifaFija, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
+import { precioClienteServicio, TARIFAS_MANTENIMIENTO, type TipoEquipo } from '@/types/solicitud'
+import { esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import { formatCOP } from '@/lib/utils/format'
@@ -41,6 +43,8 @@ interface Servicio {
   es_garantia: boolean
   created_at: string
   horario_confirmado: string | null
+  tipo_solicitud?: string | null
+  recargo_weekend_aplicado?: number | null
 }
 
 const MAX_EVIDENCIAS = 4
@@ -182,7 +186,7 @@ export default function DiagnosticoPage() {
         querySupabase(() =>
           supabase
             .from('solicitudes_servicio')
-            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado, tecnico_asignado_id')
+            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, es_garantia, created_at, horario_confirmado, tecnico_asignado_id, tipo_solicitud, recargo_weekend_aplicado')
             .eq('id', id)
             .single()
         ),
@@ -316,8 +320,10 @@ export default function DiagnosticoPage() {
     }
     // Particular: si el siguiente paso es reparar o esperar_repuesto, el técnico
     // debe ingresar su costo total para que el sistema calcule la cotización.
+    // Excepción: "Solo mantenimiento" usa la tabla preestablecida (sin costo).
     if (
       !servicio.es_garantia &&
+      !siguientePaso.mantenimientoCatalogo &&
       (siguientePaso.paso === 'reparar' || siguientePaso.paso === 'esperar_repuesto') &&
       costoTecnicoNum <= 0
     ) {
@@ -476,6 +482,9 @@ export default function DiagnosticoPage() {
           // Si el siguiente paso es no_reparable o negativa_cliente, costoTecnico
           // puede ser 0; la API lo maneja correctamente (no genera cotización).
           costoTecnico: costoTecnicoNum,
+          // "Solo mantenimiento" (2026-10-12): la API arma la cotización con
+          // la tabla preestablecida (TARIFAS_MANTENIMIENTO) e ignora costoTecnico.
+          mantenimientoCatalogo: Boolean(siguientePaso!.mantenimientoCatalogo),
           // codigoFalla disponible en ambos flujos (habilitado 2026-05-13).
           // En particular sirve para análisis posterior — no afecta cálculo.
           codigoFalla: codigoFalla ? {
@@ -539,10 +548,30 @@ export default function DiagnosticoPage() {
   )
 
   // Particular: el costo del técnico solo es obligatorio si va a haber cotización
-  // (reparar o esperar_repuesto). Para no_reparable o negativa_cliente no hace falta.
-  const requiereCostoParticular = !!servicio && !servicio.es_garantia && !!siguientePaso && (
+  // (reparar o esperar_repuesto). Para no_reparable o negativa_cliente no hace
+  // falta, ni para "Solo mantenimiento" (precio de la tabla preestablecida).
+  const esMantenimientoCatalogo = Boolean(siguientePaso?.mantenimientoCatalogo)
+  const requiereCostoParticular = !!servicio && !servicio.es_garantia && !!siguientePaso && !esMantenimientoCatalogo && (
     siguientePaso.paso === 'reparar' || siguientePaso.paso === 'esperar_repuesto'
   )
+
+  // Opción "Solo mantenimiento" (2026-10-12): solo en particular Diagnóstico /
+  // Reparación (Mantenimiento y Cambio de filtro ya son tarifa fija y no
+  // llegan aquí con reparar). Precio al cliente = tabla + recargo finde/festivo
+  // (misma fórmula que un Mantenimiento solicitado directo); neto del técnico
+  // = inversa de tarifa fija + 90% del recargo.
+  const opcionMantenimiento = useMemo(() => {
+    if (!servicio || servicio.es_garantia) return null
+    if (esServicioPrecioFijo({ es_garantia: servicio.es_garantia, tipo_solicitud: servicio.tipo_solicitud })) return null
+    const catalogo = TARIFAS_MANTENIMIENTO[servicio.tipo_equipo as TipoEquipo]
+    if (!catalogo) return null
+    const recargoBruto = servicio.recargo_weekend_aplicado ?? 0
+    return {
+      equipo: servicio.tipo_equipo,
+      precioCliente: precioClienteServicio(servicio.tipo_equipo, 'Mantenimiento', false, null, recargoBruto),
+      pagoTecnico: pagoNetoTecnicoTarifaFija(catalogo) + recargoTecnicoDesdeBruto(recargoBruto),
+    }
+  }, [servicio])
   const costoParticularListo = !requiereCostoParticular || costoTecnicoNum > 0
 
   const canSubmit = complejidad && diagnosticoTexto.length >= 10 && evidencias.length > 0
@@ -1020,6 +1049,7 @@ export default function DiagnosticoPage() {
           data={siguientePaso}
           onChange={setSiguientePaso}
           tieneProductosNecesarios={productosNecesarios.length > 0}
+          opcionMantenimiento={opcionMantenimiento}
         />
 
         {/* Particular: lo que el técnico quiere ganar (mano de obra + repuestos).
@@ -1030,6 +1060,7 @@ export default function DiagnosticoPage() {
             elegido cierra el servicio sin cotización. Obligatorio únicamente
             para reparar/esperar_repuesto (requiereCostoParticular). */}
         {!servicio!.es_garantia &&
+          !esMantenimientoCatalogo &&
           siguientePaso?.paso !== 'no_reparable' &&
           siguientePaso?.paso !== 'negativa_cliente' && (
           <div className="bg-white rounded-2xl shadow-sm border-2 border-purple-200 p-5 mb-4">

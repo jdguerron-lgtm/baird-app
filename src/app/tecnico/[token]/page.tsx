@@ -268,6 +268,22 @@ export default function PortalTecnicoPage() {
           <CarnetModal carnet={carnet} onClose={() => setVerCarnet(false)} />
         )}
 
+        {/* Agenda semanal (2026-10-11): servicios Baird + compromisos externos
+            por día y franja. Hasta MAX_SERVICIOS_TECNICO_POR_FRANJA por franja. */}
+        <Link
+          href={`/tecnico/${token}/agenda`}
+          className="w-full flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-4 mb-6 hover:bg-gray-50 transition-colors"
+        >
+          <span className="text-2xl leading-none">📅</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-slate-900">Mi agenda semanal</span>
+            <span className="block text-xs text-gray-500">
+              Organiza tus servicios Baird y tus compromisos por fuera, por día y franja
+            </span>
+          </span>
+          <span className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5">Abrir</span>
+        </Link>
+
         {/* Aviso de perfil incompleto: gasodomésticos + certificaciones
             (2026-10-08). Desaparece cuando el técnico guarda desde /perfil. */}
         {tecnico && !tecnico.perfil_actualizado_at && (

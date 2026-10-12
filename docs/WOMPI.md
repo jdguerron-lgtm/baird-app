@@ -67,7 +67,7 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 |---|---|---|---|
 | **Anticipo** 50% | `pago_anticipo_cliente_v2` al aceptar el técnico; también el CTA de la pantalla de éxito de `/solicitar` (→ `/pago/anticipo/{token}`) | `anticipo_confirmado_cliente_v1` | `anticipo_confirmado_tecnico_v1` |
 | **Abono** repuestos (50% del saldo) | `abono_repuestos_cliente_v1` al aprobar cotización CON repuestos | `abono_confirmado_cliente_v1` (nueva) | `pago_recibido_tecnico_v1` (nueva) |
-| **Saldo** | `pago_saldo_cliente_v1` al aprobar cotización SIN repuestos; `saldo_final_cliente_v1` (nueva) al completar | `saldo_confirmado_cliente_v1` | `pago_recibido_tecnico_v1` (nueva) |
+| **Saldo** | `pago_saldo_cliente_v1` al aprobar cotización SIN repuestos; `saldo_final_cliente_v1` (nueva) al completar y cuando el admin fija el **cobro final** a mano (`/api/admin/cobro-final`, 2026-10-12: escribe `cotizacion.total`, reenvía la encuesta si está pendiente y el link del saldo) | `saldo_confirmado_cliente_v1` | `pago_recibido_tecnico_v1` (nueva) |
 
 - Cada pago APPROVED además: evento 💰 `pago_registrado` en el historial,
   resumen en la solicitud (`monto_pagado_online`, `ultimo_pago_at`,

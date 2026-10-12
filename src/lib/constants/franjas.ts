@@ -18,7 +18,22 @@ export const FRANJAS_HORARIO = [
 export type FranjaHorario = (typeof FRANJAS_HORARIO)[number]['value']
 
 /**
- * Cupo máximo de reservas activas por slot (día + franja). Con 2 se evita que
- * muchos clientes agenden la misma fecha/franja y los técnicos no alcancen.
+ * Cupo máximo de reservas activas por slot (día + franja) en TODA la
+ * plataforma. Evita que muchos clientes agenden la misma fecha/franja y los
+ * técnicos no alcancen. Subido de 2 a 3 el 2026-10-11 para que el tope por
+ * técnico (abajo) sea alcanzable: con cupo global 2 ningún técnico podía
+ * llegar a 3 servicios en una franja. Subido de 3 a 5 el 2026-10-12 junto
+ * con el tope por técnico (misma razón: el global nunca puede ser menor que
+ * el tope por técnico o éste queda inalcanzable).
  */
-export const MAX_RESERVAS_POR_FRANJA = 2
+export const MAX_RESERVAS_POR_FRANJA = 5
+
+/**
+ * Cupo máximo de servicios que UN técnico puede tener en el mismo slot
+ * (día + franja). Cuenta tanto los servicios Baird activos asignados como
+ * los bloqueos externos que el técnico registra en su agenda
+ * (`agenda_tecnico_bloqueos`). Lo aplica `tecnicoOcupadoEnSlot`
+ * (agenda.service) al aceptar un servicio. Era 1 hasta el 2026-10-11 y 3
+ * hasta el 2026-10-12 (pedido del user: "2 servicios más por franja").
+ */
+export const MAX_SERVICIOS_TECNICO_POR_FRANJA = 5

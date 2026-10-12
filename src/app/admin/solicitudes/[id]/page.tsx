@@ -322,6 +322,13 @@ export default function SolicitudDetalle() {
     }
   }
   const [resultadoValor, setResultadoValor] = useState<{ ok: boolean; mensaje: string } | null>(null)
+  // Cobro final (2026-10-12): admin fija a mano el valor final del servicio
+  // ya realizado y lo manda por Wompi (+ encuesta si está pendiente).
+  const [cobroFinalInput, setCobroFinalInput] = useState('')
+  const [motivoCobroFinal, setMotivoCobroFinal] = useState('')
+  const [reenviarEncuesta, setReenviarEncuesta] = useState(true)
+  const [enviandoCobroFinal, setEnviandoCobroFinal] = useState(false)
+  const [resultadoCobroFinal, setResultadoCobroFinal] = useState<{ ok: boolean; mensaje: string } | null>(null)
   const [pidiendoRepuesto, setPidiendoRepuesto] = useState(false)
   const [resultadoRepuesto, setResultadoRepuesto] = useState<{ ok: boolean; mensaje: string } | null>(null)
   const [notas, setNotas] = useState<EventoSolicitud[]>([])
@@ -744,6 +751,74 @@ export default function SolicitudDetalle() {
       setResultadoValor({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
     }
     setActualizandoValor(false)
+  }
+
+  async function handleCobroFinal() {
+    if (!solicitud) return
+    const valor = Math.round(Number(cobroFinalInput.replace(/[^\d]/g, '')))
+    if (!Number.isFinite(valor) || valor < 1000) {
+      setResultadoCobroFinal({ ok: false, mensaje: 'Ingresá un valor válido (mínimo $1.000).' })
+      return
+    }
+    const encuestaPendiente = solicitud.estado === 'confirmacion_pendiente'
+    const confirmado = window.confirm(
+      `¿Fijar el cobro final del servicio en $${valor.toLocaleString('es-CO')} COP?\n\n` +
+      `Se le enviará al cliente por WhatsApp el link de pago Wompi por el saldo` +
+      `${encuestaPendiente && reenviarEncuesta ? ' junto con la encuesta de confirmación' : ''}. ` +
+      `No cambia el estado ni el pago al técnico.`,
+    )
+    if (!confirmado) return
+
+    setEnviandoCobroFinal(true)
+    setResultadoCobroFinal(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoCobroFinal({ ok: false, mensaje: 'Sesión expirada — vuelve a iniciar sesión.' })
+        setEnviandoCobroFinal(false)
+        return
+      }
+      const res = await fetch('/api/admin/cobro-final', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          id: solicitud.id,
+          valor,
+          motivo: motivoCobroFinal.trim() || null,
+          enviarEncuesta: reenviarEncuesta,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setResultadoCobroFinal({ ok: false, mensaje: data.error || 'No se pudo fijar el cobro final.' })
+        setEnviandoCobroFinal(false)
+        return
+      }
+      setSolicitud(prev => {
+        if (!prev) return prev
+        const rec = prev as unknown as Record<string, unknown>
+        const prevCot = (rec.cotizacion ?? {}) as Record<string, unknown>
+        return {
+          ...rec,
+          cotizacion: { ...prevCot, total: valor, mano_obra: 0, repuestos: 0, cobro_final_admin: true },
+        } as unknown as Solicitud
+      })
+      setCobroFinalInput('')
+      setMotivoCobroFinal('')
+      const partes: string[] = [`Cobro final fijado en $${valor.toLocaleString('es-CO')}.`]
+      if (data.encuesta?.enviada) partes.push('Encuesta reenviada.')
+      else if (data.encuesta?.error) partes.push(`Encuesta no enviada (${data.encuesta.error}).`)
+      if (data.link_pago?.enviado) partes.push(`Link de pago Wompi enviado por $${Number(data.saldo).toLocaleString('es-CO')}.`)
+      else if (data.link_pago?.error) partes.push(`Link de pago no enviado: ${data.link_pago.error}`)
+      setResultadoCobroFinal({ ok: true, mensaje: partes.join(' ') })
+      await recargarEventos()
+    } catch (e) {
+      setResultadoCobroFinal({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
+    }
+    setEnviandoCobroFinal(false)
   }
 
   async function runDiagnostics(sol: Solicitud) {
@@ -2254,6 +2329,102 @@ export default function SolicitudDetalle() {
                   : 'bg-amber-50 border border-amber-200 text-amber-900'
               }`}>
                 {resultadoValor.ok ? '✅ ' : '⚠️ '}{resultadoValor.mensaje}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Cobro final del servicio (2026-10-12) — solo particular, con el
+          servicio ya realizado (confirmacion_pendiente / completada). Fija a
+          mano cotizacion.total y manda al cliente el link de pago Wompi del
+          saldo (+ reenvía la encuesta si aún no la respondió). No cambia el
+          estado ni el pago al técnico. Vía /api/admin/cobro-final. */}
+      {(() => {
+        if (solicitud.es_garantia) return null
+        if (!['confirmacion_pendiente', 'completada'].includes(solicitud.estado ?? '')) return null
+        const rec = solicitud as unknown as Record<string, unknown>
+        const resumen = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
+        const totalActual = resumen?.total ?? 0
+        const pagado = resumen?.pagado ?? 0
+        const yaPagado = Boolean(rec.saldo_pagado_at)
+        const encuestaPendiente = solicitud.estado === 'confirmacion_pendiente'
+        return (
+          <div className="mt-4 bg-white rounded-xl border border-emerald-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              Cobro final del servicio
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Fija a mano el valor final que paga el <strong>cliente</strong> por este
+              servicio ya realizado y envíale por WhatsApp el link de pago <strong>Wompi</strong> del
+              saldo{encuestaPendiente ? ' junto con la encuesta de confirmación' : ''}. Lo pagado en
+              línea se descuenta solo. No cambia el estado ni el pago al técnico.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+                Total actual: <strong className="text-gray-900">${totalActual.toLocaleString('es-CO')} COP</strong>
+              </span>
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
+                Pagado en línea: <strong className="text-gray-900">${pagado.toLocaleString('es-CO')} COP</strong>
+              </span>
+              {yaPagado && (
+                <span className="inline-flex items-center px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold">
+                  ✅ Saldo final ya pagado — no se puede cambiar el cobro
+                </span>
+              )}
+            </div>
+            {!yaPagado && (
+              <>
+                <div className="flex items-end gap-3 flex-wrap">
+                  <label className="block">
+                    <span className="block text-xs font-semibold text-gray-700 mb-1">Valor final al cliente (COP)</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cobroFinalInput}
+                      onChange={(e) => setCobroFinalInput(e.target.value)}
+                      placeholder={totalActual > 0 ? String(totalActual) : 'Ej: 150000'}
+                      className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                  <label className="block flex-1 min-w-[200px]">
+                    <span className="block text-xs font-semibold text-gray-700 mb-1">Motivo (opcional)</span>
+                    <input
+                      type="text"
+                      value={motivoCobroFinal}
+                      onChange={(e) => setMotivoCobroFinal(e.target.value)}
+                      placeholder="Ej: Se cambió un repuesto adicional en sitio"
+                      className="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                  <button
+                    onClick={handleCobroFinal}
+                    disabled={enviandoCobroFinal}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {enviandoCobroFinal ? 'Enviando...' : '💳 Fijar cobro y enviar por Wompi'}
+                  </button>
+                </div>
+                {encuestaPendiente && (
+                  <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={reenviarEncuesta}
+                      onChange={(e) => setReenviarEncuesta(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    Reenviar también la encuesta de confirmación (el cliente aún no la responde)
+                  </label>
+                )}
+              </>
+            )}
+            {resultadoCobroFinal && (
+              <div className={`mt-3 rounded-lg p-3 text-sm ${
+                resultadoCobroFinal.ok
+                  ? 'bg-green-50 border border-green-200 text-green-900'
+                  : 'bg-amber-50 border border-amber-200 text-amber-900'
+              }`}>
+                {resultadoCobroFinal.ok ? '✅ ' : '⚠️ '}{resultadoCobroFinal.mensaje}
               </div>
             )}
           </div>

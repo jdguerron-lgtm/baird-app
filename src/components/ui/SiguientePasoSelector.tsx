@@ -5,6 +5,14 @@ import type { SiguientePasoDiagnostico } from '@/types/solicitud'
 export interface SiguientePasoData {
   paso: SiguientePasoDiagnostico
   detalle: string
+  /**
+   * "Solo mantenimiento" (2026-10-12): el equipo no necesita reparación, solo
+   * el mantenimiento de la tabla preestablecida (TARIFAS_MANTENIMIENTO). En
+   * BD sigue siendo `siguiente_paso = 'reparar'` (el CHECK de la columna solo
+   * admite 4 valores); la cotización se arma con el precio de catálogo y el
+   * neto de tarifa fija del técnico — ver /api/diagnostico.
+   */
+  mantenimientoCatalogo?: boolean
 }
 
 interface Props {
@@ -12,6 +20,19 @@ interface Props {
   onChange: (data: SiguientePasoData | null) => void
   /** Si el técnico ya agregó productos necesarios arriba, deshabilita la advertencia. */
   tieneProductosNecesarios?: boolean
+  /**
+   * Habilita la opción "Solo mantenimiento (tarifa de catálogo)". Solo en
+   * servicios PARTICULARES de Diagnóstico/Reparación: Mantenimiento y Cambio
+   * de filtro ya son tarifa fija y no pasan por aquí.
+   */
+  opcionMantenimiento?: { equipo: string; precioCliente: number; pagoTecnico: number } | null
+}
+
+const OPCION_MANTENIMIENTO = {
+  label: 'Solo mantenimiento (tarifa de catálogo)',
+  icon: '🧼',
+  descripcion: 'El equipo no tiene daño: solo necesita el mantenimiento preventivo. Se cobra la tarifa fija de la tabla, sin cotizar.',
+  estilo: 'border-sky-300 bg-sky-50 hover:border-sky-500',
 }
 
 const OPCIONES: Array<{
@@ -51,7 +72,7 @@ const OPCIONES: Array<{
   },
 ]
 
-export default function SiguientePasoSelector({ data, onChange, tieneProductosNecesarios }: Props) {
+export default function SiguientePasoSelector({ data, onChange, tieneProductosNecesarios, opcionMantenimiento }: Props) {
   const update = (patch: Partial<SiguientePasoData>) => {
     if (!data) return
     onChange({ ...data, ...patch })
@@ -60,6 +81,19 @@ export default function SiguientePasoSelector({ data, onChange, tieneProductosNe
   const seleccionar = (paso: SiguientePasoDiagnostico) => {
     onChange({ paso, detalle: '' })
   }
+
+  const seleccionarMantenimiento = () => {
+    onChange({ paso: 'reparar', detalle: 'Solo mantenimiento (tarifa de catálogo)', mantenimientoCatalogo: true })
+  }
+
+  const esMantenimiento = Boolean(data?.mantenimientoCatalogo)
+
+  const claseBoton = (estilo: string, activo: boolean) =>
+    `w-full text-left p-4 rounded-xl border-2 transition-all ${
+      activo
+        ? `${estilo.replace('hover:', '')} ring-2 ring-offset-1 ring-slate-900`
+        : 'border-gray-200 bg-white ' + estilo.split(' ').filter(c => c.startsWith('hover:')).join(' ')
+    }`
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
@@ -71,26 +105,49 @@ export default function SiguientePasoSelector({ data, onChange, tieneProductosNe
 
       <div className="space-y-2 mb-4">
         {OPCIONES.map(op => (
-          <button
-            key={op.paso}
-            type="button"
-            onClick={() => seleccionar(op.paso)}
-            className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
-              data?.paso === op.paso
-                ? `${op.estilo.replace('hover:', '')} ring-2 ring-offset-1 ring-slate-900`
-                : 'border-gray-200 bg-white ' + op.estilo.split(' ').filter(c => c.startsWith('hover:')).join(' ')
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <span className="text-2xl shrink-0">{op.icon}</span>
-              <div>
-                <div className="text-sm font-bold text-slate-900">{op.label}</div>
-                <p className="text-xs text-gray-600 mt-0.5">{op.descripcion}</p>
+          <div key={op.paso} className="space-y-2">
+            <button
+              type="button"
+              onClick={() => seleccionar(op.paso)}
+              className={claseBoton(op.estilo, data?.paso === op.paso && !esMantenimiento)}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-2xl shrink-0">{op.icon}</span>
+                <div>
+                  <div className="text-sm font-bold text-slate-900">{op.label}</div>
+                  <p className="text-xs text-gray-600 mt-0.5">{op.descripcion}</p>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+            {/* "Solo mantenimiento" va justo después de "reparar": es la otra
+                forma de cerrar con cobro, pero con la tabla preestablecida. */}
+            {op.paso === 'reparar' && opcionMantenimiento && (
+              <button
+                type="button"
+                onClick={seleccionarMantenimiento}
+                className={claseBoton(OPCION_MANTENIMIENTO.estilo, esMantenimiento)}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl shrink-0">{OPCION_MANTENIMIENTO.icon}</span>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">{OPCION_MANTENIMIENTO.label}</div>
+                    <p className="text-xs text-gray-600 mt-0.5">{OPCION_MANTENIMIENTO.descripcion}</p>
+                    <p className="text-xs text-sky-800 mt-1 font-semibold">
+                      Mantenimiento de {opcionMantenimiento.equipo}: cliente paga ${opcionMantenimiento.precioCliente.toLocaleString('es-CO')} COP · tú recibes ${opcionMantenimiento.pagoTecnico.toLocaleString('es-CO')} COP
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )}
+          </div>
         ))}
       </div>
+
+      {esMantenimiento && (
+        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 text-sm text-sky-900">
+          🧼 Se le enviará al cliente la tarifa fija de mantenimiento de la tabla para que la apruebe. No necesitas ingresar tu costo: tu pago es el neto de tarifa fija.
+        </div>
+      )}
 
       {data?.paso === 'esperar_repuesto' && (
         <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-4 text-sm text-fuchsia-900">

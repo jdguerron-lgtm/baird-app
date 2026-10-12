@@ -92,7 +92,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │                                                                           │
 │ Validación de agenda (agenda.service, 2026-06-12):                       │
 │  - Mínimo MAÑANA (TZ Colombia) — no se agenda para el mismo día.         │
-│  - Cupo por slot (día + franja): máx MAX_RESERVAS_POR_FRANJA (2)         │
+│  - Cupo por slot (día + franja): máx MAX_RESERVAS_POR_FRANJA (3)         │
 │    reservas activas. La UI desactiva franjas llenas vía                  │
 │    GET /api/disponibilidad-horario; el rechazo real es server-side.      │
 │  - Aplica igual en /api/reprogramar-repuesto y reagenda self-service.    │

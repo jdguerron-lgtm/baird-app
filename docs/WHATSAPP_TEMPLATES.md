@@ -251,7 +251,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Fallback**: texto libre.
 
 #### `saldo_final_cliente_v1` (nueva 2026-10-11 — **subida a Meta, PENDING**)
-- **Disparo**: `confirmarServicioCliente → enviarPagoSaldoCliente(id, saldo, { momento: 'cierre' })` al completar el servicio si queda saldo. Cubre también **Mantenimiento / Cambio de filtro** (precio fijo, sin cotización), cuyo 50% restante antes nunca tenía link de pago.
+- **Disparo**: `confirmarServicioCliente → enviarPagoSaldoCliente(id, saldo, { momento: 'cierre' })` al completar el servicio si queda saldo; también desde `/api/admin/cobro-final` (2026-10-12, el admin fija el valor final a mano y reenvía el link). Cubre también **Mantenimiento / Cambio de filtro** (precio fijo, sin cotización), cuyo 50% restante antes nunca tenía link de pago.
 - **Destino**: cliente
 - **Body** (5 params): `cliente`, `equipo`, `total`, `ya abonado`, `saldo`
 - **Botón URL dinámica**: `{APP_URL}/pago/saldo/{{1}}` — display "Pagar saldo"
@@ -378,7 +378,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 ### Final
 
 #### `confirmar_servicio_v4` **En script** ✅ (backfilled 2026-05-08)
-- **Disparo**: `POST /api/completar-servicio`
+- **Disparo**: `POST /api/completar-servicio`; reenvío desde `enviarEncuestaConfirmacionCliente()` cuando el admin fija el cobro final (`/api/admin/cobro-final`, 2026-10-12) y el cliente aún no respondió.
 - **Destino**: cliente
 - **Body** (3 params): `cliente`, `tecnico`, `equipo`
 - **Botón URL**: `/confirmar/{confirmacion_token}` — display "Confirmar servicio"

@@ -18,6 +18,7 @@ Doc canónico de la capa de datos: tablas, columnas JSONB, cliente único, migra
 | `connection_errors` (NEW observability) | Telemetría de errores de red enviada por el browser vía `/api/log-error`. Backend del panel `/admin/errores` | url, error_type, error_message, attempt_number, network_effective_type, network_downlink, network_rtt, online, actor, ip, user_agent, created_at |
 | `supervisores` (NEW 2026-05-29) | Destinatarios internos de notificaciones WhatsApp en cada cambio de estado. CRUD admin en `/admin/supervisores` | nombre, whatsapp (normalizado por trigger), activo, ambito (todos/garantia/particular), marca (NULL=todas), estados (text[], NULL/[]=todos los cambios), created_at, updated_at |
 | `llamadas` (NEW 2026-06-02) | Segunda línea de voz IA (Dapta) — un intento de llamada por fila. Idempotencia del webhook por `dapta_call_id` (índice UNIQUE parcial). Ver `docs/DAPTA.md` | solicitud_id, proposito, proveedor, dapta_call_id, estado_llamada, intento, resultado (JSONB), transcript, created_at, finished_at |
+| `agenda_tecnico_bloqueos` (NEW 2026-10-11) | Compromisos del técnico FUERA de Baird por día + franja (los registra desde `/tecnico/{token}/agenda`). Cuentan contra `MAX_SERVICIOS_TECNICO_POR_FRANJA` (5 desde 2026-10-12) en `tecnicoOcupadoEnSlot`; `bloquea_franja` cierra la franja. RLS on, sin policies anon (solo service_role vía `/api/tecnico/agenda`) | tecnico_id, fecha (DATE), franja (CHECK 4 valores), titulo, nota, bloquea_franja |
 
 ### Important JSONB Columns on solicitudes_servicio
 
@@ -85,6 +86,7 @@ Todas las migraciones viven en `supabase/migrations/`. **No usamos el Supabase C
 | `20261008_tecnicos_gasodomesticos_certificaciones.sql` | `cubre_gasodomesticos BOOLEAN` (NULL = no informado), `certificaciones JSONB` (mapa `{id: {estado, entidad, numero, vence, nota, actualizado_*}}`, CHECK `jsonb_typeof='object'`) y `perfil_actualizado_at` en `tecnicos`. Catálogo en `src/lib/constants/certificaciones.ts`; doc `docs/CERTIFICACIONES.md`. Aplicada vía MCP (2026-10-08) |
 | `20261009_tecnicos_aceptacion_legal.sql` | Aceptación legal del técnico: `tyc_version`, `tyc_aceptados_at`, `datos_version`, `datos_autorizados_at` (escritos por `/registro`) y `contrato_firmado` (NOT NULL DEFAULT false), `contrato_firmado_version`, `contrato_firmado_at`, `contrato_registrado_por` (marca manual del admin al recibir el contrato firmado en físico; gate para verificar). Versiones en `src/lib/constants/legal.ts`. Aplicada vía MCP (2026-10-09) |
 | `20261009_tecnicos_contrato_archivo.sql` | `contrato_archivo_path` + `contrato_archivo_subido_at` en `tecnicos`; bucket PRIVADO `tecnicos-contratos` (PDF/JPG/PNG ≤ 10 MB) con policies SELECT/INSERT/UPDATE/DELETE solo `authenticated`. Lectura por signed URL (1 h). Aplicada vía MCP (2026-10-09) |
+| `20261011_agenda_tecnico_bloqueos.sql` | Tabla `agenda_tecnico_bloqueos` (compromisos externos del técnico por día + franja; FK a `tecnicos` ON DELETE CASCADE; CHECK de franja y longitudes; índice `(tecnico_id, fecha)`). RLS habilitado SIN policies (solo service_role). Ya está en la BD (2026-10-11) |
 
 Detalle paso a paso de aplicación + verificación SQL en `supabase/migrations/README.md`.
 
@@ -107,6 +109,7 @@ El server escribe con service_role (bypass), así que "acceso anon" = lo que pue
 | `supervisores` (20260529) | ✅ | ninguno | Cerrada en 4.1 (antes anon podía leer `portal_token` y hacer CRUD). Portal va por `/api/supervisor/*` |
 | `llamadas` (20260602) | ✅ | ninguno | Cerrada en 4.1. Solo `dapta.service` / webhook / `/api/admin/llamadas` |
 | `pagos` (20260818) | ✅ | ninguno | Nace cerrada: solo service_role (`pagos.service.ts`, webhook Wompi) |
+| `agenda_tecnico_bloqueos` (20261011) | ✅ | ninguno | Nace cerrada: solo service_role (`/api/tecnico/agenda` auth por `portal_token`, `agenda.service → ocupacionTecnicoEnSlot`) |
 
 Verificación post-4.1 (PLAN-RLS § 3bis): anon simulado ve 0 filas en las tablas cerradas y recibe `42501` al escribir. **Lo que falta** (Fases 2–4.2): mover a API routes server-side los writes client-side de `tecnicos` y `evidencias_servicio`, luego cerrar sus policies y habilitar RLS en `solicitudes_servicio` + `especialidades_tecnico`. Ver `docs/PLAN-RLS.md` y `docs/SEGURIDAD.md`.
 

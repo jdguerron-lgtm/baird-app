@@ -227,6 +227,13 @@ export interface CotizacionReparacion {
   aprobado_at?: string
   rechazado_at?: string
   comentario_rechazo?: string
+  // "Solo mantenimiento" (2026-10-12): el técnico, en un Diagnóstico/Reparación
+  // particular, eligió cobrar la tarifa de la tabla preestablecida
+  // (TARIFAS_MANTENIMIENTO) en vez de cotizar. total = catálogo + recargo.
+  mantenimiento_catalogo?: boolean
+  // Cobro final fijado a mano por el admin tras el servicio (2026-10-12,
+  // /api/admin/cobro-final). total = valor fijado; no reabre aprobación.
+  cobro_final_admin?: boolean
   token: string                // Token for customer approval page
   // Ajuste manual del valor al cliente (admin, 2026-05-30).
   // Set por /api/admin/actualizar-valor: sobreescribe `total` con un valor
