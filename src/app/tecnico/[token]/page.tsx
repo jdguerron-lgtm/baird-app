@@ -50,7 +50,7 @@ interface Servicio {
   created_at: string
   es_garantia: boolean
   horario_confirmado: string | null
-  triaje_resultado: { complejidad?: ComplejidadServicio | null } | null
+  triaje_resultado: { complejidad?: ComplejidadServicio | null; mantenimiento_catalogo?: boolean } | null
   tiene_evidencia?: boolean
   // Capa paralela de pago del cliente (solo particular) — pago-cliente.ts
   anticipo_pagado_at: string | null
@@ -502,6 +502,11 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
         {precioFijo && esActivo && (
           <p className="mb-3 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
             🔒 Tarifa fija: recibes ${formatCOP(s.pago_tecnico)} por todo el {s.tipo_solicitud?.toLowerCase()}. No se cotiza — al terminar, toca &quot;Completar servicio&quot;.
+          </p>
+        )}
+        {s.triaje_resultado?.mantenimiento_catalogo && esActivo && (
+          <p className="mb-3 text-xs font-semibold text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+            🧼 Reparación con precio predeterminado (mantenimiento de {s.tipo_equipo.toLowerCase()}): recibes ${formatCOP(s.pago_tecnico)} por la tabla Baird. Se completa como cualquier reparación.
           </p>
         )}
         {estadoPagoCliente(s) === 'pagado' && (

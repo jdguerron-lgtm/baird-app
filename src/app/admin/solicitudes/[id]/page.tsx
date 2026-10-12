@@ -1582,10 +1582,22 @@ export default function SolicitudDetalle() {
                   {!!triaje.siguiente_paso && (
                     <div>
                       <dt className="text-xs text-gray-500">Siguiente paso</dt>
-                      <dd className="text-sm font-medium text-slate-900">{String(triaje.siguiente_paso)}</dd>
+                      <dd className="text-sm font-medium text-slate-900">
+                        {triaje.mantenimiento_catalogo || cotizacion?.mantenimiento_catalogo
+                          ? 'reparar — precio predeterminado (mantenimiento)'
+                          : String(triaje.siguiente_paso)}
+                      </dd>
                     </div>
                   )}
                 </div>
+                {/* Reparación con precio predeterminado (2026-10-12): el técnico
+                    eligió cobrar la tabla de mantenimiento por electrodoméstico en
+                    vez de cotizar. Etiqueta clara para Baird. */}
+                {Boolean(triaje.mantenimiento_catalogo || cotizacion?.mantenimiento_catalogo) && (
+                  <div className="mb-4 rounded-lg bg-sky-50 border border-sky-200 px-3 py-2 text-xs text-sky-900">
+                    🧼 <strong>Reparación con precio predeterminado:</strong> se cobra el precio fijo de mantenimiento de {solicitud.tipo_equipo} (tabla Baird + recargo finde si aplica). No hubo cotización libre; el técnico recibe el neto de tarifa fija.
+                  </div>
+                )}
                 {/* Legacy field — solo si no hay productos_necesarios (cotizaciones viejas) */}
                 {!productosNec.length && !!triaje.repuestos_detalle && (
                   <div>

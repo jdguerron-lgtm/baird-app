@@ -29,9 +29,9 @@ interface Props {
 }
 
 const OPCION_MANTENIMIENTO = {
-  label: 'Solo mantenimiento (tarifa de catálogo)',
+  label: 'Reparación con precio predeterminado (mantenimiento)',
   icon: '🧼',
-  descripcion: 'El equipo no tiene daño: solo necesita el mantenimiento preventivo. Se cobra la tarifa fija de la tabla, sin cotizar.',
+  descripcion: 'Es una reparación que se cobra con el precio fijo de mantenimiento según el electrodoméstico (tabla Baird). No ingresas costo ni cotizas: el precio ya está definido.',
   estilo: 'border-sky-300 bg-sky-50 hover:border-sky-500',
 }
 
@@ -83,7 +83,7 @@ export default function SiguientePasoSelector({ data, onChange, tieneProductosNe
   }
 
   const seleccionarMantenimiento = () => {
-    onChange({ paso: 'reparar', detalle: 'Solo mantenimiento (tarifa de catálogo)', mantenimientoCatalogo: true })
+    onChange({ paso: 'reparar', detalle: 'Reparación con precio predeterminado de mantenimiento (tabla por electrodoméstico)', mantenimientoCatalogo: true })
   }
 
   const esMantenimiento = Boolean(data?.mantenimientoCatalogo)
@@ -133,7 +133,7 @@ export default function SiguientePasoSelector({ data, onChange, tieneProductosNe
                     <div className="text-sm font-bold text-slate-900">{OPCION_MANTENIMIENTO.label}</div>
                     <p className="text-xs text-gray-600 mt-0.5">{OPCION_MANTENIMIENTO.descripcion}</p>
                     <p className="text-xs text-sky-800 mt-1 font-semibold">
-                      Mantenimiento de {opcionMantenimiento.equipo}: cliente paga ${opcionMantenimiento.precioCliente.toLocaleString('es-CO')} COP · tú recibes ${opcionMantenimiento.pagoTecnico.toLocaleString('es-CO')} COP
+                      Precio predeterminado para {opcionMantenimiento.equipo}: el cliente paga ${opcionMantenimiento.precioCliente.toLocaleString('es-CO')} COP · tú recibes ${opcionMantenimiento.pagoTecnico.toLocaleString('es-CO')} COP
                     </p>
                   </div>
                 </div>
@@ -145,7 +145,7 @@ export default function SiguientePasoSelector({ data, onChange, tieneProductosNe
 
       {esMantenimiento && (
         <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 text-sm text-sky-900">
-          🧼 Se le enviará al cliente la tarifa fija de mantenimiento de la tabla para que la apruebe. No necesitas ingresar tu costo: tu pago es el neto de tarifa fija.
+          🧼 <strong>Reparación con precio predeterminado.</strong> Al cliente le llega la cotización con el precio fijo de mantenimiento de su electrodoméstico para que la apruebe; luego haces el trabajo y completas el servicio como cualquier reparación. No ingresas tu costo: tu pago es el de la tabla (arriba).
         </div>
       )}
 

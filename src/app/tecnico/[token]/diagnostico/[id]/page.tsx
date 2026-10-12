@@ -633,12 +633,18 @@ export default function DiagnosticoPage() {
                 su pago neto — claridad total para ambos. */}
             {!servicio?.es_garantia && totalClienteApi !== null && (
               <div className="mb-4 rounded-xl bg-purple-50 border-2 border-purple-200 p-4 text-left">
-                <p className="text-xs font-bold text-purple-900 uppercase tracking-wide mb-2">🧾 Cotización generada</p>
+                <p className="text-xs font-bold text-purple-900 uppercase tracking-wide mb-2">
+                  {esMantenimientoCatalogo ? `🧼 Reparación con precio predeterminado (${servicio?.tipo_equipo})` : '🧾 Cotización generada'}
+                </p>
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-600">Total que pagará el cliente</span>
                   <span className="font-bold text-purple-900">${formatCOP(totalClienteApi)} COP</span>
                 </div>
-                <p className="text-[11px] text-gray-500 mb-2">Incluye tu pago, utilidad Baird 13% e IVA 19%.</p>
+                <p className="text-[11px] text-gray-500 mb-2">
+                  {esMantenimientoCatalogo
+                    ? 'Precio fijo de mantenimiento de la tabla Baird según el electrodoméstico (incluye IVA). No se cotizó.'
+                    : 'Incluye tu pago, utilidad Baird 13% e IVA 19%.'}
+                </p>
                 {(pagoTecnicoApi ?? costoTecnicoNum) > 0 && (
                   <div className="flex justify-between text-sm border-t border-purple-200 pt-2">
                     <span className="text-gray-600">Tu pago si el cliente aprueba</span>

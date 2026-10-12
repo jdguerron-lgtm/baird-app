@@ -43,6 +43,8 @@ interface DatosCotizacion {
     // Desglose discriminado (cotizaciones desde 2026-08-25): total = diagnóstico + servicio
     diagnostico_cliente?: number
     servicio_cliente?: number
+    // Reparación con precio predeterminado de mantenimiento (2026-10-12)
+    mantenimiento_catalogo?: boolean
     tiempo_entrega?: string | null
     productos_necesarios?: ProductoNecesario[]
     productos_recomendados?: ProductoRecomendado[]
@@ -428,9 +430,18 @@ export default function CotizacionPage() {
             {cotizacion.mano_obra === 0 && cotizacion.repuestos === 0 &&
               !((cotizacion.diagnostico_cliente ?? 0) > 0 && (cotizacion.servicio_cliente ?? 0) > 0) && (
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Total del servicio<br /><span className="text-[10px] text-gray-400">Incluye mano de obra, repuestos e IVA</span></span>
+                <span className="text-sm text-gray-600">Total del servicio<br /><span className="text-[10px] text-gray-400">
+                  {cotizacion.mantenimiento_catalogo
+                    ? 'Precio fijo de mantenimiento según tu electrodoméstico · incluye visita, mano de obra e IVA'
+                    : 'Incluye mano de obra, repuestos e IVA'}
+                </span></span>
                 <span className="font-bold text-blue-600 text-xl">${formatCOP(cotizacion.total)} <span className="text-xs font-medium">COP</span></span>
               </div>
+            )}
+            {cotizacion.mantenimiento_catalogo && (
+              <p className="mt-2 text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+                🧼 El técnico determinó que la reparación de tu equipo corresponde a un mantenimiento, por eso aplica el precio predeterminado de Baird para tu electrodoméstico (sin cotización adicional).
+              </p>
             )}
             {cotizacion.tiempo_entrega && (
               <div className="bg-blue-50 rounded-xl p-3 mt-3 text-sm text-blue-900">

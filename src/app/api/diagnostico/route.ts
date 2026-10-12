@@ -474,6 +474,9 @@ export async function POST(req: NextRequest) {
         foto_placa_url: fotoPlaca,
         diagnosticado_at: new Date().toISOString(),
         costo_tecnico: costoTecnicoNum,
+        // También en triaje_resultado para que el portal del técnico y el admin
+        // lo etiqueten sin abrir la cotización (el técnico no ve cotizacion).
+        ...(esMantenimientoCatalogo ? { mantenimiento_catalogo: true } : {}),
       }
 
       // codigoFalla habilitado en particular desde 2026-05-13. Persiste igual
