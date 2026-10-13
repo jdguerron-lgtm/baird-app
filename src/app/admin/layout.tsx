@@ -91,6 +91,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/errores', label: 'Errores conexión', icon: '📡' },
     { href: '/admin/carga-masiva', label: 'Carga Masiva', icon: '📁' },
     { href: '/admin/liquidaciones', label: 'Liquidaciones', icon: '💰' },
+    { href: '/admin/pagos-tecnicos', label: 'Pagos técnicos', icon: '💸' },
+    { href: '/admin/finanzas', label: 'Finanzas', icon: '📈' },
     { href: '/admin/garantias', label: 'Garantías', icon: '🛡️' },
     { href: '/admin/test', label: 'Testing', icon: '🧪' },
   ]
