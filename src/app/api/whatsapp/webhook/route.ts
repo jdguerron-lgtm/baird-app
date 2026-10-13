@@ -35,7 +35,9 @@ async function registrarEntregaFallida(recipient: string, wamid: string, detalle
     const { data: sol } = await supabaseAdmin
       .from('solicitudes_servicio')
       .select('id, estado')
-      .eq('cliente_telefono', recipient)
+      // Titular o receptor del servicio (2026-10-13): el failed de Meta puede
+      // ser de cualquiera de los dos números.
+      .or(`cliente_telefono.eq.${recipient},receptor_telefono.eq.${recipient}`)
       .not('estado', 'in', `(${ESTADOS_TERMINALES.join(',')})`)
       .order('created_at', { ascending: false })
       .limit(1)

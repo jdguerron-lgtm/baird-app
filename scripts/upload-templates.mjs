@@ -1871,6 +1871,45 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // ── Receptor del servicio (2026-10-13) ──
+  // Persona distinta del titular que recibe al técnico. El técnico la registra
+  // al comenzar el diagnóstico (POST /api/tecnico/receptor) y este es el ÚNICO
+  // mensaje que recibe antes de aceptar: botón → /receptor/{receptor_token}
+  // donde acepta T&C + privacidad. Solo después se le espejan los WhatsApp del
+  // titular (enviarPlantillaCliente). Llamado por: enviarBienvenidaReceptor()
+  // Subir: node --env-file=.env.local scripts/upload-templates.mjs receptor_bienvenida_v1
+  {
+    name: 'receptor_bienvenida_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, {{2}} te registró como la persona que recibe al técnico {{3}} de Baird Service ' +
+          'para el servicio de {{4}}.\n\n' +
+          'Si aceptas, por este WhatsApp vas a recibir los mismos avisos que el titular (diagnóstico, ' +
+          'cotización, repuestos y pagos) y podrás aprobar los pasos del servicio en su nombre.\n\n' +
+          'Toca el botón para leer y aceptar los Términos y Condiciones y la Política de Privacidad. 🔧',
+        example: {
+          body_text: [['Marta', 'Carlos Pérez', 'Pedro Gómez', 'Lavadora LG']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Aceptar y continuar',
+            url: `${APP_URL}/receptor/{{1}}`,
+            example: [`${APP_URL}/receptor/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 async function listExisting() {

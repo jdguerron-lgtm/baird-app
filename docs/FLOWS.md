@@ -590,6 +590,42 @@ Audit:                                Audit:
 
 ---
 
+## Side flow: Receptor del servicio (2026-10-13)
+
+Transversal a ambos flujos. Cuando quien recibe al técnico en el domicilio **no es el titular**, el técnico lo registra **al comenzar el diagnóstico** (bloque "¿Quién recibe el servicio?" en `/tecnico/{token}/diagnostico/{id}`; también en `/tecnico/{token}/completar/{id}` porque Mantenimiento / Cambio de filtro no pasan por diagnóstico). Default: "El titular" (un toque, nada que llenar).
+
+```
+Técnico en el domicilio → bloque "¿Quién recibe el servicio?"
+   │  "Otra persona": nombre + celular + relación (familiar / empleado(a) del hogar /
+   │  administración / arrendatario / otro) + check "está de acuerdo con que Baird le escriba"
+   ▼
+POST /api/tecnico/receptor  (guarda DE INMEDIATO, independiente del submit del diagnóstico)
+   │  receptor_* + receptor_token nuevo + receptor_registrado_at; evento nota_admin (actor tecnico)
+   ▼
+WhatsApp al receptor: receptor_bienvenida_v1 (único mensaje antes de aceptar)
+   │  botón "Aceptar y continuar" → /receptor/{receptor_token}
+   ▼
+Receptor acepta T&C + privacidad → POST /api/receptor/aceptar → receptor_acepto_at
+   │
+   ▼
+Desde ahí, CADA plantilla post-diagnóstico que sale al titular se ESPEJA al receptor con su
+nombre en el saludo (enviarPlantillaCliente → espejarPlantillaAlReceptor): verificación de paso,
+cotización, valor actualizado, esperando/en camino/llegó repuesto, paso aprobado/rechazado,
+finalizado sin reparación, encuesta final y TODOS los cobros (saldo, abono, confirmaciones).
+Los links son los mismos tokens: cualquiera de los dos puede aprobar y pagar; el primero que
+decide gana (los guards existentes rechazan la segunda decisión).
+```
+
+Reglas:
+- **Sin aceptación no hay espejo.** `receptorActivo()` exige `receptor_acepto_at` — consentimiento previo (Ley 1581). El admin ve "⏳ Aún no acepta" y puede reenviar el link (`POST /api/admin/receptor-reenviar`).
+- **Nunca el mismo número del titular** (lo rechaza `validarReceptor` y lo re-chequea `receptorActivo`).
+- **Receptor NULL = comportamiento idéntico al de siempre.** Los mensajes pre-diagnóstico (agenda, recordatorios, técnico asignado, anticipo) no se espejan: el receptor no existe todavía.
+- **Textos libres NO se espejan** (cancelación / reagendamiento / fallbacks): dependen de la ventana 24h de cada número. Gap conocido.
+- Cambiar el número → token nuevo y debe aceptar otra vez. Quitar al receptor solo mientras no haya aceptado (después lo gestiona el equipo).
+- Visible en `/admin/solicitudes/[id]` (ficha Cliente), portal y PDF del supervisor.
+
+---
+
 ## Side flow: Notificación a supervisores
 
 Transversal a ambos flujos (NEW 2026-05-29). En **cada cambio de estado** de una solicitud, el sistema notifica por WhatsApp a supervisores internos configurables. Es un canal de visibilidad/monitoreo, independiente del cliente y el técnico.

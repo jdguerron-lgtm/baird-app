@@ -87,6 +87,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })
   }
 
+  // Receptor del servicio (2026-10-13): columnas aparte y best-effort — si la
+  // migración 20261013_receptor_servicio no está aplicada, el portal del
+  // supervisor sigue funcionando sin ese dato.
+  try {
+    const { data: rec } = await supabase
+      .from('solicitudes_servicio')
+      .select('receptor_nombre, receptor_telefono, receptor_relacion, receptor_acepto_at')
+      .eq('id', id)
+      .maybeSingle<Record<string, unknown>>()
+    if (rec) Object.assign(sol, rec)
+  } catch {
+    // sin receptor
+  }
+
   // Gate de alcance: fuera de scope → 403 (no revelar que existe).
   if (!solicitudEnAlcance(sup, { es_garantia: sol.es_garantia as boolean | null, marca_equipo: sol.marca_equipo as string | null })) {
     return NextResponse.json({ error: 'Fuera de tu alcance' }, { status: 403 })

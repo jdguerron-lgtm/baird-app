@@ -20,6 +20,7 @@ import { CodigoFallaSelector } from '@/components/ui/CodigoFallaSelector'
 import type { CodigoFalla } from '@/lib/constants/codigos-falla'
 import OathModal from '@/components/ui/OathModal'
 import SiguientePasoSelector, { type SiguientePasoData } from '@/components/ui/SiguientePasoSelector'
+import ReceptorServicio from '@/components/tecnico/ReceptorServicio'
 import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
@@ -45,6 +46,12 @@ interface Servicio {
   horario_confirmado: string | null
   tipo_solicitud?: string | null
   recargo_weekend_aplicado?: number | null
+  // Receptor del servicio (2026-10-13) — ver components/tecnico/ReceptorServicio
+  cliente_telefono?: string | null
+  receptor_nombre?: string | null
+  receptor_telefono?: string | null
+  receptor_relacion?: string | null
+  receptor_acepto_at?: string | null
 }
 
 const MAX_EVIDENCIAS = 4
@@ -175,7 +182,7 @@ export default function DiagnosticoPage() {
       // diferencia de seguridad es nula y la ganancia ~200-500ms en 4G.
       // querySupabase reintenta con backoff en fetch errors transitorios
       // (4G/3G inestable es común para el técnico abriendo el link en la calle).
-      const [tecResult, solResult] = await Promise.all([
+      const [tecResult, solResult, receptorResult] = await Promise.all([
         querySupabase(() =>
           supabase
             .from('tecnicos')
@@ -190,6 +197,15 @@ export default function DiagnosticoPage() {
             .eq('id', id)
             .single()
         ),
+        // Receptor del servicio (2026-10-13): query APARTE y best-effort. Si
+        // la migración 20261013_receptor_servicio aún no está aplicada, el
+        // error se ignora y la página funciona exactamente igual que antes.
+        supabase
+          .from('solicitudes_servicio')
+          .select('cliente_telefono, receptor_nombre, receptor_telefono, receptor_relacion, receptor_acepto_at')
+          .eq('id', id)
+          .maybeSingle()
+          .then(r => r, () => ({ data: null, error: null })),
       ])
 
       const tec = tecResult.data
@@ -224,7 +240,7 @@ export default function DiagnosticoPage() {
         return
       }
 
-      setServicio(sol)
+      setServicio({ ...sol, ...((receptorResult?.data as Partial<Servicio> | null) ?? {}) })
       setCargando(false)
     }
     cargar()
@@ -741,6 +757,24 @@ export default function DiagnosticoPage() {
             </div>
           </div>
         </div>
+
+        {/* Receptor del servicio (2026-10-13): al COMENZAR el diagnóstico, con el
+            técnico ya en el domicilio, registra a quien recibe si no es el
+            titular. Guarda de inmediato (independiente del submit). */}
+        <ReceptorServicio
+          solicitudId={servicio!.id}
+          portalToken={token}
+          clienteNombre={servicio!.cliente_nombre}
+          clienteTelefono={servicio!.cliente_telefono}
+          inicial={servicio!.receptor_telefono && servicio!.receptor_nombre
+            ? {
+                nombre: servicio!.receptor_nombre,
+                telefono: servicio!.receptor_telefono,
+                relacion: servicio!.receptor_relacion ?? '',
+                acepto: !!servicio!.receptor_acepto_at,
+              }
+            : null}
+        />
 
         {/* WARRANTY: Pago al técnico (rango antes de diagnóstico, proyección después). */}
         {servicio!.es_garantia && pagoBreakdown && (

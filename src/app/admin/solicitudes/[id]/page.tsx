@@ -18,6 +18,7 @@ import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
 import { etapaPagoCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
 import { codigoServicio } from '@/lib/utils/facturacion'
+import { labelRelacionReceptor } from '@/lib/utils/receptor'
 
 interface Solicitud {
   id: string
@@ -49,6 +50,13 @@ interface Solicitud {
   saldo_pagado_at: string | null
   monto_pagado_online: number | null
   ultimo_pago_at: string | null
+  // Receptor del servicio (2026-10-13) — persona distinta del titular que
+  // recibe al técnico y sigue el flujo en paralelo tras aceptar T&C.
+  receptor_nombre?: string | null
+  receptor_telefono?: string | null
+  receptor_relacion?: string | null
+  receptor_registrado_at?: string | null
+  receptor_acepto_at?: string | null
 }
 
 interface Tecnico {
@@ -1235,6 +1243,61 @@ export default function SolicitudDetalle() {
                 <dt className="text-xs text-gray-500">Portal cliente (cancelar/reagendar)</dt>
                 <dd className="text-xs font-mono text-slate-700 bg-gray-50 p-2 rounded-lg break-all">
                   /servicio/{solicitud.cliente_token}
+                </dd>
+              </div>
+            )}
+            {/* Receptor del servicio (2026-10-13): lo registra el técnico al
+                iniciar el diagnóstico; recibe los WhatsApp en paralelo solo
+                después de aceptar T&C desde /receptor/{token}. */}
+            {solicitud.receptor_telefono && (
+              <div>
+                <dt className="text-xs text-gray-500">Recibe el servicio (no es el titular)</dt>
+                <dd className="text-sm text-slate-900">
+                  <span className="font-medium">{solicitud.receptor_nombre}</span>
+                  <span className="text-gray-500"> · +{solicitud.receptor_telefono} · {labelRelacionReceptor(solicitud.receptor_relacion)}</span>
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    {solicitud.receptor_acepto_at ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                        ✅ Aceptó T&C — recibe los avisos en paralelo
+                      </span>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                          ⏳ Aún no acepta — no recibe avisos
+                        </span>
+                        <button
+                          type="button"
+                          disabled={reenviandoUltimo}
+                          onClick={async () => {
+                            setReenviandoUltimo(true)
+                            setUltimoResult(null)
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession()
+                              if (!session) {
+                                setUltimoResult({ error: 'Sesión expirada. Inicia sesión de nuevo.' })
+                                setReenviandoUltimo(false)
+                                return
+                              }
+                              const res = await fetch('/api/admin/receptor-reenviar', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                                body: JSON.stringify({ solicitudId: id }),
+                              })
+                              setUltimoResult(await res.json())
+                              await recargarEventos()
+                            } catch (e) {
+                              setUltimoResult({ error: e instanceof Error ? e.message : String(e) })
+                            }
+                            setReenviandoUltimo(false)
+                          }}
+                          className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+                          title="Reenvía al receptor el WhatsApp con el link para aceptar T&C (receptor_bienvenida_v1)"
+                        >
+                          ↻ Reenviar link de aceptación
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </dd>
               </div>
             )}

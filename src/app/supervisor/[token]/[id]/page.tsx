@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import SelectorFoto from '@/components/ui/SelectorFoto'
 import { formatCOP } from '@/lib/utils/format'
+import { labelRelacionReceptor } from '@/lib/utils/receptor'
 import type { ChecklistServicio } from '@/types/solicitud'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
 import type { SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
@@ -15,6 +16,10 @@ interface Solicitud {
   id: string
   cliente_nombre: string
   cliente_telefono: string
+  receptor_nombre?: string | null
+  receptor_telefono?: string | null
+  receptor_relacion?: string | null
+  receptor_acepto_at?: string | null
   direccion: string | null
   ciudad_pueblo: string | null
   zona_servicio: string | null
@@ -253,6 +258,14 @@ export default function SupervisorDetalle() {
             <div className="col-span-2">
               <Campo label="Dirección">{sol.direccion ?? '—'}</Campo>
             </div>
+            {sol.receptor_telefono && (
+              <div className="col-span-2">
+                <Campo label="Recibe el servicio (no es el titular)">
+                  {sol.receptor_nombre} · +{sol.receptor_telefono} · {labelRelacionReceptor(sol.receptor_relacion)}
+                  {sol.receptor_acepto_at ? ' · aceptó T&C' : ' · pendiente de aceptar'}
+                </Campo>
+              </div>
+            )}
           </div>
         </Seccion>
 

@@ -9,6 +9,7 @@ import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
+import ReceptorServicio from '@/components/tecnico/ReceptorServicio'
 import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
@@ -33,6 +34,12 @@ interface Servicio {
   created_at: string
   horario_confirmado: string | null
   triaje_resultado: { complejidad?: ComplejidadServicio | null } | null
+  // Receptor del servicio (2026-10-13) — ver components/tecnico/ReceptorServicio
+  cliente_telefono?: string | null
+  receptor_nombre?: string | null
+  receptor_telefono?: string | null
+  receptor_relacion?: string | null
+  receptor_acepto_at?: string | null
 }
 
 interface TecnicoInfo {
@@ -116,7 +123,7 @@ export default function CompletarServicioPage() {
       // seguridad es la misma y la ganancia ~200-500ms en 4G.
       // querySupabase reintenta con backoff en fetch errors transitorios
       // (4G/3G inestable es común para el técnico abriendo el link en la calle).
-      const [tecResult, solResult] = await Promise.all([
+      const [tecResult, solResult, receptorResult] = await Promise.all([
         querySupabase(() =>
           supabase
             .from('tecnicos')
@@ -131,6 +138,14 @@ export default function CompletarServicioPage() {
             .eq('id', id)
             .single()
         ),
+        // Receptor del servicio (2026-10-13): query APARTE y best-effort (si la
+        // migración no está aplicada, se ignora y todo sigue como antes).
+        supabase
+          .from('solicitudes_servicio')
+          .select('cliente_telefono, receptor_nombre, receptor_telefono, receptor_relacion, receptor_acepto_at')
+          .eq('id', id)
+          .maybeSingle()
+          .then(r => r, () => ({ data: null, error: null })),
       ])
 
       const tec = tecResult.data
@@ -158,7 +173,7 @@ export default function CompletarServicioPage() {
         return
       }
 
-      setServicio(sol)
+      setServicio({ ...sol, ...((receptorResult?.data as Partial<Servicio> | null) ?? {}) })
       setCargando(false)
 
       // Get GPS
@@ -557,6 +572,27 @@ export default function CompletarServicioPage() {
             )}
           </div>
         </div>
+
+        {/* Receptor del servicio (2026-10-13): los servicios de tarifa fija
+            (Mantenimiento / Cambio de filtro) no pasan por diagnóstico, así
+            que el bloque también vive acá. Si ya se registró en el
+            diagnóstico, aparece precargado. */}
+        {servicio && (
+          <ReceptorServicio
+            solicitudId={servicio.id}
+            portalToken={token}
+            clienteNombre={servicio.cliente_nombre}
+            clienteTelefono={servicio.cliente_telefono}
+            inicial={servicio.receptor_telefono && servicio.receptor_nombre
+              ? {
+                  nombre: servicio.receptor_nombre,
+                  telefono: servicio.receptor_telefono,
+                  relacion: servicio.receptor_relacion ?? '',
+                  acepto: !!servicio.receptor_acepto_at,
+                }
+              : null}
+          />
+        )}
 
         {/* Pago al técnico (garantía): proyección detallada del pago */}
         {pagoBreakdown && (

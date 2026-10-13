@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { labelRelacionReceptor } from '@/lib/utils/receptor'
 import autoTable from 'jspdf-autotable'
 import { ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
@@ -56,6 +57,10 @@ export interface SolicitudDetallePdf {
   id: string
   cliente_nombre: string
   cliente_telefono: string
+  receptor_nombre?: string | null
+  receptor_telefono?: string | null
+  receptor_relacion?: string | null
+  receptor_acepto_at?: string | null
   direccion: string | null
   ciudad_pueblo: string | null
   zona_servicio: string | null
@@ -350,6 +355,11 @@ export function construirPdfDetalleSolicitud(
     ['Ciudad', sol.ciudad_pueblo ?? '—'],
     ['Zona', sol.zona_servicio ?? '—'],
     ['Dirección', sol.direccion ?? '—'],
+    // Receptor del servicio (2026-10-13): solo si el técnico registró a
+    // alguien distinto del titular.
+    ...(sol.receptor_telefono
+      ? [['Recibe el servicio', `${sol.receptor_nombre ?? '—'} · +${sol.receptor_telefono} · ${labelRelacionReceptor(sol.receptor_relacion)}${sol.receptor_acepto_at ? ' · aceptó T&C' : ' · pendiente de aceptar'}`] as [string, string]]
+      : []),
   ], y)
 
   const equipo: Array<[string, string]> = [

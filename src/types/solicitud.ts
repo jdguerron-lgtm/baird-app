@@ -402,6 +402,16 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   verificacion_paso_decision?: 'aprobado' | 'rechazado'
   verificacion_paso_at?: string
   verificacion_paso_comentario?: string
+  // Receptor del servicio (2026-10-13, mig 20261013_receptor_servicio): persona
+  // distinta del titular que recibe al técnico y sigue el flujo en paralelo.
+  // Solo con receptor_acepto_at se le espejan los WhatsApp (ver utils/receptor.ts).
+  receptor_nombre?: string | null
+  receptor_telefono?: string | null
+  receptor_relacion?: string | null
+  receptor_token?: string | null
+  receptor_registrado_at?: string | null
+  receptor_acepto_at?: string | null
+  receptor_tyc_version?: string | null
   // Self-service (cliente cancela / reagenda)
   cliente_token?: string
   cancelado_at?: string

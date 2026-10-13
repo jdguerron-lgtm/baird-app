@@ -2,6 +2,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import crypto from 'crypto'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
+import { componentesParaReceptor, receptorActivo, primerNombre } from '@/lib/utils/receptor'
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { urlImagenCarnet } from '@/lib/utils/carnet'
@@ -1374,7 +1375,7 @@ export async function enviarVerificacionPasoCliente(solicitudId: string): Promis
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    const result = await enviarPlantilla(sol.cliente_telefono, 'verificar_siguiente_paso_v2', 'es', [
+    const result = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'verificar_siguiente_paso_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -1459,7 +1460,7 @@ export async function enviarRepuestoRecibidoCliente(solicitudId: string): Promis
   const tecnico = tec?.nombre_completo ?? 'Técnico asignado'
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v2', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'repuesto_recibido_cliente_v2', 'es', [
       {
         type: 'body',
         parameters: [
@@ -2133,7 +2134,7 @@ export async function enviarEsperandoRepuestoCliente(
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'esperando_repuesto_cliente_v1', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'esperando_repuesto_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -2311,7 +2312,7 @@ export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promis
 
   try {
     try {
-      const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_en_camino_cliente_v1', 'es', [
+      const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'repuesto_en_camino_cliente_v1', 'es', [
         {
           type: 'body',
           parameters: [
@@ -2333,7 +2334,7 @@ export async function enviarRepuestoEnCaminoCliente(solicitudId: string): Promis
       // plantilla aprobada de repuesto (el copy dice "llegó" en vez de
       // "va en camino", pero el flujo no se corta).
       console.error('[enviarRepuestoEnCaminoCliente] v1 falló, fallback a repuesto_recibido_cliente_v2:', err)
-      const r = await enviarPlantilla(sol.cliente_telefono, 'repuesto_recibido_cliente_v2', 'es', [
+      const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'repuesto_recibido_cliente_v2', 'es', [
         {
           type: 'body',
           parameters: [
@@ -2701,7 +2702,7 @@ export async function enviarEncuestaConfirmacionCliente(
   if (evidencia.confirmado !== null) return { ok: false, error: 'El cliente ya respondió la encuesta' }
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v4', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'confirmar_servicio_v4', 'es', [
       {
         type: 'body',
         parameters: [
@@ -2761,7 +2762,7 @@ export async function enviarPagoSaldoCliente(
   if (opts.momento === 'cierre') {
     const abonado = Math.max(0, Number(sol.monto_pagado_online ?? 0))
     try {
-      const r = await enviarPlantilla(sol.cliente_telefono, 'saldo_final_cliente_v1', 'es', [
+      const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'saldo_final_cliente_v1', 'es', [
         {
           type: 'body',
           parameters: [
@@ -2803,7 +2804,7 @@ export async function enviarPagoSaldoCliente(
   }
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -2871,7 +2872,7 @@ export async function enviarAbonoRepuestosCliente(
       `Se envió al cliente el cobro del abono de repuestos ($${formatCOP(abono)} — 50% del saldo) tras aprobar la cotización`)
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'abono_repuestos_cliente_v1', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'abono_repuestos_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -2891,7 +2892,7 @@ export async function enviarAbonoRepuestosCliente(
     // el link cobra igual el 50% porque la página decide el modo server-side.
     console.error('[abono] abono_repuestos_cliente_v1 falló, fallback a pago_saldo_cliente_v1:', err)
     try {
-      const r = await enviarPlantilla(sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
+      const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'pago_saldo_cliente_v1', 'es', [
         {
           type: 'body',
           parameters: [
@@ -2967,7 +2968,7 @@ export async function enviarAbonoConfirmadoCliente(
         parameters: [{ type: 'text', text: sol.cliente_token }],
       })
     }
-    const r = await enviarPlantilla(sol.cliente_telefono, 'abono_confirmado_cliente_v1', 'es', componentes)
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'abono_confirmado_cliente_v1', 'es', componentes)
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     await registrarMensajeCliente(solicitudId, 'abono_confirmado_cliente_v1', motivo)
     return { ok: true }
@@ -3102,7 +3103,7 @@ export async function enviarSaldoConfirmadoCliente(
         parameters: [{ type: 'text', text: sol.cliente_token }],
       })
     }
-    const r = await enviarPlantilla(sol.cliente_telefono, 'saldo_confirmado_cliente_v1', 'es', componentes)
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'saldo_confirmado_cliente_v1', 'es', componentes)
     if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
     await registrarMensajeCliente(solicitudId, 'saldo_confirmado_cliente_v1',
       `Se confirmó al cliente el pago del saldo ($${formatCOP(montoPagado)}) — servicio totalmente pagado`)
@@ -3226,7 +3227,7 @@ export async function enviarPasoAprobadoCliente(solicitudId: string, accion: str
   if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'paso_aprobado_cliente_v1', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'paso_aprobado_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -3259,7 +3260,7 @@ export async function enviarPasoRechazadoCliente(solicitudId: string): Promise<{
   if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'paso_rechazado_cliente_v1', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'paso_rechazado_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -3380,7 +3381,7 @@ export async function enviarFinalizadoSinReparacion(
   const tecnico = tec?.nombre_completo?.split(' ')[0] ?? 'Técnico'
 
   try {
-    const r = await enviarPlantilla(sol.cliente_telefono, 'finalizado_sin_reparacion_v1', 'es', [
+    const r = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'finalizado_sin_reparacion_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -3445,7 +3446,7 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
 
     let result
     try {
-      result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v3', 'es', [
+      result = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'cotizacion_cliente_v3', 'es', [
         {
           type: 'body',
           parameters: [
@@ -3461,7 +3462,7 @@ export async function enviarCotizacionCliente(solicitudId: string): Promise<{ ok
       ])
     } catch (v3Err) {
       console.error('[cotizacion] cotizacion_cliente_v3 falló, fallback a v2:', v3Err)
-      result = await enviarPlantilla(sol.cliente_telefono, 'cotizacion_cliente_v2', 'es', [
+      result = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'cotizacion_cliente_v2', 'es', [
         {
           type: 'body',
           parameters: [
@@ -3519,7 +3520,7 @@ export async function enviarValorActualizadoCliente(solicitudId: string): Promis
   if (!cot.token) return { ok: false, error: 'La cotización no tiene token de aprobación' }
 
   try {
-    const result = await enviarPlantilla(sol.cliente_telefono, 'valor_actualizado_cliente_v1', 'es', [
+    const result = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'valor_actualizado_cliente_v1', 'es', [
       {
         type: 'body',
         parameters: [
@@ -4172,4 +4173,126 @@ export function verificarFirmaWebhook(rawBody: string, signature: string): boole
     Buffer.from(signature),
     Buffer.from(expected)
   )
+}
+
+// ─────────────────────────────────────────
+// Receptor del servicio (2026-10-13)
+// ─────────────────────────────────────────
+//
+// Persona distinta del titular que recibe al técnico y, tras aceptar T&C +
+// privacidad desde /receptor/{token}, sigue el flujo EN PARALELO: recibe los
+// mismos WhatsApp post-diagnóstico que el titular (avisos, decisiones y
+// pagos) con su propio nombre en el saludo. Ver docs/FLOWS.md § "Side flow:
+// Receptor del servicio" y src/lib/utils/receptor.ts.
+
+/**
+ * Envía una plantilla al TITULAR y, si la solicitud tiene un receptor activo
+ * (registrado + aceptó + número distinto), le espeja la MISMA plantilla con
+ * su nombre en el primer parámetro del body. Devuelve el resultado del envío
+ * al titular tal cual (`EnvioResult`) y propaga sus errores igual que
+ * `enviarPlantilla`, así los callers con fallback no cambian de comportamiento.
+ *
+ * El espejo es best-effort: nunca lanza ni altera el retorno. Sin receptor
+ * activo el costo es un SELECT de 4 columnas.
+ */
+export async function enviarPlantillaCliente(
+  solicitudId: string,
+  para: string,
+  templateName: string,
+  languageCode: string,
+  components?: Record<string, unknown>[],
+): Promise<EnvioResult> {
+  const result = await enviarPlantilla(para, templateName, languageCode, components)
+  if (result.sent) {
+    await espejarPlantillaAlReceptor(solicitudId, para, templateName, languageCode, components)
+  }
+  return result
+}
+
+async function espejarPlantillaAlReceptor(
+  solicitudId: string,
+  telefonoTitular: string,
+  templateName: string,
+  languageCode: string,
+  components?: Record<string, unknown>[],
+): Promise<void> {
+  try {
+    const { data: sol } = await supabase
+      .from('solicitudes_servicio')
+      .select('cliente_telefono, receptor_nombre, receptor_telefono, receptor_acepto_at')
+      .eq('id', solicitudId)
+      .maybeSingle()
+    const receptor = receptorActivo(sol)
+    if (!receptor) return
+    // Defensa extra: si por algún motivo el envío principal ya fue al número
+    // del receptor, no duplicar.
+    if (phoneToDigits(telefonoTitular) === receptor.telefono) return
+
+    const r = await enviarPlantilla(
+      receptor.telefono,
+      templateName,
+      languageCode,
+      componentesParaReceptor(components, receptor.nombre),
+    )
+    if (r.sent) {
+      await registrarMensajeCliente(solicitudId, templateName,
+        `Copia enviada al receptor ${receptor.nombre} (+${receptor.telefono}) — ${templateName}`)
+    }
+  } catch (err) {
+    console.error(`[receptor] espejo de ${templateName} falló (solicitud ${solicitudId}):`,
+      err instanceof Error ? err.message : String(err))
+  }
+}
+
+/**
+ * Mensaje ÚNICO de bienvenida al receptor recién registrado por el técnico:
+ * plantilla `receptor_bienvenida_v1` con botón URL → /receptor/{receptor_token}
+ * donde acepta T&C + política de privacidad. Hasta que acepte no se le espeja
+ * nada más (consentimiento previo, Ley 1581).
+ *
+ * Llamado por POST /api/tecnico/receptor (registro) y por
+ * POST /api/admin/receptor-reenviar (reenvío manual).
+ */
+export async function enviarBienvenidaReceptor(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura, tecnico_asignado_id, receptor_nombre, receptor_telefono, receptor_token, receptor_acepto_at')
+    .eq('id', solicitudId)
+    .single()
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.receptor_telefono || !sol.receptor_nombre || !sol.receptor_token) {
+    return { ok: false, error: 'La solicitud no tiene receptor registrado' }
+  }
+  const telefono = phoneToDigits(sol.receptor_telefono)
+  if (!isMobileColombiano(telefono)) return { ok: false, error: 'El celular del receptor no es un móvil colombiano válido' }
+
+  const { data: tec } = sol.tecnico_asignado_id
+    ? await supabase.from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).single()
+    : { data: null }
+
+  try {
+    const r = await enviarPlantilla(telefono, 'receptor_bienvenida_v1', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: primerNombre(sol.receptor_nombre) },
+          { type: 'text', text: sol.cliente_nombre },
+          { type: 'text', text: tec?.nombre_completo ?? 'el técnico de Baird' },
+          { type: 'text', text: equipoConGarantia(sol) },
+        ],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: sol.receptor_token }],
+      },
+    ])
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    await registrarMensajeCliente(solicitudId, 'receptor_bienvenida_v1',
+      `Se envió al receptor ${sol.receptor_nombre} (+${telefono}) el link para aceptar T&C y seguir el servicio`)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }

@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
+> Última actualización: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; pendiente de subir a Meta). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
 
 > 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
 
@@ -383,6 +383,17 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Body** (3 params): `cliente`, `tecnico`, `equipo`
 - **Botón URL**: `/confirmar/{confirmacion_token}` — display "Confirmar servicio"
 - **Propósito**: cliente califica satisfacción (1-10) o reporta problema.
+
+### Receptor del servicio (2026-10-13)
+
+#### `receptor_bienvenida_v1` **En script** ⏳ pendiente de subir a Meta
+- **Disparo**: `enviarBienvenidaReceptor(solicitudId)` desde `POST /api/tecnico/receptor` (el técnico registra a quien recibe al comenzar el diagnóstico o al completar un servicio de tarifa fija) y desde `POST /api/admin/receptor-reenviar` (reenvío manual).
+- **Destino**: el **receptor** (persona distinta del titular). Es el ÚNICO mensaje que recibe antes de aceptar.
+- **Body** (4 params): `receptor (primer nombre)`, `titular`, `tecnico`, `equipo` (+ "· Garantía N°" en garantía)
+- **Footer**: "Baird Service"
+- **Botón URL**: `/receptor/{receptor_token}` — display "Aceptar y continuar"
+- **Propósito**: consentimiento previo. En `/receptor/{token}` acepta T&C + política de privacidad (`receptor_acepto_at`); desde ahí recibe en paralelo con el titular TODAS las plantillas post-diagnóstico al cliente (incluidos cobros), con su nombre en el primer parámetro del body (`enviarPlantillaCliente` → `espejarPlantillaAlReceptor`). No requiere plantillas nuevas para el espejo: reutiliza las existentes.
+- **Subir**: `node --env-file=.env.local scripts/upload-templates.mjs receptor_bienvenida_v1`. Mientras esté PENDING/ausente, el registro del receptor igual se guarda y el admin ve "el WhatsApp no salió" para reenviar luego.
 
 ### Onboarding
 

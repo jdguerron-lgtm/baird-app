@@ -46,6 +46,7 @@ export default function PoliticaPrivacidadPage() {
             <li><strong>Clientes:</strong> nombre, número de documento, teléfono/WhatsApp, dirección y ciudad, datos del equipo y descripción de la falla, historial de servicios, pagos (Baird Service no almacena datos de tarjetas: los procesa la pasarela de pagos).</li>
             <li><strong>Técnicos:</strong> nombre, tipo y número de documento, foto del documento de identidad, foto de perfil, teléfono/WhatsApp, ciudad de operación, especialidades, certificaciones, afiliación a seguridad social (salud, pensión y ARL), RUT, certificación bancaria y antecedentes requeridos para la vinculación.</li>
             <li><strong>Datos del servicio:</strong> fotografías de evidencia, listas de chequeo, firmas digitales, calificaciones, y la ubicación GPS del dispositivo del técnico durante la llegada, el diagnóstico, la finalización y hasta 30 minutos después de finalizado el servicio.</li>
+            <li><strong>Persona que recibe el servicio:</strong> cuando el titular no está presente, el técnico registra el nombre, el número de WhatsApp y la relación con el titular (familiar, empleado(a) del hogar, administración, arrendatario u otro) de la persona que lo recibe en el domicilio, para que pueda seguir el servicio por WhatsApp en paralelo con el titular.</li>
             <li><strong>Comunicaciones:</strong> mensajes enviados y recibidos por WhatsApp Business y, cuando aplique, grabaciones o transcripciones de llamadas de coordinación, previo aviso.</li>
             <li><strong>Datos técnicos de navegación:</strong> dirección IP, tipo de dispositivo y registros de uso necesarios para la seguridad y el funcionamiento de la plataforma.</li>
           </ul>
@@ -84,6 +85,15 @@ export default function PoliticaPrivacidadPage() {
             El titular otorga su autorización previa, expresa e informada al marcar la casilla correspondiente al
             solicitar un servicio o al registrarse como técnico, y el técnico la ratifica al firmar su contrato.
             Baird Service conserva prueba de la autorización (fecha y versión de esta política aceptada).
+          </p>
+          <p>
+            <strong>Persona que recibe el servicio.</strong> Si el titular designa a otra persona para recibir al
+            técnico, Baird Service le envía a esa persona un único mensaje de WhatsApp con el enlace para
+            aceptar los Términos y Condiciones y esta política. Solo después de esa aceptación recibe los avisos
+            del servicio (diagnóstico, cotización, repuestos, pagos y confirmación) en paralelo con el titular y
+            puede aprobar los pasos del servicio en su nombre. Si no acepta, no recibe más mensajes y sus datos
+            se conservan únicamente como parte del registro del servicio. Quien suministra los datos de un
+            tercero declara contar con su autorización para hacerlo.
           </p>
         </Seccion>
 

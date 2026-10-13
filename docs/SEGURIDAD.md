@@ -101,6 +101,8 @@ No usan Supabase Auth — usan tokens opacos UUID v4. Cada token tiene un propó
 | `/api/aprobar-cotizacion` | `cotizacion.token` (JSONB) | `solicitudes_servicio.cotizacion->>'token'` ⚠️ |
 | `/api/diagnostico` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/completar-servicio` | `portal_token` (técnico) | `tecnicos.portal_token` |
+| `/api/tecnico/receptor` | `portal_token` (técnico) + `tecnico_asignado_id` | `tecnicos.portal_token` (2026-10-13) |
+| `/api/receptor/aceptar` | `receptor_token` | `solicitudes_servicio.receptor_token` (UNIQUE parcial, 2026-10-13) |
 | `/api/whatsapp/accept` | token de notificación | `notificaciones_whatsapp.token` |
 | `/api/supervisor/solicitudes` | `portal_token` (supervisor) | `supervisores.portal_token` |
 | `/api/supervisor/solicitud` | `portal_token` (supervisor) | `supervisores.portal_token` |

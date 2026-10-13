@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { enviarPlantilla, notificarCambioEstado } from '@/lib/services/whatsapp.service'
+import { enviarPlantillaCliente, notificarCambioEstado } from '@/lib/services/whatsapp.service'
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
 
     try {
-      const result = await enviarPlantilla(sol.cliente_telefono, 'confirmar_servicio_v4', 'es', [
+      const result = await enviarPlantillaCliente(solicitudId, sol.cliente_telefono, 'confirmar_servicio_v4', 'es', [
         {
           type: 'body',
           parameters: [

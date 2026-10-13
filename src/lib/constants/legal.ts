@@ -21,8 +21,8 @@ export const CONTRATO_TECNICO_VERSION = '2026.10.09'
 export const CONTRATO_TECNICO_FECHA = '9 de octubre de 2026'
 
 /** Política de privacidad y tratamiento de datos (/politica-privacidad). */
-export const PRIVACIDAD_VERSION = '2026.10.09'
-export const PRIVACIDAD_FECHA = '9 de octubre de 2026'
+export const PRIVACIDAD_VERSION = '2026.10.13'
+export const PRIVACIDAD_FECHA = '13 de octubre de 2026'
 
 /** Fecha visible de la versión vigente de /terminos (la versión es TYC_VERSION). */
 export const TYC_FECHA = '9 de octubre de 2026'
