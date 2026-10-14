@@ -106,8 +106,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Fuera de tu alcance' }, { status: 403 })
   }
 
-  // Técnico asignado (datos de contacto, solo lectura).
-  let tecnico: { nombre_completo: string; whatsapp: string | null; ciudad_pueblo: string | null } | null = null
+  // Técnico asignado (datos de contacto, solo lectura). `acompanantes` =
+  // auxiliares verificados que van a este servicio (equipo, 2026-10-13).
+  let tecnico: { nombre_completo: string; whatsapp: string | null; ciudad_pueblo: string | null; acompanantes?: string } | null = null
   if (sol.tecnico_asignado_id) {
     const { data: t } = await supabase
       .from('tecnicos')
@@ -115,6 +116,15 @@ export async function GET(req: NextRequest) {
       .eq('id', sol.tecnico_asignado_id as string)
       .maybeSingle()
     tecnico = t ?? null
+    if (tecnico) {
+      try {
+        const { equipoDeServicioPorId } = await import('@/lib/services/equipo.service')
+        const { fraseAcompanantes } = await import('@/lib/utils/equipo')
+        tecnico.acompanantes = fraseAcompanantes(await equipoDeServicioPorId(id))
+      } catch {
+        // sin equipo
+      }
+    }
   }
 
   // Línea de tiempo de eventos (append-only). Se devuelve tal cual para mostrar

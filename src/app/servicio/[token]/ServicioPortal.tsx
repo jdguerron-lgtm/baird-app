@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import CarnetTecnico from '@/components/ui/CarnetTecnico'
+import CarnetAuxiliar from '@/components/ui/CarnetAuxiliar'
 import type { CarnetTecnicoData } from '@/lib/utils/carnet'
+import { fraseAcompanantes, type CarnetAuxiliarData } from '@/lib/utils/equipo'
 
 interface Solicitud {
   id: string
@@ -31,6 +33,8 @@ interface Props {
   token: string
   solicitud: Solicitud
   tecnico: TecnicoInfo | null
+  /** Auxiliares verificados que acompañan al técnico en este servicio (2026-10-13). */
+  equipo?: CarnetAuxiliarData[]
   cancelable: boolean
   reagendable: boolean
   reagendamientosRestantes: number
@@ -67,6 +71,7 @@ export default function ServicioPortal({
   token,
   solicitud,
   tecnico,
+  equipo: equipoVisita = [],
   cancelable,
   reagendable,
   reagendamientosRestantes,
@@ -208,6 +213,9 @@ export default function ServicioPortal({
               <div>
                 <dt className="text-xs text-gray-500">Técnico asignado</dt>
                 <dd className="font-medium text-gray-900">👨‍🔧 {tecnico.nombre_completo}</dd>
+                {equipoVisita.length > 0 && (
+                  <dd className="text-xs text-gray-600 mt-0.5">👥 {fraseAcompanantes(equipoVisita)}</dd>
+                )}
               </div>
             )}
           </dl>
@@ -215,11 +223,28 @@ export default function ServicioPortal({
 
         {tecnico && (
           <div className="rounded-2xl bg-white p-6 shadow-lg">
-            <h2 className="font-semibold text-gray-900 mb-1">Verificación del técnico</h2>
+            <h2 className="font-semibold text-gray-900 mb-1">
+              {equipoVisita.length > 0 ? 'Quién te visita' : 'Verificación del técnico'}
+            </h2>
             <p className="text-xs text-gray-500 mb-4">
-              Este es el carnet digital de la persona que Baird asignó a tu servicio. Confírmalo cuando llegue.
+              {equipoVisita.length > 0
+                ? `Estas son las ${equipoVisita.length + 1} personas que Baird verificó para tu servicio. Confírmalas cuando lleguen: nadie más debería entrar en nombre de Baird.`
+                : 'Este es el carnet digital de la persona que Baird asignó a tu servicio. Confírmalo cuando llegue.'}
             </p>
             <CarnetTecnico carnet={tecnico} ayuda="cliente" />
+            {equipoVisita.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 text-center">
+                  {equipoVisita.length === 1 ? 'Auxiliar que lo acompaña' : 'Auxiliares que lo acompañan'}
+                </p>
+                {equipoVisita.map(a => (
+                  <CarnetAuxiliar key={a.id} auxiliar={a} tecnicoNombre={tecnico.nombre_completo.split(' ')[0]} />
+                ))}
+                <p className="text-[11px] text-slate-500 text-center leading-snug pt-1">
+                  Los auxiliares trabajan bajo la responsabilidad del técnico. Pídeles también su cédula física y compárala con estas tarjetas.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

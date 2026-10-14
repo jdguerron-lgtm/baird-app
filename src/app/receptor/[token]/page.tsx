@@ -37,6 +37,19 @@ export default async function ReceptorPage({ params }: Props) {
       )
     : { data: null }
 
+  // Equipo que visita (2026-10-13): nombres de los auxiliares verificados que
+  // acompañan al técnico. Best-effort (service_role, tabla cerrada al anon).
+  let acompanantes = ''
+  if (tec) {
+    try {
+      const { equipoDeServicioPorId } = await import('@/lib/services/equipo.service')
+      const { fraseAcompanantes } = await import('@/lib/utils/equipo')
+      acompanantes = fraseAcompanantes(await equipoDeServicioPorId(sol.id))
+    } catch {
+      // sin equipo
+    }
+  }
+
   return (
     <ReceptorView
       token={token}
@@ -45,6 +58,7 @@ export default async function ReceptorPage({ params }: Props) {
       equipo={`${sol.tipo_equipo} ${sol.marca_equipo}`}
       esGarantia={!!sol.es_garantia}
       tecnico={tec?.nombre_completo ?? 'el técnico de Baird'}
+      acompanantes={acompanantes}
       aceptoAt={sol.receptor_acepto_at ?? null}
       clienteToken={sol.cliente_token ?? null}
     />

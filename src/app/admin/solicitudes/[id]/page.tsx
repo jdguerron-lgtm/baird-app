@@ -19,6 +19,8 @@ import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePago
 import { etapaPagoCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { labelRelacionReceptor } from '@/lib/utils/receptor'
+import { ESTADO_AUXILIAR_LABELS, type AuxiliarRow, type EstadoVerificacionAuxiliar } from '@/lib/utils/equipo'
+import { useRolAdmin } from '@/components/admin/RolAdminContext'
 
 interface Solicitud {
   id: string
@@ -57,6 +59,9 @@ interface Solicitud {
   receptor_relacion?: string | null
   receptor_registrado_at?: string | null
   receptor_acepto_at?: string | null
+  // Equipo que visita (2026-10-13): ids de tecnico_auxiliares que acompañan
+  // al técnico en este servicio. Se resuelven vía GET /api/admin/auxiliares.
+  auxiliares_ids?: string[] | null
 }
 
 interface Tecnico {
@@ -170,9 +175,14 @@ function formatFechaLargaLocal(ymd: string): string {
 export default function SolicitudDetalle() {
   const params = useParams()
   const id = params.id as string
+  // Rol lectura (logística): se ocultan los controles de edición. El bloqueo
+  // real lo hacen el server (verificarAdmin) y el guard de soloLectura.ts.
+  const { soloLectura } = useRolAdmin()
 
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [tecnicoAsignado, setTecnicoAsignado] = useState<Tecnico | null>(null)
+  // Auxiliares del técnico asignado (equipo que visita, 2026-10-13).
+  const [auxiliaresTecnico, setAuxiliaresTecnico] = useState<AuxiliarRow[]>([])
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([])
   const [diagnostics, setDiagnostics] = useState<MatchDiagnostic[]>([])
   const [candidatos, setCandidatos] = useState<Tecnico[]>([])
@@ -1039,6 +1049,20 @@ export default function SolicitudDetalle() {
             ...tec,
             especialidades: esp?.map((e: { especialidad: string }) => e.especialidad) ?? [],
           })
+
+          // Equipo que visita: la tabla está cerrada al browser → API admin. Best-effort.
+          try {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session) {
+              const res = await fetch(`/api/admin/auxiliares?tecnicoId=${tec.id}`, {
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              })
+              const body = await res.json().catch(() => ({}))
+              if (res.ok && Array.isArray(body.auxiliares)) setAuxiliaresTecnico(body.auxiliares as AuxiliarRow[])
+            }
+          } catch {
+            // sin equipo
+          }
         }
       }
 
@@ -1210,6 +1234,7 @@ export default function SolicitudDetalle() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Datos del cliente</h2>
+            {!soloLectura && (
             <button
               type="button"
               onClick={abrirEdicion}
@@ -1218,6 +1243,7 @@ export default function SolicitudDetalle() {
             >
               ✏️ Editar
             </button>
+            )}
           </div>
           <dl className="space-y-3">
             <div>
@@ -1322,6 +1348,7 @@ export default function SolicitudDetalle() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo y servicio</h2>
+            {!soloLectura && (
             <button
               type="button"
               onClick={abrirEdicion}
@@ -1330,6 +1357,7 @@ export default function SolicitudDetalle() {
             >
               ✏️ Editar
             </button>
+            )}
           </div>
           <dl className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -1767,6 +1795,48 @@ export default function SolicitudDetalle() {
                   ))}
                 </dd>
               </div>
+              {/* Equipo que visita (2026-10-13): auxiliares elegidos para ESTE
+                  servicio. Solo los activos + verificados llegan al cliente;
+                  acá se muestra el estado real de cada uno para diagnosticar. */}
+              {(() => {
+                const ids = Array.isArray(solicitud?.auxiliares_ids) ? solicitud!.auxiliares_ids! : null
+                if (ids === null) return null
+                const equipo = ids.map(id => auxiliaresTecnico.find(a => a.id === id)).filter((a): a is AuxiliarRow => !!a)
+                const colorEstado: Record<EstadoVerificacionAuxiliar, string> = {
+                  verificado: 'bg-green-50 text-green-700 border-green-200',
+                  pendiente: 'bg-amber-50 text-amber-700 border-amber-200',
+                  rechazado: 'bg-red-50 text-red-700 border-red-200',
+                }
+                return (
+                  <div>
+                    <dt className="text-xs text-gray-500">Equipo que visita</dt>
+                    {ids.length === 0 ? (
+                      <dd className="text-sm text-slate-700 mt-0.5">Va solo (sin auxiliares)</dd>
+                    ) : equipo.length === 0 ? (
+                      <dd className="text-xs text-amber-700 mt-0.5">
+                        {ids.length} auxiliar(es) en el servicio pero ninguno resuelve (dado de baja o de otro técnico): el cliente no ve a nadie más.
+                      </dd>
+                    ) : (
+                      <dd className="mt-1 space-y-1">
+                        {equipo.map(a => {
+                          const est = (a.estado_verificacion ?? 'pendiente') as EstadoVerificacionAuxiliar
+                          const visible = a.activo && est === 'verificado'
+                          return (
+                            <div key={a.id} className="flex items-center gap-2 text-sm">
+                              <span className="font-medium text-slate-900">{a.nombre_completo}</span>
+                              <span className="text-xs text-gray-500">{a.tipo_documento} {a.numero_documento}</span>
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${colorEstado[est] ?? colorEstado.pendiente}`}>
+                                {a.activo ? ESTADO_AUXILIAR_LABELS[est] ?? est : 'Dado de baja'}
+                              </span>
+                              {!visible && <span className="text-[10px] text-amber-700">no visible al cliente</span>}
+                            </div>
+                          )
+                        })}
+                      </dd>
+                    )}
+                  </div>
+                )
+              })()}
               <Link
                 href={`/admin/tecnicos/${tecnicoAsignado.id}`}
                 className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors inline-block mt-2"
@@ -2594,7 +2664,9 @@ export default function SolicitudDetalle() {
           Para destrabar una solicitud cuando el flujo automático no avanzó
           (p. ej. el técnico o el cliente perdió señal y la transición nunca
           se disparó). Toda transición queda en solicitud_eventos via
-          /api/admin/cambiar-estado. NO envía WhatsApp. */}
+          /api/admin/cambiar-estado. NO envía WhatsApp.
+          Oculto para el rol lectura (logística): es solo escritura. */}
+      {!soloLectura && (
       <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
           Cambiar estado manualmente
@@ -2650,6 +2722,7 @@ export default function SolicitudDetalle() {
           </div>
         )}
       </div>
+      )}
 
       {/* Registro de llamadas del equipo (2026-08-07) — el admin carga a mano
           cada llamada con el cliente (hora + qué se habló). Va al audit log

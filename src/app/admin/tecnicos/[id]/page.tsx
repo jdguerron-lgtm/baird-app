@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { CONTRATO_TECNICO_VERSION } from '@/lib/constants/legal'
 import SelectorFoto from '@/components/ui/SelectorFoto'
+import EquipoAuxiliaresAdmin from '@/components/admin/EquipoAuxiliaresAdmin'
 import { supabase } from '@/lib/supabase'
 import { uploadContratoFirmado, urlContratoFirmado } from '@/lib/uploadHelpers'
 import { normalizeForMatch } from '@/lib/utils/format'
@@ -1146,6 +1147,9 @@ export default function TecnicoDetalle() {
           {guardandoCerts ? 'Guardando...' : 'Guardar certificaciones'}
         </button>
       </div>
+
+      {/* Equipo de trabajo (auxiliares) — verificación MANUAL (2026-10-13) */}
+      <EquipoAuxiliaresAdmin tecnicoId={id} />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { verificarLectura } from '@/lib/auth/admin'
 import { CODIGOS_FALLA, type CodigoFalla } from '@/lib/constants/codigos-falla'
 import { precioClienteServicio } from '@/types/solicitud'
 
@@ -79,7 +79,7 @@ function applyHyperlinks(ws: XLSX.WorkSheet, rows: Row[], colKey: string): void 
  */
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await verificarAdmin(req)
+    const isAdmin = await verificarLectura(req) // admin o lectura (logística): el export no escribe
     if (!isAdmin) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }

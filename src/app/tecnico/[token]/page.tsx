@@ -16,6 +16,7 @@ import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 import { estadoPagoCliente, esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import CarnetTecnico from '@/components/ui/CarnetTecnico'
+import EquipoServicioSelector, { type AuxiliarSelector } from '@/components/tecnico/EquipoServicioSelector'
 import {
   CARNET_TECNICO_SELECT,
   construirCarnet,
@@ -69,6 +70,10 @@ export default function PortalTecnicoPage() {
   // Carnet digital (2026-10-10): el técnico lo muestra al cliente al llegar.
   const [carnet, setCarnet] = useState<CarnetTecnicoData | null>(null)
   const [verCarnet, setVerCarnet] = useState(false)
+  // Equipo de trabajo (2026-10-13): auxiliares del técnico + quién va a cada
+  // servicio. Lectura aparte best-effort vía GET /api/tecnico/equipo.
+  const [auxiliares, setAuxiliares] = useState<AuxiliarSelector[]>([])
+  const [equipoPorServicio, setEquipoPorServicio] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     const cargar = async () => {
@@ -95,6 +100,16 @@ export default function PortalTecnicoPage() {
 
       setTecnico(tec)
       setCarnet(construirCarnet(tec as unknown as CarnetTecnicoRow))
+
+      // Equipo (best-effort: sin migración o sin red, el portal sigue igual).
+      fetch(`/api/tecnico/equipo?portalToken=${encodeURIComponent(token)}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(body => {
+          if (!body) return
+          setAuxiliares((body.auxiliares ?? []) as AuxiliarSelector[])
+          setEquipoPorServicio((body.equipoPorServicio ?? {}) as Record<string, string[]>)
+        })
+        .catch(() => {})
 
       // 2. Cargar servicios asignados a este técnico
       const { data: sols } = await querySupabase(() =>
@@ -284,6 +299,24 @@ export default function PortalTecnicoPage() {
           <span className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5">Abrir</span>
         </Link>
 
+        {/* Equipo de trabajo (2026-10-13): auxiliares que acompañan al técnico.
+            El cliente los ve junto al carnet una vez Baird los verifica. */}
+        <Link
+          href={`/tecnico/${token}/equipo`}
+          className="w-full flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-4 mb-6 hover:bg-gray-50 transition-colors"
+        >
+          <span className="text-2xl leading-none">👥</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-slate-900">Mi equipo de trabajo</span>
+            <span className="block text-xs text-gray-500">
+              {auxiliares.filter(a => a.activo).length > 0
+                ? `${auxiliares.filter(a => a.activo).length} auxiliar(es) · ${auxiliares.filter(a => a.activo && a.estado_verificacion === 'verificado').length} verificado(s) por Baird`
+                : '¿Vas con auxiliar? Regístralo para que el cliente sepa quién lo visita'}
+            </span>
+          </span>
+          <span className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5">Abrir</span>
+        </Link>
+
         {/* Aviso de perfil incompleto: gasodomésticos + certificaciones
             (2026-10-08). Desaparece cuando el técnico guarda desde /perfil. */}
         {tecnico && !tecnico.perfil_actualizado_at && (
@@ -346,7 +379,13 @@ export default function PortalTecnicoPage() {
                 </div>
               ) : (
                 [...activos, ...enVerificacion].map(s => (
-                  <ServiceCard key={s.id} servicio={s} token={token} />
+                  <ServiceCard
+                    key={s.id}
+                    servicio={s}
+                    token={token}
+                    auxiliares={auxiliares}
+                    equipoServicio={s.id in equipoPorServicio ? equipoPorServicio[s.id] : null}
+                  />
                 ))
               )}
             </>
@@ -430,7 +469,19 @@ function CarnetModal({ carnet, onClose }: { carnet: CarnetTecnicoData; onClose: 
   )
 }
 
-function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string }) {
+function ServiceCard({
+  servicio: s,
+  token,
+  auxiliares = [],
+  equipoServicio = null,
+}: {
+  servicio: Servicio
+  token: string
+  /** Auxiliares del técnico (equipo de trabajo, 2026-10-13). */
+  auxiliares?: AuxiliarSelector[]
+  /** auxiliares_ids de este servicio (null = nunca definido / sin dato). */
+  equipoServicio?: string[] | null
+}) {
   // El técnico puede iniciar diagnóstico tras aceptar (estado 'asignada',
   // ambos flujos — fusión 2026-07-09).
   //
@@ -490,6 +541,17 @@ function ServiceCard({ servicio: s, token }: { servicio: Servicio; token: string
           <p><span className="font-semibold text-gray-500">Direccion:</span> {s.direccion}</p>
           <p><span className="font-semibold text-gray-500">Zona:</span> {s.zona_servicio}, {s.ciudad_pueblo}</p>
         </div>
+
+        {/* Equipo que va a este servicio (2026-10-13): solo en servicios vivos
+            y si el técnico tiene auxiliares. Cada cambio avisa al cliente. */}
+        {esActivo && auxiliares.length > 0 && (
+          <EquipoServicioSelector
+            token={token}
+            solicitudId={s.id}
+            auxiliares={auxiliares}
+            seleccionados={equipoServicio}
+          />
+        )}
 
         {/* Pago */}
         <div className="mb-3 flex items-end justify-between gap-2 flex-wrap">

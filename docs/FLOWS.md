@@ -626,6 +626,50 @@ Reglas:
 
 ---
 
+## Side flow: Equipo que te visita — auxiliares del técnico (2026-10-13)
+
+Transversal a ambos flujos. Hay técnicos que van acompañados de uno o más **auxiliares**; el cliente debe saber quiénes van a entrar a su casa. Decisiones (2026-10-13): Baird **verifica** a cada auxiliar antes de mostrarlo; foto y documento **obligatorios**; al aceptar un servicio se incluye **automáticamente** el equipo por defecto; plantilla nueva solo para el caso "cambió el equipo".
+
+```
+Técnico → /tecnico/{token}/equipo ("Mi equipo de trabajo")
+   │  nombre + tipo/número de documento + foto (comprimida, bucket tecnicos-fotos/{id}/auxiliares/)
+   │  + celular opcional + check "me acompaña por defecto"
+   │  + declaración OBLIGATORIA: el auxiliar autorizó compartir sus datos (Ley 1581) y trabaja bajo su responsabilidad
+   ▼
+POST /api/tecnico/equipo → tecnico_auxiliares (estado 'pendiente', máx 3 activos por técnico)
+   ▼
+Admin → /admin/tecnicos/[id] § "Equipo de trabajo" → PATCH /api/admin/auxiliares
+   │  compara la cédula con foto + documento completo y marca verificado / rechazado (+ nota)
+   ▼
+Técnico acepta un servicio (procesarAceptacion)
+   │  fijarEquipoPorDefecto → auxiliares_ids = auxiliares activos + verificados + acompana_por_defecto
+   ▼
+WhatsApp al cliente: tecnico_asignado_cliente_v7 / tecnico_asignado_particular_v2 (SIN cambios en Meta)
+   │  param técnico = "Pedro Gómez · lo acompaña Juan Pérez (auxiliar)"   (textoEquipoWhatsApp)
+   │  header = /api/carnet/{tecnicoId}?aux=id1,id2 → PNG con fila de auxiliares (foto + doc enmascarado)
+   │  imagen free-form best-effort con caption "Lo acompaña …, también verificado por Baird"
+   ▼
+Portal /servicio/{cliente_token} § "Quién te visita": carnet del técnico + tarjeta por auxiliar (CarnetAuxiliar)
+   │  /receptor/{token}, portal supervisor y /admin/solicitudes/[id] muestran "Lo acompaña …"
+   ▼
+Técnico ajusta por servicio (card "¿Quién va a este servicio?" en /tecnico/{token})
+   │  PATCH /api/tecnico/equipo-servicio → auxiliares_ids + evento nota_admin (origen 'equipo')
+   ▼
+WhatsApp al cliente: equipo_servicio_actualizado_v1 (header carnet con equipo vigente, botón "Ver mi servicio")
+   │  fallback texto libre (ventana 24h) · se espeja al receptor si ya aceptó
+```
+
+Reglas:
+- **Visible al cliente = `activo` AND `estado_verificacion='verificado'`.** Lo garantiza `resolverEquipoServicio` en portal, PNG, WhatsApp, receptor y supervisor. Un auxiliar pendiente/rechazado/dado de baja nunca aparece aunque su id siga en `auxiliares_ids`.
+- **Cambiar nombre, documento o foto vuelve al auxiliar a `pendiente`** (y lo saca de los servicios activos): evita que se verifique a una persona y luego se cambie por otra.
+- **Rechazar / dar de baja (admin o técnico) lo saca de `auxiliares_ids` de los servicios no terminales.** El histórico conserva el id (baja lógica, nunca DELETE).
+- **El auxiliar no recibe WhatsApp ni entra al flujo de mensajes**; su celular es solo para que Baird lo contacte. No cuenta para el cupo de agenda ni cambia pagos: trabaja bajo la responsabilidad del técnico y le paga el técnico.
+- **`auxiliares_ids` NULL = nunca definido** (servicios anteriores a la migración o técnico sin tabla); `{}` = va solo (decisión explícita al aceptar).
+- Sin migración `20261013_tecnico_auxiliares.sql` todo degrada a "sin equipo"; `POST /api/tecnico/equipo` responde 503.
+- Pendiente (decisión del user): línea en `/contrato-tecnico` sobre responsabilidad por auxiliares (sube versión legal).
+
+---
+
 ## Side flow: Notificación a supervisores
 
 Transversal a ambos flujos (NEW 2026-05-29). En **cada cambio de estado** de una solicitud, el sistema notifica por WhatsApp a supervisores internos configurables. Es un canal de visibilidad/monitoreo, independiente del cliente y el técnico.

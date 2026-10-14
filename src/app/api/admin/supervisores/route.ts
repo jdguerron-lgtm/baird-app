@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { verificarAdmin, verificarLectura } from '@/lib/auth/admin'
 import { isValidPhone, phoneToDigits } from '@/lib/utils/phone'
 import { ESTADOS_VALIDOS } from '@/lib/constants/estados'
 import { enviarBienvenidaSupervisor } from '@/lib/services/whatsapp.service'
@@ -9,7 +9,8 @@ import { enviarBienvenidaSupervisor } from '@/lib/services/whatsapp.service'
  * CRUD de supervisores. Un supervisor recibe por WhatsApp los cambios de estado
  * de las solicitudes que matcheen su configuración (ámbito + marca + estados).
  *
- * Todos los handlers exigen admin autenticado (verificarAdmin).
+ * POST/PATCH/DELETE exigen admin autenticado (verificarAdmin). GET también
+ * admite el rol lectura (logística) vía verificarLectura — solo lista.
  *
  * Modelo de filtrado (ver notificarCambioEstado en whatsapp.service.ts):
  *   - ambito: 'todos' | 'garantia' | 'particular'  → contra sol.es_garantia
@@ -31,7 +32,8 @@ function parseEstados(raw: unknown): string[] | null {
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await verificarAdmin(req))) {
+  // Solo lista: también lo puede consumir el rol lectura (logística).
+  if (!(await verificarLectura(req))) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
 

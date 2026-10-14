@@ -6,6 +6,8 @@ import { componentesParaReceptor, receptorActivo, primerNombre } from '@/lib/uti
 import { formatCOP, normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { urlImagenCarnet } from '@/lib/utils/carnet'
+import { fraseAcompanantes, textoEquipoWhatsApp } from '@/lib/utils/equipo'
+import { equipoDeServicio, fijarEquipoPorDefecto } from '@/lib/services/equipo.service'
 import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
@@ -950,10 +952,20 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   const tecnicoDigits = phoneToDigits(tecnico?.whatsapp ?? '')
   const horarioServicio = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
 
+  // Equipo que visita (2026-10-13): los auxiliares del técnico marcados "me
+  // acompaña por defecto" (solo activos + verificados por Baird) quedan
+  // fijados en `auxiliares_ids` del servicio y el cliente los conoce en el
+  // MISMO mensaje de asignación: el parámetro del nombre pasa a
+  // "Pedro Gómez · lo acompaña Juan Pérez (auxiliar)" (sin plantilla nueva)
+  // y el carnet del header incluye sus tarjetas. Fail-soft: sin migración o
+  // sin auxiliares, todo queda exactamente como antes.
+  const equipo = tecnico ? await fijarEquipoPorDefecto(sol.id, tecnico.id) : []
+  const nombreTecnicoConEquipo = textoEquipoWhatsApp(tecnico?.nombre_completo ?? 'Asignado', equipo)
+
   // Carnet digital (2026-10-10): PNG público con foto de perfil + documento
   // ENMASCARADO. Va como HEADER IMAGE de las plantillas _v7/_v2 (funciona
   // fuera de la ventana 24h) y como imagen free-form best-effort más abajo.
-  const carnetUrl = tecnico ? urlImagenCarnet(tecnico.id) : null
+  const carnetUrl = tecnico ? urlImagenCarnet(tecnico.id, equipo.map(a => a.id)) : null
   const componentesCarnet = (bodyParams: Record<string, unknown>[]): Record<string, unknown>[] => [
     { type: 'header', parameters: [{ type: 'image', image: { link: carnetUrl } }] },
     { type: 'body', parameters: bodyParams },
@@ -966,7 +978,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // servicio"); si Meta aún no la aprobó (o falla), cae a la `_v6` solo texto.
     const bodyGarantia: Record<string, unknown>[] = [
       { type: 'text', text: sol.cliente_nombre },
-      { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+      { type: 'text', text: nombreTecnicoConEquipo },
       { type: 'text', text: equipoConGarantia(sol) },
       { type: 'text', text: horarioServicio },
       { type: 'text', text: `+${tecnicoDigits}` },
@@ -1009,7 +1021,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
     const bodyParticular: Record<string, unknown>[] = [
       { type: 'text', text: sol.cliente_nombre },
-      { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+      { type: 'text', text: nombreTecnicoConEquipo },
       { type: 'text', text: `${sol.tipo_equipo} ${sol.marca_equipo}` },
       { type: 'text', text: horarioServicio },
       { type: 'text', text: `+${tecnicoDigits}` },
@@ -1139,10 +1151,11 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   // (paso 5) y el carnet en /servicio/{cliente_token}. Se mantiene best-effort
   // solo para el caso en que la ventana sí esté abierta (cliente que escribió).
   if (carnetUrl && tecnico) {
+    const acompanantes = fraseAcompanantes(equipo)
     await enviarImagen(
       sol.cliente_telefono,
       carnetUrl,
-      `🪪 Carnet digital de ${tecnico.nombre_completo} — tu técnico Baird Service. Al llegar, pídele su cédula física y confirma que el número coincida.`
+      `🪪 Carnet digital de ${tecnico.nombre_completo} — tu técnico Baird Service.${acompanantes ? ` ${acompanantes}, también verificado por Baird.` : ''} Al llegar, pídeles su cédula física y confirma que el número coincida.`
     ).catch(err => console.error('[procesarAceptacion] carnet digital falló (24h?):', err instanceof Error ? err.message : err))
   }
 
@@ -4241,6 +4254,81 @@ async function espejarPlantillaAlReceptor(
   } catch (err) {
     console.error(`[receptor] espejo de ${templateName} falló (solicitud ${solicitudId}):`,
       err instanceof Error ? err.message : String(err))
+  }
+}
+
+/**
+ * Aviso al cliente de que CAMBIÓ el equipo que lo visita (2026-10-13): el
+ * técnico sumó o quitó auxiliares DESPUÉS de que el cliente ya recibió
+ * `tecnico_asignado_*`. Plantilla `equipo_servicio_actualizado_v1` (header =
+ * carnet digital con el equipo vigente, botón "Ver mi servicio"). Si Meta aún
+ * no la aprobó, cae a un texto libre best-effort (solo llega con ventana 24h
+ * abierta). El portal /servicio/{cliente_token} es la fuente de verdad en
+ * cualquier caso. Se espeja al receptor si ya aceptó (enviarPlantillaCliente).
+ *
+ * Llamado por PATCH /api/tecnico/equipo-servicio.
+ */
+export async function enviarEquipoActualizadoCliente(solicitudId: string): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol, error } = await supabase
+    .from('solicitudes_servicio')
+    .select('id, cliente_nombre, cliente_telefono, cliente_token, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura, horario_confirmado, horario_visita_1, tecnico_asignado_id, auxiliares_ids, estado')
+    .eq('id', solicitudId)
+    .single()
+  if (error || !sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (!sol.tecnico_asignado_id) return { ok: false, error: 'La solicitud no tiene técnico asignado' }
+  if (ESTADOS_TERMINALES.has(sol.estado as string)) return { ok: false, error: 'Servicio cerrado' }
+
+  const { data: tec } = await supabase
+    .from('tecnicos')
+    .select('id, nombre_completo')
+    .eq('id', sol.tecnico_asignado_id)
+    .single()
+  if (!tec) return { ok: false, error: 'Técnico no encontrado' }
+
+  const equipo = await equipoDeServicio(sol)
+  const textoEquipo = textoEquipoWhatsApp(tec.nombre_completo, equipo) + (equipo.length === 0 ? ' (va solo)' : '')
+  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
+  const carnetUrl = urlImagenCarnet(tec.id, equipo.map(a => a.id))
+
+  try {
+    if (sol.cliente_token) {
+      const r = await enviarPlantillaCliente(sol.id, sol.cliente_telefono, 'equipo_servicio_actualizado_v1', 'es', [
+        { type: 'header', parameters: [{ type: 'image', image: { link: carnetUrl } }] },
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: primerNombre(sol.cliente_nombre) },
+            { type: 'text', text: equipoConGarantia(sol) },
+            { type: 'text', text: textoEquipo },
+            { type: 'text', text: horario },
+          ],
+        },
+        { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+      ])
+      if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+      if (r.sent) {
+        await registrarMensajeCliente(sol.id, 'equipo_servicio_actualizado_v1',
+          `Se avisó al cliente el equipo actualizado que lo visita: ${textoEquipo}`)
+        return { ok: true }
+      }
+    }
+  } catch (err) {
+    console.error('[enviarEquipoActualizadoCliente] plantilla falló, fallback texto libre:', err instanceof Error ? err.message : err)
+  }
+
+  // Fallback texto libre (ventana 24h).
+  try {
+    await enviarMensajeTexto(
+      sol.cliente_telefono,
+      `Hola ${primerNombre(sol.cliente_nombre)} 👋, novedad en tu servicio de ${equipoConGarantia(sol)}: te visita ${textoEquipo}. ` +
+        `Horario: ${horario}. Al llegar, pídeles su cédula física y compárala con el carnet digital de tu portal.` +
+        (sol.cliente_token ? ` Ver mi servicio: ${(process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com').replace(/\/$/, '')}/servicio/${sol.cliente_token}` : ''),
+    )
+    await registrarMensajeCliente(sol.id, 'texto_libre',
+      `Se avisó al cliente (texto libre) el equipo actualizado que lo visita: ${textoEquipo}`)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
 

@@ -7,6 +7,13 @@ import {
   formatearFechaCarnet,
   type CarnetTecnicoRow,
 } from '@/lib/utils/carnet'
+import {
+  AUXILIAR_SELECT,
+  construirCarnetAuxiliar,
+  resolverEquipoServicio,
+  type AuxiliarRow,
+  type CarnetAuxiliarData,
+} from '@/lib/utils/equipo'
 
 /**
  * GET /api/carnet/{tecnicoId} → PNG del carnet digital del técnico.
@@ -21,12 +28,41 @@ import {
  * estado de verificación y documento ENMASCARADO (últimos 4). Nunca la foto
  * ni el número completo de la cédula. El id es el UUID del técnico (no
  * enumerable); el contenido es el mismo que ya ve cualquier cliente asignado.
+ *
+ * Equipo (2026-10-13): `?aux=id1,id2` agrega una fila con los auxiliares que
+ * acompañan al técnico en ese servicio (foto + nombre + documento
+ * enmascarado). Solo se pintan ids que sean auxiliares ACTIVOS y VERIFICADOS
+ * de ESTE técnico; cualquier otro id se ignora en silencio.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const ANCHO = 800
 const ALTO = 420
+/** Alto extra por la fila de auxiliares (hasta 3 tarjetas en una fila). */
+const ALTO_EQUIPO = 150
+const MAX_AUX_PNG = 3
+
+async function cargarEquipo(tecnicoId: string, auxParam: string | null): Promise<CarnetAuxiliarData[]> {
+  if (!auxParam) return []
+  const ids = auxParam.split(',').map(x => x.trim()).filter(x => UUID_RE.test(x)).slice(0, 10)
+  if (ids.length === 0) return []
+  try {
+    const { data, error } = await supabase
+      .from('tecnico_auxiliares')
+      .select(AUXILIAR_SELECT)
+      .eq('tecnico_id', tecnicoId)
+      .in('id', ids)
+    if (error || !data) return []
+    return resolverEquipoServicio(ids, data as unknown as AuxiliarRow[]).slice(0, MAX_AUX_PNG).map(construirCarnetAuxiliar)
+  } catch {
+    return []
+  }
+}
+
+function inicialesDe(nombre: string): string {
+  return nombre.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('')
+}
 
 async function cargarLogoDataUrl(req: NextRequest): Promise<string | null> {
   try {
@@ -62,7 +98,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
 
   const carnet = construirCarnet(data as unknown as CarnetTecnicoRow)
   const fecha = formatearFechaCarnet(carnet.fecha_verificacion)
-  const logo = await cargarLogoDataUrl(req)
+  const [logo, equipo] = await Promise.all([
+    cargarLogoDataUrl(req),
+    cargarEquipo(tecnicoId, req.nextUrl.searchParams.get('aux')),
+  ])
+  const alto = ALTO + (equipo.length > 0 ? ALTO_EQUIPO : 0)
   const iniciales = carnet.nombre_completo
     .split(/\s+/)
     .filter(Boolean)
@@ -79,7 +119,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
       <div
         style={{
           width: ANCHO,
-          height: ALTO,
+          height: alto,
           display: 'flex',
           flexDirection: 'column',
           backgroundColor: '#ffffff',
@@ -112,7 +152,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
               <span style={{ fontSize: 22, fontWeight: 700, color: '#ffffff', letterSpacing: 1 }}>BAIRD SERVICE</span>
             )}
           </div>
-          <span style={{ fontSize: 14, letterSpacing: 3, textTransform: 'uppercase' }}>Carnet digital · Técnico</span>
+          <span style={{ fontSize: 14, letterSpacing: 3, textTransform: 'uppercase' }}>
+            {equipo.length > 0 ? 'Carnet digital · Equipo' : 'Carnet digital · Técnico'}
+          </span>
         </div>
 
         {/* Cuerpo */}
@@ -195,6 +237,68 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
           </div>
         </div>
 
+        {/* Equipo que acompaña (2026-10-13) */}
+        {equipo.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '12px 32px 14px',
+              borderTop: '1px solid #e2e8f0',
+              backgroundColor: '#ffffff',
+            }}
+          >
+            <span style={{ fontSize: 11, letterSpacing: 2, color: '#94a3b8', textTransform: 'uppercase' }}>
+              {equipo.length === 1 ? 'Lo acompaña (auxiliar verificado)' : 'Lo acompañan (auxiliares verificados)'}
+            </span>
+            <div style={{ display: 'flex', marginTop: 8 }}>
+              {equipo.map((a, i) => (
+                <div
+                  key={a.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: 236,
+                    marginLeft: i === 0 ? 0 : 14,
+                    padding: 8,
+                    borderRadius: 14,
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      backgroundColor: '#e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {a.foto_perfil_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={a.foto_perfil_url} alt="" width={72} height={72} style={{ objectFit: 'cover', width: 72, height: 72 }} />
+                    ) : (
+                      <span style={{ fontSize: 24, fontWeight: 700, color: '#64748b' }}>{inicialesDe(a.nombre_completo) || '?'}</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', marginLeft: 10, width: 136 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.15 }}>{a.nombre_completo}</span>
+                    <span style={{ fontSize: 12, color: '#475569', marginTop: 3 }}>Auxiliar</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>
+                      {a.documento ? `${a.tipo_documento ?? 'CC'} ${a.documento}` : '—'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Pie */}
         <div
           style={{
@@ -206,11 +310,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tecnicoId: 
             color: '#475569',
           }}
         >
-          Pídele su cédula física y confirma que el número coincida · Nunca pagues en efectivo al técnico
+          {equipo.length > 0
+            ? 'Pídeles su cédula física y confirma que los números coincidan · Nunca pagues en efectivo al técnico'
+            : 'Pídele su cédula física y confirma que el número coincida · Nunca pagues en efectivo al técnico'}
         </div>
       </div>
     ),
-    { width: ANCHO, height: ALTO },
+    { width: ANCHO, height: alto },
   )
 
   // Meta descarga la URL en cada envío; cache corto para no re-renderizar en

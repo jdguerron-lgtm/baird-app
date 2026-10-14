@@ -395,6 +395,20 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: consentimiento previo. En `/receptor/{token}` acepta T&C + política de privacidad (`receptor_acepto_at`); desde ahí recibe en paralelo con el titular TODAS las plantillas post-diagnóstico al cliente (incluidos cobros), con su nombre en el primer parámetro del body (`enviarPlantillaCliente` → `espejarPlantillaAlReceptor`). No requiere plantillas nuevas para el espejo: reutiliza las existentes.
 - **Subir**: `node --env-file=.env.local scripts/upload-templates.mjs receptor_bienvenida_v1`. Mientras esté PENDING/ausente, el registro del receptor igual se guarda y el admin ve "el WhatsApp no salió" para reenviar luego.
 
+### Equipo que visita — auxiliares (2026-10-13)
+
+> El mensaje de **asignación** NO cambió en Meta: `tecnico_asignado_cliente_v7` / `tecnico_asignado_particular_v2` (y sus fallbacks `_v6` / `_v1`) reciben en el parámetro del nombre del técnico el texto `"Pedro Gómez · lo acompaña Juan Pérez (auxiliar)"` (`textoEquipoWhatsApp`, una sola línea, sin emojis) y en el HEADER IMAGE el carnet con fila de auxiliares (`/api/carnet/{tecnicoId}?aux=id1,id2`). Solo auxiliares verificados por Baird.
+
+#### `equipo_servicio_actualizado_v1` **En script** ⏳ pendiente de subir a Meta
+- **Disparo**: `enviarEquipoActualizadoCliente(solicitudId)` desde `PATCH /api/tecnico/equipo-servicio` cuando el técnico suma o quita auxiliares de un servicio ya asignado (el cliente ya recibió `tecnico_asignado_*`).
+- **Destino**: cliente titular (+ espejo al receptor si aceptó, vía `enviarPlantillaCliente`).
+- **Header**: IMAGE — carnet digital con el equipo vigente.
+- **Body** (4 params): `cliente (primer nombre)`, `equipo` (+ "· Garantía N°"), `técnico con equipo` ("Pedro Gómez · lo acompaña Juan Pérez (auxiliar)" o "Pedro Gómez (va solo)"), `horario`
+- **Footer**: "Baird Service - Reparaciones verificadas"
+- **Botón URL**: `/servicio/{cliente_token}` — display "Ver mi servicio"
+- **Fallback**: texto libre best-effort (requiere ventana 24h). El portal del cliente siempre refleja el equipo vigente.
+- **Subir**: `node --env-file=.env.local scripts/upload-templates.mjs equipo_servicio_actualizado_v1` (necesita `scripts/muestra-carnet.png` como ejemplo del header, igual que `_v7`).
+
 ### Onboarding
 
 #### `registro_bienvenida_v3` **En script** ✅ (backfilled 2026-05-08)

@@ -113,8 +113,16 @@ export function formatearFechaCarnet(iso: string | null): string | null {
 
 const APP_URL_FALLBACK = 'https://lineablanca.bairdservice.com'
 
-/** URL pública absoluta del PNG del carnet (la consume Meta para el header). */
-export function urlImagenCarnet(tecnicoId: string): string {
+/**
+ * URL pública absoluta del PNG del carnet (la consume Meta para el header).
+ * Con `auxiliaresIds` (equipo del servicio, 2026-10-13) el PNG agrega una
+ * fila con los auxiliares; el endpoint ignora ids que no pertenezcan al
+ * técnico o no estén verificados. Sin auxiliares la URL es la de siempre
+ * (misma caché).
+ */
+export function urlImagenCarnet(tecnicoId: string, auxiliaresIds?: string[] | null): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL || APP_URL_FALLBACK).replace(/\/$/, '')
-  return `${base}/api/carnet/${encodeURIComponent(tecnicoId)}`
+  const url = `${base}/api/carnet/${encodeURIComponent(tecnicoId)}`
+  const ids = (auxiliaresIds ?? []).filter(Boolean)
+  return ids.length > 0 ? `${url}?aux=${encodeURIComponent(ids.join(','))}` : url
 }

@@ -1878,6 +1878,47 @@ const TEMPLATES = [
   // mensaje que recibe antes de aceptar: botón → /receptor/{receptor_token}
   // donde acepta T&C + privacidad. Solo después se le espejan los WhatsApp del
   // titular (enviarPlantillaCliente). Llamado por: enviarBienvenidaReceptor()
+  // 36. Equipo que visita — ACTUALIZADO (2026-10-13). El técnico sumó o quitó
+  // auxiliares DESPUÉS de que el cliente recibió tecnico_asignado_*. Header =
+  // carnet digital con el equipo vigente (/api/carnet/{id}?aux=...). Lo
+  // dispara enviarEquipoActualizadoCliente desde PATCH /api/tecnico/equipo-servicio.
+  // El mensaje de asignación NO necesita plantilla nueva: el equipo va en el
+  // parámetro del nombre del técnico ("Pedro Gómez · lo acompaña Juan Pérez (auxiliar)").
+  // Subir: node --env-file=.env.local scripts/upload-templates.mjs equipo_servicio_actualizado_v1
+  {
+    name: 'equipo_servicio_actualizado_v1',
+    category: 'UTILITY',
+    language: 'es',
+    _sampleImage: 'scripts/muestra-carnet.png',
+    components: [
+      { type: 'HEADER', format: 'IMAGE' },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, hay una novedad en el equipo que te visita para el servicio de {{2}}:\n\n' +
+          '👨‍🔧 {{3}}\n' +
+          '🕐 Horario: {{4}}\n\n' +
+          '🪪 Arriba está el carnet digital actualizado con todas las personas verificadas por Baird. ' +
+          'Al llegar, pídeles su cédula física y confirma que los últimos dígitos coincidan. Nadie más debería entrar en nombre de Baird Service.',
+        example: {
+          body_text: [['María', 'Lavadora LG', 'Pedro Gómez · lo acompaña Juan Pérez (auxiliar)', 'Lunes 8am-12pm']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service - Reparaciones verificadas' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Ver mi servicio',
+            url: `${APP_URL}/servicio/{{1}}`,
+            example: [`${APP_URL}/servicio/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
+
   // Subir: node --env-file=.env.local scripts/upload-templates.mjs receptor_bienvenida_v1
   {
     name: 'receptor_bienvenida_v1',

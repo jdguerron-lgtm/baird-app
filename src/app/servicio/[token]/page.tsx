@@ -12,6 +12,7 @@ import {
   type CarnetTecnicoData,
   type CarnetTecnicoRow,
 } from '@/lib/utils/carnet'
+import type { CarnetAuxiliarData } from '@/lib/utils/equipo'
 import ServicioPortal from './ServicioPortal'
 
 interface Props {
@@ -70,6 +71,20 @@ export default async function ServicioPortalPage({ params }: Props) {
     carnet = tec ? construirCarnet(tec as unknown as CarnetTecnicoRow) : null
   }
 
+  // Equipo que visita (2026-10-13): auxiliares verificados que acompañan al
+  // técnico en ESTE servicio. Lectura aparte con service_role (la tabla está
+  // cerrada al anon) y best-effort: sin migración / sin service role en dev
+  // el portal sigue funcionando sin la sección.
+  let equipo: CarnetAuxiliarData[] = []
+  if (carnet) {
+    try {
+      const { equipoDeServicioPorId } = await import('@/lib/services/equipo.service')
+      equipo = await equipoDeServicioPorId(sol.id)
+    } catch (err) {
+      console.warn('[servicio/portal] equipo no disponible:', err instanceof Error ? err.message : err)
+    }
+  }
+
   const cancelable = ESTADOS_CANCELABLES_POR_CLIENTE.has(sol.estado)
   const reagendamientosCount = sol.reagendamientos_count ?? 0
   const reagendable =
@@ -81,6 +96,7 @@ export default async function ServicioPortalPage({ params }: Props) {
       token={token}
       solicitud={sol}
       tecnico={carnet}
+      equipo={equipo}
       cancelable={cancelable}
       reagendable={reagendable}
       reagendamientosRestantes={MAX_REAGENDAMIENTOS_CLIENTE - reagendamientosCount}

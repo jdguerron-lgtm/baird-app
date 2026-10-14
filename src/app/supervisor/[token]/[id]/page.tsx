@@ -69,6 +69,8 @@ interface Tecnico {
   nombre_completo: string
   whatsapp: string | null
   ciudad_pueblo: string | null
+  /** "Lo acompaña Juan Pérez (auxiliar)" — equipo que visita (2026-10-13). */
+  acompanantes?: string
 }
 
 interface Evento {
@@ -321,6 +323,7 @@ export default function SupervisorDetalle() {
               <Campo label="Nombre">{tecnico.nombre_completo}</Campo>
               <Campo label="WhatsApp">{tecnico.whatsapp ?? '—'}</Campo>
               <Campo label="Ciudad">{tecnico.ciudad_pueblo ?? '—'}</Campo>
+              {tecnico.acompanantes && <Campo label="Equipo que visita">👥 {tecnico.acompanantes}</Campo>}
             </div>
           ) : (
             <p className="text-sm text-gray-400">Sin técnico asignado todavía.</p>

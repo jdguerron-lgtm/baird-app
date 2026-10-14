@@ -10,6 +10,7 @@
 
 - **Frontend admin**: protegido por sesión Supabase Auth **+ allowlist de emails** (`/admin/layout.tsx`). Sin sesión o email fuera de la lista → `signOut()` + redirect a `/admin/login`.
 - **API admin**: protegida por `Authorization: Bearer ${session.access_token}` verificado con `verificarAdmin()` del helper compartido `src/lib/auth/admin.ts`. **`verificarAdmin` exige que el email esté en la allowlist** (`src/lib/auth/adminEmails.ts`), no solo que la sesión sea válida — autenticado ≠ admin (2026-07-06).
+- **Rol `lectura` (logística)** — 2026-10-13: segunda allowlist (`LECTURA_EMAILS`, default `logistica@encompasslatam.com`) que entra al mismo panel **sin poder escribir**: el server rechaza sus escrituras (`verificarAdmin`), solo los exports/listados aceptan ambos roles (`verificarLectura`), y el navegador instala un guard que corta toda request mutante (`src/lib/auth/soloLectura.ts`). Ver § 1 "Rol lectura".
 - **API cliente / técnico**: protegida por **tokens UUID opacos** (alta entropía) — `cliente_token`, `horario_token`, `portal_token`, etc.
 - **Cron jobs**: protegidos por header `Authorization: Bearer ${CRON_SECRET}` (env var).
 - **Webhook Meta**: HMAC-SHA256 con `WHATSAPP_WEBHOOK_SECRET`.
@@ -28,6 +29,20 @@
 ### Allowlist de emails admin
 - `src/lib/auth/adminEmails.ts` — `esEmailAdmin(email)` es la única fuente de verdad de quién es admin. Se usa en los 3 puntos: login (`/admin/login`), guard del layout (`/admin/layout.tsx`) y gate de API (`verificarAdmin`).
 - Configurable por env var **`ADMIN_EMAILS`** (server, CSV) y **`NEXT_PUBLIC_ADMIN_EMAILS`** (cliente, CSV). Si ninguna está definida, cae a un default hardcodeado (`jdguerron@bairdservice.com`) para no romper prod. Para agregar un admin: crear la cuenta en Supabase **y** añadir el email a ambas env vars en Vercel.
+
+### Rol `lectura` (logística, solo lectura) — 2026-10-13
+- **Qué es**: una segunda allowlist, independiente de la admin, para cuentas que necesitan **ver todo el panel** (casos, pagos, repuestos, liquidaciones) **sin poder modificar nada**. Default hardcodeado: `logistica@encompasslatam.com`. Env vars: **`LECTURA_EMAILS`** (server, CSV) y **`NEXT_PUBLIC_LECTURA_EMAILS`** (cliente, CSV); si ninguna está definida se usa el default. Si un email aparece en ambas listas, gana admin.
+- **Fuente de verdad**: `obtenerRolAdmin(email)` en `src/lib/auth/adminEmails.ts` → `'admin' | 'lectura' | null`. Login, layout y gates de API usan esa función. `esEmailAdmin` **no** cambia: un email de lectura nunca es admin.
+- **Tres capas, de más a menos fuerte**:
+  1. **Server (seguridad real)** — todo endpoint que escribe sigue con `verificarAdmin` / `obtenerEmailAdmin`, que rechazan al rol lectura (401). Solo los handlers que **no escriben** aceptan ambos roles vía `verificarLectura(req)` / `obtenerRolRequest(req)` (`src/lib/auth/admin.ts`): `POST /api/admin/export`, `POST /api/admin/liquidaciones` (generan Excel), `GET /api/admin/supervisores`, `GET /api/admin/auxiliares`.
+  2. **Guard del navegador** — `src/lib/auth/soloLectura.ts`. El layout lo instala sobre `window.fetch` cuando la sesión es `lectura`: cualquier request con método ≠ GET/HEAD/OPTIONS a `/api/*` (salvo los dos exports), a Supabase `/rest/v1/*` o `/storage/v1/*` (salvo `object/sign`) se corta en el cliente con un 403 sintético + toast "Modo solo lectura". Cubre de una vez todas las acciones del panel, incluidos los writes directos de supabase-js (resuelve `fetch` global en cada llamada). Es defensa en profundidad, **no** la seguridad: alguien con DevTools puede quitarlo.
+  3. **UI** — `useRolAdmin()` (`src/components/admin/RolAdminContext.tsx`) oculta controles de edición (botones "Editar" y "Cambiar estado manualmente" del detalle), el menú esconde `Carga Masiva` y `Testing` (y el layout redirige si se entra a mano) y se muestra banner + badge "logística · solo lectura".
+- **Límite conocido**: los writes directos a Supabase desde el browser (`tecnicos`, `especialidades_tecnico`, `evidencias_servicio`) solo los frena el guard del navegador porque esas tablas aún no tienen RLS para anon (Fases 2–4 de `docs/PLAN-RLS.md`). Es el **mismo** hueco que ya tiene cualquier persona con el anon key público; el rol lectura no lo amplía. Cerrar RLS lo resuelve de raíz.
+- **Alta de la cuenta y contraseña (self-service)** — 2026-10-13: la cuenta se crea **sin contraseña** con `node --env-file=.env.local scripts/crear-usuario-panel.mjs correo@dominio.com` (o desde el dashboard sin clave) y la persona fija la suya desde un link de un solo uso:
+  - `/admin/accesos` (solo admin): lista la allowlist cruzada con `auth.users` y el botón *Enviar correo de acceso* llama `POST /api/admin/accesos` → `generateLink({ type: 'recovery' })` → link `/admin/establecer-clave?token_hash=…&type=recovery` (no depende del Site URL ni de la allowlist de redirects de Supabase). Se envía por **Resend** si hay `RESEND_API_KEY`; si no, cae al SMTP de Supabase (que por defecto solo entrega a miembros del equipo del proyecto). El endpoint **devuelve el link al admin** para mandarlo por WhatsApp si el correo no sale; vence en ~1 h (Email OTP expiry) y es de un solo uso.
+  - `/admin/login` → *¿Olvidaste tu contraseña o es tu primer ingreso?* → `POST /api/auth/recuperar-clave` (público, respuesta siempre genérica, solo actúa con emails de la allowlist, throttle 1/min por email + 5/min por IP en middleware). Nunca devuelve el link.
+  - `/admin/establecer-clave`: canjea el `token_hash` con `verifyOtp` (o toma el hash `#access_token…type=recovery` del correo de Supabase, que `RedireccionRecuperacion` en el layout raíz reenvía desde cualquier página), pide la clave (mín. 10) y hace `updateUser({ password })`. Está fuera del guard del layout admin (como `/admin/login`).
+  - Revocar: borrar el usuario en Supabase y/o sacar el email de `LECTURA_EMAILS`.
 
 ### Guard de rutas
 - `src/app/admin/layout.tsx` corre `supabase.auth.getSession()` en cada render del layout.
@@ -340,6 +355,7 @@ Una vez la app esté estable y validada en producción, atender en este orden:
 - [ ] Crear route handler en `src/app/api/.../route.ts`.
 - [ ] Importar `verificarAdmin` desde `@/lib/auth/admin`.
 - [ ] **Primera línea del handler**: `const isAdmin = await verificarAdmin(req); if (!isAdmin) return 401`.
+- [ ] ¿El handler **no escribe nada** (listado, export)? Entonces usa `verificarLectura(req)` para que el rol logística también lo pueda consumir. Si escribe, **nunca** `verificarLectura`. Si es un POST que no escribe y lo llama el panel, añadirlo a `API_LECTURA_PERMITIDAS` en `src/lib/auth/soloLectura.ts` para que el guard del navegador no lo corte.
 - [ ] En el UI (`/admin/...`): obtener `session` con `supabase.auth.getSession()`, enviar `Authorization: Bearer ${session.access_token}` en el fetch.
 - [ ] Si muta estado: validar el estado actual con `.eq('estado', '...')` para evitar race conditions (patrón modelo: `procesarAceptacion`).
 - [ ] Si genera audit: insertar en `solicitud_eventos` vía `logEvento()`.

@@ -60,6 +60,9 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
   // el límite por IP frena el brute-force entre reenvíos.
   { path: '/api/supervisor/enviar-codigo', limit: 5, windowMs: 60_000 },
   { path: '/api/supervisor/verificar-codigo', limit: 10, windowMs: 60_000 },
+  // Recuperación de clave del panel admin (2026-10-13): respuesta genérica,
+  // pero cada llamada puede disparar un correo → tope estricto por IP.
+  { path: '/api/auth/recuperar-clave', limit: 5, windowMs: 60_000 },
 ]
 
 // Token pages: prevent brute-force enumeration.

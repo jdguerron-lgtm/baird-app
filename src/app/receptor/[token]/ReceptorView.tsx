@@ -11,6 +11,8 @@ interface Props {
   equipo: string
   esGarantia: boolean
   tecnico: string
+  /** "Lo acompaña Juan Pérez (auxiliar)" o '' (equipo que visita, 2026-10-13). */
+  acompanantes?: string
   aceptoAt: string | null
   clienteToken: string | null
 }
@@ -23,7 +25,7 @@ function fechaLegible(iso: string): string {
   }
 }
 
-export default function ReceptorView({ token, receptor, titular, equipo, esGarantia, tecnico, aceptoAt, clienteToken }: Props) {
+export default function ReceptorView({ token, receptor, titular, equipo, esGarantia, tecnico, acompanantes = '', aceptoAt, clienteToken }: Props) {
   const [acepta, setAcepta] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [listo, setListo] = useState<string | null>(aceptoAt)
@@ -80,6 +82,7 @@ export default function ReceptorView({ token, receptor, titular, equipo, esGaran
           <p className="text-gray-700 mb-4">
             <strong>{titular}</strong> te designó como la persona que recibe al técnico <strong>{tecnico}</strong> para
             el servicio de <strong>{equipo}</strong>{esGarantia ? ' (garantía)' : ''}.
+            {acompanantes && <> {acompanantes}, también verificado por Baird.</>}
           </p>
 
           <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-900 mb-5 space-y-1">

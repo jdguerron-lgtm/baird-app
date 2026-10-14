@@ -70,6 +70,16 @@ export async function uploadFotoDocumento(file: File, tecnicoId: string): Promis
     return uploadImage(file, 'tecnicos-documentos', `${tecnicoId}/documento`)
 }
 
+/**
+ * Foto de perfil de un AUXILIAR del técnico (equipo de trabajo, 2026-10-13).
+ * Mismo bucket público `tecnicos-fotos` (policy de insert anon que ya usa
+ * /registro), en la subcarpeta `{tecnicoId}/auxiliares/`. El server
+ * (/api/tecnico/equipo) exige que la URL guardada apunte a ese bucket.
+ */
+export async function uploadFotoAuxiliar(file: File, tecnicoId: string): Promise<string> {
+    return uploadImage(file, 'tecnicos-fotos', `${tecnicoId}/auxiliares/perfil`)
+}
+
 export async function deleteImage(bucket: string, path: string): Promise<void> {
     const { error } = await supabase.storage
         .from(bucket)

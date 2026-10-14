@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { z } from 'zod'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { verificarLectura } from '@/lib/auth/admin'
 import { calcularTarifaMABE, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
@@ -179,7 +179,7 @@ function agregarTotales(rows: Row[], columnasSuma: string[], etiquetaCol: string
 
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await verificarAdmin(req)
+    const isAdmin = await verificarLectura(req) // admin o lectura (logística): el export no escribe
     if (!isAdmin) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }

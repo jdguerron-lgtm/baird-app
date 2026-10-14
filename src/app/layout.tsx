@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
+import RedireccionRecuperacion from '@/components/RedireccionRecuperacion'
 import { GOOGLE_ADS_ID } from '@/lib/analytics/googleAds'
 import { GA_MEASUREMENT_ID } from '@/lib/analytics/googleAnalytics'
 import { HERO_ASSIGN_SCRIPT } from '@/lib/analytics/experimentoHero'
@@ -55,6 +56,7 @@ export default function RootLayout({
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
+        <RedireccionRecuperacion />
         <BotonWhatsAppFlotante />
 
         {/* Google tag (gtag.js) — un solo loader para Google Ads (conversiones)
