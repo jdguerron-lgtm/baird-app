@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; pendiente de subir a Meta). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
+> Última actualización: 2026-10-15 (nueva `tecnico_portal_v1` — link personal al portal del técnico, envío manual con `scripts/enviar-portal-tecnicos.mjs`). Anterior: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; pendiente de subir a Meta). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
 
 > 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
 
@@ -425,6 +425,13 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Botón URL dinámico**: `/tecnico/perfil/{{1}}` con `portal_token` → redirige a `/tecnico/{token}/perfil`. ⚠️ Meta exige que el `{{1}}` vaya **al final** de la URL (error 2388052 "formato de URL no válido" si va en medio) — por eso existe la ruta de redirección `src/app/tecnico/perfil/[token]/page.tsx`.
 - **Propósito**: pedirle al técnico que complete especialidades, si atiende gasodomésticos y qué certificaciones declara. Ver `docs/CERTIFICACIONES.md`.
 - **Prerrequisito de envío**: la página `/tecnico/{token}/perfil` debe estar desplegada en prod (si no, el botón da 404).
+
+#### `tecnico_portal_v1` **En script** ✅ APPROVED (subida y aprobada 2026-10-15; primer envío 14/14)
+- **Disparo**: manual — `node --env-file=.env.local scripts/enviar-portal-tecnicos.mjs` (`--dry` para listar; `--ignorar-whitelist` para el envío real si `.env.local` trae `BAIRD_TEST_PHONE_WHITELIST`). No está cableada en el código de la app.
+- **Destino**: todos los técnicos con `portal_token` y móvil válido, omitiendo `rechazado`, cuentas "prueba" y registros no verificados cuyo celular ya tiene uno verificado (duplicados). Flags `--solo-verificados`, `--to`.
+- **Header**: "Tu portal de técnico Baird" · **Body** (1 param): `primer nombre` · **Footer**: "Baird Service — Técnicos"
+- **Botón URL dinámico**: "Abrir mi portal" → `/tecnico/{{1}}` con `portal_token`.
+- **Propósito**: que cada técnico tenga a mano el link de SU portal sin depender de un servicio asignado (las otras plantillas con botón al portal van atadas a una solicitud, p.ej. `servicio_asignado_tecnico_v4`). Primer envío 2026-10-15 (pedido de JD).
 
 ### Supervisión
 

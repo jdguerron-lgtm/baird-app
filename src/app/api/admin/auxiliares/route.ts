@@ -19,6 +19,7 @@ import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
  *
  * Rechazar o dar de baja también lo saca de `auxiliares_ids` de los servicios
  * activos del técnico, para que el cliente deje de verlo en el portal.
+ * Verificar a uno con `acompana_por_defecto` lo suma a esos mismos servicios.
  */
 
 export async function GET(req: NextRequest) {
@@ -82,9 +83,32 @@ export async function PATCH(req: NextRequest) {
     if (error || !data) return NextResponse.json({ error: error?.message ?? 'No se pudo guardar' }, { status: 500 })
     const nuevo = data as unknown as AuxiliarRow
 
-    // Dejó de ser visible → fuera de los servicios activos del técnico.
     const eraVisible = prev.activo === true && prev.estado_verificacion === 'verificado'
     const esVisible = nuevo.activo === true && nuevo.estado_verificacion === 'verificado'
+
+    // Pasó a ser visible y "me acompaña por defecto" → se suma a los servicios
+    // activos del técnico que aún no lo tienen (2026-10-15, caso Néstor Castro +
+    // Lynn Mari Bonilla: la verificación llegó DESPUÉS de aceptar el servicio y
+    // fijarEquipoPorDefecto ya había corrido sin ella). El técnico puede
+    // quitarlo por servicio desde "¿Quién va?"; el portal del cliente lo refleja.
+    if (!eraVisible && esVisible && nuevo.acompana_por_defecto === true) {
+      try {
+        const { data: sols } = await supabase
+          .from('solicitudes_servicio')
+          .select('id, auxiliares_ids')
+          .eq('tecnico_asignado_id', prev.tecnico_id)
+          .not('estado', 'in', `(${[...ESTADOS_TERMINALES].join(',')})`)
+        for (const s of sols ?? []) {
+          const ids = (s.auxiliares_ids as string[] | null) ?? []
+          if (ids.includes(auxiliarId)) continue
+          await supabase.from('solicitudes_servicio').update({ auxiliares_ids: [...ids, auxiliarId] }).eq('id', s.id)
+        }
+      } catch (err) {
+        console.warn('[admin/auxiliares] no se pudo sumar al auxiliar a servicios activos:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // Dejó de ser visible → fuera de los servicios activos del técnico.
     if (eraVisible && !esVisible) {
       try {
         const { data: sols } = await supabase

@@ -662,6 +662,7 @@ WhatsApp al cliente: equipo_servicio_actualizado_v1 (header carnet con equipo vi
 Reglas:
 - **Visible al cliente = `activo` AND `estado_verificacion='verificado'`.** Lo garantiza `resolverEquipoServicio` en portal, PNG, WhatsApp, receptor y supervisor. Un auxiliar pendiente/rechazado/dado de baja nunca aparece aunque su id siga en `auxiliares_ids`.
 - **Cambiar nombre, documento o foto vuelve al auxiliar a `pendiente`** (y lo saca de los servicios activos): evita que se verifique a una persona y luego se cambie por otra.
+- **Verificar (admin) a un auxiliar con "me acompaña por defecto" lo suma a `auxiliares_ids` de los servicios no terminales del técnico** (2026-10-15): cubre el caso de verificar después de que el técnico ya aceptó. Sin aviso WhatsApp; el portal del cliente lo refleja.
 - **Rechazar / dar de baja (admin o técnico) lo saca de `auxiliares_ids` de los servicios no terminales.** El histórico conserva el id (baja lógica, nunca DELETE).
 - **El auxiliar no recibe WhatsApp ni entra al flujo de mensajes**; su celular es solo para que Baird lo contacte. No cuenta para el cupo de agenda ni cambia pagos: trabaja bajo la responsabilidad del técnico y le paga el técnico.
 - **`auxiliares_ids` NULL = nunca definido** (servicios anteriores a la migración o técnico sin tabla); `{}` = va solo (decisión explícita al aceptar).

@@ -1951,6 +1951,47 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // Link personal al portal del técnico — envío manual/masivo (2026-10-15).
+  //   Sin servicio asociado: sirve para que TODO técnico tenga a mano su
+  //   /tecnico/{portal_token} (servicios, agenda, perfil). Las demás plantillas
+  //   con botón al portal van atadas a un servicio (servicio_asignado_tecnico_v4).
+  //   {{1}} = primer nombre · botón URL = portal_token (al final de la URL).
+  //   Envío: scripts/enviar-portal-tecnicos.mjs (sin cableado en la app).
+  //   Subir: node --env-file=.env.local scripts/upload-templates.mjs tecnico_portal_v1
+  {
+    name: 'tecnico_portal_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu portal de técnico Baird',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}} 👋, este es el enlace a tu portal de técnico en Baird Service.\n\n' +
+          'Desde ahí ves tus servicios asignados y su estado, registras diagnósticos, ' +
+          'revisas tu agenda semanal y actualizas tu perfil.\n\n' +
+          'Guárdalo para entrar cuando lo necesites. El enlace es personal, no lo compartas.',
+        example: { body_text: [['Carlos']] },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Técnicos' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir mi portal',
+            url: `${APP_URL}/tecnico/{{1}}`,
+            example: [`${APP_URL}/tecnico/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 async function listExisting() {
