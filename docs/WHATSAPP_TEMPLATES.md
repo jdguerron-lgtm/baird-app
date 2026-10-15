@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-10-15 (nueva `tecnico_portal_v1` — link personal al portal del técnico, envío manual con `scripts/enviar-portal-tecnicos.mjs`). Anterior: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; pendiente de subir a Meta). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
+> Última actualización: 2026-10-15 (nueva `tecnico_portal_v1` — link personal al portal del técnico, envío manual con `scripts/enviar-portal-tecnicos.mjs`). Anterior: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; APPROVED 2026-10-15 junto con `equipo_servicio_actualizado_v1`). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
 
 > 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
 
@@ -386,7 +386,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Receptor del servicio (2026-10-13)
 
-#### `receptor_bienvenida_v1` **En script** ⏳ pendiente de subir a Meta
+#### `receptor_bienvenida_v1` **En script** ✅ APPROVED (subida y aprobada 2026-10-15)
 - **Disparo**: `enviarBienvenidaReceptor(solicitudId)` desde `POST /api/tecnico/receptor` (el técnico registra a quien recibe al comenzar el diagnóstico o al completar un servicio de tarifa fija) y desde `POST /api/admin/receptor-reenviar` (reenvío manual).
 - **Destino**: el **receptor** (persona distinta del titular). Es el ÚNICO mensaje que recibe antes de aceptar.
 - **Body** (4 params): `receptor (primer nombre)`, `titular`, `tecnico`, `equipo` (+ "· Garantía N°" en garantía)
@@ -399,7 +399,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 > El mensaje de **asignación** NO cambió en Meta: `tecnico_asignado_cliente_v7` / `tecnico_asignado_particular_v2` (y sus fallbacks `_v6` / `_v1`) reciben en el parámetro del nombre del técnico el texto `"Pedro Gómez · lo acompaña Juan Pérez (auxiliar)"` (`textoEquipoWhatsApp`, una sola línea, sin emojis) y en el HEADER IMAGE el carnet con fila de auxiliares (`/api/carnet/{tecnicoId}?aux=id1,id2`). Solo auxiliares verificados por Baird.
 
-#### `equipo_servicio_actualizado_v1` **En script** ⏳ pendiente de subir a Meta
+#### `equipo_servicio_actualizado_v1` **En script** ✅ APPROVED (subida y aprobada 2026-10-15)
 - **Disparo**: `enviarEquipoActualizadoCliente(solicitudId)` desde `PATCH /api/tecnico/equipo-servicio` cuando el técnico suma o quita auxiliares de un servicio ya asignado (el cliente ya recibió `tecnico_asignado_*`).
 - **Destino**: cliente titular (+ espejo al receptor si aceptó, vía `enviarPlantillaCliente`).
 - **Header**: IMAGE — carnet digital con el equipo vigente.
