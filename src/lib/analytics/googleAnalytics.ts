@@ -8,6 +8,11 @@
  * https://bairdservice.com — los subdominios (lineablanca.) reportan al mismo
  * flujo, que es el comportamiento estándar de GA4.
  *
+ * Además, lineablanca tiene su PROPIA propiedad para verla separada de la web
+ * principal: "Línea Blanca - lineablanca.bairdservice.com" (misma cuenta
+ * 322082684), flujo "Línea Blanca web" → GA_LINEABLANCA_ID. El sitio envía a
+ * las DOS propiedades en paralelo; Baird1 conserva el histórico.
+ *
  * Vistas de página en navegación SPA (App Router): las cubre la "Medición
  * mejorada" del flujo (page_view en cambios de history), que está ACTIVADA.
  *
@@ -19,6 +24,13 @@ import { getHeroVariante } from './experimentoHero'
 
 export const GA_MEASUREMENT_ID =
   process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID ?? 'G-DXSC4J9RGF'
+
+/**
+ * Propiedad propia de lineablanca ("Línea Blanca - lineablanca.bairdservice.com",
+ * flujo "Línea Blanca web"). Se configura en paralelo a GA_MEASUREMENT_ID.
+ */
+export const GA_LINEABLANCA_ID =
+  process.env.NEXT_PUBLIC_GA_LINEABLANCA_ID ?? 'G-ZPGP3D68XP'
 
 type GtagFn = (...args: unknown[]) => void
 
@@ -41,7 +53,7 @@ export function trackGaLead(params?: { es_garantia?: boolean; tipo_solicitud?: s
   const heroVariante = getHeroVariante()
 
   w.gtag('event', 'generate_lead', {
-    send_to: GA_MEASUREMENT_ID,
+    send_to: [GA_MEASUREMENT_ID, GA_LINEABLANCA_ID],
     ...(params?.tipo_solicitud ? { tipo_solicitud: params.tipo_solicitud } : {}),
     ...(typeof params?.es_garantia === 'boolean'
       ? { es_garantia: params.es_garantia ? 'garantia' : 'particular' }
