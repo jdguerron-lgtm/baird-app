@@ -4,7 +4,7 @@ import Script from 'next/script'
 import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
 import { GOOGLE_ADS_ID } from '@/lib/analytics/googleAds'
-import { GA_MEASUREMENT_ID } from '@/lib/analytics/googleAnalytics'
+import { GA_MEASUREMENT_ID, GA_LINEABLANCA_ID } from '@/lib/analytics/googleAnalytics'
 import { HERO_ASSIGN_SCRIPT } from '@/lib/analytics/experimentoHero'
 
 const inter = Inter({
@@ -72,6 +72,7 @@ export default function RootLayout({
             gtag('js', new Date());
             gtag('config', '${GOOGLE_ADS_ID}');
             gtag('config', '${GA_MEASUREMENT_ID}');
+            gtag('config', '${GA_LINEABLANCA_ID}');
           `}
         </Script>
       </body>
