@@ -97,9 +97,13 @@ export async function querySupabase<TResult extends SupabaseLikeResult<unknown>>
       ...opts,
       shouldRetry: (err) => {
         const code = (err as { code?: string })?.code
-        // No reintentar errores de aplicación conocidos
-        if (code === 'PGRST116') return false
-        if (code === '42501') return false // RLS denied — no se va a arreglar
+        // No reintentar errores definitivos — son bugs del input o de schema,
+        // reintentar solo agrega latencia (3.2s peor caso) sin chance de éxito.
+        if (code === 'PGRST116') return false  // no rows — token no existe
+        if (code === '42501')   return false  // RLS denied
+        if (code === '22P02')   return false  // invalid input syntax (UUID mal formateado)
+        if (code === '42P01')   return false  // undefined table — programming error
+        if (code === '42703')   return false  // undefined column — programming error
         return true
       },
     }
