@@ -242,3 +242,68 @@ describe('notificarTecnicos', () => {
     expect(tablasTocadas).not.toContain('especialidades_tecnico')
   })
 })
+
+describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
+  const TEC_A = { ...TECNICO, id: 'tec-001', nombre_completo: 'Carlos Tecnico', whatsapp: '3009876543' }
+  const TEC_B = { ...TECNICO, id: 'tec-002', nombre_completo: 'Nestor Tecnico', whatsapp: '3001112233' }
+  const ESPS = [
+    { tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' },
+    { tecnico_id: 'tec-002', especialidad: 'Neveras y Nevecones' },
+  ]
+
+  function setup(sol: Record<string, unknown>) {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'solicitudes_servicio') return queryBuilder({ data: sol, error: null })
+      if (table === 'especialidades_tecnico') return queryBuilder({ data: ESPS, error: null })
+      if (table === 'tecnicos') return queryBuilder({ data: [TEC_A, TEC_B], error: null })
+      return queryBuilder({ data: null, error: null })
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'msg-1' }] }) })
+  })
+
+  it('primera oferta: solo notifica al técnico preferido si pasó los filtros', async () => {
+    setup({ ...SOLICITUD, tecnico_preferido_id: 'tec-002', notificados_at: null })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.matched).toBe(1)
+    expect(result.notificados).toBe(1)
+    expect(result.errors).toHaveLength(0)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.to).toBe('573001112233')
+  })
+
+  it('reenvío (notificados_at ya fijado): la oferta va a todos, preferido incluido', async () => {
+    setup({ ...SOLICITUD, tecnico_preferido_id: 'tec-002', notificados_at: '2026-10-15T10:00:00Z' })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.matched).toBe(2)
+    expect(result.notificados).toBe(2)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('preferido que ya no es candidato: oferta abierta a todos + aviso en errors', async () => {
+    setup({ ...SOLICITUD, tecnico_preferido_id: 'tec-999', notificados_at: null })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.matched).toBe(2)
+    expect(result.notificados).toBe(2)
+    expect(result.errors.some(e => e.includes('preferencia'))).toBe(true)
+  })
+
+  it('sin preferencia: comportamiento histórico (todos los candidatos)', async () => {
+    setup({ ...SOLICITUD, tecnico_preferido_id: null, notificados_at: null })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.matched).toBe(2)
+    expect(result.notificados).toBe(2)
+  })
+})

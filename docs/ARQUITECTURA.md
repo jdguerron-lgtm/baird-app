@@ -79,6 +79,7 @@ src/
 │   │   ├── whatsapp.service.ts # All WhatsApp logic (notify, accept, quote, confirm)
 │   │   ├── solicitud.service.ts
 │   │   ├── agenda.service.ts   # Cupo por franja + validación de horarios agendables
+│   │   ├── tecnicos-elegibles.service.ts # Técnicos elegibles como "técnico de preferencia" (selector de /solicitar + validación server-side)
 │   │   ├── transiciones.service.ts # Transiciones de estado compartidas (WhatsApp + voz IA)
 │   │   ├── dapta.service.ts    # 2ª línea de voz IA — iniciarLlamada() con guardas (ver docs/DAPTA.md)
 │   │   └── geocoding.service.ts # Geocoding Google Maps para /admin/mapa
@@ -168,6 +169,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 |-------|--------|---------|------|
 | `/api/solicitar` | POST | Create request + send schedule selection | Both |
 | `/api/confirmar-horario` | POST | Customer confirms schedule, triggers tech notification. Valida agenda (`validarHorarioAgendable`): mínimo mañana + cupo `MAX_RESERVAS_POR_FRANJA` (5 desde 2026-10-12) por slot día+franja | Both |
+| `/api/tecnicos-disponibles` | GET | Público (`?ciudad=&tipo_equipo=`): técnicos elegibles como "técnico de preferencia" en `/solicitar` — verificados, `visible_para_cliente` y con cobertura/especialidad (`listarTecnicosElegibles`, mismo criterio que `notificarTecnicos`). Solo id, nombre corto, foto y especialidades (sin PII). Fail-open `[]`; el guard real del id está en `POST /api/solicitar` | Both |
 | `/api/disponibilidad-horario` | GET | Público (`?fecha=YYYY-MM-DD`): franjas llenas del día para que los selectores del cliente las desactiven. Solo agregados, sin PII. El guard real es server-side en la confirmación (`agenda.service`) | Both |
 | `/api/tienda/buscar` | GET | Público (`?q=2611`): proxy de la búsqueda predictiva de la tienda Shopify (`suggest.json` + SKU real vía `/products/{handle}.js`) — devuelve `{productos:[{titulo,sku,precio,disponible,url,imagen}]}`. Usado por `ProductosNecesariosForm`: el técnico toca "Usar" y la fila se llena sola (SKU, descripción, foto del catálogo). Fail-open (`{productos:[]}`), cache 5 min por query | Both |
 | `/api/diagnostico` | POST | Save diagnosis + oath + siguiente_paso (4 options). Particular Diagnóstico/Reparación admite además `mantenimientoCatalogo: true` con `reparar` ("Reparación con precio predeterminado (mantenimiento)", 2026-10-12): cotización = tabla `TARIFAS_MANTENIMIENTO` + recargo, neto técnico de tarifa fija, marca `cotizacion.mantenimiento_catalogo` | Both |

@@ -11,8 +11,8 @@ export const EMPRESA = {
   domicilio: 'Carrera 80C # 24D-74, Barrio Modelia, Bogotá D.C., Colombia',
   telefono: '+57 314 241 1888',
   whatsappSoporte: '+57 313 495 1164',
-  emailPqrs: 'servicioalcliente@bairdservice.com',
-  emailDatos: 'soporte@bairdservice.com',
+  emailPqrs: 'baird@bairdservice.com',
+  emailDatos: 'baird@bairdservice.com',
   sitio: 'https://lineablanca.bairdservice.com',
 } as const
 
@@ -21,8 +21,8 @@ export const CONTRATO_TECNICO_VERSION = '2026.10.09'
 export const CONTRATO_TECNICO_FECHA = '9 de octubre de 2026'
 
 /** Política de privacidad y tratamiento de datos (/politica-privacidad). */
-export const PRIVACIDAD_VERSION = '2026.10.13'
-export const PRIVACIDAD_FECHA = '13 de octubre de 2026'
+export const PRIVACIDAD_VERSION = '2026.10.16'
+export const PRIVACIDAD_FECHA = '16 de octubre de 2026'
 
 /** Fecha visible de la versión vigente de /terminos (la versión es TYC_VERSION). */
-export const TYC_FECHA = '9 de octubre de 2026'
+export const TYC_FECHA = '16 de octubre de 2026'

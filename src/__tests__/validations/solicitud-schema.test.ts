@@ -269,3 +269,16 @@ describe('IVA helpers', () => {
     expect(calcularIvaIncluido(0)).toBe(0)
   })
 })
+
+describe('solicitudFormSchema — tecnico_preferido_id (2026-10-15)', () => {
+  it('acepta ausente, vacío y uuid', () => {
+    expect(solicitudFormSchema.safeParse(VALID_DATA).success).toBe(true)
+    expect(solicitudFormSchema.safeParse({ ...VALID_DATA, tecnico_preferido_id: '' }).success).toBe(true)
+    expect(solicitudFormSchema.safeParse({ ...VALID_DATA, tecnico_preferido_id: '62ada351-6de6-40fa-bb5f-9e4c6dd37b74' }).success).toBe(true)
+  })
+
+  it('rechaza un id que no es uuid', () => {
+    const r = solicitudFormSchema.safeParse({ ...VALID_DATA, tecnico_preferido_id: 'carlos' })
+    expect(r.success).toBe(false)
+  })
+})

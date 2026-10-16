@@ -59,6 +59,10 @@ interface Tecnico {
   // Copia escaneada del contrato firmado (migración 20261009_tecnicos_contrato_archivo)
   contrato_archivo_path: string | null
   contrato_archivo_subido_at: string | null
+  // Selector "técnico de preferencia" de /solicitar (migración 20261015).
+  // false = perfil interno: no se ofrece al público pero sigue recibiendo
+  // las ofertas abiertas. NULL (fila vieja) cuenta como visible.
+  visible_para_cliente: boolean | null
   created_at: string
 }
 
@@ -174,6 +178,25 @@ export default function TecnicoDetalle() {
     setEspecialidades(espEdit)
     setMensaje({ texto: 'Especialidades actualizadas', tipo: 'exito' })
     setGuardandoEsp(false)
+  }
+
+  const [guardandoVisible, setGuardandoVisible] = useState(false)
+  const guardarVisible = async (valor: boolean) => {
+    setGuardandoVisible(true)
+    setMensaje(null)
+    const { data: updated, error } = await supabase
+      .from('tecnicos')
+      .update({ visible_para_cliente: valor })
+      .eq('id', id)
+      .select('visible_para_cliente')
+    if (error || !updated || updated.length === 0) {
+      setMensaje({ texto: 'Error al guardar visibilidad: ' + (error?.message ?? 'la fila no se actualizó'), tipo: 'error' })
+      setGuardandoVisible(false)
+      return
+    }
+    setTecnico(prev => prev ? { ...prev, visible_para_cliente: valor } : prev)
+    setMensaje({ texto: valor ? 'El técnico ya aparece en el selector del cliente' : 'El técnico quedó oculto del selector del cliente', tipo: 'exito' })
+    setGuardandoVisible(false)
   }
 
   const guardarGas = async (valor: boolean | null) => {
@@ -1003,6 +1026,40 @@ export default function TecnicoDetalle() {
                 <p className="text-xs text-gray-400 mb-1">Nota anterior:</p>
                 <p className="text-sm text-gray-600">{tecnico.nota_verificacion}</p>
               </div>
+            )}
+          </div>
+
+          {/* Selector "técnico de preferencia" del cliente (2026-10-15) */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Selector del cliente</h2>
+            <p className="text-xs text-gray-400 mb-3">
+              Si está visible, el cliente puede elegirlo como <span className="font-semibold">técnico de preferencia</span> en el
+              formulario (solo técnicos verificados que cubran su ciudad y tipo de equipo). Oculto = perfil interno: no se
+              ofrece al público pero sigue recibiendo las ofertas abiertas.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { v: true, t: '👁️ Visible al cliente' },
+                { v: false, t: '🙈 Oculto (interno)' },
+              ] as { v: boolean; t: string }[]).map(({ v, t }) => {
+                const on = (tecnico.visible_para_cliente ?? true) === v
+                return (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    disabled={guardandoVisible || on}
+                    onClick={() => guardarVisible(v)}
+                    className={`p-2.5 rounded-xl border-2 text-xs font-semibold transition-all disabled:cursor-default ${
+                      on ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-gray-200 hover:border-blue-300 text-gray-600'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                )
+              })}
+            </div>
+            {tecnico.estado_verificacion !== 'verificado' && (tecnico.visible_para_cliente ?? true) && (
+              <p className="text-[11px] text-gray-400 mt-2">Solo aparece en el selector cuando esté verificado.</p>
             )}
           </div>
         </div>

@@ -12,6 +12,7 @@ import { SelectField } from '@/components/ui/SelectField'
 import { TextAreaField } from '@/components/ui/TextAreaField'
 import { Button } from '@/components/ui/Button'
 import { DateTimeSlotPicker } from '@/components/ui/DateTimeSlotPicker'
+import { TecnicoPreferidoSelector } from '@/components/TecnicoPreferidoSelector'
 import {
   UserIcon,
   PhoneIcon,
@@ -496,6 +497,16 @@ export default function SolicitarServicio() {
                       icon={<AlertIcon className="w-5 h-5 mr-2 text-orange-600" />}
                       hint="💡 Cuanto más detallado seas, mejor podrá prepararse el técnico."
                       required
+                    />
+
+                    {/* Técnico de preferencia (2026-10-15, opcional). Solo aparece
+                        cuando hay técnicos elegibles para ciudad + tipo de equipo.
+                        '' = sin preferencia → oferta abierta como siempre. */}
+                    <TecnicoPreferidoSelector
+                      ciudad={formData.ciudad_pueblo}
+                      tipoEquipo={formData.tipo_equipo}
+                      value={formData.tecnico_preferido_id ?? ''}
+                      onChange={(id) => setField('tecnico_preferido_id', id)}
                     />
                   </div>
                 </div>

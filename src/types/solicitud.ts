@@ -51,6 +51,10 @@ export interface SolicitudFormData {
   pago_tecnico: number          // Valor del servicio en COP (pago a Baird Service)
   horario_visita_1: string      // Primera franja horaria preferida
   horario_visita_2: string      // Segunda franja horaria preferida
+  // Técnico de preferencia (2026-10-15, opcional): id de un técnico verificado
+  // y `visible_para_cliente` que cubre ciudad + tipo de equipo. '' / ausente =
+  // sin preferencia (oferta abierta). Columna `tecnico_preferido_id` en BD.
+  tecnico_preferido_id?: string
 }
 
 // Tipo del registro completo en BD (con ID y metadata del servidor)
@@ -134,7 +138,7 @@ export interface ProductoRecomendado {
 // Versión vigente de los Términos y Condiciones.
 // Bump al cambiar texto de /terminos. Se persiste en
 // solicitudes_servicio.tyc_version al confirmar horario.
-export const TYC_VERSION = '2026.10.09'
+export const TYC_VERSION = '2026.10.16'
 
 // ──────────────────────────────────────────────────────────
 // Self-service (cliente cancela / reagenda desde WhatsApp)
@@ -373,12 +377,15 @@ export function precioClienteServicio(
   return catalogo + recargoCliente
 }
 
-export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico'> {
+export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico' | 'tecnico_preferido_id'> {
   id: string
   created_at: string
   pago_tecnico: number
   estado?: EstadoSolicitud
   tecnico_asignado_id?: string
+  // Técnico elegido por el cliente en el formulario (opcional). La primera
+  // oferta (notificados_at NULL) va solo a él; los reenvíos a todos.
+  tecnico_preferido_id?: string | null
   notificados_at?: string
   triaje_resultado?: TriajeResponse | null
   cotizacion?: CotizacionReparacion | null  // Non-warranty: quote data

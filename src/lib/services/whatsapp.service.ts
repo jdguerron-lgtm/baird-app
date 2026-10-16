@@ -511,7 +511,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
   // Un técnico puede cubrir VARIAS ciudades/pueblos (`ciudades_cobertura`).
   // Matchea si CUALQUIERA de sus ciudades coincide con la de la solicitud.
   // Fallback a `ciudad_pueblo` para técnicos aún sin cobertura cargada.
-  const tecnicos = tecnicosVerificados.filter(t => {
+  const tecnicosEnCiudad = tecnicosVerificados.filter(t => {
     if (!ciudadNorm) return true
     const cobertura: string[] = Array.isArray(t.ciudades_cobertura) && t.ciudades_cobertura.length > 0
       ? t.ciudades_cobertura
@@ -521,7 +521,7 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     return tokens.some(tc => tc.includes(ciudadNorm) || ciudadNorm.includes(tc))
   })
 
-  if (tecnicos.length === 0) {
+  if (tecnicosEnCiudad.length === 0) {
     const ciudades = tecnicosVerificados.map(t => {
       const cob = Array.isArray(t.ciudades_cobertura) && t.ciudades_cobertura.length > 0
         ? t.ciudades_cobertura
@@ -531,6 +531,27 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
     return {
       notificados: 0, matched: 0,
       errors: [`${tecnicosVerificados.length} técnico(s) verificado(s) pero ninguno en "${sol.ciudad_pueblo}". Ciudades: ${ciudades.join(', ')}`],
+    }
+  }
+
+  // 3b. Técnico de preferencia del cliente (2026-10-15). Solo en la PRIMERA
+  //     oferta (`notificados_at` NULL): si el cliente eligió a un técnico y
+  //     este pasó los filtros de arriba, la oferta va únicamente a él. Los
+  //     reenvíos (admin "Notificar técnicos" / reenvío masivo) ya tienen
+  //     `notificados_at` y salen a todos los candidatos, preferido incluido —
+  //     así la preferencia no deja la solicitud colgada si él no responde.
+  //     Si el preferido no pasó los filtros (dejó de estar verificado, cambió
+  //     cobertura), se ignora y se avisa en `errors` sin bloquear nada.
+  let tecnicos = tecnicosEnCiudad
+  const preferidoId: string | null = sol.tecnico_preferido_id ?? null
+  if (preferidoId && !sol.notificados_at) {
+    const preferido = tecnicosEnCiudad.find(t => t.id === preferidoId)
+    if (preferido) {
+      tecnicos = [preferido]
+    } else {
+      sendErrors.push(
+        'El técnico de preferencia del cliente ya no es candidato (verificación o cobertura) — la oferta salió abierta a todos.',
+      )
     }
   }
 

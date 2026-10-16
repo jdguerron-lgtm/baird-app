@@ -41,6 +41,9 @@ interface Solicitud {
   horario_confirmado: string | null
   estado: string
   tecnico_asignado_id: string | null
+  // Técnico de preferencia elegido por el cliente en /solicitar (2026-10-15).
+  // La primera oferta fue solo a él; los reenvíos van a todos.
+  tecnico_preferido_id?: string | null
   created_at: string
   cliente_token: string | null
   horario_confirmado_at: string | null
@@ -181,6 +184,8 @@ export default function SolicitudDetalle() {
 
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [tecnicoAsignado, setTecnicoAsignado] = useState<Tecnico | null>(null)
+  // Nombre del técnico de preferencia elegido por el cliente (si lo hubo)
+  const [tecnicoPreferidoNombre, setTecnicoPreferidoNombre] = useState<string | null>(null)
   // Auxiliares del técnico asignado (equipo que visita, 2026-10-13).
   const [auxiliaresTecnico, setAuxiliaresTecnico] = useState<AuxiliarRow[]>([])
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([])
@@ -1066,6 +1071,19 @@ export default function SolicitudDetalle() {
         }
       }
 
+      // 2b. Técnico de preferencia del cliente (2026-10-15) — solo el nombre,
+      // para que el admin entienda por qué la primera oferta fue a uno solo.
+      if (sol.tecnico_preferido_id) {
+        const { data: pref } = await supabase
+          .from('tecnicos')
+          .select('nombre_completo')
+          .eq('id', sol.tecnico_preferido_id)
+          .maybeSingle()
+        setTecnicoPreferidoNombre(pref?.nombre_completo ?? null)
+      } else {
+        setTecnicoPreferidoNombre(null)
+      }
+
       // 3. Fetch notifications
       const { data: notifs } = await supabase
         .from('notificaciones_whatsapp')
@@ -1773,6 +1791,18 @@ export default function SolicitudDetalle() {
         {/* Assigned técnico */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Tecnico asignado</h2>
+          {solicitud.tecnico_preferido_id && (
+            <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+              <span className="font-semibold">Preferido por el cliente:</span>{' '}
+              {tecnicoPreferidoNombre ?? 'técnico no encontrado'}
+              {tecnicoAsignado && tecnicoAsignado.id === solicitud.tecnico_preferido_id && (
+                <span className="ml-1 font-semibold text-green-700">· aceptó él</span>
+              )}
+              <span className="block text-[11px] text-sky-700 mt-0.5">
+                La primera oferta fue solo a él. Si no acepta, &quot;Notificar técnicos&quot; la reenvía a todos los candidatos.
+              </span>
+            </div>
+          )}
           {tecnicoAsignado ? (
             <dl className="space-y-3">
               <div>

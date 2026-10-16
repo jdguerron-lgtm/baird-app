@@ -22,6 +22,8 @@ const initialFormData: SolicitudFormData = {
   pago_tecnico: calcularPagoTecnico('Lavadora', 'Diagnóstico', false),
   horario_visita_1: '',
   horario_visita_2: '',
+  // Opcional: '' = sin técnico de preferencia (oferta abierta)
+  tecnico_preferido_id: '',
 }
 
 /**

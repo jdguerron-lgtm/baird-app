@@ -88,6 +88,15 @@ export const solicitudFormSchema = z.object({
 
   horario_visita_2: nonEmptyString('El segundo horario de visita')
     .max(100, 'El horario no puede exceder 100 caracteres'),
+
+  // Técnico de preferencia (2026-10-15, opcional). '' = sin preferencia.
+  // El servidor verifica además que el id sea de un técnico elegible
+  // (verificado + visible_para_cliente + cubre ciudad y tipo de equipo);
+  // si no, lo descarta en silencio y la oferta sale abierta.
+  tecnico_preferido_id: z.union([
+    z.literal(''),
+    z.uuid('Técnico de preferencia inválido'),
+  ]).optional(),
 })
 // Refinamiento condicional: si es garantía, requiere número de serie
 .refine(

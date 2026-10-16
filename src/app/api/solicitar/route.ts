@@ -4,6 +4,7 @@ import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 import { confirmarHorarioSolicitud } from '@/lib/services/transiciones.service'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
+import { resolverTecnicoPreferido } from '@/lib/services/tecnicos-elegibles.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
 import { pagoNetoTecnicoTarifaFija, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
 import crypto from 'crypto'
@@ -79,14 +80,29 @@ export async function POST(req: NextRequest) {
     // `direccion` (solo particular) para que lleguen a técnicos, admin y
     // supervisores por los caminos existentes sin migración ni cambios de
     // plantilla. Se excluyen del insert para no romperlo.
-    const { edificio_conjunto, apto_casa, ...datosSolicitud } = formData
+    const { edificio_conjunto, apto_casa, tecnico_preferido_id, ...datosSolicitud } = formData
     const direccionCompleta = [
       formData.direccion.trim(),
       ...(formData.es_garantia ? [] : [edificio_conjunto?.trim(), apto_casa?.trim()]),
     ].filter(Boolean).join(', ')
 
+    // Técnico de preferencia (2026-10-15, opcional): solo se persiste si el id
+    // es de un técnico elegible para esta ciudad + tipo de equipo (verificado,
+    // visible_para_cliente, con cobertura). Id manipulado u oculto → null =
+    // oferta abierta como siempre. notificarTecnicos manda la PRIMERA oferta
+    // solo a él; los reenvíos del admin llegan a todos.
+    const tecnicoPreferidoId = await resolverTecnicoPreferido({
+      tecnicoId: tecnico_preferido_id,
+      ciudad: formData.ciudad_pueblo,
+      tipoEquipo: formData.tipo_equipo,
+    })
+
     const dataToInsert = {
       ...datosSolicitud,
+      // Solo se incluye la columna cuando hay preferencia: así el deploy no
+      // depende del orden con la migración 20261015 (sin columna y sin
+      // preferencia el insert es idéntico al de siempre).
+      ...(tecnicoPreferidoId ? { tecnico_preferido_id: tecnicoPreferidoId } : {}),
       pago_tecnico: pagoTecnicoCalculado,
       ciudad_pueblo: formData.ciudad_pueblo.trim(),
       zona_servicio: formData.zona_servicio.trim(),
