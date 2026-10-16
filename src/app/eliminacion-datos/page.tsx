@@ -27,7 +27,7 @@ export default function EliminacionDatosPage() {
         <section className="mb-8">
           <h2 className="mb-3 text-xl font-semibold text-gray-800">Opcion 1: Por correo electronico</h2>
           <p className="text-gray-700 leading-relaxed">
-            Envia un correo a <a href="mailto:soporte@bairdservice.com" className="text-blue-600 hover:underline">soporte@bairdservice.com</a> con
+            Envia un correo a <a href="mailto:baird@bairdservice.com" className="text-blue-600 hover:underline">baird@bairdservice.com</a> con
             el asunto &quot;Solicitud de eliminacion de datos&quot; e incluye tu nombre completo y numero de
             telefono registrado.
           </p>
