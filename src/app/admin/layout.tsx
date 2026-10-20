@@ -119,6 +119,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const navItems = [
     { href: '/admin', label: 'Dashboard', icon: '📊' },
     { href: '/admin/solicitudes', label: 'Solicitudes', icon: '📋' },
+    { href: '/admin/incumplidos', label: 'Incumplidos', icon: '⏰' },
     { href: '/admin/mapa', label: 'Mapa', icon: '🗺️' },
     { href: '/admin/cotizaciones-pendientes', label: 'Pricing pendiente', icon: '💵' },
     { href: '/admin/tecnicos', label: 'Técnicos', icon: '🔧' },
