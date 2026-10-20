@@ -23,7 +23,10 @@ const fechaOpcional = z.union([z.literal(''), z.null(), z.string().datetime({ of
   .optional()
   .transform((v) => (v ? v : null))
 
-const baseSchema = z.object({
+// Campos editables SIN refinamiento: Zod no permite `.partial()` sobre un
+// objeto con superRefine (rompía el build de Vercel al evaluar el módulo).
+// Las reglas cruzadas se aplican aparte, tolerando campos ausentes (PATCH).
+const camposBase = z.object({
   tipo: z.enum(['porcentaje', 'valor']),
   valor: z.number().positive('El valor debe ser mayor a 0'),
   descripcion: z.string().trim().max(200).optional().nullable(),
@@ -31,20 +34,29 @@ const baseSchema = z.object({
   vigente_desde: fechaOpcional,
   vigente_hasta: fechaOpcional,
   max_usos: z.number().int().positive().optional().nullable(),
-}).superRefine((d, ctx) => {
-  if (d.tipo === 'porcentaje' && (d.valor > 100 || d.valor < 1)) {
+})
+
+type CamposBase = z.infer<typeof camposBase>
+
+function reglasCruzadas(d: Partial<CamposBase>, ctx: z.RefinementCtx): void {
+  if (d.tipo === 'porcentaje' && d.valor !== undefined && (d.valor > 100 || d.valor < 1)) {
     ctx.addIssue({ code: 'custom', path: ['valor'], message: 'El porcentaje debe estar entre 1 y 100' })
   }
-  if (d.tipo === 'valor' && (d.valor < 1000 || !Number.isInteger(d.valor))) {
+  if (d.tipo === 'valor' && d.valor !== undefined && (d.valor < 1000 || !Number.isInteger(d.valor))) {
     ctx.addIssue({ code: 'custom', path: ['valor'], message: 'El valor en COP debe ser entero y de al menos $1.000' })
   }
   if (d.vigente_desde && d.vigente_hasta && new Date(d.vigente_hasta) < new Date(d.vigente_desde)) {
     ctx.addIssue({ code: 'custom', path: ['vigente_hasta'], message: 'La fecha de fin debe ser posterior al inicio' })
   }
-})
+}
 
-const crearSchema = z.object({ codigo: z.string().trim().min(3).max(30) }).and(baseSchema)
-const patchSchema = z.object({ id: z.uuid() }).and(baseSchema.partial())
+const crearSchema = camposBase
+  .extend({ codigo: z.string().trim().min(3).max(30) })
+  .superRefine(reglasCruzadas)
+const patchSchema = camposBase
+  .partial()
+  .extend({ id: z.uuid() })
+  .superRefine(reglasCruzadas)
 
 export async function GET(req: NextRequest) {
   if (!(await verificarLectura(req))) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
