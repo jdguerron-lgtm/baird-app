@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { useParams } from 'next/navigation'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import SelectorFoto from '@/components/ui/SelectorFoto'
+import MediaEvidencia from '@/components/ui/MediaEvidencia'
 import { formatCOP } from '@/lib/utils/format'
 import { labelRelacionReceptor } from '@/lib/utils/receptor'
 import type { ChecklistServicio } from '@/types/solicitud'
@@ -408,9 +409,7 @@ export default function SupervisorDetalle() {
                   </h3>
                   <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
                     {diagFotos.map((url, i) => (
-                      <a key={`diag-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-purple-400 transition-all">
-                        <Image src={url} alt={`Diagnóstico ${i + 1}`} fill className="object-cover" />
-                      </a>
+                      <MediaEvidencia key={`diag-${i}`} url={url} alt={`Diagnóstico ${i + 1}`} ring="hover:ring-purple-400" />
                     ))}
                   </div>
                 </div>
@@ -424,9 +423,7 @@ export default function SupervisorDetalle() {
                   </h3>
                   <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
                     {compFotos.map((url, i) => (
-                      <a key={`comp-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-green-400 transition-all">
-                        <Image src={url} alt={`Completación ${i + 1}`} fill className="object-cover" />
-                      </a>
+                      <MediaEvidencia key={`comp-${i}`} url={url} alt={`Completación ${i + 1}`} ring="hover:ring-green-400" />
                     ))}
                   </div>
                 </div>

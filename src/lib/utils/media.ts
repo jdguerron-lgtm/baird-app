@@ -10,8 +10,9 @@
  *    exporta como JPEG → universalmente visible.
  *
  * 2. **Peso del archivo**: una foto iPhone son 4-6 MB sin tocar. Subir 4 fotos en 4G
- *    son 30-60 s. Resize a 2560px máx + JPEG 0.9 baja a ~600-900 KB → upload 5-10×
- *    más rápido y siguen siendo más que suficientes como evidencia técnica.
+ *    son 30-60 s. Resize a 4000px máx + JPEG 0.92 (2026-10-20; antes 2560px / 0.9)
+ *    baja a ~1.5-2.5 MB: se conserva el detalle fino de placas, tarjetas y
+ *    soldaduras y el upload sigue siendo 2-3× más rápido que el original.
  *
  * 3. **Extensión robusta**: `file.name.split('.').pop()` devuelve "HEIC", "MOV", "jpeg",
  *    o nada (cámaras nativas a veces no ponen nombre con extensión). `inferExtension`
@@ -38,6 +39,28 @@ const SKIP_COMPRESSION_THRESHOLD_BYTES = 500 * 1024
  */
 export const MAX_VIDEO_SIZE_MB = 50
 export const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024
+
+/**
+ * Límite para IMÁGENES ya comprimidas (defensa post-compresión). Subido de
+ * 10 → 20 MB el 2026-10-20 junto con la resolución de salida (4000 px / 0.92):
+ * una foto de 48 MP re-encodeada puede pasar de 10 MB sin ser un error.
+ */
+export const MAX_IMAGE_SIZE_MB = 20
+export const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
+
+/**
+ * Topes de archivos por formulario (2026-10-20: 4 → 10 en diagnóstico,
+ * 6 → 12 en completar, 20 para la evidencia adicional del admin). El video
+ * sigue limitado a MAX_VIDEO_SIZE_MB por archivo (techo del plan Supabase),
+ * así que "un video más largo" se sube como varios clips de ≤ 50 MB.
+ */
+export const MAX_EVIDENCIAS_DIAGNOSTICO = 10
+export const MAX_ARCHIVOS_COMPLETAR = 12
+export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = 20
+
+/** Resolución y calidad por defecto de las fotos de evidencia (lado mayor en px / calidad JPEG). */
+export const EVIDENCIA_MAX_DIMENSION = 4000
+export const EVIDENCIA_JPEG_QUALITY = 0.92
 
 /** Tipos de imagen que ya son universalmente compatibles y no necesitan conversión. */
 const COMPATIBLE_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
@@ -112,8 +135,8 @@ export function inferExtension(file: File): string {
  */
 export async function compressImageIfNeeded(file: File, opts: CompressOptions = {}): Promise<File> {
   const {
-    maxDimension = 2560,
-    quality = 0.9,
+    maxDimension = EVIDENCIA_MAX_DIMENSION,
+    quality = EVIDENCIA_JPEG_QUALITY,
     skipThresholdBytes = SKIP_COMPRESSION_THRESHOLD_BYTES,
     forceReencode = false,
   } = opts
@@ -171,6 +194,30 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
   }
 }
 
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm', 'mkv', '3gp', 'm4v'])
+
+/** Extensión (minúsculas, sin query string) de una URL de Storage; '' si no tiene. */
+function extensionDeUrl(url: string): string {
+  const limpia = url.split('?')[0].split('#')[0]
+  const m = /\.([a-z0-9]{2,5})$/i.exec(limpia)
+  return m ? m[1].toLowerCase() : ''
+}
+
+/**
+ * true si la URL de evidencia apunta a un video (por extensión). Las galerías
+ * (admin, supervisor, cotización del cliente) lo usan para renderizar
+ * `<video>` en vez de `<img>`: antes todo pasaba por next/image y un .mp4
+ * salía como imagen rota.
+ */
+export function esUrlVideo(url: string): boolean {
+  return VIDEO_EXTENSIONS.has(extensionDeUrl(url))
+}
+
+/** true si la URL apunta a un PDF (evidencia adicional del admin / comprobantes). */
+export function esUrlPdf(url: string): boolean {
+  return extensionDeUrl(url) === 'pdf'
+}
+
 /** Devuelve true si el video probablemente se reproducirá en la mayoría de browsers/devices. */
 export function isCompatibleVideo(file: File): boolean {
   return COMPATIBLE_VIDEO_TYPES.has(file.type.toLowerCase())
@@ -186,10 +233,10 @@ export function videoSizeAdvice(): string {
   const isAndroid = /Android/.test(ua)
 
   if (isIPhone) {
-    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de 40 segundos.`
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de 40 segundos. Si necesitas mostrar más, sube varios clips.`
   }
   if (isAndroid) {
-    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de 40 segundos.`
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de 40 segundos. Si necesitas mostrar más, sube varios clips.`
   }
-  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (20-30 s) o usa resolución 1080p en lugar de 4K.`
+  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (20-30 s) o usa resolución 1080p en lugar de 4K. Puedes subir varios clips.`
 }

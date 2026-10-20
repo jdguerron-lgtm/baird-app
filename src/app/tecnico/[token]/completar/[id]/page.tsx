@@ -10,15 +10,15 @@ import type { ChecklistServicio } from '@/types/solicitud'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import ReceptorServicio from '@/components/tecnico/ReceptorServicio'
-import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB } from '@/lib/utils/media'
+import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_IMAGE_SIZE_BYTES, MAX_IMAGE_SIZE_MB, MAX_ARCHIVOS_COMPLETAR } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
-/** Límite de tamaño para IMÁGENES (post-compresión). Los videos usan MAX_VIDEO_SIZE_BYTES (50 MB, 2026-10-10). */
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
-/** Máximo de archivos adjuntables (igual al tope previo de "fotos", ahora también videos). */
-const MAX_ARCHIVOS = 6
+/** Límite de tamaño para IMÁGENES (post-compresión, 20 MB desde 2026-10-20). Los videos usan MAX_VIDEO_SIZE_BYTES (50 MB). */
+const MAX_FILE_SIZE = MAX_IMAGE_SIZE_BYTES
+/** Máximo de archivos adjuntables (fotos + videos): 12 desde 2026-10-20 (antes 6). */
+const MAX_ARCHIVOS = MAX_ARCHIVOS_COMPLETAR
 
 interface Servicio {
   id: string
@@ -307,7 +307,7 @@ export default function CompletarServicioPage() {
       //
       // Cambios respecto al loop secuencial anterior:
       //
-      // - Imágenes comprimidas client-side (2560 px máx, JPEG 0.9). Una foto
+      // - Imágenes comprimidas client-side (4000 px máx, JPEG 0.92). Una foto
       //   iPhone HEIC de 5 MB termina en ~700 KB JPEG, y de paso queda en formato
       //   que Chrome/Firefox del admin sí decodifican (HEIC no es universal).
       // - `Promise.all` en vez de `for await`: subir 6 archivos en serie a 4G
@@ -322,7 +322,7 @@ export default function CompletarServicioPage() {
 
       const uploadResults = await Promise.all(
         fotos.map(async (rawFile, i) => {
-          const file = await compressImageIfNeeded(rawFile, { maxDimension: 2560, quality: 0.9 })
+          const file = await compressImageIfNeeded(rawFile)
           // Defensa post-compresión: si tras comprimir aún excede el límite (caso raro,
           // ej. un video grande adjuntado), no lo subimos.
           const esVideo = file.type.startsWith('video/')
@@ -333,7 +333,7 @@ export default function CompletarServicioPage() {
               idx: i,
               error: esVideo
                 ? `Archivo ${i + 1}: el video excede ${MAX_VIDEO_SIZE_MB} MB`
-                : `Archivo ${i + 1}: excede 10 MB tras compresión`,
+                : `Archivo ${i + 1}: excede ${MAX_IMAGE_SIZE_MB} MB tras compresión`,
             }
           }
           const ext = inferExtension(file)
@@ -612,8 +612,8 @@ export default function CompletarServicioPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="text-sm font-bold text-slate-900 mb-1">Evidencia del servicio</h3>
           <p className="text-xs text-gray-400 mb-3">
-            Equipo funcionando, placa de serie, repuesto, antes/después (máx 6).
-            Graba un video corto de la prueba de funcionamiento con el botón 🎬.
+            Equipo funcionando, placa de serie, repuesto, antes/después (máx {MAX_ARCHIVOS} archivos).
+            Graba la prueba de funcionamiento con el botón 🎬; si es larga, súbela en varios clips.
           </p>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
