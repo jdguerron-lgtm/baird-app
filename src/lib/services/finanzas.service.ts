@@ -24,6 +24,7 @@
 import { calcularTarifaMABE, MARGEN_BAIRD_GARANTIA, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
 
 export interface SolicitudFinanzas {
   id: string
@@ -41,6 +42,11 @@ export interface SolicitudFinanzas {
   siguiente_paso: string | null
   siguiente_paso_at: string | null
   repuesto_recibido_at: string | null
+  // Código de descuento (2026-10-19): Baird lo asume → baja la venta, no el
+  // pago al técnico. Opcionales para no romper constructores/tests existentes.
+  descuento_codigo?: string | null
+  descuento_tipo?: string | null
+  descuento_valor?: number | string | null
 }
 
 export interface EvidenciaFinanzas {
@@ -187,14 +193,19 @@ export function cifrasServicio(
     }
   }
 
-  const totalCliente = precioClienteServicio(
+  const totalBruto = precioClienteServicio(
     sol.tipo_equipo,
     sol.tipo_solicitud,
     sol.es_garantia,
     sol.cotizacion as { total?: number | null } | null,
     sol.recargo_weekend_aplicado,
   )
-  const baseVenta = Number(sol.cotizacion?.base_venta ?? 0) > 0
+  // Código de descuento (2026-10-19): Baird lo asume. La venta neta es
+  // total − descuento; con descuento la base se deriva del neto (la
+  // base_venta persistida en la cotización es la bruta).
+  const descuento = montoDescuento(totalBruto, descuentoDeSolicitud(sol))
+  const totalCliente = Math.max(0, totalBruto - descuento)
+  const baseVenta = descuento === 0 && Number(sol.cotizacion?.base_venta ?? 0) > 0
     ? Number(sol.cotizacion?.base_venta)
     : Math.round(totalCliente / (1 + IVA_TARIFA))
   return {
@@ -207,6 +218,7 @@ export function cifrasServicio(
       origen: 'pago_tecnico persistido (costo cotizado + recargo)',
       totalCliente,
       recargoWeekend: sol.recargo_weekend_aplicado ?? 0,
+      ...(descuento > 0 ? { totalBruto, descuento, codigoDescuento: sol.descuento_codigo ?? null } : {}),
     },
   }
 }

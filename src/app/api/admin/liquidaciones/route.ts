@@ -6,6 +6,7 @@ import { verificarLectura } from '@/lib/auth/admin'
 import { calcularTarifaMABE, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
 import {
   SIIGO,
   codigoServicio,
@@ -128,6 +129,10 @@ interface SolicitudLiquidacion {
   repuesto_recibido_at: string | null
   anticipo_pagado_at: string | null
   saldo_pagado_at: string | null
+  // Código de descuento (2026-10-19): se resta del saldo final; Baird lo asume.
+  descuento_codigo?: string | null
+  descuento_tipo?: string | null
+  descuento_valor?: number | string | null
 }
 
 /** Fecha de cierre efectiva del servicio (con fallbacks explícitos). */
@@ -199,7 +204,7 @@ export async function POST(req: NextRequest) {
     // 1. Servicios completados (tope defensivo, mismo patrón que /api/admin/export)
     let solQuery = supabase
       .from('solicitudes_servicio')
-      .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at')
+      .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at, descuento_codigo, descuento_tipo, descuento_valor')
       .order('created_at', { ascending: false })
       .limit(5000)
 
@@ -454,21 +459,25 @@ export async function POST(req: NextRequest) {
       const rows: Row[] = enRango.map((x) => {
         const { sol, cierre } = x
         const tec = sol.tecnico_asignado_id ? tecnicoMap.get(sol.tecnico_asignado_id) : null
-        const totalCliente = precioClienteServicio(
+        const totalBruto = precioClienteServicio(
           sol.tipo_equipo,
           sol.tipo_solicitud,
           sol.es_garantia,
           sol.cotizacion as { total?: number | null } | null,
           sol.recargo_weekend_aplicado,
         )
-        // Desglose DIAN: si la cotización persistió base/IVA se usan; si no,
-        // se derivan del total (precio con IVA incluido) — mismo criterio
-        // del detalle admin ("Cuentas del servicio").
+        // Código de descuento (2026-10-19): Baird lo asume → el total que
+        // paga el cliente es el neto; el pago al técnico no cambia.
+        const descuento = montoDescuento(totalBruto, descuentoDeSolicitud(sol))
+        const totalCliente = Math.max(0, totalBruto - descuento)
+        // Desglose DIAN: si la cotización persistió base/IVA se usan (solo sin
+        // descuento — la persistida es la bruta); si no, se derivan del total
+        // (precio con IVA incluido) — mismo criterio del detalle admin.
         const cot = sol.cotizacion
-        const baseVenta = Number(cot?.base_venta ?? 0) > 0
+        const baseVenta = descuento === 0 && Number(cot?.base_venta ?? 0) > 0
           ? Number(cot?.base_venta)
           : Math.round(totalCliente / (1 + IVA_TARIFA))
-        const ivaVenta = Number(cot?.iva_venta ?? 0) > 0 ? Number(cot?.iva_venta) : totalCliente - baseVenta
+        const ivaVenta = descuento === 0 && Number(cot?.iva_venta ?? 0) > 0 ? Number(cot?.iva_venta) : totalCliente - baseVenta
         const pagoTec = sol.pago_tecnico ?? 0
         const online = pagosPorSolicitud.get(sol.id) ?? { anticipo: 0, abono: 0, saldo: 0 }
         const recaudado = online.anticipo + online.abono + online.saldo
@@ -481,6 +490,9 @@ export async function POST(req: NextRequest) {
           'Equipo': `${sol.tipo_equipo} ${sol.marca_equipo}`,
           'Tipo solicitud': sol.tipo_solicitud,
           'Técnico': tec?.nombre_completo ?? '',
+          'Total bruto (COP)': totalBruto,
+          'Código descuento': sol.descuento_codigo ?? '',
+          'Descuento (COP)': descuento,
           'Total cliente (COP)': totalCliente,
           'Base gravable (COP)': baseVenta,
           'IVA 19% (COP)': ivaVenta,
@@ -495,6 +507,7 @@ export async function POST(req: NextRequest) {
         }
       })
       agregarTotales(rows, [
+        'Total bruto (COP)', 'Descuento (COP)',
         'Total cliente (COP)', 'Base gravable (COP)', 'IVA 19% (COP)', 'Pago técnico (COP)',
         'Margen Baird (COP)', 'Anticipo online (COP)', 'Abono repuestos online (COP)',
         'Saldo online (COP)', 'Recaudado online (COP)', 'Pendiente / por fuera (COP)',
@@ -525,14 +538,19 @@ export async function POST(req: NextRequest) {
       for (const x of enRango.filter((x) => !x.sol.es_garantia)) {
         const { sol, cierre } = x
         const tec = sol.tecnico_asignado_id ? tecnicoMap.get(sol.tecnico_asignado_id) : null
-        const totalCliente = precioClienteServicio(
+        const totalBruto = precioClienteServicio(
           sol.tipo_equipo, sol.tipo_solicitud, sol.es_garantia,
           sol.cotizacion as { total?: number | null } | null, sol.recargo_weekend_aplicado,
         )
+        // Código de descuento (2026-10-19): la FV va por el NETO (lo que el
+        // cliente pagó). Los ítems se arman sobre el bruto y el descuento se
+        // reporta aparte para que contabilidad lo registre como tal en Siigo.
+        const descuento = montoDescuento(totalBruto, descuentoDeSolicitud(sol))
+        const totalCliente = Math.max(0, totalBruto - descuento)
         const ident = identificacionCliente(sol.cliente_cedula)
         const recaudado = pagosPorSolicitud.get(sol.id) ?? 0
         const pago = formaPagoSugerida(totalCliente, recaudado)
-        const items = itemsFacturaParticular(sol, totalCliente)
+        const items = itemsFacturaParticular(sol, totalBruto)
         const codigo = codigoServicio(sol.id)
         items.forEach((item, i) => {
           fvParticular.push({
@@ -554,6 +572,7 @@ export async function POST(req: NextRequest) {
             'Impuesto Siigo': `IVA 19% (${SIIGO.IMPUESTO_IVA_19})`,
             'Valor IVA': item.iva,
             'Total ítem (con IVA)': item.total,
+            'Descuento código (COP)': i === 0 ? descuento : '',
             'Total factura (con IVA)': i === 0 ? totalCliente : '',
             'Forma de pago Siigo': i === 0 ? `${pago.nombre} (${pago.id})` : '',
             'Recaudado Wompi (COP)': i === 0 ? recaudado : '',
@@ -568,6 +587,7 @@ export async function POST(req: NextRequest) {
         faltas.push('Sin email del cliente (no se captura) → factura electrónica sin envío al cliente')
         if (ident.verificar) faltas.push('Tipo de documento inferido como NIT — confirmar')
         if (items.length === 1 && sol.cotizacion) faltas.push('Cotización sin desglose diagnóstico/servicio (anterior a 2026-08-25) → 1 ítem')
+        if (descuento > 0) faltas.push(`Código de descuento ${sol.descuento_codigo ?? ''}: −$${descuento} sobre el total de ítems → registrar el descuento en la FV`)
         if (pago.pendiente > 0) faltas.push(`Saldo por fuera de Wompi: $${pago.pendiente} — confirmar cómo se cobró`)
         faltantes.push({
           'Código servicio': codigo,
@@ -578,7 +598,7 @@ export async function POST(req: NextRequest) {
         })
       }
       if (fvParticular.length > 0) {
-        agregarTotales(fvParticular, ['Precio unitario base (sin IVA)', 'Valor IVA', 'Total ítem (con IVA)', 'Total factura (con IVA)', 'Recaudado Wompi (COP)', 'Pendiente por fuera (COP)'], 'Código servicio')
+        agregarTotales(fvParticular, ['Precio unitario base (sin IVA)', 'Valor IVA', 'Total ítem (con IVA)', 'Descuento código (COP)', 'Total factura (con IVA)', 'Recaudado Wompi (COP)', 'Pendiente por fuera (COP)'], 'Código servicio')
       }
       XLSX.utils.book_append_sheet(
         wb,
@@ -683,7 +703,7 @@ export async function POST(req: NextRequest) {
       if (faltanIds.length > 0) {
         const { data: extra } = await supabase
           .from('solicitudes_servicio')
-          .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at')
+          .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at, descuento_codigo, descuento_tipo, descuento_valor')
           .in('id', faltanIds)
         for (const s of (extra ?? []) as unknown as SolicitudLiquidacion[]) solLedgerMap.set(s.id, s)
       }

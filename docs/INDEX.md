@@ -33,6 +33,7 @@
 | **Reenviar la oferta a técnicos de varias solicitudes a la vez** | `/admin/solicitudes` → filtro "Sin técnico" → seleccionar → "Reenviar a técnicos" (usa `POST /api/whatsapp/notify`) |
 | **Cargar órdenes MABE masivamente** (Excel BITÁCORA o PDF TALLER) | `docs/TEST_CARGA_MASIVA.md` + `src/lib/utils/pdf-orden-mapping.ts` |
 | **Tocar un cobro online** (anticipo, saldo, abono, webhook Wompi) | `docs/WOMPI.md` |
+| **Códigos de descuento** (crear uno, cambiar cómo se aplica, dónde entra en el cobro) | `docs/TARIFAS.md` § "Códigos de descuento" |
 | **Entender el portal de supervisores** (link mágico, OTP, alcance) | `docs/SEGURIDAD.md` § Supervisores + `src/lib/auth/supervisor.ts` |
 | **Especialidades del técnico, gasodomésticos, certificaciones (SENA, gas, CONTE)** | `docs/CERTIFICACIONES.md` + `src/lib/constants/{especialidades,certificaciones}.ts` |
 | **Encender o tocar la línea de voz IA** | `docs/DAPTA.md` |

@@ -24,6 +24,8 @@ const initialFormData: SolicitudFormData = {
   horario_visita_2: '',
   // Opcional: '' = sin técnico de preferencia (oferta abierta)
   tecnico_preferido_id: '',
+  // Opcional (solo particular): '' = sin código de descuento
+  codigo_descuento: '',
 }
 
 /**

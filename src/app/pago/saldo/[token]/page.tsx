@@ -12,7 +12,8 @@ import {
   registrarPagoWompi,
 } from '@/lib/services/pagos.service'
 import { formatCOP } from '@/lib/utils/format'
-import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { totalClienteParaCobro, descuentoClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { descuentoDeSolicitud, describirDescuento } from '@/lib/constants/descuentos'
 
 /**
  * Página de pago del SALDO (pasarela Wompi) — el total cotizado menos los
@@ -99,6 +100,10 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
   // Total de la cotización, o precio de catálogo en Mantenimiento / Cambio de
   // filtro (2026-10-11 — antes esos servicios veían "aún no hay saldo").
   const total = totalClienteParaCobro(sol)
+  // Código de descuento (2026-10-19): ya viene restado en `saldo` (último
+  // pago). Acá solo se muestra el renglón para que el total cuadre.
+  const descuento = descuentoClienteParaCobro(sol)
+  const descuentoSnap = descuentoDeSolicitud(sol)
   const saldo = await calcularMontoSaldo(sol)
   // Modo ABONO: cotización con repuestos y sin abono registrado → se cobra
   // el 50% del saldo (0 = no aplica → modo saldo normal).
@@ -164,7 +169,10 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
     )
   }
 
-  const pagosAcreditados = total - saldo
+  // saldo = total − descuento − acreditados → acreditados = total − descuento − saldo
+  const pagosAcreditados = Math.max(0, total - descuento - saldo)
+  // En modo abono el 50% se calcula sobre el saldo BRUTO (sin descuento).
+  const saldoBruto = Math.max(0, total - pagosAcreditados)
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -215,7 +223,16 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
             {modoAbono && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Saldo pendiente</span>
-                <span className="font-medium">${formatCOP(saldo)} COP</span>
+                <span className="font-medium">${formatCOP(saldoBruto)} COP</span>
+              </div>
+            )}
+            {descuento > 0 && descuentoSnap && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">
+                  🏷️ Descuento {descuentoSnap.codigo} ({describirDescuento(descuentoSnap)})
+                  {modoAbono ? ' · se aplica en tu último pago' : ''}
+                </span>
+                <span className="font-medium text-emerald-700">−${formatCOP(descuento)} COP</span>
               </div>
             )}
             <div className="flex justify-between items-center border-t pt-2 mt-2">

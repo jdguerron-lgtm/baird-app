@@ -97,6 +97,21 @@ export const solicitudFormSchema = z.object({
     z.literal(''),
     z.uuid('Técnico de preferencia inválido'),
   ]).optional(),
+
+  // Código de descuento (2026-10-19, opcional, solo particular). '' = sin
+  // código. Se normaliza a mayúsculas; el servidor lo valida contra
+  // `codigos_descuento` y rechaza con 400 si no existe/venció (el cliente
+  // debe saber que NO obtuvo el descuento). El descuento se aplica en el
+  // ÚLTIMO pago (saldo final).
+  codigo_descuento: z.string()
+    .trim()
+    .toUpperCase()
+    .max(30, 'El código de descuento no puede exceder 30 caracteres')
+    .refine(
+      (v) => v === '' || /^[A-Z0-9_-]{3,30}$/.test(v),
+      'Código de descuento inválido: usa solo letras, números, guion o guion bajo (3 a 30 caracteres)',
+    )
+    .optional(),
 })
 // Refinamiento condicional: si es garantía, requiere número de serie
 .refine(

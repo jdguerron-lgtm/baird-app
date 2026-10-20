@@ -12,7 +12,7 @@ import {
   type TransaccionWompi,
 } from '@/lib/wompi'
 import { montoAnticipo, saldoPendiente, montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
-import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { totalClienteParaCobro, descuentoClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { precioClienteServicio } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
 import {
@@ -68,10 +68,17 @@ type SolicitudPago = {
   saldo_pagado_at: string | null
   horario_confirmado: string | null
   cliente_nombre: string
+  // Snapshot del código de descuento (2026-10-19): entra SOLO en el saldo
+  // final (calcularMontoSaldo). Nullable — sin código nada cambia.
+  descuento_codigo?: string | null
+  descuento_tipo?: string | null
+  descuento_valor?: number | string | null
 }
 
+// ⚠️ descuento_* requieren la migración 20261019_codigos_descuento aplicada
+// ANTES de desplegar (PostgREST rechaza columnas desconocidas en el select).
 const CAMPOS_SOLICITUD_PAGO =
-  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre'
+  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre, descuento_codigo, descuento_tipo, descuento_valor'
 
 /**
  * Monto (COP) del anticipo que corresponde a una solicitud particular.
@@ -100,10 +107,23 @@ export function calcularMontoAnticipo(sol: {
   return montoAnticipo(precioCliente)
 }
 
+/** Suma de pagos APPROVED ya acreditados contra el total (anticipos + abonos). */
+async function montoAcreditado(solicitudId: string): Promise<number> {
+  const { data: acreditados } = await supabase
+    .from('pagos')
+    .select('monto')
+    .eq('solicitud_id', solicitudId)
+    .in('tipo', ['anticipo', 'abono'])
+    .eq('estado', 'APPROVED')
+  return (acreditados ?? []).reduce((acc, p) => acc + (p.monto ?? 0), 0)
+}
+
 /**
- * Saldo pendiente (COP) tras la cotización: total cotizado − pagos APPROVED
- * ya acreditados en `pagos` (anticipos de reserva + abonos de repuestos).
- * 0 si no hay cotización con total.
+ * Saldo pendiente (COP) tras la cotización: total cotizado − código de
+ * descuento (2026-10-19, solo acá: es el ÚLTIMO pago) − pagos APPROVED ya
+ * acreditados en `pagos` (anticipos de reserva + abonos de repuestos).
+ * 0 si no hay cotización con total. Nunca negativo: si el descuento supera
+ * lo que faltaba, el saldo queda en 0 y no hay devolución.
  *
  * OJO: solo cuenta pagos ONLINE (tabla pagos); un pago recibido por fuera
  * (transferencia manual) no se acredita solo — admin ajusta el valor
@@ -116,15 +136,20 @@ export async function calcularMontoSaldo(sol: SolicitudPago): Promise<number> {
   // restante de un precio fijo nunca tenía link de pago).
   const total = totalClienteParaCobro(sol)
   if (!Number.isFinite(total) || total <= 0) return 0
+  const abonado = await montoAcreditado(sol.id)
+  return saldoPendiente(total - descuentoClienteParaCobro(sol), abonado)
+}
 
-  const { data: acreditados } = await supabase
-    .from('pagos')
-    .select('monto')
-    .eq('solicitud_id', sol.id)
-    .in('tipo', ['anticipo', 'abono'])
-    .eq('estado', 'APPROVED')
-  const abonado = (acreditados ?? []).reduce((acc, p) => acc + (p.monto ?? 0), 0)
-  return saldoPendiente(total, abonado)
+/**
+ * Saldo BRUTO (sin código de descuento): base del abono de repuestos. El
+ * descuento se aplica únicamente en el saldo final, así que el abono (50%)
+ * se calcula como si no existiera.
+ */
+async function calcularMontoSaldoBruto(sol: SolicitudPago): Promise<number> {
+  if (sol.es_garantia) return 0
+  const total = totalClienteParaCobro(sol)
+  if (!Number.isFinite(total) || total <= 0) return 0
+  return saldoPendiente(total, await montoAcreditado(sol.id))
 }
 
 /**
@@ -137,7 +162,7 @@ export async function calcularMontoAbonoRepuestos(sol: SolicitudPago): Promise<n
   if (sol.es_garantia) return 0
   if (!cotizacionTieneRepuestos(sol.cotizacion)) return 0
   if (await abonoRepuestosPagado(sol.id)) return 0
-  const saldo = await calcularMontoSaldo(sol)
+  const saldo = await calcularMontoSaldoBruto(sol)
   return montoAbonoRepuestos(saldo)
 }
 

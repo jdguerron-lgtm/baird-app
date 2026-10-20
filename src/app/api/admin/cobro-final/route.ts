@@ -7,7 +7,7 @@ import {
   enviarPagoSaldoCliente,
 } from '@/lib/services/whatsapp.service'
 import { cargarSolicitudPago, calcularMontoSaldo } from '@/lib/services/pagos.service'
-import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { totalClienteParaCobro, descuentoClienteParaCobro } from '@/lib/constants/pago-cliente'
 import type { CotizacionReparacion } from '@/types/solicitud'
 
 export const maxDuration = 30
@@ -164,12 +164,16 @@ export async function POST(req: NextRequest) {
       if (!r.ok) console.error('[cobro-final] encuesta no enviada:', r.error)
     }
 
-    // Link de pago del saldo (valor − pagos online acreditados)
+    // Link de pago del saldo (valor − código de descuento − pagos online
+    // acreditados). El `valor` que fija el admin es el total BRUTO: el
+    // descuento del código (si lo hay) se resta solo en este último pago.
     let saldo = 0
+    let descuento = 0
     let linkPago: { enviado: boolean; error?: string } = { enviado: false }
     try {
       const solPago = await cargarSolicitudPago(id)
       if (solPago) {
+        descuento = descuentoClienteParaCobro(solPago)
         saldo = await calcularMontoSaldo(solPago)
         if (saldo > 0) {
           const r = await enviarPagoSaldoCliente(id, saldo, { momento: 'cierre' })
@@ -189,6 +193,7 @@ export async function POST(req: NextRequest) {
       valor_anterior: valorAnterior,
       valor_nuevo: valor,
       saldo,
+      descuento,
       encuesta,
       link_pago: linkPago,
     })

@@ -30,8 +30,9 @@ export default function BadgePagoCliente({
 
   const padding = size === 'md' ? 'px-3 py-1.5 text-xs' : 'px-2 py-0.5 text-[10px]'
   const monto = mostrarMontos && resumen.porCobrar > 0 ? ` · $${formatCOP(resumen.porCobrar)}` : ''
+  // Con código de descuento el "de" es el total NETO (lo que de verdad paga).
   const hint = mostrarMontos && resumen.total > 0
-    ? `${ETAPA_PAGO_HINT[resumen.etapa]} Pagado $${formatCOP(resumen.pagado)} de $${formatCOP(resumen.total)}.`
+    ? `${ETAPA_PAGO_HINT[resumen.etapa]} Pagado $${formatCOP(resumen.pagado)} de $${formatCOP(resumen.totalNeto)}${resumen.descuento > 0 ? ` (descuento −$${formatCOP(resumen.descuento)} en el saldo final)` : ''}.`
     : ETAPA_PAGO_HINT[resumen.etapa]
 
   return (
@@ -53,7 +54,7 @@ export function ProgresoPagoCliente({ solicitud }: { solicitud: SolicitudParaEta
   if (!resumen) return null
   const pasos = pasosPagoCliente(solicitud)
   const NOMBRE = { anticipo: 'Anticipo', abono: 'Abono repuestos', saldo: 'Saldo' } as const
-  const pct = resumen.total > 0 ? Math.min(100, Math.round((resumen.pagado / resumen.total) * 100)) : 0
+  const pct = resumen.totalNeto > 0 ? Math.min(100, Math.round((resumen.pagado / resumen.totalNeto) * 100)) : 0
   const fecha = (iso: string | null) =>
     iso ? new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : null
 
@@ -63,7 +64,10 @@ export function ProgresoPagoCliente({ solicitud }: { solicitud: SolicitudParaEta
         <BadgePagoCliente solicitud={solicitud} size="md" />
         {resumen.total > 0 && (
           <span className="text-xs text-gray-600">
-            Pagado <strong>${formatCOP(resumen.pagado)}</strong> de ${formatCOP(resumen.total)}
+            Pagado <strong>${formatCOP(resumen.pagado)}</strong> de ${formatCOP(resumen.totalNeto)}
+            {resumen.descuento > 0 && (
+              <span className="text-emerald-700" title="Código de descuento: se resta del saldo final"> (🏷️ −${formatCOP(resumen.descuento)})</span>
+            )}
           </span>
         )}
       </div>

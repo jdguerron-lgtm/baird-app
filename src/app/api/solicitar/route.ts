@@ -5,6 +5,7 @@ import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
 import { confirmarHorarioSolicitud } from '@/lib/services/transiciones.service'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { resolverTecnicoPreferido } from '@/lib/services/tecnicos-elegibles.service'
+import { validarCodigoDescuento } from '@/lib/services/descuentos.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
 import { pagoNetoTecnicoTarifaFija, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
 import crypto from 'crypto'
@@ -80,7 +81,32 @@ export async function POST(req: NextRequest) {
     // `direccion` (solo particular) para que lleguen a técnicos, admin y
     // supervisores por los caminos existentes sin migración ni cambios de
     // plantilla. Se excluyen del insert para no romperlo.
-    const { edificio_conjunto, apto_casa, tecnico_preferido_id, ...datosSolicitud } = formData
+    const { edificio_conjunto, apto_casa, tecnico_preferido_id, codigo_descuento, ...datosSolicitud } = formData
+
+    // Código de descuento (2026-10-19, solo particular). Se valida de nuevo
+    // server-side y se guarda un SNAPSHOT (código/tipo/valor) en la solicitud:
+    // el monto se calcula al cobrar el saldo final (descuentoClienteParaCobro).
+    // Un código inválido RECHAZA la solicitud (400) para que el cliente sepa
+    // que no obtuvo el descuento, en vez de ignorarlo en silencio. En garantía
+    // el cliente no paga: el código se ignora.
+    let descuentoSnapshot: {
+      codigo_descuento_id: string
+      descuento_codigo: string
+      descuento_tipo: 'porcentaje' | 'valor'
+      descuento_valor: number
+    } | null = null
+    if (!formData.es_garantia && codigo_descuento) {
+      const r = await validarCodigoDescuento(codigo_descuento)
+      if (!r.ok) {
+        return NextResponse.json({ error: `Código de descuento: ${r.motivo}` }, { status: 400 })
+      }
+      descuentoSnapshot = {
+        codigo_descuento_id: r.descuento.id,
+        descuento_codigo: r.descuento.codigo,
+        descuento_tipo: r.descuento.tipo,
+        descuento_valor: r.descuento.valor,
+      }
+    }
     const direccionCompleta = [
       formData.direccion.trim(),
       ...(formData.es_garantia ? [] : [edificio_conjunto?.trim(), apto_casa?.trim()]),
@@ -103,6 +129,9 @@ export async function POST(req: NextRequest) {
       // depende del orden con la migración 20261015 (sin columna y sin
       // preferencia el insert es idéntico al de siempre).
       ...(tecnicoPreferidoId ? { tecnico_preferido_id: tecnicoPreferidoId } : {}),
+      // Snapshot del descuento solo cuando hay código válido (mismo criterio:
+      // sin código el insert es idéntico al de siempre).
+      ...(descuentoSnapshot ?? {}),
       pago_tecnico: pagoTecnicoCalculado,
       ciudad_pueblo: formData.ciudad_pueblo.trim(),
       zona_servicio: formData.zona_servicio.trim(),
@@ -197,6 +226,9 @@ export async function POST(req: NextRequest) {
       agendado,
       horario: horarioAgendado,
       notificados,
+      descuento: descuentoSnapshot
+        ? { codigo: descuentoSnapshot.descuento_codigo, tipo: descuentoSnapshot.descuento_tipo, valor: descuentoSnapshot.descuento_valor }
+        : null,
     })
   } catch (error) {
     console.error('Error en /api/solicitar:', error)

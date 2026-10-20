@@ -16,7 +16,8 @@ import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
-import { etapaPagoCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
+import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
+import { descuentoDeSolicitud, describirDescuento } from '@/lib/constants/descuentos'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { labelRelacionReceptor } from '@/lib/utils/receptor'
 import { ESTADO_AUXILIAR_LABELS, type AuxiliarRow, type EstadoVerificacionAuxiliar } from '@/lib/utils/equipo'
@@ -832,6 +833,7 @@ export default function SolicitudDetalle() {
       setCobroFinalInput('')
       setMotivoCobroFinal('')
       const partes: string[] = [`Cobro final fijado en $${valor.toLocaleString('es-CO')}.`]
+      if (Number(data.descuento) > 0) partes.push(`Descuento por código aplicado: −$${Number(data.descuento).toLocaleString('es-CO')}.`)
       if (data.encuesta?.enviada) partes.push('Encuesta reenviada.')
       else if (data.encuesta?.error) partes.push(`Encuesta no enviada (${data.encuesta.error}).`)
       if (data.link_pago?.enviado) partes.push(`Link de pago Wompi enviado por $${Number(data.saldo).toLocaleString('es-CO')}.`)
@@ -1546,6 +1548,10 @@ export default function SolicitudDetalle() {
           const margenBaird = Number(cot?.margen_baird ?? 0) > 0
             ? Number(cot?.margen_baird)
             : Math.max(0, baseVenta - pagoTec)
+          // Código de descuento (2026-10-19): lo asume Baird, se resta del
+          // saldo final. El pago al técnico no cambia.
+          const descuentoSnap = descuentoDeSolicitud(solicitud as unknown as SolicitudParaEtapaPago)
+          const descuentoMonto = descuentoClienteParaCobro(solicitud as unknown as SolicitudParaEtapaPago)
           return (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -1569,10 +1575,19 @@ export default function SolicitudDetalle() {
               {errorFicha && <p className="text-xs text-red-600 mb-2">{errorFicha}</p>}
               <div className="space-y-1.5">
                 <Fila label="Total que paga el cliente a Baird (IVA incluido)" valor={totalCliente} bold verde />
+                {descuentoSnap && (
+                  <>
+                    <Fila label={`🏷️ Descuento código ${descuentoSnap.codigo} (${describirDescuento(descuentoSnap)}, en el saldo final)`} valor={-descuentoMonto} />
+                    <Fila label="Total neto que paga el cliente" valor={Math.max(0, totalCliente - descuentoMonto)} bold verde />
+                  </>
+                )}
                 <Fila label="Base gravable (sin IVA)" valor={baseVenta} />
                 <Fila label="IVA 19%" valor={ivaVenta} />
                 <Fila label="Pago al técnico (neto)" valor={pagoTec} />
-                <Fila label="Margen Baird (antes de IVA)" valor={margenBaird} bold />
+                <Fila label={descuentoSnap ? 'Margen Baird (antes de IVA y de descuento)' : 'Margen Baird (antes de IVA)'} valor={margenBaird} bold />
+                {descuentoSnap && descuentoMonto > 0 && (
+                  <Fila label="Margen Baird tras el descuento (sin IVA)" valor={margenBaird - Math.round(descuentoMonto / 1.19)} bold />
+                )}
               </div>
               {/* Recaudo online (Wompi) — capa paralela: en qué cobro va el
                   cliente (anticipo → abono → saldo). Se refresca solo cada
@@ -2522,6 +2537,7 @@ export default function SolicitudDetalle() {
         const resumen = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
         const totalActual = resumen?.total ?? 0
         const pagado = resumen?.pagado ?? 0
+        const descuentoActual = resumen?.descuento ?? 0
         const yaPagado = Boolean(rec.saldo_pagado_at)
         const encuestaPendiente = solicitud.estado === 'confirmacion_pendiente'
         return (
@@ -2542,6 +2558,11 @@ export default function SolicitudDetalle() {
               <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
                 Pagado en línea: <strong className="text-gray-900">${pagado.toLocaleString('es-CO')} COP</strong>
               </span>
+              {rec.descuento_codigo ? (
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
+                  🏷️ Código {String(rec.descuento_codigo)}: −${descuentoActual.toLocaleString('es-CO')} COP se restan del saldo (el valor que fijes es el total <strong>antes</strong> del descuento)
+                </span>
+              ) : null}
               {yaPagado && (
                 <span className="inline-flex items-center px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold">
                   ✅ Saldo final ya pagado — no se puede cambiar el cobro
