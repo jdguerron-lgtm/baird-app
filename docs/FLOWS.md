@@ -699,6 +699,23 @@ CUALQUIER transición de estado (notificada→asignada, →en_proceso, →comple
 1. **Supervisor general** — ámbito `todos`, sin marca, sin filtro de estados → ve TODO.
 2. **Supervisor MABE** — ámbito `garantia` + marca `MABE` → solo garantías de esa marca.
 
+**Resumen diario de movimientos (2026-10-20).** Además del aviso instantáneo por cambio, a las **5:00 pm Colombia** cada supervisor activo recibe UN mensaje de **texto** con todos los cambios de estado del día (5 pm de ayer → 5 pm de hoy) de los servicios de su alcance — el mismo del portal (`solicitudEnAlcance`: ámbito + marca; el filtro `estados` NO aplica acá). Agrupado por servicio: cliente · equipo · No. garantía · ciudad, una línea `HH:mm anterior → nuevo (quién)` por movimiento (los de anoche salen como `ayer HH:mm`), y `🔩 Repuesto: SKU · descripción` si el servicio tocó o quedó en el ciclo de repuesto; "sin movimientos hoy" si no hubo. Pie con el link a su panel.
+
+```
+Vercel Cron 22:00 UTC → GET /api/cron/resumen-movimientos (Bearer CRON_SECRET)
+   │  solicitud_eventos (tipos de transición, ventana 5pm→5pm CO)
+   │  + solicitudes_servicio + repuestos_pendientes + tecnicos (una query c/u)
+   ▼
+ por supervisor activo: armarResumenSupervisor() → texto
+   ├─ 📩 enviarMensajeTexto (texto libre; partido en mensajes ≤ 3.900 chars)
+   │     ⚠️ solo llega si el supervisor escribió a la línea en las últimas 24 h
+   ├─ fallback: 📩 supervisor_resumen_diario_v1 (plantilla: resumen en 1 línea +
+   │     botón al portal — funciona fuera de la ventana; PENDIENTE de subir a Meta)
+   └─ bitácora supervisor_resumenes (canal texto|plantilla|filtrado|error)
+```
+
+`?dry=1` arma y devuelve los textos sin enviar; `?corte=ahora` toma lo que va del día. Respeta `BAIRD_TEST_PHONE_WHITELIST`. Ver `docs/WHATSAPP_TEMPLATES.md` § Supervisión y `src/lib/services/resumen-movimientos.service.ts` (puro, testeado).
+
 **Garantías de robustez:**
 - `notificarCambioEstado` **nunca lanza** — si el envío falla, loguea y la transición sigue.
 - Corta si `estadoPrevio === estadoNuevo` (no hay cambio real).
@@ -922,7 +939,7 @@ Mapeo de cada momento donde el flujo manda WhatsApp y si la entrega depende de l
 12. **No hay reminder pre-visita** entre confirmación de horario y aceptación del técnico. Si la solicitud queda largo tiempo en `notificada`, el cliente puede perder visibilidad.
 13. ~~**Auth de admin API routes.**~~ ✅ RESUELTO — `/api/cotizacion-precios`, `/api/repuesto-recibido` y todos los `/api/admin/*` validan sesión con `verificarAdmin`/`obtenerEmailAdmin` (ver tabla en `docs/SEGURIDAD.md` § 2).
 14. **Escalada cuando el cliente no responde WhatsApp** — la segunda línea de voz IA (llamada automática tras N horas de silencio, por propósito: agendar/cierre/cotización/repuesto) está construida en Fase 0 pero **apagada** (`DAPTA_ENABLED=false`, decisión de proveedor pendiente). Hoy el silencio del cliente solo lo cubre el cron `sin_agendar`. Ver `docs/DAPTA.md`.
-15. **Resumen semanal a supervisores no automatizado** — el PDF semanal (`resumen_semanal_supervisores_v1`) se genera y envía manualmente con `scripts/resumen-semanal-pdf.py` + `scripts/enviar-resumen-supervisores.mjs`; falta un cron/scheduled job.
+15. **Resumen semanal a supervisores no automatizado** — el PDF semanal (`resumen_semanal_supervisores_v1`) se genera y envía manualmente con `scripts/resumen-semanal-pdf.py` + `scripts/enviar-resumen-supervisores.mjs`; falta un cron/scheduled job. (El resumen **diario** de movimientos sí está automatizado desde 2026-10-20: `/api/cron/resumen-movimientos`, 5 pm CO — ver side flow Supervisores.)
 
 ---
 

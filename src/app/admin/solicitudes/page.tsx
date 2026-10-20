@@ -35,6 +35,21 @@ interface Solicitud {
   ultimo_pago_at: string | null
   cotizacion: unknown
   recargo_weekend_aplicado: number | null
+  // Repuesto(s) que espera el servicio (solo en estados de repuesto) — ver
+  // cargarRepuestosPendientes. Vacío si no hay ninguno especificado.
+  repuestos_pendientes?: RepuestoPendienteResumen[]
+}
+
+interface RepuestoPendienteResumen {
+  sku: string | null
+  descripcion: string | null
+  cantidad: number | null
+  estado: string | null
+}
+
+interface TecnicoOpcion {
+  id: string
+  nombre_completo: string
 }
 
 /** Refresco silencioso del listado (pagos y estados casi en vivo). */
@@ -54,9 +69,61 @@ interface ResultadoReenvio {
 // Es el conjunto que se re-oferta masivamente con "Reenviar a técnicos".
 const FILTRO_SIN_TECNICO = 'sin_tecnico'
 
+// Filtro virtual (2026-10-20): servicios detenidos por un repuesto, en
+// cualquiera de los tres estados del ciclo (esperando → en camino → recibido).
+// La fila muestra el repuesto que esperan (repuestos_pendientes, con fallback
+// a cotizacion.productos_necesarios).
+const FILTRO_PENDIENTE_REPUESTO = 'pendiente_repuesto'
+const ESTADOS_REPUESTO = ['esperando_repuesto', 'repuesto_en_camino', 'repuesto_recibido'] as const
+
+/**
+ * Repuestos que espera un servicio, para pintarlos en el listado. Fuente
+ * principal: `repuestos_pendientes` (SKU + descripción, sin cancelados).
+ * Fallback: `cotizacion.productos_necesarios` (diagnósticos previos a la tabla
+ * o cuando el técnico solo lo describió en la cotización). Solo se consulta
+ * para las solicitudes en estado de repuesto — el resto no lo necesita.
+ */
+async function cargarRepuestosPendientes(
+  solicitudes: Array<{ id: string; estado: string; cotizacion: unknown }>,
+): Promise<Map<string, RepuestoPendienteResumen[]>> {
+  const mapa = new Map<string, RepuestoPendienteResumen[]>()
+  const enRepuesto = solicitudes.filter(s => (ESTADOS_REPUESTO as readonly string[]).includes(s.estado))
+  if (enRepuesto.length === 0) return mapa
+
+  const { data } = await supabase
+    .from('repuestos_pendientes')
+    .select('solicitud_id, sku, descripcion, cantidad, estado')
+    .in('solicitud_id', enRepuesto.map(s => s.id))
+    .neq('estado', 'cancelado')
+    .order('solicitado_at', { ascending: true })
+
+  for (const r of data ?? []) {
+    const lista = mapa.get(r.solicitud_id) ?? []
+    lista.push({ sku: r.sku, descripcion: r.descripcion, cantidad: r.cantidad, estado: r.estado })
+    mapa.set(r.solicitud_id, lista)
+  }
+
+  // Fallback: lo que el técnico listó en la cotización (JSONB).
+  for (const s of enRepuesto) {
+    if (mapa.has(s.id)) continue
+    const productos = (s.cotizacion as { productos_necesarios?: Array<{ sku?: string; descripcion?: string; cantidad?: number }> } | null)
+      ?.productos_necesarios
+    if (Array.isArray(productos) && productos.length > 0) {
+      mapa.set(s.id, productos.map(p => ({
+        sku: p.sku ?? null,
+        descripcion: p.descripcion ?? null,
+        cantidad: typeof p.cantidad === 'number' ? p.cantidad : null,
+        estado: null,
+      })))
+    }
+  }
+  return mapa
+}
+
 const ESTADOS = [
   { value: 'todos', label: 'Todos', color: 'bg-gray-100 text-gray-700' },
   { value: FILTRO_SIN_TECNICO, label: '📣 Sin técnico', color: 'bg-orange-100 text-orange-800' },
+  { value: FILTRO_PENDIENTE_REPUESTO, label: '🔩 Pendientes por repuesto', color: 'bg-fuchsia-100 text-fuchsia-800' },
   { value: 'pendiente_horario', label: 'Pendiente horario', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'notificada', label: 'Notificada', color: 'bg-blue-100 text-blue-800' },
   { value: 'asignada', label: 'Asignada', color: 'bg-green-100 text-green-800' },
@@ -68,6 +135,10 @@ export default function SolicitudesAdmin() {
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [vista, setVista] = useState<'lista' | 'calendario'>('lista')
   const [filtro, setFiltro] = useState('todos')
+  // Filtro por técnico asignado (2026-10-20): '' = todos. Convive con el
+  // filtro de estado (ambos se aplican en la query).
+  const [tecnicoFiltro, setTecnicoFiltro] = useState('')
+  const [tecnicosOpciones, setTecnicosOpciones] = useState<TecnicoOpcion[]>([])
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
@@ -91,6 +162,19 @@ export default function SolicitudesAdmin() {
     return () => clearInterval(id)
   }, [])
 
+  // Lista de técnicos para el selector (una sola vez).
+  useEffect(() => {
+    let activo = true
+    supabase
+      .from('tecnicos')
+      .select('id, nombre_completo')
+      .order('nombre_completo', { ascending: true })
+      .then(({ data }) => {
+        if (activo && data) setTecnicosOpciones(data as TecnicoOpcion[])
+      })
+    return () => { activo = false }
+  }, [])
+
   useEffect(() => {
     const silencioso = refresco > 0
     const cargar = async () => {
@@ -105,8 +189,14 @@ export default function SolicitudesAdmin() {
         if (filtro === FILTRO_SIN_TECNICO) {
           // Ofertadas sin que ningún técnico haya aceptado
           query = query.eq('estado', 'notificada').is('tecnico_asignado_id', null)
+        } else if (filtro === FILTRO_PENDIENTE_REPUESTO) {
+          query = query.in('estado', [...ESTADOS_REPUESTO])
         } else if (filtro !== 'todos') {
           query = query.eq('estado', filtro)
+        }
+
+        if (tecnicoFiltro) {
+          query = query.eq('tecnico_asignado_id', tecnicoFiltro)
         }
 
         const { data: solData, error } = await query
@@ -140,12 +230,18 @@ export default function SolicitudesAdmin() {
           })
         }
 
+        // Repuesto que esperan los servicios en estado de repuesto (una query).
+        const repuestosMap = await cargarRepuestosPendientes(
+          solData.map(s => ({ id: s.id, estado: s.estado ?? 'pendiente', cotizacion: s.cotizacion })),
+        )
+
         const resultado: Solicitud[] = solData.map(s => ({
           ...s,
           estado: s.estado ?? 'pendiente',
           pago_tecnico: s.pago_tecnico ?? 0,
           precio_cliente: precioClienteServicio(s.tipo_equipo, s.tipo_solicitud, s.es_garantia, s.cotizacion, s.recargo_weekend_aplicado),
           tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) : undefined,
+          repuestos_pendientes: repuestosMap.get(s.id) ?? [],
         }))
 
         setSolicitudes(resultado)
@@ -157,7 +253,7 @@ export default function SolicitudesAdmin() {
     }
 
     cargar()
-  }, [filtro, refresco])
+  }, [filtro, tecnicoFiltro, refresco])
 
   const toggleSeleccion = (id: string) => {
     setSeleccionados(prev => {
@@ -396,6 +492,21 @@ export default function SolicitudesAdmin() {
             </button>
           ))}
         </div>
+        <div className="sm:w-56">
+          <select
+            value={tecnicoFiltro}
+            onChange={(e) => setTecnicoFiltro(e.target.value)}
+            title="Filtrar por técnico asignado"
+            className={`w-full border rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent ${
+              tecnicoFiltro ? 'border-green-300 bg-green-50 text-green-900 font-medium' : 'border-gray-200 text-gray-600'
+            }`}
+          >
+            <option value="">👷 Todos los técnicos</option>
+            {tecnicosOpciones.map(t => (
+              <option key={t.id} value={t.id}>{t.nombre_completo}</option>
+            ))}
+          </select>
+        </div>
         <div className="flex-1 sm:max-w-xs">
           <input
             type="text"
@@ -574,6 +685,23 @@ export default function SolicitudesAdmin() {
                       <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${ESTADO_ESTILOS[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>
                         {s.estado}
                       </span>
+                      {(ESTADOS_REPUESTO as readonly string[]).includes(s.estado) && (
+                        <div className="mt-1.5 space-y-0.5" title="Repuesto que espera este servicio">
+                          {s.repuestos_pendientes && s.repuestos_pendientes.length > 0 ? (
+                            s.repuestos_pendientes.map((r, i) => (
+                              <p key={`${s.id}-rep-${i}`} className="text-[11px] leading-snug text-fuchsia-800 max-w-[220px]">
+                                🔩 {r.sku ? <span className="font-mono font-semibold">{r.sku}</span> : null}
+                                {r.sku && r.descripcion ? ' · ' : ''}
+                                {r.descripcion ?? (r.sku ? '' : 'Sin descripción')}
+                                {r.cantidad && r.cantidad > 1 ? ` ×${r.cantidad}` : ''}
+                                {r.estado === 'recibido' ? <span className="ml-1 text-lime-700">(recibido)</span> : null}
+                              </p>
+                            ))
+                          ) : (
+                            <p className="text-[11px] text-gray-400 italic">🔩 Sin repuesto especificado</p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {s.tecnico_nombre ? (

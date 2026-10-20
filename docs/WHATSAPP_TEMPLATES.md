@@ -1,7 +1,7 @@
 # Plantillas WhatsApp — Baird Service
 
 > Documento canónico de TODAS las plantillas WhatsApp del proyecto.
-> Última actualización: 2026-10-15 (nueva `tecnico_portal_v1` — link personal al portal del técnico, envío manual con `scripts/enviar-portal-tecnicos.mjs`). Anterior: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; APPROVED 2026-10-15 junto con `equipo_servicio_actualizado_v1`). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
+> Última actualización: 2026-10-20 (nueva `supervisor_resumen_diario_v1` — fallback del resumen diario de movimientos a supervisores, que sale primero como TEXTO LIBRE desde el cron `/api/cron/resumen-movimientos`; **en script, pendiente de subir a Meta**). Anterior: 2026-10-15 (nueva `tecnico_portal_v1` — link personal al portal del técnico, envío manual con `scripts/enviar-portal-tecnicos.mjs`). Anterior: 2026-10-13 (nueva `receptor_bienvenida_v1` — link de aceptación para la persona que recibe el servicio cuando no es el titular; APPROVED 2026-10-15 junto con `equipo_servicio_actualizado_v1`). Anterior: 2026-10-08 (nueva `tecnico_actualizar_perfil_v1` — pide al técnico completar gasodomésticos y certificaciones desde su portal; botón URL dinámico al final de la URL). Anterior: 2026-07-11 (`supervisor_actualizaciones_v1`).
 
 > 🆕 **Cambios 2026-06-24 (resumen semanal → supervisores):** nueva plantilla **`resumen_semanal_supervisores_v1`** (UTILITY, **header de DOCUMENTO/PDF**, sin botón), **pendiente de aprobación Meta** (subida 2026-06-24, id `1321576059565776`). Es la **primera plantilla del proyecto con header de documento**: el PDF real se adjunta en el **envío** como `header.document.link` (URL pública del Storage, bucket `evidencias-servicio/informes/`); para **crearla** en Meta se sube una *muestra* vía Resumable Upload API y se inyecta el `header_handle` al vuelo desde el campo privado `_sampleDoc` (ver `getHeaderHandle`/`uploadOne` en `scripts/upload-templates.mjs`). Params: `{{1}}`=nombre supervisor, `{{2}}`=semana/corte. El PDF lo genera `scripts/resumen-semanal-pdf.py` y el envío (solo a supervisores `activo=true`) lo hace `scripts/enviar-resumen-supervisores.mjs`. Funciona fuera de la ventana 24h. Pendiente: automatizar semanal (cron/endpoint).
 
@@ -435,6 +435,16 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 
 ### Supervisión
 
+#### `supervisor_resumen_diario_v1` ⏳ **en script, pendiente de subir a Meta** (nueva 2026-10-20)
+- **En script** ✅ (`scripts/upload-templates.mjs`, última entrada). Subir: `node --env-file=.env.local scripts/upload-templates.mjs supervisor_resumen_diario_v1`.
+- **Disparo**: `GET /api/cron/resumen-movimientos` (Vercel Cron diario 22:00 UTC = 5:00 pm Bogotá), **solo como fallback**: el resumen completo del día va primero como **texto libre** (`enviarMensajeTexto`, una línea por movimiento agrupado por servicio, repuesto incluido). Como los supervisores casi nunca le escriben a la línea, ese texto suele morir fuera de la ventana 24h (131047) → entonces sale esta plantilla con el mismo resumen comprimido en una línea. Mientras no esté APPROVED, el fallback también falla y el cron deja `canal='error'` en `supervisor_resumenes`.
+- **Destino**: cada supervisor **activo** (`supervisores.whatsapp`), con SOLO los servicios de su alcance (ámbito + marca, `solicitudEnAlcance`).
+- **Header**: TEXT — "Resumen diario de servicios"
+- **Body** (4 params): `supervisor_nombre` (primer nombre), `fecha` ("20 de octubre"), `conteo` ("5 movimientos en 3 servicios" | "sin movimientos"), `detalle` — ⚠️ **una sola línea** (`compactarLinea`, ≤ 650 chars: servicios separados por `" • "`, cada uno "Cliente (equipo · Garantía N): Estado → Estado → …, repuesto SKU · descripción"; si no caben todos cierra con "… y N servicios más").
+- **Botón**: URL dinámica → `${APP_URL}/supervisor/{{1}}` con param = `portal_token` ("Abrir mi panel"). Se omite el componente de botón si el supervisor no tiene token.
+- **Propósito**: que el supervisor reciba a las 5 pm todos los cambios de estado del día de sus servicios aunque no haya chateado con la línea. Lógica de armado pura y testeada en `src/lib/services/resumen-movimientos.service.ts`.
+- **Nota**: el BODY abre con "Hola {{1}}," y cierra con "…repuestos en espera." (regla Meta 2388299); `{{4}}` va entre texto fijo.
+
 #### `supervisor_cambio_estado_v1` ✅ APPROVED (verificado en vivo 2026-08-25)
 - **En script** ✅ (nueva 2026-05-29)
 - **Disparo**: `notificarCambioEstado(solicitudId, estadoPrevio, estadoNuevo)` — se invoca en cada transición de estado de `solicitudes_servicio` (ver lista de call-sites en `docs/ARQUITECTURA.md`).
@@ -522,6 +532,7 @@ Algunos avisos se envían como **texto libre** (`enviarMensajeTexto`) en vez de 
 | Cliente RECHAZÓ siguiente paso | técnico | Confirmación corta |
 | Cliente RECHAZÓ cotización | técnico | Confirmación con motivo |
 | Cliente APROBÓ "negativa_cliente" | cliente | Cierre amable |
+| **Resumen diario de movimientos** (cron 5 pm CO, `/api/cron/resumen-movimientos`) | cada supervisor activo | El informe es largo y con saltos de línea (una línea por movimiento, agrupado por servicio, repuesto en espera): no cabe en un parámetro de plantilla. Se parte en mensajes ≤ 3.900 chars. **Si falla por ventana 24h cae a `supervisor_resumen_diario_v1`** (resumen en una línea + botón al portal). |
 
 **Pendiente**: convertir los textos libres más críticos (cancelación, reagendamiento) en plantillas para que se entreguen siempre. Requiere aprobación Meta.
 
