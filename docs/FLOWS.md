@@ -710,7 +710,7 @@ Vercel Cron 22:00 UTC → GET /api/cron/resumen-movimientos (Bearer CRON_SECRET)
    ├─ 📩 enviarMensajeTexto (texto libre; partido en mensajes ≤ 3.900 chars)
    │     ⚠️ solo llega si el supervisor escribió a la línea en las últimas 24 h
    ├─ fallback: 📩 supervisor_resumen_diario_v1 (plantilla: resumen en 1 línea +
-   │     botón al portal — funciona fuera de la ventana; PENDIENTE de subir a Meta)
+   │     botón al portal — funciona fuera de la ventana; APPROVED 2026-10-21)
    └─ bitácora supervisor_resumenes (canal texto|plantilla|filtrado|error)
 ```
 
