@@ -202,8 +202,11 @@ if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
 |---|---|---|
 | `/api/cron/horario-recordatorio` | Cada hora | Recordatorio T-24h + transición a `sin_agendar` (T-24h+12h) |
 | `/api/cron/gps-followup` | Cada 10 min | Flag silencioso si GPS post-visita está a < 100m del cliente |
+| `/api/cron/repuesto-recordatorio` | Diario 09:45 UTC | Recordatorios del ciclo de repuesto (supervisores en garantía, cliente tras la guía) |
+| `/api/cron/wompi-conciliar` | Cada 5 min (pg_cron) | Conciliación de pagos contra Wompi |
+| `/api/cron/resumen-movimientos` | Diario 22:00 UTC (5 pm Bogotá) | Resumen de cambios de estado del día a cada supervisor activo, SOLO sus servicios (alcance server-side `solicitudEnAlcance`). Envía WhatsApp → con `CRON_SECRET` sin configurar cualquiera podría disparar reenvíos (`?force=1`); la bitácora `supervisor_resumenes` evita duplicados por corte |
 
-Configurados en `vercel.json`.
+Configurados en `vercel.json` (Hobby: diarios; `wompi-conciliar` lo dispara `pg_cron` desde Supabase).
 
 El mismo gate `Bearer CRON_SECRET` (más `ENABLE_TEST_ENDPOINTS=true`, sin el cual responde 404) protege `/api/test-whatsapp` — GET de diagnóstico de configuración WhatsApp (presencia de env vars, whitelist activa, validez del token, salud del número). No filtra secretos ni envía mensajes.
 

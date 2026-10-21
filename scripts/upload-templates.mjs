@@ -1992,6 +1992,57 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // Resumen diario de movimientos — SUPERVISORES (2026-10-20). Fallback del
+  //   cron GET /api/cron/resumen-movimientos (5:00 pm Bogotá): el informe
+  //   completo va como TEXTO LIBRE, pero los supervisores casi nunca le
+  //   escriben a la línea y el texto libre muere fuera de la ventana 24h
+  //   (131047). Esta plantilla lleva el mismo resumen comprimido en UNA línea
+  //   ({{4}}, servicios separados por " • ") y el botón al portal.
+  //   {{1}}=primer nombre · {{2}}=fecha corta ("20 de octubre") ·
+  //   {{3}}=conteo ("5 movimientos en 3 servicios" | "sin movimientos") ·
+  //   {{4}}=detalle en una línea (≤ 650 chars, lo arma compactarLinea) ·
+  //   botón URL = portal_token.
+  //   Subir: node --env-file=.env.local scripts/upload-templates.mjs supervisor_resumen_diario_v1
+  {
+    name: 'supervisor_resumen_diario_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Resumen diario de servicios',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, este es el resumen del {{2}} de los servicios que supervisas en Baird Service: {{3}}.\n\n' +
+          '{{4}}\n\n' +
+          'En tu panel está el detalle de cada servicio y los repuestos en espera.',
+        example: {
+          body_text: [[
+            'Andrés',
+            '20 de octubre',
+            '3 movimientos en 2 servicios',
+            'Juan Pérez (Nevera Mabe · Garantía 9415091231): Asignada → Esperando repuesto, repuesto WR60X10185 · Compresor 1/4 HP • María Gómez (Lavadora Mabe · Garantía 9415091777): Notificada → Asignada → En proceso',
+          ]],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service — Supervisión' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir mi panel',
+            url: `${APP_URL}/supervisor/{{1}}`,
+            example: [`${APP_URL}/supervisor/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 async function listExisting() {
