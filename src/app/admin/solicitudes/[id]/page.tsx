@@ -16,11 +16,15 @@ import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
-import { etapaPagoCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
+import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
+import { descuentoDeSolicitud, describirDescuento } from '@/lib/constants/descuentos'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { labelRelacionReceptor } from '@/lib/utils/receptor'
 import { ESTADO_AUXILIAR_LABELS, type AuxiliarRow, type EstadoVerificacionAuxiliar } from '@/lib/utils/equipo'
 import { useRolAdmin } from '@/components/admin/RolAdminContext'
+import MediaEvidencia from '@/components/ui/MediaEvidencia'
+import EvidenciaAdminSeccion from '@/components/admin/EvidenciaAdminSeccion'
+import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
 
 interface Solicitud {
   id: string
@@ -355,6 +359,8 @@ export default function SolicitudDetalle() {
   const [pidiendoRepuesto, setPidiendoRepuesto] = useState(false)
   const [resultadoRepuesto, setResultadoRepuesto] = useState<{ ok: boolean; mensaje: string } | null>(null)
   const [notas, setNotas] = useState<EventoSolicitud[]>([])
+  // Evidencia adicional del equipo (2026-10-20): nota_admin con payload.origen='evidencia_admin'.
+  const [evidenciasAdmin, setEvidenciasAdmin] = useState<EventoSolicitud[]>([])
   const [historial, setHistorial] = useState<EventoSolicitud[]>([])
   const [nuevaNota, setNuevaNota] = useState('')
   const [guardandoNota, setGuardandoNota] = useState(false)
@@ -832,6 +838,7 @@ export default function SolicitudDetalle() {
       setCobroFinalInput('')
       setMotivoCobroFinal('')
       const partes: string[] = [`Cobro final fijado en $${valor.toLocaleString('es-CO')}.`]
+      if (Number(data.descuento) > 0) partes.push(`Descuento por código aplicado: −$${Number(data.descuento).toLocaleString('es-CO')}.`)
       if (data.encuesta?.enviada) partes.push('Encuesta reenviada.')
       else if (data.encuesta?.error) partes.push(`Encuesta no enviada (${data.encuesta.error}).`)
       if (data.link_pago?.enviado) partes.push(`Link de pago Wompi enviado por $${Number(data.saldo).toLocaleString('es-CO')}.`)
@@ -998,7 +1005,10 @@ export default function SolicitudDetalle() {
       .eq('solicitud_id', id)
       .order('ocurrido_at', { ascending: false })
     const eventos: EventoSolicitud[] = eventosData ?? []
-    setNotas(eventos.filter(e => e.tipo === 'nota_admin'))
+    // Las cargas de evidencia del equipo son nota_admin (origen evidencia_admin)
+    // pero se muestran en su propia sección, no entre las notas.
+    setNotas(eventos.filter(e => e.tipo === 'nota_admin' && !esEventoEvidenciaAdmin(e)))
+    setEvidenciasAdmin(eventos.filter(esEventoEvidenciaAdmin))
     // Llamadas: manuales del equipo (llamada_admin) + intenciones de
     // llamada del técnico desde su portal (llamada_tecnico).
     setLlamadas(eventos.filter(e => e.tipo === 'llamada_admin' || e.tipo === 'llamada_tecnico'))
@@ -1014,6 +1024,7 @@ export default function SolicitudDetalle() {
       e.tipo === 'comprobante_envio' ||
       e.tipo === 'pago_registrado' ||
       (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
+      esEventoEvidenciaAdmin(e) ||
       (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.tipo !== 'pago_registrado' && e.estado_previo !== e.estado_nuevo),
     ))
   }, [id])
@@ -1546,6 +1557,10 @@ export default function SolicitudDetalle() {
           const margenBaird = Number(cot?.margen_baird ?? 0) > 0
             ? Number(cot?.margen_baird)
             : Math.max(0, baseVenta - pagoTec)
+          // Código de descuento (2026-10-19): lo asume Baird, se resta del
+          // saldo final. El pago al técnico no cambia.
+          const descuentoSnap = descuentoDeSolicitud(solicitud as unknown as SolicitudParaEtapaPago)
+          const descuentoMonto = descuentoClienteParaCobro(solicitud as unknown as SolicitudParaEtapaPago)
           return (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -1569,10 +1584,19 @@ export default function SolicitudDetalle() {
               {errorFicha && <p className="text-xs text-red-600 mb-2">{errorFicha}</p>}
               <div className="space-y-1.5">
                 <Fila label="Total que paga el cliente a Baird (IVA incluido)" valor={totalCliente} bold verde />
+                {descuentoSnap && (
+                  <>
+                    <Fila label={`🏷️ Descuento código ${descuentoSnap.codigo} (${describirDescuento(descuentoSnap)}, en el saldo final)`} valor={-descuentoMonto} />
+                    <Fila label="Total neto que paga el cliente" valor={Math.max(0, totalCliente - descuentoMonto)} bold verde />
+                  </>
+                )}
                 <Fila label="Base gravable (sin IVA)" valor={baseVenta} />
                 <Fila label="IVA 19%" valor={ivaVenta} />
                 <Fila label="Pago al técnico (neto)" valor={pagoTec} />
-                <Fila label="Margen Baird (antes de IVA)" valor={margenBaird} bold />
+                <Fila label={descuentoSnap ? 'Margen Baird (antes de IVA y de descuento)' : 'Margen Baird (antes de IVA)'} valor={margenBaird} bold />
+                {descuentoSnap && descuentoMonto > 0 && (
+                  <Fila label="Margen Baird tras el descuento (sin IVA)" valor={margenBaird - Math.round(descuentoMonto / 1.19)} bold />
+                )}
               </div>
               {/* Recaudo online (Wompi) — capa paralela: en qué cobro va el
                   cliente (anticipo → abono → saldo). Se refresca solo cada
@@ -2014,7 +2038,8 @@ export default function SolicitudDetalle() {
         // Dedup en caso de que el mismo url esté en ambos (suele pasar en particular).
         const diagFotos = Array.from(new Set([...diagFotosTriaje, ...diagFotosCot]))
         const compFotos = evidencia?.fotos ?? []
-        const total = diagFotos.length + compFotos.length + (evidencia?.oath_firma ? 1 : 0) + (evidencia?.firma_url ? 1 : 0)
+        const adminArchivos = evidenciasAdmin.flatMap(e => archivosDeEvento(e))
+        const total = diagFotos.length + compFotos.length + contarArchivosEvidenciaAdmin(evidenciasAdmin) + (evidencia?.oath_firma ? 1 : 0) + (evidencia?.firma_url ? 1 : 0)
         if (total === 0) return null
 
         return (
@@ -2031,9 +2056,7 @@ export default function SolicitudDetalle() {
                 </h3>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
                   {diagFotos.map((url, i) => (
-                    <a key={`diag-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-purple-400 transition-all">
-                      <Image src={url} alt={`Diagnóstico ${i + 1}`} fill className="object-cover" />
-                    </a>
+                    <MediaEvidencia key={`diag-${i}`} url={url} alt={`Diagnóstico ${i + 1}`} ring="hover:ring-purple-400" />
                   ))}
                 </div>
               </div>
@@ -2047,9 +2070,21 @@ export default function SolicitudDetalle() {
                 </h3>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
                   {compFotos.map((url, i) => (
-                    <a key={`comp-${i}`} href={url} target="_blank" rel="noopener noreferrer" className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 hover:ring-2 hover:ring-green-400 transition-all">
-                      <Image src={url} alt={`Completación ${i + 1}`} fill className="object-cover" />
-                    </a>
+                    <MediaEvidencia key={`comp-${i}`} url={url} alt={`Completación ${i + 1}`} ring="hover:ring-green-400" />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adminArchivos.length > 0 && (
+              <div className="mb-5">
+                <h3 className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
+                  <span>📎 Equipo Baird</span>
+                  <span className="text-gray-400 font-normal">({adminArchivos.length})</span>
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                  {adminArchivos.map((a, i) => (
+                    <MediaEvidencia key={`adm-${i}`} url={a.url} alt={a.nombre ?? `Equipo ${i + 1}`} ring="hover:ring-slate-500" />
                   ))}
                 </div>
               </div>
@@ -2085,6 +2120,18 @@ export default function SolicitudDetalle() {
         )
       })()}
 
+      {/* Evidencia adicional del equipo (2026-10-20): fotos/videos/PDF que el
+          admin recibe por fuera del flujo. Subida directa a Storage + evento
+          nota_admin/origen evidencia_admin vía /api/admin/evidencias. */}
+      {solicitud && (
+        <EvidenciaAdminSeccion
+          solicitudId={solicitud.id}
+          eventos={evidenciasAdmin}
+          soloLectura={soloLectura}
+          onSubido={recargarEventos}
+        />
+      )}
+
       {/* Service evidence */}
       {evidencia && (
         <div className="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
@@ -2098,9 +2145,7 @@ export default function SolicitudDetalle() {
               <h3 className="text-xs font-semibold text-gray-500 mb-2">Fotos ({evidencia.fotos.length})</h3>
               <div className="grid grid-cols-3 gap-2">
                 {evidencia.fotos.map((url, i) => (
-                  <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-                    <Image src={url} alt={`Evidencia ${i + 1}`} fill className="object-cover" />
-                  </div>
+                  <MediaEvidencia key={i} url={url} alt={`Evidencia ${i + 1}`} ring="hover:ring-green-400" />
                 ))}
               </div>
             </div>
@@ -2522,6 +2567,7 @@ export default function SolicitudDetalle() {
         const resumen = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
         const totalActual = resumen?.total ?? 0
         const pagado = resumen?.pagado ?? 0
+        const descuentoActual = resumen?.descuento ?? 0
         const yaPagado = Boolean(rec.saldo_pagado_at)
         const encuestaPendiente = solicitud.estado === 'confirmacion_pendiente'
         return (
@@ -2542,6 +2588,11 @@ export default function SolicitudDetalle() {
               <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600">
                 Pagado en línea: <strong className="text-gray-900">${pagado.toLocaleString('es-CO')} COP</strong>
               </span>
+              {rec.descuento_codigo ? (
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
+                  🏷️ Código {String(rec.descuento_codigo)}: −${descuentoActual.toLocaleString('es-CO')} COP se restan del saldo (el valor que fijes es el total <strong>antes</strong> del descuento)
+                </span>
+              ) : null}
               {yaPagado && (
                 <span className="inline-flex items-center px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold">
                   ✅ Saldo final ya pagado — no se puede cambiar el cobro
@@ -2925,8 +2976,10 @@ export default function SolicitudDetalle() {
               url?: string
               subido_por?: string
               plantilla?: string
+              origen?: string
             } | null
             const esEdicion = e.tipo === 'nota_admin' && !!payload?.campos_modificados
+            const esEvidenciaAdmin = esEventoEvidenciaAdmin(e)
             return (
               <div key={e.id} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-slate-50 p-3">
                 <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${badge.clase}`}>
@@ -2966,6 +3019,17 @@ export default function SolicitudDetalle() {
                         >
                           Ver archivo
                         </a>
+                      )}
+                    </p>
+                  ) : esEvidenciaAdmin ? (
+                    <p className="text-sm text-slate-900">
+                      📎 <span className="font-semibold">Evidencia adicional adjuntada</span>
+                      <span className="ml-2 text-xs text-gray-600">
+                        {archivosDeEvento(e).length} archivo{archivosDeEvento(e).length === 1 ? '' : 's'}
+                        {e.motivo ? ` · ${e.motivo}` : ''}
+                      </span>
+                      {payload?.subido_por && (
+                        <span className="ml-2 text-xs text-gray-500">por {payload.subido_por}</span>
                       )}
                     </p>
                   ) : e.tipo === 'pago_registrado' ? (

@@ -274,3 +274,46 @@ describe('registrarPagoWompi — contrato', () => {
     expect(pagos()).toHaveLength(0)
   })
 })
+
+describe('registrarPagoWompi — código de descuento (2026-10-19)', () => {
+  const conDescuento = {
+    estado: 'completada',
+    anticipo_pagado_at: '2026-10-09T20:49:38Z',
+    cotizacion: { total: 200000, aprobado_at: '2026-10-19T10:00:00Z', productos_necesarios: [] },
+    descuento_codigo: 'PROMO10',
+    descuento_tipo: 'porcentaje',
+    descuento_valor: '10.00',
+  }
+
+  it('11. SALDO con código: esperado = total − descuento − acreditados; el abono no cambia', async () => {
+    db.solicitudes_servicio = [solicitud(conDescuento)]
+    db.pagos = [{ id: 'p0', solicitud_id: SOL_ID, tipo: 'anticipo', estado: 'APPROVED', monto: 42000, transaccion_id: 'tx-ant', pagado_at: '2026-10-09T20:49:38Z' }]
+    const s = (await cargarSolicitudPago(SOL_ID))!
+    expect(await calcularMontoSaldo(s)).toBe(138000) // 200.000 − 20.000 − 42.000
+
+    // Un pago por el saldo BRUTO viejo (158.000) sigue aceptándose (cubre el esperado).
+    const ok = await registrarPagoWompi(tx({ id: 'tx-saldo-desc', reference: `saldo-${SOL_ID}`, amount_in_cents: 13800000 }), 'webhook')
+    expect(ok).toMatchObject({ ok: true, confirmado: true })
+    expect(sol().saldo_pagado_at).toBe('2026-10-11T02:06:39.144Z')
+    expect(wa.enviarSaldoConfirmadoCliente).toHaveBeenCalledWith(SOL_ID, 138000)
+  })
+
+  it('12. SALDO corto frente al neto → ⚠️ sin confirmar (el descuento no abre la puerta a pagar menos)', async () => {
+    db.solicitudes_servicio = [solicitud(conDescuento)]
+    db.pagos = [{ id: 'p0', solicitud_id: SOL_ID, tipo: 'anticipo', estado: 'APPROVED', monto: 42000, transaccion_id: 'tx-ant', pagado_at: '2026-10-09T20:49:38Z' }]
+    const corto = await registrarPagoWompi(tx({ id: 'tx-saldo-corto-desc', reference: `saldo-${SOL_ID}`, amount_in_cents: 13000000 }), 'redirect')
+    expect(corto).toMatchObject({ confirmado: false, error: 'Monto insuficiente' })
+    expect(sol().saldo_pagado_at).toBeNull()
+  })
+
+  it('13. abono de repuestos con código: 50% del saldo BRUTO (el descuento va solo al último pago)', async () => {
+    db.solicitudes_servicio = [solicitud({
+      ...conDescuento,
+      estado: 'en_proceso',
+      cotizacion: { total: 200000, aprobado_at: '2026-10-19T10:00:00Z', productos_necesarios: [{ sku: 'X', cantidad: 1 }] },
+    })]
+    db.pagos = [{ id: 'p0', solicitud_id: SOL_ID, tipo: 'anticipo', estado: 'APPROVED', monto: 42000, transaccion_id: 'tx-ant', pagado_at: '2026-10-09T20:49:38Z' }]
+    const { calcularMontoAbonoRepuestos } = await import('@/lib/services/pagos.service')
+    expect(await calcularMontoAbonoRepuestos((await cargarSolicitudPago(SOL_ID))!)).toBe(79000) // 50% × 158.000
+  })
+})

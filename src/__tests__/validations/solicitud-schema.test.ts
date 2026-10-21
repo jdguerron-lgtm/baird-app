@@ -282,3 +282,16 @@ describe('solicitudFormSchema — tecnico_preferido_id (2026-10-15)', () => {
     expect(r.success).toBe(false)
   })
 })
+
+describe('solicitudFormSchema — codigo_descuento (2026-10-19)', () => {
+  it('acepta vacío/ausente y normaliza a mayúsculas', () => {
+    expect(solicitudFormSchema.safeParse({ ...VALID_DATA, codigo_descuento: '' }).success).toBe(true)
+    const r = solicitudFormSchema.safeParse({ ...VALID_DATA, codigo_descuento: '  promo10 ' })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.codigo_descuento).toBe('PROMO10')
+  })
+  it('rechaza formatos inválidos', () => {
+    expect(solicitudFormSchema.safeParse({ ...VALID_DATA, codigo_descuento: 'AB' }).success).toBe(false)
+    expect(solicitudFormSchema.safeParse({ ...VALID_DATA, codigo_descuento: 'CON ESPACIO' }).success).toBe(false)
+  })
+})

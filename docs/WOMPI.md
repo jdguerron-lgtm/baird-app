@@ -95,6 +95,14 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
   2026-10-11 se registraron a mano 2 (Tatiana Moreno, Ana Prieto) con
   `_origen: 'tienda_shopify_manual'`. Desde ese día el CTA usa el checkout de
   la app.
+- **Código de descuento (2026-10-19)**: si la solicitud trae snapshot
+  (`descuento_codigo/tipo/valor`, lo escribe el cliente en `/solicitar`),
+  `calcularMontoSaldo` resta el descuento **solo en el saldo final**
+  (`saldoPendiente(total − descuento, acreditados)`); el anticipo y el abono de
+  repuestos (`calcularMontoSaldoBruto`) no cambian. `/pago/saldo` muestra el
+  renglón "🏷️ Descuento CÓDIGO". El monto esperado al confirmar un `saldo-…`
+  ya es el neto (test 11–12 de `pagos-contrato`). Reglas y ejemplo en
+  `docs/TARIFAS.md` § "Códigos de descuento".
 
 ### Conciliación por cron (tercer camino, 2026-10-11)
 

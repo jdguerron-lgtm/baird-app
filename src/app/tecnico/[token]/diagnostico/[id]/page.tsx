@@ -25,7 +25,7 @@ import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
-import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB } from '@/lib/utils/media'
+import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_EVIDENCIAS_DIAGNOSTICO } from '@/lib/utils/media'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
@@ -54,7 +54,8 @@ interface Servicio {
   receptor_acepto_at?: string | null
 }
 
-const MAX_EVIDENCIAS = 4
+/** 10 archivos desde 2026-10-20 (antes 4): fotos + varios clips de video de ≤ 50 MB. */
+const MAX_EVIDENCIAS = MAX_EVIDENCIAS_DIAGNOSTICO
 
 export default function DiagnosticoPage() {
   const { token, id } = useParams<{ token: string; id: string }>()
@@ -248,8 +249,8 @@ export default function DiagnosticoPage() {
 
   // Handle file selection (photos/videos).
   // Las fotos se comprimen luego (en enviarDiagnostico), acá solo validamos tamaño
-  // y tipo. El límite de 10 MB se aplica tras la compresión para imágenes (una
-  // foto HEIC iPhone 6 MB termina en ~700 KB); los videos tienen su propio tope
+  // y tipo. Las imágenes se re-encodean a 4000 px / JPEG 0.92 (una foto HEIC
+  // iPhone 6 MB termina en ~2 MB); los videos tienen su propio tope
   // (MAX_VIDEO_SIZE_BYTES, 50 MB desde 2026-10-10) y se validan antes porque no
   // se comprimen client-side. Por eso el mensaje accionable solo se muestra
   // cuando el archivo grande es un video.
@@ -373,7 +374,7 @@ export default function DiagnosticoPage() {
       const rand = Math.random().toString(36).slice(2, 8)
 
       const uploadPromises = evidencias.map(async (rawFile, i) => {
-        const file = await compressImageIfNeeded(rawFile, { maxDimension: 2560, quality: 0.9 })
+        const file = await compressImageIfNeeded(rawFile)
         const ext = inferExtension(file)
         const path = `${servicio.id}/diagnostico_${stamp}_${rand}_${i}.${ext}`
 
@@ -396,7 +397,7 @@ export default function DiagnosticoPage() {
       // Foto de la placa: mismo pipeline de compresión/subida, path con
       // prefijo placa_ para distinguirla en Storage y en las galerías.
       const placaUploadPromise = (async () => {
-        const file = await compressImageIfNeeded(fotoPlaca!, { maxDimension: 2560, quality: 0.9 })
+        const file = await compressImageIfNeeded(fotoPlaca!)
         const ext = inferExtension(file)
         const path = `${servicio.id}/placa_${stamp}_${rand}.${ext}`
         const { error: uploadErr } = await supabase.storage
@@ -979,7 +980,8 @@ export default function DiagnosticoPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-1">Evidencia del fallo *</h2>
           <p className="text-xs text-gray-400 mb-3">
-            Toma fotos del problema o graba un video corto de la falla/prueba con el botón 🎬.
+            Toma fotos del problema o graba video de la falla/prueba con el botón 🎬.
+            Hasta {MAX_EVIDENCIAS} archivos; si el video es largo, súbelo en varios clips de máx {MAX_VIDEO_SIZE_MB} MB.
           </p>
 
           {/* File grid */}
@@ -1080,7 +1082,7 @@ export default function DiagnosticoPage() {
           )}
 
           <p className="text-[10px] text-gray-400">
-            {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos del fallo (o video corto opcional)
+            {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos del fallo y/o videos (máx {MAX_VIDEO_SIZE_MB} MB cada uno)
           </p>
         </div>
 

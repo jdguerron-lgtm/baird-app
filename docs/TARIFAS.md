@@ -308,6 +308,34 @@ Detalle en [public/guia-pagos.html](../public/guia-pagos.html) (guía del técni
 
 > 🐛 **Fix 2026-06-09:** antes `pago_tecnico` guardaba el precio de catálogo (sobrepagaba al técnico el IVA+margen) y, al aprobar una cotización, `procesarAprobacionCotizacion` lo sobreescribía con `cotizacion.total` (= precio al cliente). Ahora `pago_tecnico` guarda siempre el neto: tarifa fija → catálogo ÷ multiplicador en `/api/solicitar` ($35.000 fijo para diagnóstico desde 2026-07-05); cotización libre → `costoTecnico` fijado en `/api/diagnostico` o `/api/cotizacion-precios`, y la aprobación **ya no lo toca** (mismo criterio que `/api/admin/actualizar-valor`).
 
+### Códigos de descuento (2026-10-19)
+
+El cliente **particular** puede escribir un código promocional en `/solicitar`
+(campo opcional, oculto en garantía). Reglas decididas el 2026-10-19:
+
+| Regla | Decisión |
+|---|---|
+| Dónde se aplica | **Solo en el último pago (saldo final).** El anticipo (50% del precio) y el abono de repuestos (50% del saldo **bruto**) se cobran como siempre. |
+| Base del porcentaje | Sobre el **total del servicio** (diagnóstico + servicio + repuestos, IVA incl.): `montoDescuento(total, snapshot)`. Un código de valor fijo resta ese valor. |
+| Quién lo asume | **Baird.** `pago_tecnico` / `cotizacion.costo_tecnico` no cambian; el descuento sale del margen (en finanzas y facturación la venta es el neto). |
+| Tope | Nunca supera el total ni deja saldo negativo: si el descuento es mayor a lo que faltaba, el saldo queda en $0 y **no hay devolución**. |
+| Garantía | No aplica (paga la marca); un código enviado se ignora. |
+| Snapshot | La solicitud guarda `descuento_codigo` / `descuento_tipo` / `descuento_valor` al reservar: editar o desactivar el código después **no** cambia servicios ya reservados. Los usos se cuentan desde `solicitudes_servicio` (no canceladas). |
+
+Ejemplo: total $200.000, código 10% → descuento $20.000. Anticipo $100.000 →
+saldo final **$80.000** (y no 10% del saldo = $90.000). Con repuestos: abono
+= 50% × (200.000 − 100.000) = $50.000 (sin descuento) → saldo final $30.000.
+
+Implementación: `src/lib/constants/descuentos.ts` (helpers puros) →
+`descuentoClienteParaCobro()` / `totalClienteNetoParaCobro()` en
+`src/lib/constants/pago-cliente.ts` (único punto que calcula el monto de una
+solicitud) → `calcularMontoSaldo` (pagos.service, etiquetado `[pagos]`), etapa
+de pago, `/pago/saldo`, `/api/admin/cobro-final` (el valor que fija el admin
+es el **bruto**), `finanzas.service` y el export de facturación (columnas
+"Descuento (COP)" / "Descuento código (COP)"). Admin: `/admin/descuentos`
+(`codigos_descuento`, migración `20261019_codigos_descuento`). Tests:
+`src/__tests__/utils/descuentos.test.ts` + casos 11–13 de `pagos-contrato`.
+
 ---
 
 ## Protocolo de visita y no-show

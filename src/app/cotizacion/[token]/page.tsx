@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import { formatCOP } from '@/lib/utils/format'
+import { esUrlVideo } from '@/lib/utils/media'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 
@@ -306,12 +307,25 @@ export default function CotizacionPage() {
               <h3 className="text-sm font-bold text-gray-700 mb-2">📷 Evidencia del diagnóstico</h3>
               <div className="grid grid-cols-2 gap-2">
                 {cotizacion.evidencias_diagnostico.map((url, i) => (
-                  <img
-                    key={i}
-                    src={url}
-                    alt={`Evidencia ${i + 1}`}
-                    className="rounded-lg w-full h-32 object-cover"
-                  />
+                  esUrlVideo(url) ? (
+                    // Video del diagnóstico (2026-10-20): antes salía como imagen rota.
+                    <video
+                      key={i}
+                      src={url}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      className="rounded-lg w-full h-32 object-contain bg-black"
+                      aria-label={`Video ${i + 1}`}
+                    />
+                  ) : (
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`Evidencia ${i + 1}`}
+                      className="rounded-lg w-full h-32 object-cover"
+                    />
+                  )
                 ))}
               </div>
             </div>

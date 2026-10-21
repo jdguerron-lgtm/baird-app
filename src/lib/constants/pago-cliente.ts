@@ -19,6 +19,7 @@
 
 import { precioClienteServicio } from '@/types/solicitud'
 import { montoAnticipo, montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
+import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
 
 export type EstadoPagoCliente = 'pagado' | 'anticipo_pagado' | 'pendiente'
 
@@ -130,14 +131,23 @@ export interface SolicitudParaEtapaPago {
   abono_pagado_at?: string | null
   saldo_pagado_at?: string | null
   monto_pagado_online?: number | null
+  // Snapshot del código de descuento (2026-10-19, migración
+  // 20261019_codigos_descuento). Solo particular; se aplica en el saldo final.
+  descuento_codigo?: string | null
+  descuento_tipo?: string | null
+  descuento_valor?: number | string | null
 }
 
 /**
- * Total (COP, IVA incl.) que el cliente le debe a Baird por el servicio, para
- * efectos de COBRO: total de la cotización si existe; si no, precio de
- * catálogo SOLO en servicios de precio fijo (Mantenimiento / Cambio de
- * filtro). En Diagnóstico/Reparación sin cotización devuelve 0 = "aún no se
- * sabe" (el diagnóstico solo, si el cliente no repara, no genera saldo).
+ * Total BRUTO (COP, IVA incl.) que el cliente le debe a Baird por el servicio,
+ * ANTES del código de descuento, para efectos de COBRO: total de la
+ * cotización si existe; si no, precio de catálogo SOLO en servicios de precio
+ * fijo (Mantenimiento / Cambio de filtro). En Diagnóstico/Reparación sin
+ * cotización devuelve 0 = "aún no se sabe" (el diagnóstico solo, si el
+ * cliente no repara, no genera saldo).
+ *
+ * Sobre este bruto se calculan el abono de repuestos y el % del descuento;
+ * el saldo final usa `totalClienteNetoParaCobro`.
  */
 export function totalClienteParaCobro(sol: SolicitudParaEtapaPago): number {
   if (sol.es_garantia) return 0
@@ -148,10 +158,34 @@ export function totalClienteParaCobro(sol: SolicitudParaEtapaPago): number {
   return precioClienteServicio(sol.tipo_equipo, sol.tipo_solicitud, false, null, sol.recargo_weekend_aplicado ?? null)
 }
 
+/**
+ * Monto (COP) del código de descuento de la solicitud sobre su total bruto
+ * (`totalClienteParaCobro`). 0 si no hay código, garantía o total aún
+ * indefinido. Nunca supera el total. ÚNICO punto que calcula el descuento de
+ * una solicitud: lo consumen `calcularMontoSaldo` (pagos.service), la etapa
+ * de pago, /pago/saldo, finanzas y facturación.
+ */
+export function descuentoClienteParaCobro(sol: SolicitudParaEtapaPago): number {
+  return montoDescuento(totalClienteParaCobro(sol), descuentoDeSolicitud(sol))
+}
+
+/**
+ * Total NETO (bruto − descuento) que el cliente termina pagando. Es la cifra
+ * contra la que se mide "pagado total" y de la que sale el saldo final.
+ */
+export function totalClienteNetoParaCobro(sol: SolicitudParaEtapaPago): number {
+  const total = totalClienteParaCobro(sol)
+  return Math.max(0, total - descuentoClienteParaCobro(sol))
+}
+
 export interface ResumenPagoCliente {
   etapa: EtapaPagoCliente
-  /** Total del servicio al cliente (0 = aún no definido). */
+  /** Total BRUTO del servicio al cliente, antes de descuento (0 = aún no definido). */
   total: number
+  /** Descuento por código aplicado al saldo final (0 = sin código). */
+  descuento: number
+  /** Total neto = total − descuento: lo que el cliente termina pagando. */
+  totalNeto: number
   /** Pagado en línea (Wompi, APPROVED). */
   pagado: number
   /** Monto del cobro EN CURSO (anticipo/abono/saldo pendiente); 0 si ninguno. */
@@ -166,12 +200,17 @@ export function etapaPagoCliente(sol: SolicitudParaEtapaPago): ResumenPagoClient
   if (sol.es_garantia) return null
 
   const total = totalClienteParaCobro(sol)
+  const descuento = descuentoClienteParaCobro(sol)
+  const totalNeto = Math.max(0, total - descuento)
   const pagado = Math.max(0, Math.round(sol.monto_pagado_online ?? 0))
+  // Restante BRUTO: base del abono de repuestos (el descuento se aplica solo
+  // en el saldo final). Restante NETO: lo que de verdad falta por pagar.
   const restante = Math.max(0, total - pagado)
+  const restanteNeto = Math.max(0, totalNeto - pagado)
   const resumen = (etapa: EtapaPagoCliente, porCobrar = 0): ResumenPagoCliente =>
-    ({ etapa, total, pagado, porCobrar })
+    ({ etapa, total, descuento, totalNeto, pagado, porCobrar })
 
-  if (sol.saldo_pagado_at || (total > 0 && pagado >= total)) return resumen('pagado')
+  if (sol.saldo_pagado_at || (totalNeto > 0 && pagado >= totalNeto)) return resumen('pagado')
 
   if (sol.estado && ESTADOS_CERRADOS_SIN_COBRO.has(sol.estado)) {
     return pagado > 0 || sol.anticipo_pagado_at ? resumen('cerrado_con_pago') : null
@@ -206,8 +245,12 @@ export function etapaPagoCliente(sol: SolicitudParaEtapaPago): ResumenPagoClient
 
   // El link del saldo sale al aprobar una cotización SIN repuestos, o al
   // completar el servicio (con repuestos, o precio fijo).
+  // El saldo final es el único cobro donde entra el código de descuento.
   const cobroFinalEnCurso = sol.estado === 'completada' || (cotAprobada && !conRepuestos)
-  if (cobroFinalEnCurso && restante > 0) return resumen('saldo_pendiente', restante)
+  if (cobroFinalEnCurso && restanteNeto > 0) return resumen('saldo_pendiente', restanteNeto)
+  // El descuento cubrió todo lo que faltaba (código del 100% o valor ≥ saldo):
+  // no hay nada más que cobrar.
+  if (cobroFinalEnCurso && total > 0 && descuento > 0 && restanteNeto === 0) return resumen('pagado')
 
   if (sol.abono_pagado_at) return resumen('abono_pagado')
   if (sol.anticipo_pagado_at) return resumen('anticipo_pagado')

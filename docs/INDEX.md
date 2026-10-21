@@ -29,9 +29,13 @@
 | **Elegir el cliente Supabase correcto** (anon vs service_role) | `docs/GOTCHAS.md` (primer ítem) + `docs/SUPABASE.md` § "Dos clientes" |
 | **Saber qué env vars necesita** | `CLAUDE.md` § "Environment Variables" |
 | **Entender por qué un técnico sí/no recibe una oferta** (matching ciudad/especialidad) | `docs/GOTCHAS.md` § Matching + `src/lib/utils/format.ts` (`normalizeForMatch`, `cityTokenForMatch`) + panel "Diagnóstico de matching" en `/admin/solicitudes/[id]` |
+| **Ver qué visitas NO se atendieron el día reservado** (incumplidas, atendidas tarde, cumplimiento por técnico) | `/admin/incumplidos` (KPI "Sin atender" en `/admin`) → `GET /api/admin/incumplidos` → `src/lib/services/incumplidos.service.ts` (criterio documentado en el header del archivo) |
+| **Ver qué servicios están detenidos por un repuesto / filtrar por técnico** | `/admin/solicitudes` → chip "🔩 Pendientes por repuesto" (muestra SKU + descripción bajo el estado) y selector de técnico |
+| **Resumen diario de movimientos a supervisores (5 pm, WhatsApp)** | `docs/FLOWS.md` § "Side flow: Notificación a supervisores" → `GET /api/cron/resumen-movimientos` (`?dry=1` para ver los textos) → `src/lib/services/resumen-movimientos.service.ts` + `docs/WHATSAPP_TEMPLATES.md` § `supervisor_resumen_diario_v1` |
 | **Reenviar la oferta a técnicos de varias solicitudes a la vez** | `/admin/solicitudes` → filtro "Sin técnico" → seleccionar → "Reenviar a técnicos" (usa `POST /api/whatsapp/notify`) |
 | **Cargar órdenes MABE masivamente** (Excel BITÁCORA o PDF TALLER) | `docs/TEST_CARGA_MASIVA.md` + `src/lib/utils/pdf-orden-mapping.ts` |
 | **Tocar un cobro online** (anticipo, saldo, abono, webhook Wompi) | `docs/WOMPI.md` |
+| **Códigos de descuento** (crear uno, cambiar cómo se aplica, dónde entra en el cobro) | `docs/TARIFAS.md` § "Códigos de descuento" |
 | **Entender el portal de supervisores** (link mágico, OTP, alcance) | `docs/SEGURIDAD.md` § Supervisores + `src/lib/auth/supervisor.ts` |
 | **Especialidades del técnico, gasodomésticos, certificaciones (SENA, gas, CONTE)** | `docs/CERTIFICACIONES.md` + `src/lib/constants/{especialidades,certificaciones}.ts` |
 | **Encender o tocar la línea de voz IA** | `docs/DAPTA.md` |

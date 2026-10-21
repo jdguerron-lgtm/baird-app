@@ -3,6 +3,7 @@ import { labelRelacionReceptor } from '@/lib/utils/receptor'
 import autoTable from 'jspdf-autotable'
 import { ESTADO_LABELS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
+import { esUrlVideo } from '@/lib/utils/media'
 import type { ChecklistServicio } from '@/types/solicitud'
 
 /**
@@ -627,14 +628,16 @@ export async function cargarImagenesEvidencia(
 ): Promise<ImagenEvidencia[]> {
   const diagTriaje = (sol.triaje_resultado?.evidencias_diagnostico as string[] | undefined) ?? []
   const diagCotizacion = (sol.cotizacion?.evidencias_diagnostico as string[] | undefined) ?? []
+  // Los videos (.mp4/.mov) no se pueden embeber en jsPDF: se saltan sin
+  // descargar los 50 MB (2026-10-20). El índice conserva la numeración original.
   const diagnostico = [...new Set([...diagTriaje, ...diagCotizacion])]
 
   const pendientes: Array<Promise<ImagenEvidencia | null>> = [
-    ...diagnostico.map((url, i) =>
-      cargarImagen(url, `Diagnóstico ${i + 1}`, 'diagnostico', fechaSubida(url, archivosAt)),
+    ...diagnostico.flatMap((url, i) =>
+      esUrlVideo(url) ? [] : [cargarImagen(url, `Diagnóstico ${i + 1}`, 'diagnostico', fechaSubida(url, archivosAt))],
     ),
-    ...(evidencia?.fotos ?? []).map((url, i) =>
-      cargarImagen(url, `Completación ${i + 1}`, 'completacion', fechaSubida(url, archivosAt)),
+    ...(evidencia?.fotos ?? []).flatMap((url, i) =>
+      esUrlVideo(url) ? [] : [cargarImagen(url, `Completación ${i + 1}`, 'completacion', fechaSubida(url, archivosAt))],
     ),
   ]
   if (evidencia?.firma_url) {

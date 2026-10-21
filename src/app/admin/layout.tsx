@@ -119,6 +119,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const navItems = [
     { href: '/admin', label: 'Dashboard', icon: '📊' },
     { href: '/admin/solicitudes', label: 'Solicitudes', icon: '📋' },
+    { href: '/admin/incumplidos', label: 'Incumplidos', icon: '⏰' },
     { href: '/admin/mapa', label: 'Mapa', icon: '🗺️' },
     { href: '/admin/cotizaciones-pendientes', label: 'Pricing pendiente', icon: '💵' },
     { href: '/admin/tecnicos', label: 'Técnicos', icon: '🔧' },
@@ -128,6 +129,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/gps-alertas', label: 'Alertas GPS', icon: '🚨' },
     { href: '/admin/errores', label: 'Errores conexión', icon: '📡' },
     { href: '/admin/carga-masiva', label: 'Carga Masiva', icon: '📁' },
+    { href: '/admin/descuentos', label: 'Descuentos', icon: '🏷️' },
     { href: '/admin/liquidaciones', label: 'Liquidaciones', icon: '💰' },
     { href: '/admin/pagos-tecnicos', label: 'Pagos técnicos', icon: '💸' },
     { href: '/admin/finanzas', label: 'Finanzas', icon: '📈' },

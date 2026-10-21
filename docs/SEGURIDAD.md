@@ -34,7 +34,7 @@
 - **Qué es**: una segunda allowlist, independiente de la admin, para cuentas que necesitan **ver todo el panel** (casos, pagos, repuestos, liquidaciones) **sin poder modificar nada**. Default hardcodeado: `logistica@encompasslatam.com`. Env vars: **`LECTURA_EMAILS`** (server, CSV) y **`NEXT_PUBLIC_LECTURA_EMAILS`** (cliente, CSV); si ninguna está definida se usa el default. Si un email aparece en ambas listas, gana admin.
 - **Fuente de verdad**: `obtenerRolAdmin(email)` en `src/lib/auth/adminEmails.ts` → `'admin' | 'lectura' | null`. Login, layout y gates de API usan esa función. `esEmailAdmin` **no** cambia: un email de lectura nunca es admin.
 - **Tres capas, de más a menos fuerte**:
-  1. **Server (seguridad real)** — todo endpoint que escribe sigue con `verificarAdmin` / `obtenerEmailAdmin`, que rechazan al rol lectura (401). Solo los handlers que **no escriben** aceptan ambos roles vía `verificarLectura(req)` / `obtenerRolRequest(req)` (`src/lib/auth/admin.ts`): `POST /api/admin/export`, `POST /api/admin/liquidaciones` (generan Excel), `GET /api/admin/supervisores`, `GET /api/admin/auxiliares`.
+  1. **Server (seguridad real)** — todo endpoint que escribe sigue con `verificarAdmin` / `obtenerEmailAdmin`, que rechazan al rol lectura (401). Solo los handlers que **no escriben** aceptan ambos roles vía `verificarLectura(req)` / `obtenerRolRequest(req)` (`src/lib/auth/admin.ts`): `POST /api/admin/export`, `POST /api/admin/liquidaciones` (generan Excel), `GET /api/admin/supervisores`, `GET /api/admin/auxiliares`, `GET /api/admin/incumplidos` (reporte de cumplimiento de reservas, 2026-10-19).
   2. **Guard del navegador** — `src/lib/auth/soloLectura.ts`. El layout lo instala sobre `window.fetch` cuando la sesión es `lectura`: cualquier request con método ≠ GET/HEAD/OPTIONS a `/api/*` (salvo los dos exports), a Supabase `/rest/v1/*` o `/storage/v1/*` (salvo `object/sign`) se corta en el cliente con un 403 sintético + toast "Modo solo lectura". Cubre de una vez todas las acciones del panel, incluidos los writes directos de supabase-js (resuelve `fetch` global en cada llamada). Es defensa en profundidad, **no** la seguridad: alguien con DevTools puede quitarlo.
   3. **UI** — `useRolAdmin()` (`src/components/admin/RolAdminContext.tsx`) oculta controles de edición (botones "Editar" y "Cambiar estado manualmente" del detalle), el menú esconde `Carga Masiva` y `Testing` (y el layout redirige si se entra a mano) y se muestra banner + badge "logística · solo lectura".
 - **Límite conocido**: los writes directos a Supabase desde el browser (`tecnicos`, `especialidades_tecnico`, `evidencias_servicio`) solo los frena el guard del navegador porque esas tablas aún no tienen RLS para anon (Fases 2–4 de `docs/PLAN-RLS.md`). Es el **mismo** hueco que ya tiene cualquier persona con el anon key público; el rol lectura no lo amplía. Cerrar RLS lo resuelve de raíz.
@@ -202,8 +202,11 @@ if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
 |---|---|---|
 | `/api/cron/horario-recordatorio` | Cada hora | Recordatorio T-24h + transición a `sin_agendar` (T-24h+12h) |
 | `/api/cron/gps-followup` | Cada 10 min | Flag silencioso si GPS post-visita está a < 100m del cliente |
+| `/api/cron/repuesto-recordatorio` | Diario 09:45 UTC | Recordatorios del ciclo de repuesto (supervisores en garantía, cliente tras la guía) |
+| `/api/cron/wompi-conciliar` | Cada 5 min (pg_cron) | Conciliación de pagos contra Wompi |
+| `/api/cron/resumen-movimientos` | Diario 22:00 UTC (5 pm Bogotá) | Resumen de cambios de estado del día a cada supervisor activo, SOLO sus servicios (alcance server-side `solicitudEnAlcance`). Envía WhatsApp → con `CRON_SECRET` sin configurar cualquiera podría disparar reenvíos (`?force=1`); la bitácora `supervisor_resumenes` evita duplicados por corte |
 
-Configurados en `vercel.json`.
+Configurados en `vercel.json` (Hobby: diarios; `wompi-conciliar` lo dispara `pg_cron` desde Supabase).
 
 El mismo gate `Bearer CRON_SECRET` (más `ENABLE_TEST_ENDPOINTS=true`, sin el cual responde 404) protege `/api/test-whatsapp` — GET de diagnóstico de configuración WhatsApp (presencia de env vars, whitelist activa, validez del token, salud del número). No filtra secretos ni envía mensajes.
 

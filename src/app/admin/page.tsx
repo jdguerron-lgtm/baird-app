@@ -38,6 +38,9 @@ const GUIAS = [
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
+  // Reservas vencidas que siguen abiertas sin atender (últimos 30 días),
+  // vía GET /api/admin/incumplidos. null = cargando o sin sesión.
+  const [sinAtender, setSinAtender] = useState<number | null>(null)
   const [recientes, setRecientes] = useState<{
     id: string
     nombre_completo: string
@@ -68,7 +71,26 @@ export default function AdminDashboard() {
       setRecientes(tecRecientes.data ?? [])
     }
 
+    const cargarIncumplidos = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        const res = await fetch('/api/admin/incumplidos', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (!res.ok) return
+        const json = await res.json()
+        const r = json?.resumen
+        if (r && typeof r.vencidas === 'number' && typeof r.sin_tecnico === 'number') {
+          setSinAtender(r.vencidas + r.sin_tecnico)
+        }
+      } catch {
+        /* el dashboard no depende de este KPI */
+      }
+    }
+
     cargarStats()
+    cargarIncumplidos()
   }, [])
 
   const estadoBadge = (estado: string) => {
@@ -93,7 +115,15 @@ export default function AdminDashboard() {
 
       {/* Stats cards */}
       {stats ? (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+          <Link
+            href="/admin/incumplidos"
+            className={`border rounded-xl p-5 hover:shadow-md transition-shadow ${sinAtender ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}
+            title="Visitas reservadas en los últimos 30 días que ya pasaron y nadie atendió (siguen abiertas)"
+          >
+            <p className={`text-3xl font-bold ${sinAtender ? 'text-red-700' : 'text-slate-500'}`}>{sinAtender ?? '…'}</p>
+            <p className={`text-xs font-semibold mt-1 uppercase tracking-wide ${sinAtender ? 'text-red-600' : 'text-slate-500'}`}>⏰ Sin atender</p>
+          </Link>
           <Link href="/admin/tecnicos?filtro=pendiente" className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 hover:shadow-md transition-shadow">
             <p className="text-3xl font-bold text-yellow-700">{stats.pendientes}</p>
             <p className="text-xs font-semibold text-yellow-600 mt-1 uppercase tracking-wide">Pendientes</p>
@@ -116,8 +146,8 @@ export default function AdminDashboard() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-          {[...Array(5)].map((_, i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+          {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-gray-100 rounded-xl p-5 animate-pulse h-24" />
           ))}
         </div>

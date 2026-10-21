@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     // Completadas (tope defensivo, mismo patrón que liquidaciones/export).
     const { data: solicitudesRaw, error: solErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, created_at, es_garantia, tipo_equipo, tipo_solicitud, estado, pago_tecnico, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at')
+      .select('id, created_at, es_garantia, tipo_equipo, tipo_solicitud, estado, pago_tecnico, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, descuento_codigo, descuento_tipo, descuento_valor')
       .eq('estado', 'completada')
       .order('created_at', { ascending: false })
       .limit(5000)

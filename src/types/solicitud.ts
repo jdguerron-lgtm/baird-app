@@ -51,6 +51,10 @@ export interface SolicitudFormData {
   pago_tecnico: number          // Valor del servicio en COP (pago a Baird Service)
   horario_visita_1: string      // Primera franja horaria preferida
   horario_visita_2: string      // Segunda franja horaria preferida
+  // Código de descuento (2026-10-19, opcional, solo particular). '' = sin
+  // código. No es columna: el servidor valida y guarda el snapshot
+  // (descuento_codigo / descuento_tipo / descuento_valor) en la solicitud.
+  codigo_descuento?: string
   // Técnico de preferencia (2026-10-15, opcional): id de un técnico verificado
   // y `visible_para_cliente` que cubre ciudad + tipo de equipo. '' / ausente =
   // sin preferencia (oferta abierta). Columna `tecnico_preferido_id` en BD.
@@ -377,7 +381,7 @@ export function precioClienteServicio(
   return catalogo + recargoCliente
 }
 
-export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico' | 'tecnico_preferido_id'> {
+export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico' | 'tecnico_preferido_id' | 'codigo_descuento'> {
   id: string
   created_at: string
   pago_tecnico: number
@@ -386,6 +390,13 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   // Técnico elegido por el cliente en el formulario (opcional). La primera
   // oferta (notificados_at NULL) va solo a él; los reenvíos a todos.
   tecnico_preferido_id?: string | null
+  // Código de descuento (2026-10-19, mig 20261019_codigos_descuento): snapshot
+  // tomado al reservar. Se aplica SOLO en el saldo final — ver
+  // descuentoClienteParaCobro() en lib/constants/pago-cliente.ts.
+  codigo_descuento_id?: string | null
+  descuento_codigo?: string | null
+  descuento_tipo?: 'porcentaje' | 'valor' | null
+  descuento_valor?: number | null
   notificados_at?: string
   triaje_resultado?: TriajeResponse | null
   cotizacion?: CotizacionReparacion | null  // Non-warranty: quote data

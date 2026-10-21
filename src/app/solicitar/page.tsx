@@ -13,6 +13,7 @@ import { TextAreaField } from '@/components/ui/TextAreaField'
 import { Button } from '@/components/ui/Button'
 import { DateTimeSlotPicker } from '@/components/ui/DateTimeSlotPicker'
 import { TecnicoPreferidoSelector } from '@/components/TecnicoPreferidoSelector'
+import { CodigoDescuentoInput } from '@/components/ui/CodigoDescuentoInput'
 import {
   UserIcon,
   PhoneIcon,
@@ -187,13 +188,17 @@ export default function SolicitarServicio() {
       const tecnicosMsg = data.notificados > 0
         ? ` ${data.notificados} técnico(s) notificado(s) por WhatsApp.`
         : ' Registramos tu solicitud y buscaremos técnicos disponibles.'
+      // Código de descuento aceptado por el servidor (snapshot guardado).
+      const descuentoMsg = data.descuento?.codigo
+        ? ` 🏷️ Código ${data.descuento.codigo} aplicado: ${data.descuento.tipo === 'porcentaje' ? `${data.descuento.valor}%` : `$${Number(data.descuento.valor).toLocaleString('es-CO')}`} de descuento en el último pago de tu servicio.`
+        : ''
 
       setMensaje({
         texto: data.agendado
           // Auto-agendado con la opción 1 (o la 2): la visita ya quedó fijada,
           // sin paso extra de confirmación por WhatsApp.
-          ? `✅ Solicitud #${id.slice(0, 8)} enviada y visita agendada para ${data.horario}.${tecnicosMsg} Te avisaremos cuando un técnico acepte.`
-          : `✅ Solicitud #${id.slice(0, 8)} enviada. Te enviamos un WhatsApp para confirmar el horario de tu visita.${tecnicosMsg}`,
+          ? `✅ Solicitud #${id.slice(0, 8)} enviada y visita agendada para ${data.horario}.${tecnicosMsg} Te avisaremos cuando un técnico acepte.${descuentoMsg}`
+          : `✅ Solicitud #${id.slice(0, 8)} enviada. Te enviamos un WhatsApp para confirmar el horario de tu visita.${tecnicosMsg}${descuentoMsg}`,
         tipo: 'success',
       })
     } catch {
@@ -508,6 +513,17 @@ export default function SolicitarServicio() {
                       value={formData.tecnico_preferido_id ?? ''}
                       onChange={(id) => setField('tecnico_preferido_id', id)}
                     />
+
+                    {/* Código de descuento (2026-10-19, opcional, solo particular:
+                        en garantía paga la marca). Se valida en vivo y de nuevo
+                        en el servidor; se aplica en el ÚLTIMO pago (saldo final). */}
+                    {!formData.es_garantia && (
+                      <CodigoDescuentoInput
+                        value={formData.codigo_descuento ?? ''}
+                        onChange={(codigo) => setField('codigo_descuento', codigo)}
+                        error={errors.codigo_descuento}
+                      />
+                    )}
                   </div>
                 </div>
 
