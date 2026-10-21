@@ -27,6 +27,7 @@
 | **Ver qué columnas existen** en una tabla | `docs/SUPABASE.md` § "Database Tables" + última migración relevante |
 | **Entender RLS y storage** | `docs/SUPABASE.md` § "Supabase Architecture" + **`docs/PLAN-RLS.md`** (fases + bitácora: qué está cerrado y qué falta) |
 | **Elegir el cliente Supabase correcto** (anon vs service_role) | `docs/GOTCHAS.md` (primer ítem) + `docs/SUPABASE.md` § "Dos clientes" |
+| **Probar un cambio en local, hacer un respaldo o desplegar a producción** | `docs/FLUJO-DESARROLLO.md` | Todo |
 | **Saber qué env vars necesita** | `CLAUDE.md` § "Environment Variables" |
 | **Entender por qué un técnico sí/no recibe una oferta** (matching ciudad/especialidad) | `docs/GOTCHAS.md` § Matching + `src/lib/utils/format.ts` (`normalizeForMatch`, `cityTokenForMatch`) + panel "Diagnóstico de matching" en `/admin/solicitudes/[id]` |
 | **Ver qué visitas NO se atendieron el día reservado** (incumplidas, atendidas tarde, cumplimiento por técnico) | `/admin/incumplidos` (KPI "Sin atender" en `/admin`) → `GET /api/admin/incumplidos` → `src/lib/services/incumplidos.service.ts` (criterio documentado en el header del archivo) |
@@ -62,6 +63,7 @@
 | **`docs/MAQUINA-DE-ESTADOS.md`** | Cómo se parte el sistema en dos flujos (`es_garantia`), diagramas warranty/particular, payment model, admin pricing gate, customer self-service, state machine completa. Complementa `FLOWS.md` (narrativo). | Antes de tocar la state machine, el pricing gate o el self-service. | Tras agregar un estado, cambiar una transición, modificar el pricing gate o el self-service. |
 | **`docs/SUPABASE.md`** | Capa de datos: tablas, columnas JSONB (`triaje_resultado`, `cotizacion`), cliente único, migraciones, RLS por tabla, storage buckets, patrones de query, tablas append-only, CHECK constraints, auth admin, auditoría. | Antes de tocar el schema, escribir una query, o entender RLS/storage. | Tras agregar tabla/columna, cambiar RLS, agregar bucket, o un patrón de query nuevo. |
 | **`docs/GOTCHAS.md`** | Trampas conocidas: Supabase client, atomic acceptance, phone format, WhatsApp 24h window, storage PII, RLS gap, pre-deploy, etc. | Antes de tocar código sensible. | Cuando detectás un patrón a evitar o una trampa nueva. |
+| **`docs/FLUJO-DESARROLLO.md`** | Entornos (prod/preview/local), carpetas replicadas en el PC (`baird-app`, `baird-app-main`, `baird-app-backups`), ciclo de un cambio (rama → tsc/lint/test → dev local → PR → merge = deploy), reglas con varias sesiones en el mismo repo, respaldo y restauración con `git bundle`, rollback. | Antes de tu primer cambio, y antes de cualquier push a `main`. | Cuando cambia el proceso de deploy, las carpetas del PC o las herramientas. |
 | **`docs/TARIFAS.md`** | Doc canónico de tarifas. MABE garantía (Tipo D + bonos + weekend + margen 22%) y particular multi-marca (× 1.13 utilidad Baird × 1.19 IVA, + ½ comisión Wompi en cotizaciones ≈ × 1.3675). Apéndices: marco tributario 2026, pasarelas, decisión reseller vs marketplace. | Antes de tocar cualquier cálculo de pago, agregar bono/recargo, o cambiar margen. | Tras cambiar una tarifa, modificar el modelo de margen, agregar marca nueva al flujo garantía, o cambiar IVA por reforma DIAN. |
 | **`docs/PROTOCOLO-VISITA.md`** | **Spec parcialmente implementada** (solo migración, `cumple_ta`, recargo y estado `no_show_cliente`; recordatorios T-24h/T-2h, plantillas y UI de no-show pendientes). Verificación T-24h / T-2h / llegada / no-show, política de gracia recurrentes. | Antes de implementar UI técnico para llegada, recordatorios, o gestión de no-shows. | Tras cambiar el SLA de TA, agregar/quitar pasos del protocolo, modificar política de gracia. |
 | **`docs/FLOWS.md`** | Diagramas paso-a-paso de cada flujo end-to-end con cada plantilla WhatsApp en su contexto, puntos de decisión del cliente, gaps conocidos, plan de testing manual. | Cuando vas a tocar el state machine, agregar una página customer-facing, o entender dónde se manda qué WhatsApp. | Tras cambiar el state machine, agregar/cambiar una plantilla en el flujo, o mover un disparo de WhatsApp. |
@@ -218,6 +220,8 @@ Cuando busques referencias en código, estos son los identificadores estables:
 
 ## 🩺 Health check rápido — comandos pegados
 
+> Ciclo completo (rama → verificación → PR → deploy), réplica local y respaldo: `docs/FLUJO-DESARROLLO.md`.
+
 ```bash
 # Build + typecheck + lint + tests (todo en uno, secuencial)
 npm run lint && npx tsc --noEmit && npm test && npm run build
@@ -256,3 +260,4 @@ Cuando el siguiente LLM (o tú mismo en una nueva sesión) abra este proyecto:
 2. **Este INDEX es el segundo paso obligatorio** — antes de hacer queries random al código, identificá la sección "¿qué doc abro para…?" y abrí el doc indicado.
 3. **No dupliques documentación.** Si querés agregar un detalle nuevo, primero leé qué doc ya cubre el tema y agregalo ahí.
 4. **Pipeline de actualización es ley** — si tocás un mensaje WA, el script + `WHATSAPP_TEMPLATES.md` van juntos. Si tocás el state machine, los 7 lugares de la sección "Agregas un estado nuevo" van juntos.
+5. **El ciclo de cambio vive en `docs/FLUJO-DESARROLLO.md`** — rama desde `main`, `npx tsc --noEmit && npm run lint && npm test`, prueba en local, PR y merge (= deploy a prod). Nada a `main` sin OK explícito. Para probar lo que está en prod sin tocar el repo de trabajo: la réplica `Documents/baird-app-main`.
