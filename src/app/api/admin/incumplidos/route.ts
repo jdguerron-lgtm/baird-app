@@ -7,6 +7,7 @@ import {
   calcularReporteCumplimiento,
   type EvidenciaIncumplidos,
   type PingIncumplidos,
+  type ReagendamientoIncumplidos,
   type SolicitudIncumplidos,
 } from '@/lib/services/incumplidos.service'
 
@@ -19,6 +20,11 @@ import {
  * reserva (hora Colombia); default últimos 30 días. Las reservas de hoy o
  * futuras nunca se evalúan. Solo lectura: admin y rol logística.
  * Clasificación pura en `src/lib/services/incumplidos.service.ts`.
+ *
+ * `items` viene priorizado (2026-10-21): reagendamientos desc → días desde la
+ * solicitud desc → gravedad. Los reagendamientos se cuentan como el máximo
+ * entre `reagendamientos_count` y los eventos `reagendamiento` + `nota_admin`
+ * con `payload.origen = 'reagendamiento_admin'`.
  */
 
 const querySchema = z.object({
@@ -82,10 +88,11 @@ export async function GET(req: NextRequest) {
 
     let evidencias: EvidenciaIncumplidos[] = []
     let pings: PingIncumplidos[] = []
+    let reagendamientos: ReagendamientoIncumplidos[] = []
     const tecnicos: Record<string, string> = {}
     if (ids.length > 0) {
       const tecnicoIds = [...new Set(solicitudes.map((s) => s.tecnico_asignado_id).filter((v): v is string => !!v))]
-      const [evRes, pingRes, tecRes] = await Promise.all([
+      const [evRes, pingRes, reagRes, tecRes] = await Promise.all([
         enLotes(ids, async (lote) => {
           const { data } = await supabase
             .from('evidencias_servicio')
@@ -100,6 +107,16 @@ export async function GET(req: NextRequest) {
             .in('solicitud_id', lote)
           return (data ?? []) as PingIncumplidos[]
         }),
+        enLotes(ids, async (lote) => {
+          // Reagendamientos del cliente y "reagendar vencido" (tipo dedicado) +
+          // reprogramaciones del admin (nota_admin con origen=reagendamiento_admin).
+          const { data } = await supabase
+            .from('solicitud_eventos')
+            .select('solicitud_id')
+            .in('solicitud_id', lote)
+            .or('tipo.eq.reagendamiento,and(tipo.eq.nota_admin,payload->>origen.eq.reagendamiento_admin)')
+          return (data ?? []) as ReagendamientoIncumplidos[]
+        }),
         enLotes(tecnicoIds, async (lote) => {
           const { data } = await supabase
             .from('tecnicos')
@@ -110,10 +127,11 @@ export async function GET(req: NextRequest) {
       ])
       evidencias = evRes
       pings = pingRes
+      reagendamientos = reagRes
       for (const t of tecRes) tecnicos[t.id] = t.nombre_completo ?? 'Técnico sin nombre'
     }
 
-    const reporte = calcularReporteCumplimiento({ solicitudes, evidencias, pings, tecnicos, desde, hasta, ahora })
+    const reporte = calcularReporteCumplimiento({ solicitudes, evidencias, pings, reagendamientos, tecnicos, desde, hasta, ahora })
     return NextResponse.json(reporte)
   } catch (err) {
     console.error('[admin/incumplidos] error:', err)

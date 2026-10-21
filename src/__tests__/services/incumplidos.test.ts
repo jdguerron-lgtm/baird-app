@@ -3,6 +3,9 @@ import {
   calcularReporteCumplimiento,
   diasEntreYMD,
   evaluarReserva,
+  nivelPrioridad,
+  ordenarPorPrioridad,
+  ordenarPorUrgencia,
   type SolicitudIncumplidos,
 } from '@/lib/services/incumplidos.service'
 
@@ -158,14 +161,80 @@ describe('incumplidos.service — calcularReporteCumplimiento', () => {
     })
     expect(reporte.resumen.cumplimiento_pct).toBeCloseTo(0.2)
 
-    // Vencidas primero, la más atrasada arriba; luego sin técnico; luego tarde.
+    // Sin reagendamientos y misma antigüedad (todas creadas el 10 oct): manda la
+    // gravedad — vencidas primero, la más atrasada arriba; luego sin técnico; luego tarde.
     expect(reporte.items.map((i) => i.solicitud_id)).toEqual(['vencida-vieja', 'vencida-nueva', 'sin-tec', 'tarde', 'cumplida'])
+    expect(reporte.items.every((i) => i.dias_desde_solicitud === 9 && i.prioridad === 'media')).toBe(true)
 
     expect(reporte.por_tecnico[0]).toMatchObject({ tecnico_id: 'tec-1', tecnico_nombre: 'Néstor', reservas: 3, vencidas: 2, cumplidas: 1 })
     const sinTec = reporte.por_tecnico.find((t) => t.tecnico_id === null)
     expect(sinTec).toMatchObject({ tecnico_nombre: 'Sin técnico', sin_tecnico: 1 })
     const henry = reporte.por_tecnico.find((t) => t.tecnico_id === 'tec-2')
     expect(henry).toMatchObject({ tarde: 1, incumplidas: 1, cumplimiento_pct: 0 })
+  })
+
+  it('prioriza por reagendamientos y luego por antigüedad de la solicitud, por encima de la gravedad', () => {
+    const reporte = calcularReporteCumplimiento({
+      solicitudes: [
+        // Vencida, pero nueva y sin reagendar → va después.
+        sol({ id: 'vencida-nueva', created_at: '2026-10-14T12:00:00Z' }),
+        // Atendida tarde, reagendada 2 veces por contador → primera.
+        sol({ id: 'tarde-reagendada', estado: 'completada', reagendamientos_count: 2 }),
+        // Sin técnico, 1 reagendamiento que SOLO quedó en eventos (reagendar vencido).
+        sol({ id: 'sin-tec-evento', estado: 'notificada', tecnico_asignado_id: null, created_at: '2026-10-01T12:00:00Z' }),
+        // Vencida, sin reagendar, pero la solicitud más vieja del grupo sin reagendamientos.
+        sol({ id: 'vencida-vieja', created_at: '2026-09-20T12:00:00Z' }),
+      ],
+      evidencias: [{ solicitud_id: 'tarde-reagendada', completado_at: '2026-10-16T18:00:00Z' }],
+      pings: [],
+      reagendamientos: [{ solicitud_id: 'sin-tec-evento' }],
+      tecnicos: { 'tec-1': 'Néstor' },
+      desde: '2026-10-01',
+      hasta: '2026-10-18',
+      ahora: AHORA,
+    })
+
+    expect(reporte.items.map((i) => i.solicitud_id)).toEqual([
+      'tarde-reagendada', // 2 reagendamientos
+      'sin-tec-evento', // 1 reagendamiento (por evento), 18 días
+      'vencida-vieja', // 0 reagendamientos, 29 días
+      'vencida-nueva', // 0 reagendamientos, 5 días
+    ])
+    const porId = Object.fromEntries(reporte.items.map((i) => [i.solicitud_id, i]))
+    expect(porId['tarde-reagendada']).toMatchObject({ reagendamientos: 2, dias_desde_solicitud: 9, prioridad: 'alta' })
+    expect(porId['sin-tec-evento']).toMatchObject({ reagendamientos: 1, dias_desde_solicitud: 18, prioridad: 'alta' })
+    expect(porId['vencida-vieja']).toMatchObject({ reagendamientos: 0, dias_desde_solicitud: 29, prioridad: 'alta' })
+    expect(porId['vencida-nueva']).toMatchObject({ reagendamientos: 0, dias_desde_solicitud: 5, prioridad: 'baja' })
+
+    // El orden por urgencia sigue disponible para la vista: vencidas primero.
+    expect(ordenarPorUrgencia(reporte.items).map((i) => i.solicitud_id)).toEqual([
+      'vencida-vieja', 'vencida-nueva', 'sin-tec-evento', 'tarde-reagendada',
+    ])
+    // ordenarPorPrioridad no muta y es estable con la salida del reporte.
+    const copia = [...reporte.items].reverse()
+    expect(ordenarPorPrioridad(copia).map((i) => i.solicitud_id)).toEqual(reporte.items.map((i) => i.solicitud_id))
+    expect(copia[0].solicitud_id).toBe('vencida-nueva')
+  })
+
+  it('reagendamientos = máximo entre el contador y los eventos (no se suman)', () => {
+    const conAmbos = evaluarReserva(sol({ id: 'a', reagendamientos_count: 3 }), {
+      ahora: AHORA,
+      reagendamientos: [{ solicitud_id: 'a' }, { solicitud_id: 'a' }],
+    })
+    expect(conAmbos?.reagendamientos).toBe(3)
+    const soloEventos = evaluarReserva(sol({ id: 'b', reagendamientos_count: null }), {
+      ahora: AHORA,
+      reagendamientos: [{ solicitud_id: 'b' }],
+    })
+    expect(soloEventos?.reagendamientos).toBe(1)
+  })
+
+  it('dias_desde_solicitud cuenta días calendario CO y nunca es negativo', () => {
+    // 18 oct 23:30 Bogotá = 19 oct 04:30Z → sigue siendo el 18 en Colombia: 1 día.
+    expect(evaluarReserva(sol({ id: 'a', created_at: '2026-10-19T04:30:00Z' }), { ahora: AHORA })?.dias_desde_solicitud).toBe(1)
+    expect(evaluarReserva(sol({ id: 'b', created_at: '2026-10-25T12:00:00Z' }), { ahora: AHORA })?.dias_desde_solicitud).toBe(0)
+    // created_at inválido: cae a la fecha de la reserva (15 oct → 4 días).
+    expect(evaluarReserva(sol({ id: 'c', created_at: 'no-es-fecha' }), { ahora: AHORA })?.dias_desde_solicitud).toBe(4)
   })
 
   it('cumplimiento_pct es null sin base (solo cerradas sin visita)', () => {
@@ -180,6 +249,18 @@ describe('incumplidos.service — calcularReporteCumplimiento', () => {
     })
     expect(reporte.resumen.cerradas_sin_visita).toBe(1)
     expect(reporte.resumen.cumplimiento_pct).toBeNull()
+  })
+})
+
+describe('incumplidos.service — nivelPrioridad', () => {
+  it('alta con ≥2 reagendamientos o ≥15 días; media con ≥1 o ≥7; baja el resto', () => {
+    expect(nivelPrioridad(0, 0)).toBe('baja')
+    expect(nivelPrioridad(0, 6)).toBe('baja')
+    expect(nivelPrioridad(1, 0)).toBe('media')
+    expect(nivelPrioridad(0, 7)).toBe('media')
+    expect(nivelPrioridad(2, 0)).toBe('alta')
+    expect(nivelPrioridad(0, 15)).toBe('alta')
+    expect(nivelPrioridad(1, 20)).toBe('alta')
   })
 })
 
