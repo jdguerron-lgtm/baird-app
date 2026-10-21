@@ -34,6 +34,11 @@ interface Props {
 }
 
 const MARCAS_SERVIPLUS = ['mabe', 'ge', 'general electric', 'centrales']
+/** Buscador de partes de Serviplus (visualizador MABE): por número de parte
+ * o descripción. Es el acceso principal para el técnico (2026-10-21). */
+const SERVIPLUS_BUSCAR_PARTE = 'https://visualizador.serviplus.com.mx/proce/search.html'
+/** Despiece por modelo (acepta ?p=MODELO). Acceso secundario cuando ya
+ * tenemos el modelo del equipo. */
 const SERVIPLUS_BASE = 'https://visualizador.serviplus.com.mx/consultas/visualmdlo.html'
 
 function urlServiplus(modelo?: string | null): string {
@@ -171,24 +176,48 @@ export default function ProductosNecesariosForm({ productos, onChange, marcaEqui
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-      <div className="flex items-start justify-between mb-1">
-        <h2 className="text-lg font-bold text-slate-900">Productos necesarios</h2>
-        {esMarcaServiplus && (
-          <a
-            href={linkServiplus}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-fuchsia-700 underline font-medium hover:text-fuchsia-900 shrink-0 ml-2"
-            title={modeloEquipo ? `Buscar despiece para modelo ${modeloEquipo}` : 'Buscar SKU en Serviplus'}
-          >
-            🔍 {modeloEquipo ? `Buscar despiece ${modeloEquipo}` : 'Buscar SKU Serviplus'} ↗
-          </a>
-        )}
-      </div>
+      <h2 className="text-lg font-bold text-slate-900 mb-1">Productos necesarios</h2>
       <p className="text-xs text-gray-500 mb-3">
         Repuestos que se necesitan para completar la reparación. Escribe el SKU o la
         descripción y te mostramos disponibilidad y precio en la tienda Baird.
       </p>
+      {/* Acceso destacado al visualizador de Serviplus (MABE / GE / Centrales):
+          el técnico busca ahí el número de parte antes de escribir el SKU.
+          Bloque visible y con botón grande a pedido del negocio (2026-10-21). */}
+      {esMarcaServiplus && (
+        <div className="mb-4 rounded-xl border-2 border-fuchsia-300 bg-fuchsia-50 p-3">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl shrink-0">🔍</span>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-bold text-fuchsia-900">
+                Busca la parte en el visualizador MABE (Serviplus)
+              </h3>
+              <p className="text-xs text-fuchsia-800 mt-0.5 mb-2">
+                Encuentra el número de parte exacto de tu {marcaEquipo} y cópialo en el SKU de abajo.
+              </p>
+              <a
+                href={SERVIPLUS_BUSCAR_PARTE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-fuchsia-700 active:bg-fuchsia-800"
+              >
+                🔎 Buscar parte en Serviplus ↗
+              </a>
+              {modeloEquipo && (
+                <a
+                  href={linkServiplus}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 block text-xs font-semibold text-fuchsia-700 underline hover:text-fuchsia-900"
+                  title={`Buscar despiece para modelo ${modeloEquipo}`}
+                >
+                  Ver despiece del modelo {modeloEquipo} ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Descuento de técnico (2026-08-18): al cotizar, el técnico usa el
           precio con descuento, no el público. Dejarlo explícito acá evita
           que cotice de más y que el cliente pague un repuesto inflado. */}
