@@ -119,7 +119,7 @@ El server escribe con service_role (bypass), así que "acceso anon" = lo que pue
 | `tecnico_auxiliares` (20261013) | ✅ | ninguno | Nace cerrada: solo service_role (`/api/tecnico/equipo` auth por `portal_token`, `/api/admin/auxiliares` auth admin, `equipo.service` desde RSC y `procesarAceptacion`). La foto va al bucket público `tecnicos-fotos/{tecnicoId}/auxiliares/` con la policy de insert anon de `/registro` |
 | `agenda_tecnico_bloqueos` (20261011) | ✅ | ninguno | Nace cerrada: solo service_role (`/api/tecnico/agenda` auth por `portal_token`, `agenda.service → ocupacionTecnicoEnSlot`) |
 | `codigos_descuento` (20261019) | ✅ | ninguno | Nace cerrada: solo service_role (`descuentos.service.ts` desde `/api/descuentos/validar`, `/api/solicitar` y `/api/admin/descuentos`) |
-| `supervisor_resumenes` (20261020) | ✅ | ninguno | Nace cerrada: solo service_role (`/api/cron/resumen-movimientos`). Si la tabla falta, el cron loguea y envía igual (pierde la idempotencia) |
+| `supervisor_resumenes` (20261020, aplicada 2026-10-21) | ✅ | ninguno | Nace cerrada: solo service_role (`/api/cron/resumen-movimientos`). Si la tabla falta, el cron loguea y envía igual (pierde la idempotencia) |
 
 Verificación post-4.1 (PLAN-RLS § 3bis): anon simulado ve 0 filas en las tablas cerradas y recibe `42501` al escribir. **Lo que falta** (Fases 2–4.2): mover a API routes server-side los writes client-side de `tecnicos` y `evidencias_servicio`, luego cerrar sus policies y habilitar RLS en `solicitudes_servicio` + `especialidades_tecnico`. Ver `docs/PLAN-RLS.md` y `docs/SEGURIDAD.md`.
 
