@@ -216,7 +216,7 @@ cliente ni el pago del técnico — es una operación aparte.
 |---|---|---|---|
 | **1. Manual asistida** (este doc) | Export Excel con los campos exactos; contabilidad captura en Siigo (o usa la plantilla de importación de Siigo) | Hecho | ✅ 2026-09-09 |
 | **2. Capturar lo que falta** | Email del cliente (en `/solicitar` y en `/pago/*`), tipo de documento (CC/NIT) en vez de inferirlo, datos bancarios + régimen + email del técnico en `/registro` y en el admin | Bajo (form + 4 columnas) | ⏳ propuesto |
-| **3. Borrador automático en Siigo** | Al pasar a `completada` (particular) crear la FV por API (`POST /v1/invoices`, cliente creado/actualizado con `POST /v1/customers`), guardar `siigo_invoice_id` + número en la solicitud, mostrar en admin y en el correo de facturación. Kill-switch por env (`SIIGO_ENABLED`) como Wompi/Dapta. Garantía: FV MABE mensual por script | Medio | ⏳ propuesto |
+| **3. Borrador automático en Siigo** | Al pasar a `completada` (particular) crear la FV por API (`POST /v1/invoices`, cliente creado/actualizado con `POST /v1/customers`), guardar `siigo_invoice_id` + número en la solicitud, mostrar en admin y en el correo de facturación. Kill-switch por env (`SIIGO_ENABLED`) como Wompi/Dapta. Garantía: FV MABE mensual por script | Medio | 📐 **diseño aprobado 2026-10-20** — plan completo (regla "100 % Wompi", emisión directa DIAN, tercero, DANE, descuento, tabla `facturas_siigo`, dry-run) en [`docs/mejoras-futuras/facturacion-siigo-automatica/README.md`](mejoras-futuras/facturacion-siigo-automatica/README.md) |
 | **4. Documento soporte automático** | Al cerrar la quincena, crear en Siigo el documento soporte por técnico + registrar retención | Medio | ⏳ propuesto |
 | **5. Conciliación automática Wompi** | Cron que lee el settlement de Wompi (o el webhook) y marca cada pago como conciliado contra la FV | Medio | ⏳ idea |
 
@@ -261,7 +261,8 @@ a mano.
 - [ ] Crear a MABE como tercero en Siigo y poner `FACTURACION_MABE_NIT` en Vercel.
 - [x] Opción de repuestos al técnico: **A** (2026-09-11). Pendiente operativo: crear los códigos de descuento por técnico en Shopify y entregarlos.
 - [ ] Cruce automático órdenes Shopify (nota `BS-…`) ↔ servicio para el análisis por servicio.
-- [ ] Fase 2: capturar email del cliente y tipo de documento; datos bancarios, régimen y email del técnico.
+- [ ] Fase 2: capturar email del cliente (decidido 2026-10-20: sí, va dentro de la fase 3); tipo de documento se sigue infiriendo (decisión 2026-10-20); datos bancarios, régimen y email del técnico siguen pendientes.
+- [ ] Fase 3 (FV automática): crear centro de costo "SERVICIOS LINEA BLANCA" en Siigo (la FV-2 lo exige) y poner `SIIGO_*` en Vercel — ver plan en `mejoras-futuras/facturacion-siigo-automatica/`.
 - [ ] Consecutivo legible `numero_servicio` (§ 5) — migración + referencia Wompi.
 - [ ] Snapshot inmutable de liquidaciones al cierre (`completada_at` + tabla `liquidaciones`).
 - [ ] Registrar pagos en sitio (QR Bre-B) para que el ledger cierre al 100%.
