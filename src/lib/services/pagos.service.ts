@@ -24,6 +24,7 @@ import {
   enviarSaldoConfirmadoTecnico,
   enviarAbonoConfirmadoTecnico,
   enviarAbonoConfirmadoCliente,
+  enviarDevolucionConfirmadaCliente,
   enviarMensajeTexto,
 } from '@/lib/services/whatsapp.service'
 
@@ -647,12 +648,45 @@ export async function devolverPagoWompi(params: {
       referencia_wompi: referenciaWompi ?? null,
     },
   })
+  // Aviso al cliente (plantilla devolucion_confirmada_cliente_v1). Best-effort:
+  // un fallo de Meta no revierte la devolución; queda evento ⚠️ para avisar a mano.
+  let avisoCliente: string | null = null
+  try {
+    const r = await enviarDevolucionConfirmadaCliente(solicitudId, {
+      monto: pago.monto,
+      tipo: pago.tipo,
+      medio: via === 'manual' ? 'por el medio acordado contigo' : `al mismo medio con el que pagaste (${metodoLegible(pago.metodo)})`,
+    })
+    if (!r.ok) avisoCliente = r.error ?? 'sin detalle'
+  } catch (err) {
+    avisoCliente = err instanceof Error ? err.message : String(err)
+  }
+  if (avisoCliente && !avisoCliente.includes('BAIRD_TEST_PHONE_WHITELIST')) {
+    console.error(`[pagos] aviso de devolución al cliente falló:`, avisoCliente)
+    await registrarEventoPago(sol, {
+      motivo: `⚠️ La devolución del ${etiqueta} quedó registrada pero NO se pudo avisar al cliente por WhatsApp — avisar manualmente`,
+      payload: { transaccion_id: pago.transaccion_id, monto: pago.monto, tipo: pago.tipo, devolucion: true, requiere_intervencion_admin: true, fallas_aviso: [`cliente: ${avisoCliente}`] },
+    })
+  }
+
   await alertarPagoEquipoBaird(sol,
     `↩️ Devolución — ${etiqueta.toUpperCase()} $${formatCOP(pago.monto)} (${metodo})\n` +
     `Cliente: ${sol.cliente_nombre} · ${sol.tipo_solicitud} ${sol.tipo_equipo}\n` +
-    `Servicio ${solicitudId.slice(0, 8)} · ${VIA_LABEL[via]} · por ${actor}`)
+    `Servicio ${solicitudId.slice(0, 8)} · ${VIA_LABEL[via]} · por ${actor}` +
+    (avisoCliente ? `\n⚠️ No se pudo avisar al cliente` : ''))
 
   return { ok: true, via, referenciaWompi, ...base }
+}
+
+/** Nombre legible del método de pago de Wompi para mensajes al cliente. */
+function metodoLegible(metodo: string | null): string {
+  const m = (metodo ?? '').toUpperCase()
+  if (m === 'CARD') return 'tarjeta'
+  if (m === 'PSE') return 'PSE'
+  if (m === 'NEQUI') return 'Nequi'
+  if (m === 'BANCOLOMBIA_TRANSFER' || m === 'BANCOLOMBIA_COLLECT') return 'Bancolombia'
+  if (m === 'DAVIPLATA') return 'Daviplata'
+  return metodo ?? 'Wompi'
 }
 
 /**

@@ -60,6 +60,7 @@ const { db, mockFrom, wa } = vi.hoisted(() => {
     enviarSaldoConfirmadoTecnico: vi.fn(),
     enviarAbonoConfirmadoTecnico: vi.fn(),
     enviarAbonoConfirmadoCliente: vi.fn(),
+    enviarDevolucionConfirmadaCliente: vi.fn(),
     enviarMensajeTexto: vi.fn(),
   }
   return { db, mockFrom: vi.fn(from), wa }
@@ -121,6 +122,7 @@ beforeEach(() => {
   wa.enviarSaldoConfirmadoTecnico.mockResolvedValue({ ok: true })
   wa.enviarAbonoConfirmadoTecnico.mockResolvedValue({ ok: true })
   wa.enviarAbonoConfirmadoCliente.mockResolvedValue({ ok: true })
+  wa.enviarDevolucionConfirmadaCliente.mockResolvedValue({ ok: true })
   wa.enviarMensajeTexto.mockResolvedValue(undefined)
 })
 
@@ -383,6 +385,24 @@ describe('devolverPagoWompi — devoluciones desde el admin (2026-10-21)', () =>
     expect(ev[0].payload).toMatchObject({ devolucion: true, via: 'reembolso_wompi', monto: 42000, actor: 'jdguerron@bairdservice.com', pasarela: 'wompi' })
     expect(wa.enviarMensajeTexto).toHaveBeenCalledTimes(1)
     expect(String(wa.enviarMensajeTexto.mock.calls[0][1])).toContain('Devolución')
+    // Aviso al cliente con la plantilla devolucion_confirmada_cliente_v1 (medio = el que pagó).
+    expect(wa.enviarDevolucionConfirmadaCliente).toHaveBeenCalledTimes(1)
+    expect(wa.enviarDevolucionConfirmadaCliente).toHaveBeenCalledWith(SOL_ID, {
+      monto: 42000, tipo: 'anticipo', medio: 'al mismo medio con el que pagaste (PSE)',
+    })
+  })
+
+  it('14b. si el WhatsApp al cliente falla, la devolución NO se revierte: evento ⚠️ y marca en la alerta', async () => {
+    conAnticipoPagado('CARD')
+    wa.enviarDevolucionConfirmadaCliente.mockResolvedValue({ ok: false, error: 'Meta 131047: fuera de ventana' })
+    mockFetch([{ body: { data: { id: 1, status: 'APPROVED', amount_in_cents: 4200000, transaction_id: TX_ANT } } }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(true)
+    expect(pagos()[0].estado).toBe('VOIDED')
+    const aviso = eventos().find(e => Array.isArray((e.payload as Row).fallas_aviso))
+    expect(aviso).toBeDefined()
+    expect((aviso!.payload as Row).requiere_intervencion_admin).toBe(true)
+    expect(String(wa.enviarMensajeTexto.mock.calls[0][1])).toContain('No se pudo avisar al cliente')
   })
 
   it('15. Wompi DECLINA el reembolso → nada cambia en la BD, evento ⚠️ y error claro', async () => {
@@ -444,6 +464,9 @@ describe('devolverPagoWompi — devoluciones desde el admin (2026-10-21)', () =>
     expect(sol().monto_pagado_online).toBe(0)
     expect(sol().anticipo_pagado_at).toBeNull()
     expect(eventos()[0].motivo).toContain('Reembolso desde el panel de Wompi #778')
+    expect(wa.enviarDevolucionConfirmadaCliente).toHaveBeenCalledWith(SOL_ID, {
+      monto: 42000, tipo: 'anticipo', medio: 'por el medio acordado contigo',
+    })
   })
 
   it('20. idempotencia: un pago ya VOIDED responde yaDevuelto sin llamar a Wompi ni repetir evento', async () => {

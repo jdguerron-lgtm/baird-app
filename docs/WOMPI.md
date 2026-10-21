@@ -185,8 +185,11 @@ y el `raw` original intacto; el trigger `pagos_resumen_aiud` descuenta el
 monto de `monto_pagado_online`; si no queda otro pago APPROVED del mismo
 tipo se limpia `{anticipo|abono|saldo}_pagado_at` (coherencia con
 `auditar_pagos()` y, si el cliente vuelve a pagar, se le avisa de nuevo);
-evento ↩️ `pago_registrado` (`payload.devolucion = true`) y alerta de texto
-al equipo. Un pago ya VOIDED responde `yaDevuelto` sin llamar a Wompi. Si
+evento ↩️ `pago_registrado` (`payload.devolucion = true`), **WhatsApp al
+cliente** con la plantilla `devolucion_confirmada_cliente_v1` (monto,
+concepto, equipo, medio de devolución y plazo bancario; fallback a texto
+libre; si falla queda evento ⚠️ `requiere_intervencion_admin`) y alerta de
+texto al equipo. Un pago ya VOIDED responde `yaDevuelto` sin llamar a Wompi. Si
 Wompi rechaza (DECLINED/ERROR/HTTP), **nada cambia en la BD**: solo queda un
 evento ⚠️ `devolucion_fallida` y el admin ve el motivo. La devolución es
 siempre por el monto completo del pago (parcial = hacerla en el panel y
