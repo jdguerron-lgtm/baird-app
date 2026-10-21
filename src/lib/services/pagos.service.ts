@@ -8,6 +8,8 @@ import {
   referenciaPago,
   listarTransaccionesPorReferencia,
   wompiConciliacionHabilitada,
+  crearReembolsoWompi,
+  anularTransaccionWompi,
   type TipoPago,
   type TransaccionWompi,
 } from '@/lib/wompi'
@@ -453,6 +455,256 @@ async function registrarEventoPago(
   } catch (err) {
     console.error('[pagos] evento pago_registrado threw:', err)
   }
+}
+
+// ─────────────────────────────────────────
+// Devoluciones desde el admin (2026-10-21)
+// ─────────────────────────────────────────
+
+export type ModoDevolucion = 'wompi' | 'manual'
+
+export interface ResultadoDevolucion {
+  ok: boolean
+  error?: string
+  /** Cómo se hizo efectiva la devolución (solo si ok). */
+  via?: 'reembolso_wompi' | 'anulacion_wompi' | 'manual'
+  /** true si el pago ya figuraba devuelto (idempotencia: no se repite nada). */
+  yaDevuelto?: boolean
+  tipo?: TipoPago
+  monto?: number
+  /** Id del reembolso/anulación en Wompi (para cruzar con el panel). */
+  referenciaWompi?: string
+}
+
+/** Fila del ledger tal como la lee la devolución. */
+type PagoLedger = {
+  id: string
+  solicitud_id: string
+  tipo: TipoPago
+  estado: string
+  monto: number
+  transaccion_id: string | null
+  metodo: string | null
+  raw: Record<string, unknown> | null
+}
+
+const ETIQUETA_TIPO: Record<TipoPago, string> = { anticipo: 'anticipo', abono: 'abono de repuestos', saldo: 'saldo' }
+
+/**
+ * Devuelve al cliente un pago APPROVED del ledger (caso típico: el servicio
+ * se canceló después de pagar el anticipo).
+ *
+ *   - `modo: 'wompi'`  → el dinero regresa al medio de pago original por el
+ *     API de Wompi: reembolso V2 (`POST /v1/refunds`, cualquier método) y, si
+ *     ese endpoint no está disponible para el comercio y el pago fue con
+ *     TARJETA, anulación (`/void`). Requiere WOMPI_PRIVATE_KEY.
+ *   - `modo: 'manual'` → el admin ya devolvió por fuera (panel de Wompi,
+ *     transferencia) y solo deja constancia.
+ *
+ * En ambos casos la MISMA fila de `pagos` pasa a `VOIDED` (una transacción =
+ * una fila; el trigger `pagos_resumen_aiud` descuenta el monto del resumen),
+ * con `raw._devolucion` {via, at, actor, nota, respuesta}. Si no queda otro
+ * pago APPROVED del mismo tipo se limpia `{tipo}_pagado_at` — así el ledger y
+ * los guards quedan coherentes (`auditar_pagos()`) y, si el cliente vuelve a
+ * pagar, se le avisa de nuevo. Queda evento ↩️ en el historial y alerta al
+ * equipo. Idempotente: un pago ya VOIDED responde `yaDevuelto` sin llamar a
+ * Wompi. Un fallo de Wompi NO toca la BD (solo evento ⚠️ de intento).
+ */
+export async function devolverPagoWompi(params: {
+  pagoId: string
+  solicitudId: string
+  modo: ModoDevolucion
+  actor: string
+  nota?: string
+}): Promise<ResultadoDevolucion> {
+  const { pagoId, solicitudId, modo, actor } = params
+  const nota = params.nota?.trim().slice(0, 500) || undefined
+
+  const { data: pagoRow, error: pagoErr } = await supabase
+    .from('pagos')
+    .select('id, solicitud_id, tipo, estado, monto, transaccion_id, metodo, raw')
+    .eq('id', pagoId)
+    .eq('solicitud_id', solicitudId)
+    .maybeSingle()
+  if (pagoErr) return { ok: false, error: `No se pudo leer el pago: ${pagoErr.message}` }
+  const pago = (pagoRow as PagoLedger | null) ?? null
+  if (!pago) return { ok: false, error: 'Ese pago no existe o no pertenece a este servicio' }
+
+  const base = { tipo: pago.tipo, monto: pago.monto }
+  if (pago.estado === 'VOIDED') return { ok: true, yaDevuelto: true, ...base }
+  if (pago.estado !== 'APPROVED') {
+    return { ok: false, error: `Solo se puede devolver un pago aprobado (este está ${pago.estado})`, ...base }
+  }
+
+  const sol = await cargarSolicitudPago(solicitudId)
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada', ...base }
+
+  const metodo = pago.metodo ?? 'Wompi'
+  const etiqueta = ETIQUETA_TIPO[pago.tipo] ?? pago.tipo
+  let via: NonNullable<ResultadoDevolucion['via']>
+  let referenciaWompi: string | undefined
+  let respuesta: unknown = null
+
+  if (modo === 'wompi') {
+    if (!pago.transaccion_id) return { ok: false, error: 'El pago no tiene transacción de Wompi asociada', ...base }
+    const motivoWompi = nota ?? `Devolución del ${etiqueta} — servicio ${solicitudId.slice(0, 8)}`
+    const reembolso = await crearReembolsoWompi({
+      transactionId: pago.transaccion_id,
+      amountInCents: pago.monto * 100,
+      motivo: motivoWompi,
+      referencia: `devolucion-${pago.tipo}-${solicitudId}`,
+    })
+
+    if (reembolso.ok) {
+      if (reembolso.data.status !== 'APPROVED') {
+        const detalle = reembolso.data.status_message ? ` (${reembolso.data.status_message})` : ''
+        await registrarEventoPago(sol, {
+          motivo: `⚠️ Wompi NO aprobó la devolución del ${etiqueta} por $${formatCOP(pago.monto)} COP: ${reembolso.data.status}${detalle} — intentarlo desde el panel de Wompi`,
+          payload: { transaccion_id: pago.transaccion_id, monto: pago.monto, tipo: pago.tipo, devolucion_fallida: true, actor, respuesta: reembolso.data },
+        })
+        return { ok: false, error: `Wompi respondió ${reembolso.data.status}${detalle}`, ...base }
+      }
+      via = 'reembolso_wompi'
+      referenciaWompi = reembolso.data.v2_refund_id ?? String(reembolso.data.id)
+      respuesta = reembolso.data
+    } else {
+      // Reembolsos V2 no disponible para el comercio → con tarjeta aún se
+      // puede intentar la anulación clásica (misma jornada).
+      const endpointNoDisponible = reembolso.httpStatus !== undefined && [403, 404, 405].includes(reembolso.httpStatus)
+      const esTarjeta = (pago.metodo ?? '').toUpperCase() === 'CARD'
+      const anulacion = endpointNoDisponible && esTarjeta ? await anularTransaccionWompi(pago.transaccion_id) : null
+      if (anulacion?.ok && anulacion.data.status === 'VOIDED') {
+        via = 'anulacion_wompi'
+        referenciaWompi = anulacion.data.id
+        respuesta = anulacion.data
+      } else {
+        const errorFinal = !anulacion
+          ? reembolso.error
+          : anulacion.ok
+            ? `Wompi dejó la transacción en ${anulacion.data.status} (no se anuló)`
+            : `${reembolso.error}; anulación: ${anulacion.error}`
+        await registrarEventoPago(sol, {
+          motivo: `⚠️ No se pudo devolver el ${etiqueta} por $${formatCOP(pago.monto)} COP desde el API de Wompi: ${errorFinal} — hacerlo desde el panel de Wompi y registrar la devolución manual`,
+          payload: { transaccion_id: pago.transaccion_id, monto: pago.monto, tipo: pago.tipo, devolucion_fallida: true, actor, error: errorFinal },
+        })
+        return { ok: false, error: errorFinal, ...base }
+      }
+    }
+  } else {
+    via = 'manual'
+  }
+
+  // Misma fila → VOIDED. Guard estado=APPROVED: si otro admin la devolvió en
+  // paralelo este UPDATE no toca filas y no se duplica el evento.
+  const devolucion = { via, at: new Date().toISOString(), actor, nota: nota ?? null, referencia_wompi: referenciaWompi ?? null, respuesta }
+  const { data: marcada, error: updErr } = await supabase
+    .from('pagos')
+    .update({ estado: 'VOIDED', raw: { ...(pago.raw ?? {}), _devolucion: devolucion } })
+    .eq('id', pago.id)
+    .eq('estado', 'APPROVED')
+    .select('id')
+    .maybeSingle()
+  if (updErr) {
+    console.error('[pagos] devolución: update de pagos falló:', updErr)
+    return { ok: false, error: `La devolución se hizo (${via}) pero no se pudo marcar en la BD: ${updErr.message}`, via, referenciaWompi, ...base }
+  }
+  if (!marcada) return { ok: true, yaDevuelto: true, via, referenciaWompi, ...base }
+
+  await actualizarResumenPago(solicitudId)
+
+  // Limpia el guard del momento si ya no queda ningún pago aprobado de ese tipo.
+  const { data: restantes } = await supabase
+    .from('pagos')
+    .select('id')
+    .eq('solicitud_id', solicitudId)
+    .eq('tipo', pago.tipo)
+    .eq('estado', 'APPROVED')
+    .limit(1)
+  if (!restantes || restantes.length === 0) {
+    const columna = pago.tipo === 'anticipo' ? 'anticipo_pagado_at' : pago.tipo === 'abono' ? 'abono_pagado_at' : 'saldo_pagado_at'
+    const { error: guardErr } = await supabase
+      .from('solicitudes_servicio')
+      .update({ [columna]: null })
+      .eq('id', solicitudId)
+    if (guardErr) console.error(`[pagos] devolución: no se pudo limpiar ${columna}:`, guardErr.message)
+  }
+
+  const VIA_LABEL: Record<typeof via, string> = {
+    reembolso_wompi: 'reembolso por API de Wompi',
+    anulacion_wompi: 'anulación de la transacción en Wompi',
+    manual: 'devolución manual (fuera de la app)',
+  }
+  await registrarEventoPago(sol, {
+    motivo: `↩️ Devolución del ${etiqueta} por $${formatCOP(pago.monto)} COP (${metodo}) — ${VIA_LABEL[via]}${nota ? `. Nota: ${nota}` : ''}`,
+    payload: {
+      transaccion_id: pago.transaccion_id,
+      monto: pago.monto,
+      tipo: pago.tipo,
+      devolucion: true,
+      via,
+      actor,
+      nota: nota ?? null,
+      referencia_wompi: referenciaWompi ?? null,
+    },
+  })
+  await alertarPagoEquipoBaird(sol,
+    `↩️ Devolución — ${etiqueta.toUpperCase()} $${formatCOP(pago.monto)} (${metodo})\n` +
+    `Cliente: ${sol.cliente_nombre} · ${sol.tipo_solicitud} ${sol.tipo_equipo}\n` +
+    `Servicio ${solicitudId.slice(0, 8)} · ${VIA_LABEL[via]} · por ${actor}`)
+
+  return { ok: true, via, referenciaWompi, ...base }
+}
+
+/**
+ * Pagos de una solicitud para la ficha admin (la tabla `pagos` está cerrada
+ * al anon: solo se puede leer server-side). Incluye el detalle de la
+ * devolución si la fila está VOIDED.
+ */
+export async function listarPagosSolicitud(solicitudId: string): Promise<Array<{
+  id: string
+  tipo: TipoPago
+  estado: string
+  monto: number
+  metodo: string | null
+  transaccion_id: string | null
+  pagado_at: string | null
+  created_at: string
+  origen: string | null
+  devolucion: { via: string; at: string; actor: string; nota: string | null; referencia_wompi: string | null } | null
+}>> {
+  const { data, error } = await supabase
+    .from('pagos')
+    .select('id, tipo, estado, monto, metodo, transaccion_id, pagado_at, created_at, raw')
+    .eq('solicitud_id', solicitudId)
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.error('[pagos] listarPagosSolicitud falló:', error.message)
+    return []
+  }
+  return (data ?? []).map(p => {
+    const raw = (p.raw ?? {}) as Record<string, unknown>
+    const dev = raw._devolucion as Record<string, unknown> | undefined
+    return {
+      id: p.id as string,
+      tipo: p.tipo as TipoPago,
+      estado: p.estado as string,
+      monto: p.monto as number,
+      metodo: (p.metodo as string | null) ?? null,
+      transaccion_id: (p.transaccion_id as string | null) ?? null,
+      pagado_at: (p.pagado_at as string | null) ?? null,
+      created_at: p.created_at as string,
+      origen: typeof raw._origen === 'string' ? raw._origen : null,
+      devolucion: dev
+        ? {
+            via: String(dev.via ?? ''),
+            at: String(dev.at ?? ''),
+            actor: String(dev.actor ?? ''),
+            nota: typeof dev.nota === 'string' ? dev.nota : null,
+            referencia_wompi: typeof dev.referencia_wompi === 'string' ? dev.referencia_wompi : null,
+          }
+        : null,
+    }
+  })
 }
 
 // ─────────────────────────────────────────

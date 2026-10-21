@@ -190,6 +190,7 @@ src/lib/services/pagos.service.ts        ← registrarPagoWompi, resumen, concil
 src/app/api/wompi/webhook/route.ts
 src/app/api/cron/wompi-conciliar/route.ts
 src/app/api/admin/pagos/verificar/route.ts
+src/app/api/admin/pagos/devolver/route.ts  ← devoluciones (reembolso V2 / void / manual), 2026-10-21
 src/app/pago/anticipo/[token]/page.tsx   ← solo la parte de confirmación (?id=)
 src/app/pago/saldo/[token]/page.tsx      ← ídem
 src/lib/constants/pagos.ts               ← porcentajes (anticipo 50 %, abono 50 %)

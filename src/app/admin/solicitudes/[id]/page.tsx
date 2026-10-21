@@ -313,6 +313,120 @@ export default function SolicitudDetalle() {
     }
   }
 
+  // Ledger de pagos online + "↩️ Devolver" (2026-10-21). La tabla `pagos`
+  // está cerrada al anon, así que se lee por /api/admin/pagos. La devolución
+  // va por /api/admin/pagos/devolver: modo 'wompi' (reembolso por API) o
+  // 'manual' (constancia de una devolución hecha desde el panel de Wompi).
+  type PagoLedgerUI = {
+    id: string
+    tipo: 'anticipo' | 'abono' | 'saldo'
+    estado: string
+    monto: number
+    metodo: string | null
+    transaccion_id: string | null
+    pagado_at: string | null
+    created_at: string
+    devolucion: { via: string; at: string; actor: string; nota: string | null; referencia_wompi: string | null } | null
+  }
+  const [pagosLedger, setPagosLedger] = useState<PagoLedgerUI[]>([])
+  const [devolviendoId, setDevolviendoId] = useState<string | null>(null)
+  const [resultadoDevolucion, setResultadoDevolucion] = useState<{ ok: boolean; texto: string; pagoId?: string; ofrecerManual?: boolean } | null>(null)
+
+  const cargarPagosLedger = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const res = await fetch(`/api/admin/pagos?solicitudId=${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) return
+      const body = await res.json().catch(() => ({}))
+      setPagosLedger(Array.isArray(body?.pagos) ? body.pagos : [])
+    } catch {
+      /* best-effort: la ficha sigue mostrando la etapa por las columnas derivadas */
+    }
+  }, [id])
+
+  useEffect(() => { void cargarPagosLedger() }, [cargarPagosLedger])
+
+  const refrescarPagoSolicitud = async () => {
+    const { data: fresca } = await supabase
+      .from('solicitudes_servicio')
+      .select('anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, ultimo_pago_at')
+      .eq('id', id)
+      .single()
+    if (fresca) setSolicitud(prev => (prev ? { ...prev, ...fresca } : prev))
+  }
+
+  const devolverPago = async (pago: PagoLedgerUI, modo: 'wompi' | 'manual') => {
+    const etiqueta = pago.tipo === 'abono' ? 'abono de repuestos' : pago.tipo
+    let nota: string | undefined
+    if (modo === 'wompi') {
+      const ok = window.confirm(
+        `¿Devolver $${formatCOP(pago.monto)} del ${etiqueta} a través de Wompi?\n\n` +
+        `El dinero regresa al medio de pago original (${pago.metodo ?? 'Wompi'}). ` +
+        'Esta acción no se puede deshacer desde la app.',
+      )
+      if (!ok) return
+    } else {
+      const respuesta = window.prompt(
+        `Registrar devolución MANUAL de $${formatCOP(pago.monto)} del ${etiqueta}.\n\n` +
+        '¿Cómo se devolvió? (p.ej. "reembolso desde el panel de Wompi #123" o "transferencia Bancolombia 21/10")',
+      )
+      if (respuesta === null) return
+      nota = respuesta.trim()
+      if (!nota) {
+        setResultadoDevolucion({ ok: false, texto: 'Indica cómo se devolvió el dinero para dejar constancia.', pagoId: pago.id })
+        return
+      }
+    }
+
+    setDevolviendoId(pago.id)
+    setResultadoDevolucion(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoDevolucion({ ok: false, texto: 'Sesión expirada — vuelve a iniciar sesión.', pagoId: pago.id })
+        return
+      }
+      const res = await fetch('/api/admin/pagos/devolver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ solicitudId: id, pagoId: pago.id, modo, nota }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResultadoDevolucion({
+          ok: false,
+          pagoId: pago.id,
+          ofrecerManual: modo === 'wompi',
+          texto: body?.sinLlave
+            ? 'La devolución automática necesita WOMPI_PRIVATE_KEY en Vercel. Devuélvelo desde el panel de Wompi y regístralo aquí como devolución manual.'
+            : `No se pudo devolver: ${body?.error ?? `Error ${res.status}`}. Puedes hacerlo desde el panel de Wompi y registrarlo como devolución manual.`,
+        })
+        return
+      }
+      const VIA: Record<string, string> = {
+        reembolso_wompi: 'reembolso enviado por Wompi al medio de pago original',
+        anulacion_wompi: 'transacción anulada en Wompi',
+        manual: 'devolución manual registrada',
+      }
+      setResultadoDevolucion({
+        ok: true,
+        pagoId: pago.id,
+        texto: body.yaDevuelto
+          ? `Ese ${etiqueta} ya figuraba devuelto.`
+          : `✅ $${formatCOP(body.monto ?? pago.monto)} del ${etiqueta}: ${VIA[body.via] ?? 'devuelto'}` +
+            (body.referenciaWompi ? ` (ref. Wompi ${body.referenciaWompi})` : '') + '.',
+      })
+      await Promise.all([cargarPagosLedger(), refrescarPagoSolicitud(), recargarEventos()])
+    } catch (err) {
+      setResultadoDevolucion({ ok: false, texto: err instanceof Error ? err.message : 'Error de red', pagoId: pago.id })
+    } finally {
+      setDevolviendoId(null)
+    }
+  }
+
   const descargarFichaFacturacion = async () => {
     setErrorFicha(null)
     setDescargandoFicha(true)
@@ -1633,8 +1747,81 @@ export default function SolicitudDetalle() {
                     {resultadoVerificacion.texto}
                   </p>
                 )}
+                {/* Ledger + devoluciones (2026-10-21): cada pago aprobado se
+                    puede devolver desde aquí (reembolso por API de Wompi) o
+                    dejar constancia de una devolución hecha por fuera. */}
+                {pagosLedger.length > 0 && (() => {
+                  const TIPO_LABEL: Record<string, string> = { anticipo: 'Anticipo', abono: 'Abono repuestos', saldo: 'Saldo' }
+                  const aprobados = pagosLedger.filter(p => p.estado === 'APPROVED')
+                  const cancelada = solicitud.estado === 'cancelada'
+                  return (
+                    <div className="space-y-1.5 pt-1">
+                      {cancelada && aprobados.length > 0 && !soloLectura && (
+                        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                          ⚠️ Servicio cancelado con {aprobados.length === 1 ? 'un pago' : `${aprobados.length} pagos`} online aprobado{aprobados.length === 1 ? '' : 's'} —
+                          revisa si corresponde devolverlo al cliente.
+                        </p>
+                      )}
+                      <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+                        {pagosLedger.map(p => {
+                          const devuelto = p.estado === 'VOIDED'
+                          const aprobado = p.estado === 'APPROVED'
+                          const fecha = p.pagado_at ?? p.created_at
+                          return (
+                            <li key={p.id} className="px-2 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className={`font-semibold ${devuelto ? 'text-gray-400 line-through' : aprobado ? 'text-gray-800' : 'text-gray-500'}`}>
+                                {TIPO_LABEL[p.tipo] ?? p.tipo} ${formatCOP(p.monto)}
+                              </span>
+                              <span className="text-[11px] text-gray-500">
+                                {p.metodo ?? 'Wompi'} · {new Date(fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}
+                                {p.transaccion_id ? ` · #${p.transaccion_id}` : ''}
+                              </span>
+                              {devuelto ? (
+                                <span
+                                  className="text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5"
+                                  title={p.devolucion ? `${p.devolucion.via} · ${p.devolucion.actor}${p.devolucion.nota ? ` · ${p.devolucion.nota}` : ''}` : 'Anulada en Wompi'}
+                                >
+                                  ↩️ Devuelto{p.devolucion?.at ? ` ${new Date(p.devolucion.at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}` : ''}
+                                </span>
+                              ) : !aprobado ? (
+                                <span className="text-[11px] text-gray-400">{p.estado}</span>
+                              ) : !soloLectura ? (
+                                <span className="ml-auto flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => devolverPago(p, 'wompi')}
+                                    disabled={devolviendoId !== null}
+                                    className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                                    title="Reembolsa el pago completo al medio de pago original a través del API de Wompi"
+                                  >
+                                    {devolviendoId === p.id ? 'Devolviendo…' : '↩️ Devolver por Wompi'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => devolverPago(p, 'manual')}
+                                    disabled={devolviendoId !== null}
+                                    className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                                    title="Ya lo devolviste desde el panel de Wompi o por transferencia: deja constancia sin llamar a Wompi"
+                                  >
+                                    Registrar devolución manual
+                                  </button>
+                                </span>
+                              ) : null}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      {resultadoDevolucion && (
+                        <p className={`text-[11px] ${resultadoDevolucion.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {resultadoDevolucion.texto}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
                 <p className="text-[11px] text-gray-400">
                   Solo pagos ONLINE (Wompi). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
+                  {!soloLectura && ' Las devoluciones por Wompi tardan de 1 a 15 días hábiles en verse en la cuenta del cliente según el banco.'}
                 </p>
               </div>
               <p className="mt-3 text-[11px] text-gray-400">
