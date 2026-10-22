@@ -274,6 +274,66 @@ WHERE coalesce(array_length(ciudades_cobertura, 1), 0) = 0
   AND ciudad_pueblo IS NOT NULL AND btrim(ciudad_pueblo) <> '';
 ```
 
+## Correcciones manuales de datos (sin migración)
+
+Ajustes puntuales a filas de producción que NO cambian el schema. Se aplican a
+mano en el SQL Editor **solo con OK explícito de Juan**; quedan aquí como
+registro y para poder repetir la verificación.
+
+### 2026-10-22 — `fecha_visita_at` con año imposible (3 solicitudes)
+
+**Causa.** Dos vías dejaban un año absurdo en `solicitudes_servicio.fecha_visita_at`
+(la fecha materializada de la visita: alimenta el cupo por franja, el calendario
+admin, `/admin/incumplidos` y el resumen diario a supervisores):
+
+1. `POST /api/admin/reagendar-solicitud` solo validaba el formato `YYYY-MM-DD` y
+   `materializarFechaVisita` acepta cualquier año → un año mal tecleado en el
+   `<input type="date">` de `/admin/solicitudes/[id]` pasaba derecho
+   (órdenes 9415695001 → `2006-10-20` y 9415696056 → `2008-10-21`, ambas con
+   evento `nota_admin` / `payload.origen='reagendamiento_admin'` del 2026-10-16).
+2. `parsearFechaVisita` sumaba +1 año a cualquier fecha ya pasada → una opción
+   vencida del formulario confirmada semanas después quedaba un año adelante
+   (orden 9415568723: "sábado, 29 de agosto · 8am-12pm", creada 2026-08-25,
+   quedó `2027-08-29`).
+
+**Código (mismo PR):** una sola función `validarFechaVisita`
+(`src/lib/utils/fecha-visita.ts`: no anterior a hoy CO, no > 180 días, día
+real) usada por `validarHorarioAgendable` (todas las vías del cliente y la
+aceptación del técnico) y por el route admin (400 + `motivo`); la página pone
+`rangoFechaVisita()` como `min`/`max`. `parsearFechaVisita` solo rota al año
+siguiente si la fecha pasó Y el año siguiente la deja a < 180 días (cruce
+dic → ene); si no, conserva el año de la referencia y se rechaza como pasada.
+
+**Corrección de datos — APLICADA en prod el 2026-10-22 vía MCP con OK explícito
+de Juan.** Antes: 9415568723 `2027-08-29` (completada), 9415695001 `2006-10-20`
+(completada), 9415696056 `2008-10-21` (esperando_repuesto). Después: las 3 en
+2026, la consulta de verificación devolvió 0 filas y ninguna de las 101
+solicitudes con `fecha_visita_at` queda a más de 180 días (rango
+2026-05-30 … 2026-10-31). Se deja el SQL para repetir la verificación:
+
+```sql
+-- Antes: ver el estado actual de las 3 filas
+SELECT numero_serie_factura, horario_confirmado, fecha_visita_at, estado, created_at
+FROM solicitudes_servicio
+WHERE numero_serie_factura IN ('9415695001', '9415696056', '9415568723');
+
+-- Corrección (el horario_confirmado ya dice el día correcto; solo se arregla el año)
+UPDATE solicitudes_servicio SET fecha_visita_at = '2026-10-20T13:00:00Z' WHERE numero_serie_factura = '9415695001';
+UPDATE solicitudes_servicio SET fecha_visita_at = '2026-10-21T13:00:00Z' WHERE numero_serie_factura = '9415696056';
+UPDATE solicitudes_servicio SET fecha_visita_at = '2026-08-29T13:00:00Z' WHERE numero_serie_factura = '9415568723';
+
+-- Verificación: no debe quedar ninguna fila con año fuera de 2026
+SELECT id, numero_serie_factura, horario_confirmado, fecha_visita_at, estado
+FROM solicitudes_servicio
+WHERE fecha_visita_at < '2026-01-01' OR fecha_visita_at >= '2027-01-01';
+```
+
+> Los tres timestamps son las 8:00 hora Colombia (franja `8am-12pm`) del día
+> que dice `horario_confirmado`, igual que los materializa el código (hora de
+> inicio de franja + 5 h). La consulta de verificación hay que ajustarla al
+> cambiar de año (en enero de 2027 la ventana válida pasa a `2026-07-01` /
+> `2027-07-01`, por ejemplo).
+
 ## Rollback
 
 Las migraciones no traen rollback automático. Si necesitas revertir una columna, hazlo manualmente. **No revertir** mientras haya filas `pendiente_pricing` o `reagendamiento_pendiente` en producción.
