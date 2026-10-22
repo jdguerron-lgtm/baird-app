@@ -453,6 +453,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Body** (4 params): `supervisor_nombre` (primer nombre), `fecha` ("20 de octubre"), `conteo` ("5 movimientos en 3 servicios" | "sin movimientos"), `detalle` — ⚠️ **una sola línea** (`compactarLinea`, ≤ 650 chars: servicios separados por `" • "`, cada uno "Cliente (equipo · Garantía N): Estado → Estado → …, repuesto SKU · descripción"; si no caben todos cierra con "… y N servicios más").
 - **Botón**: URL dinámica → `${APP_URL}/supervisor/{{1}}` con param = `portal_token` ("Abrir mi panel"). Se omite el componente de botón si el supervisor no tiene token.
 - **Propósito**: que el supervisor reciba a las 5 pm todos los cambios de estado del día de sus servicios aunque no haya chateado con la línea. Lógica de armado pura y testeada en `src/lib/services/resumen-movimientos.service.ts`.
+- **Cerrar para abrir después (2026-10-22)**: si una garantía quedó agendada con la visita a más de 4 días, `conteo` termina en `· N para cerrar y abrir después` y `detalle` lleva `⏸️ cerrar/abrir (visita en N días)` en ese servicio (sin plantilla nueva; el texto libre trae además la sección completa). Ver `docs/FLOWS.md` § Supervisores.
 - **Nota**: el BODY abre con "Hola {{1}}," y cierra con "…repuestos en espera." (regla Meta 2388299); `{{4}}` va entre texto fijo.
 
 #### `supervisor_cambio_estado_v1` ✅ APPROVED (verificado en vivo 2026-08-25)

@@ -701,16 +701,19 @@ CUALQUIER transición de estado (notificada→asignada, →en_proceso, →comple
 
 **Resumen diario de movimientos (2026-10-20).** Además del aviso instantáneo por cambio, a las **5:00 pm Colombia** cada supervisor activo recibe UN mensaje de **texto** con todos los cambios de estado del día (5 pm de ayer → 5 pm de hoy) de los servicios de su alcance — el mismo del portal (`solicitudEnAlcance`: ámbito + marca; el filtro `estados` NO aplica acá). Agrupado por servicio: cliente · equipo · No. garantía · ciudad, una línea `HH:mm anterior → nuevo (quién)` por movimiento (los de anoche salen como `ayer HH:mm`), y `🔩 Repuesto: SKU · descripción` si el servicio tocó o quedó en el ciclo de repuesto; "sin movimientos hoy" si no hubo. Pie con el link a su panel.
 
+**"Cerrar para abrir después" (regla interna MABE, 2026-10-22).** Toda **garantía** que en la ventana quede agendada con la visita a **más de 4 días** calendario (Colombia) del día en que se agendó (`DIAS_AGENDA_CERRAR_PARA_ABRIR`) sale en una sección propia al inicio del resumen — `⏸️ *Cerrar para abrir después* — visita a más de 4 días (N):` con cliente · equipo · No. garantía · ciudad · `visita sábado 31 de octubre (7 días)` — y con una línea `⏸️ Visita … → cerrar para abrir después` dentro de su bloque; el conteo agrega `· N para cerrar y abrir después` (también en la plantilla de fallback). Así el supervisor MABE cierra la orden en su sistema y la reabre cerca de la fecha para que esos días no cuenten contra el tiempo de atención. Cuenta como agendamiento: confirmación de horario (`pendiente_horario`/`sin_agendar` → `notificada`), `reagendamiento`, `reagendamiento_confirmado` y el **reagendamiento del admin** (`nota_admin` con `payload.origen = 'reagendamiento_admin'`, que no cambia el estado pero sí la fecha — por eso un resumen puede traer esa sección aunque diga "sin cambios de estado hoy"). La fecha sale del `payload.fecha_visita_at` del evento o, si no lo trae, de `fecha_visita_at` de la solicitud. Particular no aplica.
+
 ```
 Vercel Cron 22:00 UTC → GET /api/cron/resumen-movimientos (Bearer CRON_SECRET)
    │  solicitud_eventos (tipos de transición, ventana 5pm→5pm CO)
-   │  + solicitudes_servicio + repuestos_pendientes + tecnicos (una query c/u)
+   │  + nota_admin origen 'reagendamiento_admin' (fecha de visita, sin cambio de estado)
+   │  + solicitudes_servicio (incl. fecha_visita_at) + repuestos_pendientes + tecnicos (una query c/u)
    ▼
  por supervisor activo: armarResumenSupervisor() → texto
    ├─ 📩 enviarMensajeTexto (texto libre; partido en mensajes ≤ 3.900 chars)
    │     ⚠️ solo llega si el supervisor escribió a la línea en las últimas 24 h
    ├─ fallback: 📩 supervisor_resumen_diario_v1 (plantilla: resumen en 1 línea +
-   │     botón al portal — funciona fuera de la ventana; PENDIENTE de subir a Meta)
+   │     botón al portal — funciona fuera de la ventana; APPROVED 2026-10-22)
    └─ bitácora supervisor_resumenes (canal texto|plantilla|filtrado|error)
 ```
 

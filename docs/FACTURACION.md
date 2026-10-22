@@ -41,7 +41,7 @@ consolidada; el técnico recibe el 78% de la base + 90% de bonos.
 | `customer.name` | `cliente_nombre` | ✅ |
 | `customer.address` + ciudad (código DANE) | `direccion`, `ciudad_pueblo` (texto libre, sin código DANE) | ⚠️ contabilidad mapea la ciudad |
 | `customer.phones` | `cliente_telefono` (dígitos con 57) | ✅ |
-| `customer.contacts[].email` | **No se captura.** Solo llega en `pagos.raw.customer_email` cuando el cliente pagó por Wompi | ❌ gap → la FV electrónica se emite sin correo al cliente |
+| `customer.contacts[].email` | Hoy solo llega en `pagos.raw.customer_email` cuando el cliente pagó por Wompi (25 de 27 pagos aprobados lo traen, 2026-10-22). **Decisión 2026-10-22:** en la Fase 3 el correo sale de `cliente_email` (formulario `/solicitar` o `/pago/*`) → `customer_email` de Wompi → correo por defecto de Baird (`FACTURACION_EMAIL`) si no hay o está mal; y la FV **siempre** se le envía al cliente por WhatsApp (PDF adjunto), el correo es secundario | ⚠️ pendiente Fase 3 |
 | `items[].code` | Constante `SIIGO.ITEM_SERVICIO_CODIGO` = "2" (Servicios profesionales / técnicos) | ✅ |
 | `items[].description` | "Visita de diagnóstico — {equipo}" + "Servicio técnico {tipo} — {equipo}" (dos ítems cuando la cotización trae `diagnostico_cliente` + `servicio_cliente`; un ítem si no) | ✅ |
 | `items[].price` (base sin IVA) | Derivada del total con IVA de cada ítem (`desglosarIva`), mismo criterio de TARIFAS.md | ✅ |
@@ -57,7 +57,7 @@ consolidada; el técnico recibe el 78% de la base + 90% de bonos.
 | Tercero (NIT MABE) | Env `FACTURACION_MABE_NIT` / `FACTURACION_MABE_NOMBRE` | ⚠️ **configurar** (MABE no aparece como tercero en Siigo al 2026-09-09) |
 | Ítem | "Servicios técnicos de garantía MABE — N órdenes del período" (1 ítem, relación anexa) | ✅ |
 | Base | Σ `totalMABE` del período (tarifa base + bonos + recargo finde) | ✅ |
-| IVA | 19% sobre la base. **Supuesto: el tarifario Tipo D es antes de IVA** — confirmar con MABE; si liquida IVA incluido, tomar la relación como total | ⚠️ confirmar |
+| IVA | 19% sobre la base. **Confirmado con MABE (2026-10-22): el tarifario Tipo D es antes de IVA** — la hoja "FV MABE" suma el IVA sobre la relación, tal como está | ✅ |
 | Anexo | Relación de órdenes: N° orden MABE, cliente final, equipo, complejidad, tarifa, bono, recargo, valor | ✅ |
 | Forma de pago | Crédito (MABE paga NET-30/60) | ✅ |
 
@@ -216,7 +216,7 @@ cliente ni el pago del técnico — es una operación aparte.
 |---|---|---|---|
 | **1. Manual asistida** (este doc) | Export Excel con los campos exactos; contabilidad captura en Siigo (o usa la plantilla de importación de Siigo) | Hecho | ✅ 2026-09-09 |
 | **2. Capturar lo que falta** | Email del cliente (en `/solicitar` y en `/pago/*`), tipo de documento (CC/NIT) en vez de inferirlo, datos bancarios + régimen + email del técnico en `/registro` y en el admin | Bajo (form + 4 columnas) | ⏳ propuesto |
-| **3. Borrador automático en Siigo** | Al pasar a `completada` (particular) crear la FV por API (`POST /v1/invoices`, cliente creado/actualizado con `POST /v1/customers`), guardar `siigo_invoice_id` + número en la solicitud, mostrar en admin y en el correo de facturación. Kill-switch por env (`SIIGO_ENABLED`) como Wompi/Dapta. Garantía: FV MABE mensual por script | Medio | 📐 **diseño aprobado 2026-10-20** — plan completo (regla "100 % Wompi", emisión directa DIAN, tercero, DANE, descuento, tabla `facturas_siigo`, dry-run) en [`docs/mejoras-futuras/facturacion-siigo-automatica/README.md`](mejoras-futuras/facturacion-siigo-automatica/README.md) |
+| **3. Borrador automático en Siigo** | Al pasar a `completada` (particular) crear la FV por API (`POST /v1/invoices`, cliente creado/actualizado con `POST /v1/customers`), guardar `siigo_invoice_id` + número en la solicitud, mostrar en admin y en el correo de facturación. Kill-switch por env (`SIIGO_ENABLED`) como Wompi/Dapta. Garantía: FV MABE mensual por script | Medio | ⏸️ **pospuesta 2026-10-22** — antes van (a) el seguimiento facturado / no facturado y (b) los ítems adicionales en la cotización (segundos equipos, partes del inventario); mientras tanto contabilidad ajusta la FV en Siigo a mano con lo que necesite cada servicio. Diseño aprobado 2026-10-20 — plan completo (regla "100 % Wompi", emisión directa DIAN, tercero, DANE, descuento, tabla `facturas_siigo`, dry-run) en [`docs/mejoras-futuras/facturacion-siigo-automatica/README.md`](mejoras-futuras/facturacion-siigo-automatica/README.md) |
 | **4. Documento soporte automático** | Al cerrar la quincena, crear en Siigo el documento soporte por técnico + registrar retención | Medio | ⏳ propuesto |
 | **5. Conciliación automática Wompi** | Cron que lee el settlement de Wompi (o el webhook) y marca cada pago como conciliado contra la FV | Medio | ⏳ idea |
 
@@ -257,11 +257,15 @@ a mano.
 
 ## 10. Pendientes y decisiones abiertas
 
-- [ ] Confirmar con MABE si el tarifario Tipo D es antes o después de IVA.
+- [x] Confirmar con MABE si el tarifario Tipo D es antes o después de IVA → **antes de IVA** (Juan, 2026-10-22). El export ya lo trata así; nada que cambiar.
+- [x] **FV MABE se queda asistida** (decisión 2026-10-22): el export la pre-genera (hojas "FV MABE" + "Relación órdenes MABE") y contabilidad la captura; **liquidación quincenal a MABE** con el preset "Quincena anterior". No se automatiza.
+- [ ] **Seguimiento facturado / no facturado** (decisión 2026-10-22): columnas `facturacion_estado` (`pendiente` / `facturada` / `no_aplica`), `factura_numero`, `facturada_at`, `facturada_por` en `solicitudes_servicio`; chip **"Sin facturar"** en `/admin/solicitudes` (sin página nueva); se cambia desde la **ficha de cada solicitud**; **el rol LECTURA (logística) SÍ puede cambiarlo** — única excepción a su solo-lectura (`verificarLectura` + endpoint propio, no `verificarAdmin`); columna "Facturación" en los exports.
+- [ ] **Ítems adicionales en la cotización** (2026-10-22): segundos equipos y partes del inventario deben poder ir como renglones propios de la cotización y salir en la FV / nota. Falta pulir el modelo; hasta entonces la FV se ajusta a mano en Siigo. Es prerrequisito de la Fase 3.
+- [ ] **Guía de operadores (logística)** (2026-10-22): página `/admin/guia` visible con rol lectura, fuente en `docs/GUIA-OPERACION-LOGISTICA.md`; cubre toda la operación diaria (solicitudes y estados, repuestos, incumplidos, cobros y devoluciones, facturación, cierre de quincena, qué hacer cuando algo falla).
 - [ ] Crear a MABE como tercero en Siigo y poner `FACTURACION_MABE_NIT` en Vercel.
 - [x] Opción de repuestos al técnico: **A** (2026-09-11). Pendiente operativo: crear los códigos de descuento por técnico en Shopify y entregarlos.
 - [ ] Cruce automático órdenes Shopify (nota `BS-…`) ↔ servicio para el análisis por servicio.
-- [ ] Fase 2: capturar email del cliente (decidido 2026-10-20: sí, va dentro de la fase 3); tipo de documento se sigue infiriendo (decisión 2026-10-20); datos bancarios, régimen y email del técnico siguen pendientes.
+- [ ] Fase 2: capturar email del cliente (decidido 2026-10-20: sí, va dentro de la fase 3; **2026-10-22:** orden formulario → Wompi → correo por defecto de Baird, sin bloquear nunca la emisión, y la FV se entrega al cliente **siempre por WhatsApp** con el PDF); tipo de documento se sigue infiriendo (decisión 2026-10-20); datos bancarios, régimen y email del técnico siguen pendientes.
 - [ ] Fase 3 (FV automática): crear centro de costo "SERVICIOS LINEA BLANCA" en Siigo (la FV-2 lo exige) y poner `SIIGO_*` en Vercel — ver plan en `mejoras-futuras/facturacion-siigo-automatica/`.
 - [ ] Consecutivo legible `numero_servicio` (§ 5) — migración + referencia Wompi.
 - [ ] Snapshot inmutable de liquidaciones al cierre (`completada_at` + tabla `liquidaciones`).

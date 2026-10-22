@@ -1,6 +1,11 @@
 # Factura de venta automática en Siigo (particular, 100 % pagado por Wompi)
 
-> **Estado: diseño aprobado 2026-10-20, SIN código.** Es la "Fase 3" de
+> **Estado: diseño aprobado 2026-10-20, SIN código. POSPUESTA el 2026-10-22:**
+> antes van el seguimiento facturado / no facturado (chip + estado en la ficha,
+> logística puede cambiarlo) y los ítems adicionales en la cotización
+> (segundos equipos, partes del inventario); mientras tanto contabilidad
+> ajusta cada FV a mano en Siigo. Ver `docs/FACTURACION.md` § 10.
+> Es la "Fase 3" de
 > [`docs/FACTURACION.md`](../../FACTURACION.md) § 7, ya con las decisiones
 > tomadas. Cuando se implemente, este doc se promueve a `docs/SIIGO.md` y
 > FACTURACION.md § 7 marca la fase como hecha.
@@ -36,11 +41,11 @@ Fuera de alcance (por decisión):
 | 1 | Disparo | Solo cuando Wompi cubre el 100 %. Sin botón "pago en sitio". |
 | 2 | Emisión | Directa a la DIAN (`stamp.send = true`). Sin borrador ni aprobación. Corregir = nota crédito en Siigo. |
 | 3 | Sin cédula | Consumidor final `222222222222`. (Particular ya exige cédula en `/solicitar`; aplica a garantía y a datos viejos.) |
-| 4 | Email | Se agrega `cliente_email`: opcional en `/solicitar`, obligatorio en `/pago/*` si falta, y backfill automático desde `customer_email` de Wompi. |
+| 4 | Email | Se agrega `cliente_email`: opcional en `/solicitar`, obligatorio en `/pago/*` si falta, y backfill automático desde `customer_email` de Wompi (el checkout de Wompi lo pide siempre; 25 de 27 pagos aprobados lo traen). **2026-10-22:** si no hay correo o es inválido, se usa el **correo por defecto de Baird** (`FACTURACION_EMAIL`) y la emisión **nunca se bloquea** por falta de correo; la entrega al cliente va por WhatsApp (decisión 8). |
 | 5 | Tipo de documento | Se sigue infiriendo (`identificacionCliente`: 9 dígitos que empiezan por 8/9 = NIT). Sin selector nuevo. Un NIT se crea como `Company` y la FV lleva observación "verificar responsabilidad fiscal". |
 | 6 | Ciudad | Mapa fijo `ciudad_pueblo` → código DANE (§ 4.3). Desconocida = Bogotá + observación "verificar ciudad". |
 | 7 | Descuento | Se aplica como descuento del ítem "Servicio técnico" en Siigo; la FV cuadra con lo recibido. |
-| 8 | PDF al cliente | Lo envía Siigo por correo (`mail.send`). Sin plantilla WhatsApp. |
+| 8 | PDF al cliente | **2026-10-22 (cambia la decisión del 20):** la FV se entrega al cliente **siempre por WhatsApp** con el PDF adjunto (plantilla nueva `factura_electronica_cliente_v1`, header DOCUMENT, § 4.8), espejada al receptor del servicio. Siigo además la manda por correo (`mail.send = true`) al correo que tenga el tercero, sea el del cliente o el por defecto de Baird; el correo es secundario. |
 | 9 | Centro de costo | Crear **"SERVICIOS LINEA BLANCA"** (código 7-3) en Siigo. La FV-2 lo exige (`cost_center_mandatory: true`, verificado por API 2026-10-20). Hoy solo existen 413 "REPUESTOS LINEA BLANCA" y 414 "REPUESTOS IT". |
 | 10 | Credenciales | Las mismas del skill `siigo-tools` (`SIIGO_USERNAME`, `SIIGO_ACCESS_KEY`, `SIIGO_PARTNER_ID`). |
 
@@ -117,8 +122,11 @@ huérfana y el cron la pasa a `error`.
 ```
 
 Email del contacto, en orden: `sol.cliente_email` → `customer_email` del
-último pago APPROVED (`pagos.raw`) → `FACTURACION_EMAIL` (y `mail.send =
-false` + observación "cliente sin correo").
+último pago APPROVED (`pagos.raw`) → `FACTURACION_EMAIL` (correo por defecto
+de Baird; se deja `mail.send = true` para que Baird reciba la copia y la FV
+lleva la observación "cliente sin correo — enviada por WhatsApp"). Cada
+candidato pasa por una validación de formato (`z.email()`); uno inválido se
+descarta y se sigue con el siguiente. El correo **nunca bloquea** la emisión.
 
 Mapa DANE (`src/lib/siigo/ciudades.ts`, clave = `cityTokenForMatch`):
 
@@ -202,6 +210,48 @@ Además, un evento en `solicitud_eventos` por cada emisión (`factura_emitida`,
 payload con número y total) y por cada error (`nota_admin` con
 `requiere_intervencion_admin`), para que aparezca en el historial del admin.
 
+Columnas extra para la entrega por WhatsApp (§ 4.8): `pdf_path TEXT`
+(ruta en el bucket privado `facturas-siigo`), `whatsapp_enviado_at
+TIMESTAMPTZ`, `whatsapp_error TEXT`.
+
+### 4.8 Entrega de la FV al cliente por WhatsApp (decisión 2026-10-22)
+
+La idea es que el cliente **siempre** reciba su factura por WhatsApp, tenga
+o no correo. Flujo, justo después de que la fila queda `emitida`:
+
+1. `GET /v1/invoices/{siigo_id}/pdf` → Siigo devuelve el PDF en base64. Si
+   aún no está listo (el timbrado DIAN puede tardar unos segundos), se deja
+   `whatsapp_enviado_at = NULL` y el cron diario lo reintenta.
+2. Guardar el PDF en el bucket **privado** `facturas-siigo` como
+   `{solicitud_id}/{numero}.pdf` (es PII: nunca público) y anotar `pdf_path`.
+   El admin lo descarga desde la ficha con URL firmada.
+3. Subir el PDF a Meta (`POST /v22.0/{WHATSAPP_PHONE_ID}/media`, multipart
+   `application/pdf`) → `media_id`. Así no hace falta ninguna URL pública.
+4. `enviarPlantillaCliente(sol, 'factura_electronica_cliente_v1', …)` con
+   header `{ type: 'document', document: { id: media_id, filename: 'Factura-FV-2-1524.pdf' } }`
+   y body: nombre, número de FV, código de servicio `BS-…`, equipo y total.
+   Al usar `enviarPlantillaCliente` se espeja sola al receptor del servicio
+   (`receptor_acepto_at`), igual que los cobros.
+5. `whatsapp_enviado_at = now()`. Si falla, `whatsapp_error` + evento
+   `nota_admin` + botón **Reenviar factura** en la ficha del admin.
+
+Plantilla nueva (seguir el proceso de `docs/WHATSAPP_TEMPLATES.md`: definir
+en `scripts/upload-templates.mjs`, subir con `getHeaderHandle` y un PDF de
+muestra como se hizo con el resumen semanal de supervisores, #23, y esperar
+APPROVED antes de activar `SIIGO_ENABLED`):
+
+```
+factura_electronica_cliente_v1 — HEADER DOCUMENT
+BODY: Hola {{1}} 👋, ya quedó emitida tu factura electrónica {{2}} del servicio {{3}}
+      ({{4}}) por {{5}}. Te la adjuntamos en PDF; también la tienes en el correo si
+      nos dejaste uno. Gracias por confiar en Baird Service.
+FOOTER: Baird Service S.A.S. · NIT 830.024.646-2
+```
+
+Emojis solo en el BODY (regla de la casa). El correo de Siigo sigue saliendo
+en paralelo; si el cliente no dejó correo, la copia llega al correo por
+defecto de Baird y queda como respaldo.
+
 ### 4.6 Código nuevo / tocado
 
 | Archivo | Cambio |
@@ -215,7 +265,11 @@ payload con número y total) y por cada error (`nota_admin` con
 | `src/app/api/cron/siigo-reintentos/route.ts` **(nuevo)** + `vercel.json` | Diario 06:00 Bogotá. `verificarCron` (`CRON_SECRET`). |
 | `src/app/api/admin/facturas-siigo/route.ts` **(nuevo)** | `POST { solicitud_id }` → `facturarSolicitudEnSiigo(id, 'admin')`. `verificarAdmin`; rol lectura rechazado. |
 | `src/app/admin/solicitudes/[id]/page.tsx` | En "Cuentas del servicio — Particular": estado de la FV (emitida: número + fecha; error: mensaje + botón **Reintentar**; no aplica: razón, p. ej. "pago online 60 %"); botón **Facturar en Siigo** cuando cumple la regla y no hay FV. |
-| `src/lib/services/email.service.ts` | El correo de facturación agrega la línea "FV Siigo: FV-2-1524" o "no emitida: <razón>". |
+| `src/lib/services/email.service.ts` | El correo de facturación agrega la línea "FV Siigo: FV-2-1524" o "no emitida: <razón>" y si se envió por WhatsApp. |
+| `src/lib/siigo/client.ts` + `src/lib/services/facturacion-siigo.service.ts` | `getInvoicePdf(id)` (base64) y `entregarFacturaCliente(facturaId)`: guarda el PDF en el bucket privado `facturas-siigo`, lo sube a Meta como media y manda `factura_electronica_cliente_v1` vía `enviarPlantillaCliente` (§ 4.8). Reintento desde el cron y botón **Reenviar factura** en el admin. |
+| `src/lib/services/whatsapp.service.ts` | `subirMediaWhatsApp(buffer, mime, filename)` (multipart a `/{phone_id}/media`) y `enviarFacturaCliente(sol, factura, mediaId)`; respeta `BAIRD_TEST_PHONE_WHITELIST`. |
+| `scripts/upload-templates.mjs` + `docs/WHATSAPP_TEMPLATES.md` | Plantilla `factura_electronica_cliente_v1` (HEADER DOCUMENT con PDF de muestra, BODY con 5 parámetros, FOOTER). |
+| `supabase/migrations/20261021_facturas_siigo.sql` | Además de la tabla: bucket privado `facturas-siigo` (sin policies anon) y columnas `pdf_path`, `whatsapp_enviado_at`, `whatsapp_error`. |
 | `src/lib/validations/solicitud.schema.ts` + `src/app/solicitar/page.tsx` + `src/app/api/solicitar/route.ts` | `cliente_email` opcional (email válido, trim, lowercase), hint "para enviarte la factura electrónica". |
 | `src/app/pago/anticipo/[token]` y `src/app/pago/saldo/[token]` + `POST /api/pago/email` **(nuevo)** | Si la solicitud no tiene email, campo obligatorio antes del botón de pago; se guarda por `cliente_token`. También se pasa `customer-data:email` al checkout de Wompi (`construirCheckoutUrl`). |
 | `src/app/api/admin/liquidaciones/route.ts` | Hoja "FV particulares" gana columna "FV Siigo". |
@@ -243,7 +297,9 @@ SIIGO_COST_CENTER_ID=           # id del centro "SERVICIOS LINEA BLANCA" (crear 
 | Doble disparo A + B | Claim atómico en `facturas_siigo` (§ 4.2). |
 | Base × 1.19 no cuadra con `payments` por redondeo | `price` con 6 decimales; test de cuadre al peso. |
 | Token de Siigo en serverless (cold start = re-auth) | Cache en módulo + reintentos; si Siigo limita auth, mover el token a Supabase. |
-| Cliente sin email | Contacto con `FACTURACION_EMAIL`, `mail.send=false`, observación; el admin ve "sin correo" y puede reenviar desde Siigo. |
+| Cliente sin email o con email mal escrito | Validación de formato por candidato; contacto con `FACTURACION_EMAIL` como último recurso y observación "cliente sin correo — enviada por WhatsApp". La entrega real es por WhatsApp (§ 4.8), así que un correo malo nunca deja al cliente sin factura. |
+| El PDF no está listo justo después de timbrar / Meta rechaza el media | `whatsapp_enviado_at` queda NULL; el cron diario reintenta `entregarFacturaCliente`; botón **Reenviar factura** en el admin. La FV ya está emitida y el correo de Siigo salió igual. |
+| Plantilla `factura_electronica_cliente_v1` sin aprobar | `SIIGO_ENABLED` no se enciende hasta que `--check` la muestre APPROVED; mientras, la emisión funciona y la entrega queda pendiente para el cron. |
 | NIT inferido mal (cédula de 9 dígitos que empieza por 8/9) | Observación "verificar tipo de documento"; corregir el tercero en Siigo y nota crédito si ya se emitió. |
 | Hook muere (timeout, deploy) | Cron diario de reintentos + botón manual. |
 | Rol lectura intenta facturar | `verificarAdmin` rechaza. |
@@ -253,16 +309,20 @@ SIIGO_COST_CENTER_ID=           # id del centro "SERVICIOS LINEA BLANCA" (crear 
 1. **Siigo (Juan/contabilidad):** crear centro de costo "SERVICIOS LINEA
    BLANCA" (7-3) y confirmar que el usuario API puede emitir FV-2 (resolución
    DIAN vigente, consecutivo 1523).
-2. **BD:** aplicar `20261021_facturas_siigo.sql` (aditiva).
-3. **Deploy** sin `SIIGO_ENABLED` → no-op; el formulario ya captura email.
-4. **Vercel:** `SIIGO_*` con `SIIGO_DRY_RUN=true`. Esperar 2 o 3 cierres
+2. **BD:** aplicar `20261021_facturas_siigo.sql` (aditiva) y crear el bucket
+   privado `facturas-siigo`.
+3. **Meta:** subir `factura_electronica_cliente_v1` con
+   `node --env-file=.env.local scripts/upload-templates.mjs` y esperar
+   APPROVED (`--check`).
+4. **Deploy** sin `SIIGO_ENABLED` → no-op; el formulario ya captura email.
+5. **Vercel:** `SIIGO_*` con `SIIGO_DRY_RUN=true`. Esperar 2 o 3 cierres
    reales; revisar las filas `simulada` (payload, tercero, ciudad, cuadre).
-5. **Primera FV real:** `SIIGO_DRY_RUN=false`; emitir desde el botón del admin
-   un servicio pequeño ya pagado; validar en Siigo Nube (PDF, CUFE, correo al
-   cliente) y que `facturas_siigo` quedó `emitida`.
-6. **Automático:** desde ahí todo cierre pagado factura solo. Las 6
-   históricas elegibles se emiten una a una desde el admin si contabilidad
-   aún no las capturó.
+6. **Primera FV real:** `SIIGO_DRY_RUN=false`; emitir desde el botón del admin
+   un servicio pequeño ya pagado; validar en Siigo Nube (PDF, CUFE, correo)
+   y que el cliente recibió el PDF por WhatsApp (`whatsapp_enviado_at`).
+7. **Automático:** desde ahí todo cierre pagado factura solo. Las 5
+   históricas elegibles (2026-10-22) se emiten una a una desde el admin si
+   contabilidad aún no las capturó.
 
 ## 7. Esfuerzo
 
@@ -272,7 +332,8 @@ SIIGO_COST_CENTER_ID=           # id del centro "SERVICIOS LINEA BLANCA" (crear 
 | B | Service + disparadores A/B + cron + API admin + UI admin | 1 día |
 | C | `cliente_email` (form, pago, backfill Wompi, checkout prefill) + correo | 0,5 día |
 | D | Dry-run en prod, primera FV real, docs | 0,5 día |
-| | **Total** | **~2,5 días** |
+| E | Entrega por WhatsApp: PDF de Siigo, bucket privado, media Meta, plantilla, reenvío admin (§ 4.8) | 0,5 día |
+| | **Total** | **~3 días** |
 
 ## 8. Datos de contexto (prod, 2026-10-20)
 
