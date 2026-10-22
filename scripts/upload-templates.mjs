@@ -2043,6 +2043,41 @@ const TEMPLATES = [
       },
     ],
   },
+
+  // 38. Devolución de un pago al CLIENTE (2026-10-21). La dispara
+  //   pagos.service → devolverPagoWompi() → enviarDevolucionConfirmadaCliente()
+  //   cuando el admin devuelve un pago APPROVED desde la ficha (reembolso por
+  //   API de Wompi, anulación de tarjeta o devolución manual). Caso típico:
+  //   servicio cancelado después de pagar el anticipo. Sin botón: no hay
+  //   acción pendiente del cliente.
+  //   {{1}}=primer nombre · {{2}}=monto "42.000" · {{3}}=qué se devuelve
+  //   ("anticipo" | "abono de repuestos" | "saldo") · {{4}}=equipo
+  //   ("Lavadora LG") · {{5}}=cómo llega ("al mismo medio con el que pagaste
+  //   (PSE)" | "por el medio acordado contigo").
+  //   Subir: node --env-file=.env.local scripts/upload-templates.mjs devolucion_confirmada_cliente_v1
+  {
+    name: 'devolucion_confirmada_cliente_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Devolución en proceso',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, te confirmamos que procesamos la devolución de {{2}} COP correspondiente al {{3}} de tu servicio de {{4}}. ↩️\n\n' +
+          'El dinero regresa {{5}}. Según tu banco puede tardar entre 1 y 15 días hábiles en verse reflejado.\n\n' +
+          'Si tienes alguna duda, responde a este mensaje y te ayudamos.',
+        example: {
+          body_text: [['Juan', '42.000', 'anticipo', 'Lavadora LG', 'al mismo medio con el que pagaste (PSE)']],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+    ],
+  },
 ]
 
 async function listExisting() {

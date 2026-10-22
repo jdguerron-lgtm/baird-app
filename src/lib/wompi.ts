@@ -24,7 +24,8 @@ import { createHash } from 'crypto'
  *   WOMPI_PUBLIC_KEY        pub_prod_… / pub_test_…  (visible al navegador vía URL, no es secreta)
  *   WOMPI_INTEGRITY_SECRET  prod_integrity_… / test_integrity_…
  *   WOMPI_EVENTS_SECRET     prod_events_… / test_events_…  (verificación del webhook)
- *   WOMPI_PRIVATE_KEY       prv_prod_… (opcional hoy — reservada para API transaccional futura)
+ *   WOMPI_PRIVATE_KEY       prv_prod_… (conciliación por referencia, Bearer en consultas y
+ *                           devoluciones/anulaciones desde el admin — sin ella son no-op)
  */
 
 const APP_URL =
@@ -227,6 +228,146 @@ export async function listarTransaccionesPorReferencia(referencia: string): Prom
   } catch (err) {
     console.error(`[wompi] listarTransaccionesPorReferencia(${ref}) error:`, err)
     return []
+  }
+}
+
+// ─────────────────────────────────────────
+// Devoluciones (2026-10-21)
+// ─────────────────────────────────────────
+// Dos mecanismos en el API de Wompi (docs.wompi.co § Transacciones y
+// § Reembolsos V2), ambos SOLO con la llave PRIVADA como Bearer:
+//
+//   1. Reembolso V2 — POST /v1/refunds { transaction_id, amount_in_cents,
+//      reason, reference }. Total o parcial, sobre cualquier transacción
+//      APPROVED (tarjeta, PSE, Nequi, Bancolombia…). Es un objeto aparte: la
+//      transacción original sigue APPROVED en Wompi; el reembolso trae su
+//      propio estado (APPROVED | DECLINED | ERROR | CANCELLED).
+//   2. Anulación — POST /v1/transactions/{id}/void. SOLO tarjeta y "solo
+//      disponible para ciertos estados" (misma jornada, antes del cierre
+//      del adquirente). Deja la transacción en VOIDED.
+//
+// La app intenta primero el reembolso; si Wompi responde que el endpoint no
+// está disponible para el comercio (403/404/405) y el pago fue con tarjeta,
+// cae a la anulación. Sin WOMPI_PRIVATE_KEY ambas son no-op con error claro.
+
+/** Shape mínimo del reembolso V2 que devuelve Wompi. */
+export interface ReembolsoWompi {
+  id: string | number
+  status: 'APPROVED' | 'DECLINED' | 'ERROR' | 'CANCELLED' | string
+  status_message?: string | null
+  v2_refund_id?: string
+  amount_in_cents: number
+  transaction_id: string
+  reference?: string
+  created_at?: string
+}
+
+export type ResultadoApiWompi<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; httpStatus?: number }
+
+/** Extrae un mensaje legible del body de error de Wompi (varias formas). */
+function mensajeErrorWompi(body: unknown, fallback: string): string {
+  const err = (body as { error?: { reason?: string; type?: string; messages?: unknown } } | null)?.error
+  if (!err) return fallback
+  const partes: string[] = []
+  if (typeof err.reason === 'string') partes.push(err.reason)
+  else if (typeof err.type === 'string') partes.push(err.type)
+  if (err.messages && typeof err.messages === 'object') {
+    for (const [campo, msgs] of Object.entries(err.messages as Record<string, unknown>)) {
+      const lista = Array.isArray(msgs) ? msgs.join(', ') : String(msgs)
+      partes.push(`${campo}: ${lista}`)
+    }
+  }
+  return partes.length ? partes.join(' — ') : fallback
+}
+
+/**
+ * Crea un reembolso (total o parcial) de una transacción APPROVED
+ * (`POST /v1/refunds`, Reembolsos V2). Requiere WOMPI_PRIVATE_KEY.
+ *
+ * Devuelve el objeto del reembolso aunque su `status` no sea APPROVED: el
+ * caller decide (DECLINED/ERROR = no se devolvió el dinero). Nunca lanza.
+ *
+ * @param amountInCents monto a devolver en CENTAVOS (Wompi), > 0.
+ */
+export async function crearReembolsoWompi(params: {
+  transactionId: string
+  amountInCents: number
+  motivo?: string
+  referencia?: string
+}): Promise<ResultadoApiWompi<ReembolsoWompi>> {
+  const key = wompiPrivateKey()
+  if (!key) return { ok: false, error: 'Falta WOMPI_PRIVATE_KEY: la devolución por API no está habilitada' }
+  const id = params.transactionId.trim()
+  if (!id || id.length > 100 || !/^[\w-]+$/.test(id)) return { ok: false, error: 'Id de transacción inválido' }
+  const cents = Math.round(params.amountInCents)
+  if (!Number.isFinite(cents) || cents <= 0) return { ok: false, error: 'Monto a devolver inválido' }
+
+  const body: Record<string, unknown> = { transaction_id: id, amount_in_cents: cents }
+  if (params.motivo?.trim()) body.reason = params.motivo.trim().slice(0, 255)
+  if (params.referencia?.trim()) body.reference = params.referencia.trim().slice(0, 255)
+
+  try {
+    const res = await fetch(`${wompiApiBase()}/refunds`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) {
+      const msg = mensajeErrorWompi(json, `Wompi respondió HTTP ${res.status} al reembolsar`)
+      console.error(`[wompi] crearReembolsoWompi(${id}) HTTP ${res.status}: ${msg}`)
+      return { ok: false, error: msg, httpStatus: res.status }
+    }
+    const data = (json as { data?: ReembolsoWompi } | null)?.data
+    if (!data || typeof data.status !== 'string') {
+      return { ok: false, error: 'Respuesta de Wompi sin datos del reembolso', httpStatus: res.status }
+    }
+    return { ok: true, data }
+  } catch (err) {
+    console.error(`[wompi] crearReembolsoWompi(${id}) error:`, err)
+    return { ok: false, error: err instanceof Error ? err.message : 'Error de red con Wompi' }
+  }
+}
+
+/**
+ * Anula una transacción de TARJETA (`POST /v1/transactions/{id}/void`).
+ * Solo funciona mientras el adquirente no haya cerrado la jornada; después
+ * Wompi responde 422 y hay que usar el reembolso. Requiere WOMPI_PRIVATE_KEY.
+ *
+ * Devuelve la transacción tal como queda (status VOIDED si se anuló). La
+ * respuesta anida la transacción en `data.transaction` (y en algunas
+ * versiones directamente en `data`); se aceptan ambas formas. Nunca lanza.
+ */
+export async function anularTransaccionWompi(transactionId: string): Promise<ResultadoApiWompi<TransaccionWompi>> {
+  const key = wompiPrivateKey()
+  if (!key) return { ok: false, error: 'Falta WOMPI_PRIVATE_KEY: la anulación por API no está habilitada' }
+  const id = transactionId.trim()
+  if (!id || id.length > 100 || !/^[\w-]+$/.test(id)) return { ok: false, error: 'Id de transacción inválido' }
+  try {
+    const res = await fetch(`${wompiApiBase()}/transactions/${encodeURIComponent(id)}/void`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${key}` },
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) {
+      const msg = mensajeErrorWompi(json, `Wompi respondió HTTP ${res.status} al anular`)
+      console.error(`[wompi] anularTransaccionWompi(${id}) HTTP ${res.status}: ${msg}`)
+      return { ok: false, error: msg, httpStatus: res.status }
+    }
+    const data = (json as { data?: { transaction?: TransaccionWompi; status?: string } & Partial<TransaccionWompi> } | null)?.data
+    const tx = data?.transaction ?? (data?.id ? (data as TransaccionWompi) : null)
+    if (!tx) {
+      // 201 sin cuerpo: Wompi aceptó la anulación; el caller puede reconsultar.
+      return { ok: true, data: { id, reference: '', status: typeof data?.status === 'string' ? data.status : 'VOIDED', amount_in_cents: 0, currency: 'COP' } }
+    }
+    return { ok: true, data: tx }
+  } catch (err) {
+    console.error(`[wompi] anularTransaccionWompi(${id}) error:`, err)
+    return { ok: false, error: err instanceof Error ? err.message : 'Error de red con Wompi' }
   }
 }
 

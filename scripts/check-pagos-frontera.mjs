@@ -24,6 +24,7 @@ const FRONTERA = [
   'src/app/api/wompi/webhook/route.ts',
   'src/app/api/cron/wompi-conciliar/route.ts',
   'src/app/api/admin/pagos/verificar/route.ts',
+  'src/app/api/admin/pagos/devolver/route.ts',
   'src/app/pago/anticipo/[token]/page.tsx',
   'src/app/pago/saldo/[token]/page.tsx',
   'src/lib/auth/cron.ts',

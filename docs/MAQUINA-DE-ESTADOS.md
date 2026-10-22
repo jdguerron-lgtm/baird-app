@@ -200,7 +200,7 @@ Diagnóstico técnico
 ```
 
 **Componentes UI:**
-- `src/components/ui/ProductosNecesariosForm.tsx` — lista de SKUs (link a Serviplus visible para Mabe/GE).
+- `src/components/ui/ProductosNecesariosForm.tsx` — lista de SKUs (bloque destacado con botón al buscador de partes de Serviplus `proce/search.html` para Mabe/GE/Centrales + link secundario al despiece por modelo, 2026-10-21).
 - `src/components/ui/ProductosRecomendadosForm.tsx` — lista informativa sin precio.
 - `src/app/tecnico/[token]/diagnostico/[id]/page.tsx` — particular: campo "Tu costo total" → muestra desglose IVA + margen + total cliente al técnico (no al cliente).
 - `src/app/admin/cotizaciones-pendientes/page.tsx` — desde 2026-08-02 solo aplica a particular + esperar_repuesto (garantía ya no pasa por aquí).

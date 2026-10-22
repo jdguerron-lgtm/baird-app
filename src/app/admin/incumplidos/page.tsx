@@ -5,7 +5,12 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
 import {
+  PRIORIDAD_LABELS,
+  PRIORIDAD_UMBRALES,
   RESULTADO_LABELS,
+  ordenarPorPrioridad,
+  ordenarPorUrgencia,
+  type PrioridadReserva,
   type ReporteCumplimiento,
   type ResultadoReserva,
 } from '@/lib/services/incumplidos.service'
@@ -14,6 +19,10 @@ import {
  * /admin/incumplidos — visitas que NO se atendieron el día reservado.
  * Datos de GET /api/admin/incumplidos (rango por día de reserva, hora
  * Colombia; hoy y el futuro no se evalúan). Admin + rol lectura.
+ *
+ * Priorización (2026-10-21): el detalle sale ordenado por veces reagendada y
+ * días desde que entró la solicitud (`ordenarPorPrioridad`); se puede cambiar a
+ * urgencia (retraso) o fecha de reserva. Cada fila muestra su nivel de prioridad.
  */
 
 function hoyColombia(): string {
@@ -81,6 +90,24 @@ const EVIDENCIA_LABELS: Record<string, string> = {
   completado: 'Servicio completado',
 }
 
+const PRIORIDAD_ESTILOS: Record<PrioridadReserva, string> = {
+  alta: 'bg-red-600 text-white',
+  media: 'bg-amber-400 text-amber-950',
+  baja: 'bg-gray-100 text-gray-500',
+}
+
+type OrdenItems = 'prioridad' | 'urgencia' | 'reserva'
+
+const ORDENES: { value: OrdenItems; label: string; title: string }[] = [
+  {
+    value: 'prioridad',
+    label: 'Prioridad',
+    title: `Más reagendada primero, luego la solicitud más antigua. Alta: ≥${PRIORIDAD_UMBRALES.alta.reagendamientos} reagendamientos o ≥${PRIORIDAD_UMBRALES.alta.dias} días desde la solicitud; media: ≥${PRIORIDAD_UMBRALES.media.reagendamientos} o ≥${PRIORIDAD_UMBRALES.media.dias} días`,
+  },
+  { value: 'urgencia', label: 'Urgencia', title: 'Vencidas sin atender con más retraso primero, luego sin técnico, luego tarde' },
+  { value: 'reserva', label: 'Fecha de reserva', title: 'Reserva más reciente primero' },
+]
+
 type VistaItems = 'incumplidas' | 'pendientes' | 'todas'
 
 const VISTAS: { value: VistaItems; label: string; title: string }[] = [
@@ -95,6 +122,7 @@ export default function IncumplidosPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [vista, setVista] = useState<VistaItems>('incumplidas')
+  const [orden, setOrden] = useState<OrdenItems>('prioridad')
   const [tecnicoFiltro, setTecnicoFiltro] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
@@ -130,13 +158,18 @@ export default function IncumplidosPage() {
 
   const items = useMemo(() => {
     if (!data) return []
-    return data.items.filter((it) => {
+    const filtrados = data.items.filter((it) => {
       if (tecnicoFiltro !== null && (it.tecnico_id ?? '') !== tecnicoFiltro) return false
       if (vista === 'incumplidas') return it.resultado === 'vencida' || it.resultado === 'sin_tecnico' || it.resultado === 'tarde'
       if (vista === 'pendientes') return it.resultado === 'vencida' || it.resultado === 'sin_tecnico'
       return true
     })
-  }, [data, vista, tecnicoFiltro])
+    if (orden === 'prioridad') return ordenarPorPrioridad(filtrados)
+    if (orden === 'urgencia') return ordenarPorUrgencia(filtrados)
+    return [...filtrados].sort((a, b) => b.fecha_visita_at.localeCompare(a.fecha_visita_at))
+  }, [data, vista, orden, tecnicoFiltro])
+
+  const altas = useMemo(() => items.filter((it) => it.prioridad === 'alta').length, [items])
 
   const tecnicoFiltroNombre = tecnicoFiltro === null
     ? null
@@ -150,6 +183,7 @@ export default function IncumplidosPage() {
           <p className="text-sm text-slate-500 mt-1">
             Visitas que <strong>no se atendieron el día reservado</strong>. Una reserva cuenta como atendida si ese día hay
             ping GPS del técnico, diagnóstico enviado o servicio completado. Hoy y el futuro no se evalúan (hora Colombia).
+            El detalle sale <strong>priorizado</strong>: primero las más veces reagendadas y, entre iguales, las solicitudes más antiguas.
           </p>
         </div>
         <Link href="/admin/solicitudes" className="text-sm text-slate-600 hover:text-slate-900 underline whitespace-nowrap">
@@ -335,9 +369,28 @@ export default function IncumplidosPage() {
             {v.label}
           </button>
         ))}
+        <div className="flex items-center gap-1 ml-auto" role="group" aria-label="Orden del detalle">
+          <span className="text-xs text-gray-400 mr-1">Orden:</span>
+          {ORDENES.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => setOrden(o.value)}
+              title={o.title}
+              aria-pressed={orden === o.value}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${
+                orden === o.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
         {data && (
-          <span className="text-xs text-gray-400 ml-auto">
-            {items.length} reserva{items.length !== 1 ? 's' : ''}{tecnicoFiltroNombre ? ` · ${tecnicoFiltroNombre}` : ''}
+          <span className="text-xs text-gray-400 w-full sm:w-auto sm:basis-full text-right">
+            {items.length} reserva{items.length !== 1 ? 's' : ''}
+            {altas > 0 && <span className="text-red-600 font-semibold"> · {altas} con prioridad alta</span>}
+            {tecnicoFiltroNombre ? ` · ${tecnicoFiltroNombre}` : ''}
           </span>
         )}
       </div>
@@ -356,6 +409,7 @@ export default function IncumplidosPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-5 py-3" title={ORDENES[0].title}>Prioridad</th>
                   <th className="px-5 py-3">Reserva</th>
                   <th className="px-5 py-3">Resultado</th>
                   <th className="px-5 py-3">Cliente</th>
@@ -369,13 +423,30 @@ export default function IncumplidosPage() {
                 {items.map((it) => {
                   const franja = franjaDe(it.horario_confirmado)
                   return (
-                    <tr key={it.solicitud_id} className="hover:bg-gray-50/50 transition-colors">
+                    <tr
+                      key={it.solicitud_id}
+                      className={`transition-colors ${it.prioridad === 'alta' ? 'bg-red-50/40 hover:bg-red-50' : 'hover:bg-gray-50/50'}`}
+                    >
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <span
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${PRIORIDAD_ESTILOS[it.prioridad]}`}
+                          title={PRIORIDAD_LABELS[it.prioridad]}
+                        >
+                          {it.prioridad}
+                        </span>
+                        <p className={`text-xs mt-1 ${it.reagendamientos >= PRIORIDAD_UMBRALES.alta.reagendamientos ? 'text-red-700 font-semibold' : it.reagendamientos > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                          {it.reagendamientos > 0 ? `${it.reagendamientos}× reagendada` : 'Sin reagendar'}
+                        </p>
+                        <p
+                          className={`text-xs ${it.dias_desde_solicitud >= PRIORIDAD_UMBRALES.alta.dias ? 'text-red-700 font-semibold' : it.dias_desde_solicitud >= PRIORIDAD_UMBRALES.media.dias ? 'text-amber-700' : 'text-gray-400'}`}
+                          title={`Solicitud creada el ${new Date(it.creada_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' })}`}
+                        >
+                          {it.dias_desde_solicitud} día{it.dias_desde_solicitud !== 1 ? 's' : ''} desde la solicitud
+                        </p>
+                      </td>
                       <td className="px-5 py-3 whitespace-nowrap">
                         <p className="text-sm font-semibold text-slate-900">{fechaCorta(it.dia_reserva)}</p>
-                        <p className="text-xs text-gray-400">
-                          {franja ?? '—'}
-                          {it.reagendamientos > 0 && <span className="ml-1 text-amber-600" title="Veces reagendada por el cliente">· {it.reagendamientos}× reagendada</span>}
-                        </p>
+                        <p className="text-xs text-gray-400">{franja ?? '—'}</p>
                       </td>
                       <td className="px-5 py-3">
                         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${RESULTADO_ESTILOS[it.resultado]}`}>

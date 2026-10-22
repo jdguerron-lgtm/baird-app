@@ -26,6 +26,13 @@
  *
  * Incumplimiento = `vencida` + `sin_tecnico` + `tarde`. Puro (sin I/O) para
  * poder testearlo; la carga vive en GET /api/admin/incumplidos.
+ *
+ * Priorización (2026-10-21): cada reserva lleva `reagendamientos` (máximo entre
+ * `reagendamientos_count` y los eventos `reagendamiento` / `nota_admin` con
+ * `origen='reagendamiento_admin'`, porque "reagendar vencido" solo deja evento),
+ * `dias_desde_solicitud` (hoy − día CO de `created_at`) y un nivel `prioridad`.
+ * `items` sale ordenado por `ordenarPorPrioridad`: más reagendada primero,
+ * luego la solicitud más antigua, luego el resultado más grave y el retraso.
  */
 
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
@@ -59,6 +66,25 @@ export interface EvidenciaIncumplidos {
 export interface PingIncumplidos {
   solicitud_id: string
   capturado_at: string | null
+}
+
+/** Un evento de reagendamiento (cliente, admin o reagendar-vencido). */
+export interface ReagendamientoIncumplidos {
+  solicitud_id: string
+}
+
+export type PrioridadReserva = 'alta' | 'media' | 'baja'
+
+/** Umbrales del nivel de prioridad (reagendamientos / días desde la solicitud). */
+export const PRIORIDAD_UMBRALES = {
+  alta: { reagendamientos: 2, dias: 15 },
+  media: { reagendamientos: 1, dias: 7 },
+} as const
+
+export const PRIORIDAD_LABELS: Record<PrioridadReserva, string> = {
+  alta: 'Prioridad alta',
+  media: 'Prioridad media',
+  baja: 'Prioridad baja',
 }
 
 export type ResultadoReserva =
@@ -95,7 +121,14 @@ export interface ReservaEvaluada {
   evidencia: EvidenciaAtencion | null
   /** Días de retraso: tarde = atención − reserva; vencida/sin_tecnico = hoy − reserva. */
   dias_retraso: number
+  /** Veces reagendada (máximo entre el contador y los eventos de reagendamiento). */
   reagendamientos: number
+  /** Cuándo entró la solicitud (ISO). */
+  creada_at: string
+  /** Días calendario CO desde que entró la solicitud hasta hoy. */
+  dias_desde_solicitud: number
+  /** Nivel derivado de reagendamientos y antigüedad (ver PRIORIDAD_UMBRALES). */
+  prioridad: PrioridadReserva
 }
 
 export interface ResumenCumplimiento {
@@ -171,6 +204,45 @@ function fechaValida(iso: string | null | undefined): string | null {
   return Number.isNaN(t) ? null : iso
 }
 
+/** Nivel de prioridad: la peor de las dos señales (reagendamientos, antigüedad). */
+export function nivelPrioridad(reagendamientos: number, diasDesdeSolicitud: number): PrioridadReserva {
+  if (reagendamientos >= PRIORIDAD_UMBRALES.alta.reagendamientos || diasDesdeSolicitud >= PRIORIDAD_UMBRALES.alta.dias) return 'alta'
+  if (reagendamientos >= PRIORIDAD_UMBRALES.media.reagendamientos || diasDesdeSolicitud >= PRIORIDAD_UMBRALES.media.dias) return 'media'
+  return 'baja'
+}
+
+const PESO_RESULTADO: Record<ResultadoReserva, number> = {
+  vencida: 0, sin_tecnico: 1, tarde: 2, cerrada_sin_visita: 3, sin_evidencia: 4, cumplida: 5, futura: 6,
+}
+
+/**
+ * Orden de atención: más reagendada primero, luego la solicitud más antigua,
+ * luego el resultado más grave (vencida > sin técnico > tarde > …) y, a
+ * igualdad, la de mayor retraso. Devuelve una copia ordenada.
+ */
+export function ordenarPorPrioridad(items: ReservaEvaluada[]): ReservaEvaluada[] {
+  return [...items].sort((a, b) => {
+    if (b.reagendamientos !== a.reagendamientos) return b.reagendamientos - a.reagendamientos
+    if (b.dias_desde_solicitud !== a.dias_desde_solicitud) return b.dias_desde_solicitud - a.dias_desde_solicitud
+    if (PESO_RESULTADO[a.resultado] !== PESO_RESULTADO[b.resultado]) return PESO_RESULTADO[a.resultado] - PESO_RESULTADO[b.resultado]
+    if (b.dias_retraso !== a.dias_retraso) return b.dias_retraso - a.dias_retraso
+    return b.dia_reserva.localeCompare(a.dia_reserva)
+  })
+}
+
+/**
+ * Orden por urgencia del resultado (el que tenía la vista hasta 2026-10-21):
+ * vencidas por retraso desc, luego sin técnico, luego tarde, luego el resto por
+ * fecha de reserva desc. Devuelve una copia ordenada.
+ */
+export function ordenarPorUrgencia(items: ReservaEvaluada[]): ReservaEvaluada[] {
+  return [...items].sort((a, b) => {
+    if (PESO_RESULTADO[a.resultado] !== PESO_RESULTADO[b.resultado]) return PESO_RESULTADO[a.resultado] - PESO_RESULTADO[b.resultado]
+    if (a.resultado === 'vencida' || a.resultado === 'sin_tecnico') return b.dias_retraso - a.dias_retraso
+    return b.dia_reserva.localeCompare(a.dia_reserva)
+  })
+}
+
 /**
  * Evalúa una reserva. Retorna null si la solicitud no tiene `fecha_visita_at`
  * (nunca se agendó: no hay fecha que cumplir).
@@ -180,6 +252,8 @@ export function evaluarReserva(
   opts: {
     evidencias?: EvidenciaIncumplidos[]
     pings?: PingIncumplidos[]
+    /** Eventos de reagendamiento de la solicitud (se toma el máximo con el contador). */
+    reagendamientos?: ReagendamientoIncumplidos[]
     tecnicoNombre?: string | null
     ahora?: Date
   } = {},
@@ -236,6 +310,10 @@ export function evaluarReserva(
 
   const equipo = [sol.tipo_equipo, sol.marca_equipo].filter(Boolean).join(' · ') || '—'
 
+  const reagendamientos = Math.max(sol.reagendamientos_count ?? 0, opts.reagendamientos?.length ?? 0)
+  const creadaAt = fechaValida(sol.created_at) ?? fechaVisita
+  const diasDesdeSolicitud = Math.max(0, diasEntreYMD(fechaColombiaYMD(new Date(creadaAt)), hoy))
+
   return {
     solicitud_id: sol.id,
     cliente_nombre: sol.cliente_nombre ?? '—',
@@ -256,7 +334,10 @@ export function evaluarReserva(
     dia_atencion: diaAtencion,
     evidencia: atencion?.tipo ?? null,
     dias_retraso: diasRetraso,
-    reagendamientos: sol.reagendamientos_count ?? 0,
+    reagendamientos,
+    creada_at: creadaAt,
+    dias_desde_solicitud: diasDesdeSolicitud,
+    prioridad: nivelPrioridad(reagendamientos, diasDesdeSolicitud),
   }
 }
 
@@ -302,6 +383,8 @@ export function calcularReporteCumplimiento(input: {
   solicitudes: SolicitudIncumplidos[]
   evidencias: EvidenciaIncumplidos[]
   pings: PingIncumplidos[]
+  /** Eventos de reagendamiento (opcional: sin ellos vale el contador de la solicitud). */
+  reagendamientos?: ReagendamientoIncumplidos[]
   tecnicos: Record<string, string>
   desde: string
   hasta: string
@@ -323,30 +406,31 @@ export function calcularReporteCumplimiento(input: {
     pingsPorSol.set(p.solicitud_id, lista)
   }
 
-  const items: ReservaEvaluada[] = []
+  const reagPorSol = new Map<string, ReagendamientoIncumplidos[]>()
+  for (const r of input.reagendamientos ?? []) {
+    const lista = reagPorSol.get(r.solicitud_id) ?? []
+    lista.push(r)
+    reagPorSol.set(r.solicitud_id, lista)
+  }
+
+  const evaluadas: ReservaEvaluada[] = []
   for (const sol of input.solicitudes) {
     const item = evaluarReserva(sol, {
       evidencias: evPorSol.get(sol.id),
       pings: pingsPorSol.get(sol.id),
+      reagendamientos: reagPorSol.get(sol.id),
       tecnicoNombre: sol.tecnico_asignado_id ? input.tecnicos[sol.tecnico_asignado_id] ?? null : null,
       ahora,
     })
     if (!item) continue
     if (item.resultado === 'futura') continue
     if (item.dia_reserva < input.desde || item.dia_reserva > input.hasta) continue
-    items.push(item)
+    evaluadas.push(item)
   }
 
-  // Más urgente primero: vencidas/sin técnico por retraso desc, luego tarde,
-  // luego el resto por fecha de reserva desc.
-  const peso: Record<ResultadoReserva, number> = {
-    vencida: 0, sin_tecnico: 1, tarde: 2, cerrada_sin_visita: 3, sin_evidencia: 4, cumplida: 5, futura: 6,
-  }
-  items.sort((a, b) => {
-    if (peso[a.resultado] !== peso[b.resultado]) return peso[a.resultado] - peso[b.resultado]
-    if (a.resultado === 'vencida' || a.resultado === 'sin_tecnico') return b.dias_retraso - a.dias_retraso
-    return b.dia_reserva.localeCompare(a.dia_reserva)
-  })
+  // Prioridad de atención: reagendamientos desc → antigüedad de la solicitud
+  // desc → gravedad del resultado → retraso (2026-10-21).
+  const items = ordenarPorPrioridad(evaluadas)
 
   const resumen = resumenVacio()
   const porTecnico = new Map<string, CumplimientoTecnico>()
