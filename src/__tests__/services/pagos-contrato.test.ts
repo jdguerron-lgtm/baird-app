@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 /**
  * 🔒 TESTS DE CONTRATO DEL MÓDULO DE PAGOS (2026-10-11)
@@ -60,6 +60,7 @@ const { db, mockFrom, wa } = vi.hoisted(() => {
     enviarSaldoConfirmadoTecnico: vi.fn(),
     enviarAbonoConfirmadoTecnico: vi.fn(),
     enviarAbonoConfirmadoCliente: vi.fn(),
+    enviarDevolucionConfirmadaCliente: vi.fn(),
     enviarMensajeTexto: vi.fn(),
   }
   return { db, mockFrom: vi.fn(from), wa }
@@ -68,7 +69,7 @@ const { db, mockFrom, wa } = vi.hoisted(() => {
 vi.mock('@/lib/supabase-admin', () => ({ supabaseAdmin: { from: mockFrom } }))
 vi.mock('@/lib/services/whatsapp.service', () => wa)
 
-import { registrarPagoWompi, calcularMontoSaldo, cargarSolicitudPago } from '@/lib/services/pagos.service'
+import { registrarPagoWompi, calcularMontoSaldo, cargarSolicitudPago, devolverPagoWompi } from '@/lib/services/pagos.service'
 import type { TransaccionWompi } from '@/lib/wompi'
 
 const SOL_ID = '6c7efe75-6309-432e-8809-61d2a5013e3e'
@@ -121,6 +122,7 @@ beforeEach(() => {
   wa.enviarSaldoConfirmadoTecnico.mockResolvedValue({ ok: true })
   wa.enviarAbonoConfirmadoTecnico.mockResolvedValue({ ok: true })
   wa.enviarAbonoConfirmadoCliente.mockResolvedValue({ ok: true })
+  wa.enviarDevolucionConfirmadaCliente.mockResolvedValue({ ok: true })
   wa.enviarMensajeTexto.mockResolvedValue(undefined)
 })
 
@@ -315,5 +317,191 @@ describe('registrarPagoWompi — código de descuento (2026-10-19)', () => {
     db.pagos = [{ id: 'p0', solicitud_id: SOL_ID, tipo: 'anticipo', estado: 'APPROVED', monto: 42000, transaccion_id: 'tx-ant', pagado_at: '2026-10-09T20:49:38Z' }]
     const { calcularMontoAbonoRepuestos } = await import('@/lib/services/pagos.service')
     expect(await calcularMontoAbonoRepuestos((await cargarSolicitudPago(SOL_ID))!)).toBe(79000) // 50% × 158.000
+  })
+})
+
+describe('devolverPagoWompi — devoluciones desde el admin (2026-10-21)', () => {
+  const ENV = ['WOMPI_PUBLIC_KEY', 'WOMPI_PRIVATE_KEY'] as const
+  const envBackup: Record<string, string | undefined> = {}
+  const TX_ANT = '1510245-1791684095-17537'
+
+  function mockFetch(respuestas: Array<{ body: unknown; status?: number }>) {
+    let i = 0
+    const fn = vi.fn(async (_url: string, _init?: RequestInit) => {
+      const r = respuestas[Math.min(i++, respuestas.length - 1)]
+      const status = r.status ?? 201
+      return { ok: status >= 200 && status < 300, status, json: async () => r.body }
+    })
+    vi.stubGlobal('fetch', fn)
+    return fn
+  }
+
+  function conAnticipoPagado(metodo = 'PSE') {
+    db.solicitudes_servicio = [solicitud({ estado: 'cancelada', anticipo_pagado_at: '2026-10-09T20:49:38Z', monto_pagado_online: 42000, ultimo_pago_at: '2026-10-09T20:49:38Z' })]
+    db.pagos = [{
+      id: 'p-ant', solicitud_id: SOL_ID, tipo: 'anticipo', estado: 'APPROVED', monto: 42000,
+      transaccion_id: TX_ANT, metodo, pagado_at: '2026-10-09T20:49:38Z', raw: { _origen: 'redirect' },
+    }]
+  }
+
+  beforeEach(() => {
+    for (const k of ENV) envBackup[k] = process.env[k]
+    process.env.WOMPI_PUBLIC_KEY = 'pub_prod_x'
+    process.env.WOMPI_PRIVATE_KEY = 'prv_prod_x'
+  })
+
+  afterEach(() => {
+    for (const k of ENV) {
+      if (envBackup[k] === undefined) delete process.env[k]
+      else process.env[k] = envBackup[k]
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it('14. reembolso APPROVED en Wompi → la MISMA fila pasa a VOIDED, resumen en 0, anticipo_pagado_at limpio, evento ↩️ y alerta', async () => {
+    conAnticipoPagado('PSE')
+    const fetchMock = mockFetch([{ body: { data: { id: 1523, status: 'APPROVED', v2_refund_id: 'v2_refund_abc', amount_in_cents: 4200000, transaction_id: TX_ANT } } }])
+
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'jdguerron@bairdservice.com' })
+    expect(r).toMatchObject({ ok: true, via: 'reembolso_wompi', tipo: 'anticipo', monto: 42000, referenciaWompi: 'v2_refund_abc' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://production.wompi.co/v1/refunds')
+    expect(JSON.parse(String(init.body))).toMatchObject({ transaction_id: TX_ANT, amount_in_cents: 4200000 }) // monto del LEDGER
+
+    expect(pagos()).toHaveLength(1) // una transacción = una fila
+    expect(pagos()[0]).toMatchObject({ estado: 'VOIDED', transaccion_id: TX_ANT })
+    expect(((pagos()[0].raw as Row)._devolucion as Row)).toMatchObject({ via: 'reembolso_wompi', actor: 'jdguerron@bairdservice.com', referencia_wompi: 'v2_refund_abc' })
+    expect((pagos()[0].raw as Row)._origen).toBe('redirect') // el payload original se conserva
+
+    expect(sol().monto_pagado_online).toBe(0)
+    expect(sol().ultimo_pago_at).toBeNull()
+    expect(sol().anticipo_pagado_at).toBeNull()
+
+    const ev = eventos().filter(e => e.tipo === 'pago_registrado')
+    expect(ev).toHaveLength(1)
+    expect(ev[0].motivo).toContain('Devolución del anticipo')
+    expect(ev[0].payload).toMatchObject({ devolucion: true, via: 'reembolso_wompi', monto: 42000, actor: 'jdguerron@bairdservice.com', pasarela: 'wompi' })
+    expect(wa.enviarMensajeTexto).toHaveBeenCalledTimes(1)
+    expect(String(wa.enviarMensajeTexto.mock.calls[0][1])).toContain('Devolución')
+    // Aviso al cliente con la plantilla devolucion_confirmada_cliente_v1 (medio = el que pagó).
+    expect(wa.enviarDevolucionConfirmadaCliente).toHaveBeenCalledTimes(1)
+    expect(wa.enviarDevolucionConfirmadaCliente).toHaveBeenCalledWith(SOL_ID, {
+      monto: 42000, tipo: 'anticipo', medio: 'al mismo medio con el que pagaste (PSE)',
+    })
+  })
+
+  it('14b. si el WhatsApp al cliente falla, la devolución NO se revierte: evento ⚠️ y marca en la alerta', async () => {
+    conAnticipoPagado('CARD')
+    wa.enviarDevolucionConfirmadaCliente.mockResolvedValue({ ok: false, error: 'Meta 131047: fuera de ventana' })
+    mockFetch([{ body: { data: { id: 1, status: 'APPROVED', amount_in_cents: 4200000, transaction_id: TX_ANT } } }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(true)
+    expect(pagos()[0].estado).toBe('VOIDED')
+    const aviso = eventos().find(e => Array.isArray((e.payload as Row).fallas_aviso))
+    expect(aviso).toBeDefined()
+    expect((aviso!.payload as Row).requiere_intervencion_admin).toBe(true)
+    expect(String(wa.enviarMensajeTexto.mock.calls[0][1])).toContain('No se pudo avisar al cliente')
+  })
+
+  it('15. Wompi DECLINA el reembolso → nada cambia en la BD, evento ⚠️ y error claro', async () => {
+    conAnticipoPagado('PSE')
+    mockFetch([{ body: { data: { id: 1, status: 'DECLINED', status_message: 'Tiempo límite sin encontrar fondos excedido', amount_in_cents: 4200000, transaction_id: TX_ANT } } }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('DECLINED')
+    expect(pagos()[0].estado).toBe('APPROVED')
+    expect(sol().anticipo_pagado_at).not.toBeNull()
+    expect(sol().monto_pagado_online).toBe(42000)
+    const ev = eventos().find(e => (e.payload as Row).devolucion_fallida === true)
+    expect(ev).toBeDefined()
+    expect(wa.enviarMensajeTexto).not.toHaveBeenCalled()
+  })
+
+  it('16. reembolsos no disponibles (404) + TARJETA → cae a la anulación /void', async () => {
+    conAnticipoPagado('CARD')
+    const fetchMock = mockFetch([
+      { body: { error: { type: 'NOT_FOUND_ERROR', reason: 'Not found' } }, status: 404 },
+      { body: { data: { status: 'VOIDED', transaction: { id: TX_ANT, reference: `anticipo-${SOL_ID}`, status: 'VOIDED', amount_in_cents: 4200000, currency: 'COP' } } } },
+    ])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r).toMatchObject({ ok: true, via: 'anulacion_wompi', referenciaWompi: TX_ANT })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(String(fetchMock.mock.calls[1][0])).toBe(`https://production.wompi.co/v1/transactions/${TX_ANT}/void`)
+    expect(pagos()[0].estado).toBe('VOIDED')
+    expect(sol().anticipo_pagado_at).toBeNull()
+  })
+
+  it('17. reembolsos no disponibles (404) + PSE → NO intenta /void; error y BD intacta', async () => {
+    conAnticipoPagado('PSE')
+    const fetchMock = mockFetch([{ body: { error: { type: 'NOT_FOUND_ERROR', reason: 'Not found' } }, status: 404 }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(pagos()[0].estado).toBe('APPROVED')
+  })
+
+  it('18. sin WOMPI_PRIVATE_KEY → error que nombra la variable, sin llamar a Wompi ni tocar la BD', async () => {
+    delete process.env.WOMPI_PRIVATE_KEY
+    conAnticipoPagado('PSE')
+    const fetchMock = mockFetch([{ body: {} }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('WOMPI_PRIVATE_KEY')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(pagos()[0].estado).toBe('APPROVED')
+  })
+
+  it('19. devolución MANUAL → VOIDED con la nota, sin llamar a Wompi', async () => {
+    conAnticipoPagado('NEQUI')
+    const fetchMock = mockFetch([{ body: {} }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'manual', actor: 'admin', nota: 'Reembolso desde el panel de Wompi #778' })
+    expect(r).toMatchObject({ ok: true, via: 'manual', monto: 42000 })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(pagos()[0].estado).toBe('VOIDED')
+    expect(((pagos()[0].raw as Row)._devolucion as Row)).toMatchObject({ via: 'manual', nota: 'Reembolso desde el panel de Wompi #778' })
+    expect(sol().monto_pagado_online).toBe(0)
+    expect(sol().anticipo_pagado_at).toBeNull()
+    expect(eventos()[0].motivo).toContain('Reembolso desde el panel de Wompi #778')
+    expect(wa.enviarDevolucionConfirmadaCliente).toHaveBeenCalledWith(SOL_ID, {
+      monto: 42000, tipo: 'anticipo', medio: 'por el medio acordado contigo',
+    })
+  })
+
+  it('20. idempotencia: un pago ya VOIDED responde yaDevuelto sin llamar a Wompi ni repetir evento', async () => {
+    conAnticipoPagado('CARD')
+    db.pagos[0].estado = 'VOIDED'
+    const fetchMock = mockFetch([{ body: {} }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r).toMatchObject({ ok: true, yaDevuelto: true })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(eventos()).toHaveLength(0)
+  })
+
+  it('21. solo pagos APPROVED: DECLINED no se devuelve; pago de otra solicitud no se encuentra', async () => {
+    conAnticipoPagado('CARD')
+    db.pagos[0].estado = 'DECLINED'
+    const fetchMock = mockFetch([{ body: {} }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('DECLINED')
+
+    db.pagos[0].estado = 'APPROVED'
+    const ajeno = await devolverPagoWompi({ pagoId: 'p-ant', solicitudId: '00000000-0000-0000-0000-000000000000', modo: 'wompi', actor: 'admin' })
+    expect(ajeno.ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('22. si queda OTRO pago APPROVED del mismo tipo, el guard *_pagado_at NO se limpia (pago duplicado: se devuelve uno)', async () => {
+    conAnticipoPagado('PSE')
+    db.pagos.push({ id: 'p-ant-2', solicitud_id: SOL_ID, tipo: 'anticipo', estado: 'APPROVED', monto: 42000, transaccion_id: 'tx-dup', metodo: 'PSE', pagado_at: '2026-10-09T21:00:00Z', raw: {} })
+    mockFetch([{ body: { data: { id: 2, status: 'APPROVED', amount_in_cents: 4200000, transaction_id: 'tx-dup' } } }])
+    const r = await devolverPagoWompi({ pagoId: 'p-ant-2', solicitudId: SOL_ID, modo: 'wompi', actor: 'admin' })
+    expect(r.ok).toBe(true)
+    expect(pagos().find(p => p.id === 'p-ant-2')!.estado).toBe('VOIDED')
+    expect(pagos().find(p => p.id === 'p-ant')!.estado).toBe('APPROVED')
+    expect(sol().monto_pagado_online).toBe(42000)
+    expect(sol().anticipo_pagado_at).toBe('2026-10-09T20:49:38Z')
   })
 })

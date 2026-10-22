@@ -37,6 +37,8 @@ src/lib/services/pagos.service.ts ← conciliación idempotente: tabla pagos +
 src/app/pago/anticipo/[token]/    ← página de pago (Server Component: la firma
                                     usa WOMPI_INTEGRITY_SECRET, nunca va al bundle)
 src/app/api/wompi/webhook/        ← POST transaction.updated (checksum verificado)
+src/app/api/admin/pagos/          ← GET ledger de una solicitud (ficha admin);
+   devolver/                        POST devolución (reembolso V2 / void / manual) — 2026-10-21
 supabase/migrations/20260818_wompi_pagos.sql  ← tabla pagos (RLS cerrada, solo
                                     service_role) + anticipo_pagado_at + evento
                                     'pago_registrado' (aplicada en prod 2026-08-18)
@@ -142,6 +144,62 @@ wompi.ts → listarTransaccionesPorReferencia ← GET /v1/transactions?reference
   `/api/wompi/webhook` reenvíe a Conexa los eventos ajenos (proxy). Vuelve a la
   app punto único de falla de la tienda.
 
+### Devoluciones desde el admin (2026-10-21)
+
+Caso típico: el servicio se cancela después de que el cliente pagó el
+anticipo. En la ficha admin (`/admin/solicitudes/[id]` → "Cobros al
+cliente") aparece el **ledger de pagos online** (`GET /api/admin/pagos`) y,
+para cada pago APPROVED, dos acciones (solo admin con escritura; el rol
+lectura solo ve la lista):
+
+| Acción | Qué hace | Cuándo usarla |
+|---|---|---|
+| **↩️ Devolver por Wompi** | `POST /api/admin/pagos/devolver` `{ modo: 'wompi' }` → `devolverPagoWompi` → **reembolso V2** `POST /v1/refunds` (Bearer `WOMPI_PRIVATE_KEY`, monto COMPLETO del ledger) y, si ese endpoint responde 403/404/405 y el pago fue con **tarjeta**, **anulación** `POST /v1/transactions/{id}/void`. El dinero regresa al medio de pago original. | Siempre que haya llave privada. Aplica a tarjeta, PSE, Nequi y Bancolombia (el reembolso V2 es por transacción, no por método). |
+| **Registrar devolución manual** | `{ modo: 'manual', nota }` → misma marca en la BD **sin llamar a Wompi**. Exige una nota ("reembolso desde el panel de Wompi #…", "transferencia …"). | Ya devolviste por el panel de Wompi o por transferencia; o Wompi rechazó el reembolso automático. |
+
+Lo que permite y NO permite el API de Wompi (verificado en docs.wompi.co
+§ Transacciones y § Reembolsos V2, 2026-10-21):
+
+- **Reembolsos V2** (`POST /v1/refunds` `{ transaction_id, amount_in_cents,
+  reason, reference }`): total o parcial sobre una transacción APPROVED de
+  cualquier método; SOLO con llave privada (`pub_*` → 401/403). Es un objeto
+  aparte con su propio estado (`APPROVED | DECLINED | ERROR | CANCELLED`); la
+  transacción original sigue APPROVED en Wompi. La doc lo presenta como
+  "(Sandbox)": si en producción el comercio no lo tiene habilitado, Wompi
+  responde 403/404 y la app lo dice ("hazlo desde el panel y regístralo como
+  manual"). Los tiempos de abono al cliente dependen del banco (tarjeta
+  1–15 días hábiles; PSE/Nequi según la entidad).
+- **Anulación** (`/void`): SOLO tarjeta y "solo para ciertos estados" (misma
+  jornada, antes del cierre del adquirente) → después responde 422. Deja la
+  transacción en `VOIDED`.
+- **No hay anulación por API para PSE / Nequi / Bancolombia**: solo el
+  reembolso V2 o el panel de Wompi.
+- **Sin `WOMPI_PRIVATE_KEY`** ambas llamadas son no-op con error claro (409
+  en la ruta) — queda la devolución manual.
+
+Efecto en la BD (contrato, tests 14–22 de `pagos-contrato`): la **misma
+fila** de `pagos` pasa a `estado = 'VOIDED'` (una transacción = una fila;
+nunca se inserta otra) con `raw._devolucion = { via: 'reembolso_wompi' |
+'anulacion_wompi' | 'manual', at, actor, nota, referencia_wompi, respuesta }`
+y el `raw` original intacto; el trigger `pagos_resumen_aiud` descuenta el
+monto de `monto_pagado_online`; si no queda otro pago APPROVED del mismo
+tipo se limpia `{anticipo|abono|saldo}_pagado_at` (coherencia con
+`auditar_pagos()` y, si el cliente vuelve a pagar, se le avisa de nuevo);
+evento ↩️ `pago_registrado` (`payload.devolucion = true`), **WhatsApp al
+cliente** con la plantilla `devolucion_confirmada_cliente_v1` (monto,
+concepto, equipo, medio de devolución y plazo bancario; fallback a texto
+libre; si falla queda evento ⚠️ `requiere_intervencion_admin`) y alerta de
+texto al equipo. Un pago ya VOIDED responde `yaDevuelto` sin llamar a Wompi. Si
+Wompi rechaza (DECLINED/ERROR/HTTP), **nada cambia en la BD**: solo queda un
+evento ⚠️ `devolucion_fallida` y el admin ve el motivo. La devolución es
+siempre por el monto completo del pago (parcial = hacerla en el panel y
+registrar manual con nota).
+
+Para el cron de conciliación una solicitud `cancelada` no se consulta; si
+el servicio sigue vivo y el guard quedó vacío, volver a encontrar la misma
+transacción APPROVED en Wompi es un no-op (índice único por
+`transaccion_id`) — no se "re-registra" un pago devuelto.
+
 ## Reglas de seguridad (no negociables)
 
 1. El monto NUNCA viene del cliente: checkout firmado
@@ -161,8 +219,9 @@ wompi.ts → listarTransaccionesPorReferencia ← GET /v1/transactions?reference
 WOMPI_PUBLIC_KEY        pub_prod_… (o pub_test_… → apunta solo a sandbox)
 WOMPI_INTEGRITY_SECRET  prod_integrity_…  (firma del checkout)
 WOMPI_EVENTS_SECRET     prod_events_…     (verificación del webhook)
-WOMPI_PRIVATE_KEY       prv_prod_… (conciliación por cron + Bearer en consultas;
-                                    sin ella el cron es no-op — desde 2026-10-11)
+WOMPI_PRIVATE_KEY       prv_prod_… (conciliación por cron + Bearer en consultas +
+                                    devoluciones/anulaciones desde el admin; sin ella el
+                                    cron y "Devolver por Wompi" son no-op — desde 2026-10-11)
 ```
 
 Sin las dos primeras: `wompiHabilitado()` = false y todo degrada al

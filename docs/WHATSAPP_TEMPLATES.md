@@ -243,6 +243,16 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: "servicio totalmente pagado — no entregues dinero al técnico". El técnico recibe el aviso equivalente con `pago_recibido_tecnico_v1` (`enviarSaldoConfirmadoTecnico`).
 - **Fallback**: texto libre.
 
+#### `devolucion_confirmada_cliente_v1` (nueva 2026-10-21 — **subida a Meta 2026-10-21, PENDING, id 2174269310130975; verificar APPROVED con `--check`**)
+- **Disparo**: `pagos.service → devolverPagoWompi() → enviarDevolucionConfirmadaCliente()` cuando el admin devuelve un pago APPROVED desde la ficha (`POST /api/admin/pagos/devolver`: reembolso por API de Wompi, anulación de tarjeta o devolución manual). Caso típico: servicio cancelado tras pagar el anticipo. Una vez por devolución (la fila de `pagos` pasa a `VOIDED`; un pago ya devuelto no se repite).
+- **Destino**: cliente titular (no se espeja al receptor: el dinero vuelve a su medio de pago).
+- **Header**: "Devolución en proceso"
+- **Body** (5 params): `cliente`, `monto` ("42.000"), `concepto` ("anticipo" | "abono de repuestos" | "saldo"), `equipo`, `medio` ("al mismo medio con el que pagaste (PSE)" | "por el medio acordado contigo" en devolución manual).
+- **Sin botón** (no hay acción pendiente del cliente). Footer "Baird Service".
+- **Propósito**: dejar al cliente tranquilo con el monto, el concepto y el plazo bancario (1–15 días hábiles) para que no escriba preguntando.
+- **Fallback**: texto libre (best-effort). Si ambos fallan, `pagos.service` deja evento ⚠️ `requiere_intervencion_admin` en el historial y lo marca en la alerta al equipo.
+- **Subir**: `node --env-file=.env.local scripts/upload-templates.mjs devolucion_confirmada_cliente_v1`. Ver `docs/WOMPI.md` § Devoluciones.
+
 #### `abono_confirmado_cliente_v1` (nueva 2026-10-11 — **subida a Meta, PENDING**)
 - **Disparo**: `pagos.service → enviarAbonoConfirmadoCliente()` cuando Wompi aprueba la transacción `abono-…` (una sola vez — guard `abono_pagado_at`). Antes de esta plantilla el cliente **no recibía nada** al pagar el abono.
 - **Destino**: cliente

@@ -3160,6 +3160,71 @@ export async function enviarSaldoConfirmadoCliente(
 }
 
 /**
+ * Le confirma al CLIENTE que se le devolvió un pago (2026-10-21). La dispara
+ * `pagos.service → devolverPagoWompi()` cuando el admin devuelve un pago
+ * APPROVED desde la ficha (reembolso por API de Wompi, anulación de tarjeta
+ * o devolución manual) — caso típico: servicio cancelado tras pagar el
+ * anticipo. Plantilla `devolucion_confirmada_cliente_v1` (5 params, sin
+ * botón) con fallback a texto libre mientras esté PENDING. Va solo al
+ * titular (el dinero vuelve a su medio de pago): no se espeja al receptor.
+ *
+ * @param datos.medio frase que completa "El dinero regresa …": p.ej.
+ *   "al mismo medio con el que pagaste (PSE)" o "por el medio acordado contigo".
+ */
+export async function enviarDevolucionConfirmadaCliente(
+  solicitudId: string,
+  datos: { monto: number; tipo: 'anticipo' | 'abono' | 'saldo'; medio: string },
+): Promise<{ ok: boolean; error?: string }> {
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo')
+    .eq('id', solicitudId)
+    .single()
+
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+
+  const nombre = sol.cliente_nombre.split(' ')[0]
+  const equipo = `${sol.tipo_equipo} ${sol.marca_equipo}`
+  const concepto = datos.tipo === 'abono' ? 'abono de repuestos' : datos.tipo
+  const descripcion = `Se confirmó al cliente la devolución de $${formatCOP(datos.monto)} (${concepto})`
+
+  try {
+    const componentes: Record<string, unknown>[] = [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: formatCOP(datos.monto) },
+          { type: 'text', text: concepto },
+          { type: 'text', text: equipo },
+          { type: 'text', text: datos.medio },
+        ],
+      },
+    ]
+    const r = await enviarPlantilla(sol.cliente_telefono, 'devolucion_confirmada_cliente_v1', 'es', componentes)
+    if (r.filtered) return { ok: false, error: 'Envío filtrado por BAIRD_TEST_PHONE_WHITELIST (test mode)' }
+    await registrarMensajeCliente(solicitudId, 'devolucion_confirmada_cliente_v1', descripcion)
+    return { ok: true }
+  } catch (err) {
+    // Fallback a texto libre — la plantilla puede seguir PENDING en Meta.
+    console.error('[devolucion] devolucion_confirmada_cliente_v1 falló, fallback a texto libre:', err)
+    try {
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `↩️ Hola ${nombre}, te confirmamos que procesamos la devolución de $${formatCOP(datos.monto)} COP ` +
+        `correspondiente al ${concepto} de tu servicio de ${equipo}.\n\n` +
+        `El dinero regresa ${datos.medio}. Según tu banco puede tardar entre 1 y 15 días hábiles en verse reflejado.\n\n` +
+        `Si tienes alguna duda, responde a este mensaje y te ayudamos.\n\n🔧 Baird Service`
+      )
+      await registrarMensajeCliente(solicitudId, 'devolucion_confirmada_cliente_v1 (texto libre)', descripcion)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
+  }
+}
+
+/**
  * Avisa al TÉCNICO asignado que el cliente pagó el saldo en línea — no debe
  * cobrar nada en sitio. Plantilla `pago_recibido_tecnico_v1` con fallback a
  * texto libre (si ambos fallan, pagos.service deja un evento ⚠️ en el
