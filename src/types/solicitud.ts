@@ -438,6 +438,28 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   cancelado_tarde?: boolean
   reagendamientos_count?: number
   ultimo_reagendado_at?: string
+  // Seguimiento de facturación (2026-10-22, mig 20261022_facturacion_estado):
+  // qué servicio completado ya tiene FV emitida en Siigo. Solo lo escribe
+  // POST /api/admin/facturacion-estado (admin o rol lectura/logística).
+  facturacion_estado?: FacturacionEstado
+  factura_numero?: string | null
+  facturada_at?: string | null
+  facturada_por?: string | null
+  facturacion_nota?: string | null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seguimiento de facturación (2026-10-22) — docs/FACTURACION.md
+// § "Seguimiento facturado / no facturado". Mantener sincronizado con el CHECK
+// solicitudes_servicio_facturacion_estado_check (mig 20261022).
+// ─────────────────────────────────────────────────────────────────────────────
+export const FACTURACION_ESTADOS = ['pendiente', 'facturada', 'no_aplica'] as const
+export type FacturacionEstado = typeof FACTURACION_ESTADOS[number]
+
+export const FACTURACION_ESTADO_LABEL: Record<FacturacionEstado, string> = {
+  pendiente: 'Sin facturar',
+  facturada: 'Facturada',
+  no_aplica: 'No aplica',
 }
 
 // Evento append-only en la tabla solicitud_eventos.

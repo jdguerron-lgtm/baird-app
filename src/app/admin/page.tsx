@@ -41,6 +41,9 @@ export default function AdminDashboard() {
   // Reservas vencidas que siguen abiertas sin atender (últimos 30 días),
   // vía GET /api/admin/incumplidos. null = cargando o sin sesión.
   const [sinAtender, setSinAtender] = useState<number | null>(null)
+  // Servicios completados que contabilidad aún no facturó (2026-10-22,
+  // `facturacion_estado = 'pendiente'`). null = cargando o columna ausente.
+  const [sinFacturar, setSinFacturar] = useState<number | null>(null)
   const [recientes, setRecientes] = useState<{
     id: string
     nombre_completo: string
@@ -71,6 +74,19 @@ export default function AdminDashboard() {
       setRecientes(tecRecientes.data ?? [])
     }
 
+    const cargarSinFacturar = async () => {
+      try {
+        const { count, error } = await supabase
+          .from('solicitudes_servicio')
+          .select('id', { count: 'exact', head: true })
+          .eq('estado', 'completada')
+          .eq('facturacion_estado', 'pendiente')
+        if (!error) setSinFacturar(count ?? 0)
+      } catch {
+        /* el dashboard no depende de este KPI (p. ej. migración sin aplicar) */
+      }
+    }
+
     const cargarIncumplidos = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -91,6 +107,7 @@ export default function AdminDashboard() {
 
     cargarStats()
     cargarIncumplidos()
+    cargarSinFacturar()
   }, [])
 
   const estadoBadge = (estado: string) => {
@@ -115,7 +132,7 @@ export default function AdminDashboard() {
 
       {/* Stats cards */}
       {stats ? (
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-7 gap-4 mb-8">
           <Link
             href="/admin/incumplidos"
             className={`border rounded-xl p-5 hover:shadow-md transition-shadow ${sinAtender ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}
@@ -123,6 +140,14 @@ export default function AdminDashboard() {
           >
             <p className={`text-3xl font-bold ${sinAtender ? 'text-red-700' : 'text-slate-500'}`}>{sinAtender ?? '…'}</p>
             <p className={`text-xs font-semibold mt-1 uppercase tracking-wide ${sinAtender ? 'text-red-600' : 'text-slate-500'}`}>⏰ Sin atender</p>
+          </Link>
+          <Link
+            href="/admin/solicitudes?filtro=sin_facturar"
+            className={`border rounded-xl p-5 hover:shadow-md transition-shadow ${sinFacturar ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}
+            title="Servicios completados que contabilidad aún no marcó como facturados (se marca en la ficha de cada servicio)"
+          >
+            <p className={`text-3xl font-bold ${sinFacturar ? 'text-amber-700' : 'text-slate-500'}`}>{sinFacturar ?? '…'}</p>
+            <p className={`text-xs font-semibold mt-1 uppercase tracking-wide ${sinFacturar ? 'text-amber-600' : 'text-slate-500'}`}>🧾 Sin facturar</p>
           </Link>
           <Link href="/admin/tecnicos?filtro=pendiente" className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 hover:shadow-md transition-shadow">
             <p className="text-3xl font-bold text-yellow-700">{stats.pendientes}</p>
@@ -146,8 +171,8 @@ export default function AdminDashboard() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
-          {[...Array(6)].map((_, i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-7 gap-4 mb-8">
+          {[...Array(7)].map((_, i) => (
             <div key={i} className="bg-gray-100 rounded-xl p-5 animate-pulse h-24" />
           ))}
         </div>
