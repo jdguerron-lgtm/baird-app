@@ -25,6 +25,8 @@ import { useRolAdmin } from '@/components/admin/RolAdminContext'
 import MediaEvidencia from '@/components/ui/MediaEvidencia'
 import EvidenciaAdminSeccion from '@/components/admin/EvidenciaAdminSeccion'
 import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
+import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
+import type { FacturacionEstado } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -69,6 +71,12 @@ interface Solicitud {
   // Equipo que visita (2026-10-13): ids de tecnico_auxiliares que acompañan
   // al técnico en este servicio. Se resuelven vía GET /api/admin/auxiliares.
   auxiliares_ids?: string[] | null
+  // Seguimiento de facturación (2026-10-22, mig 20261022_facturacion_estado).
+  facturacion_estado?: FacturacionEstado | null
+  factura_numero?: string | null
+  facturada_at?: string | null
+  facturada_por?: string | null
+  facturacion_nota?: string | null
 }
 
 interface Tecnico {
@@ -1138,6 +1146,7 @@ export default function SolicitudDetalle() {
       e.tipo === 'comprobante_envio' ||
       e.tipo === 'pago_registrado' ||
       (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
+      (e.tipo === 'nota_admin' && (e.payload as { origen?: unknown } | null)?.origen === 'facturacion_estado') ||
       esEventoEvidenciaAdmin(e) ||
       (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.tipo !== 'pago_registrado' && e.estado_previo !== e.estado_nuevo),
     ))
@@ -1832,6 +1841,17 @@ export default function SolicitudDetalle() {
             </div>
           )
         })()}
+
+        {/* 🧾 Facturación (2026-10-22) — seguimiento facturada / no facturada por
+            servicio, en ambos flujos. Único bloque operable por el rol lectura
+            (logística): POST /api/admin/facturacion-estado. */}
+        <FacturacionSolicitud
+          solicitud={solicitud}
+          onActualizada={(f) => {
+            setSolicitud((prev) => (prev ? { ...prev, ...f } : prev))
+            recargarEventos()
+          }}
+        />
 
         {/* Diagnosis & Fault Code — visible para warranty Y particular cuando hay diagnóstico */}
         {(() => {
@@ -3164,6 +3184,7 @@ export default function SolicitudDetalle() {
               subido_por?: string
               plantilla?: string
               origen?: string
+              rol?: string
             } | null
             const esEdicion = e.tipo === 'nota_admin' && !!payload?.campos_modificados
             const esEvidenciaAdmin = esEventoEvidenciaAdmin(e)
@@ -3234,6 +3255,13 @@ export default function SolicitudDetalle() {
                       💬 <span className="font-semibold">WhatsApp al cliente</span>
                       {payload?.plantilla && (
                         <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-700">{payload.plantilla}</span>
+                      )}
+                    </p>
+                  ) : payload?.origen === 'facturacion_estado' ? (
+                    <p className="text-sm text-slate-900">
+                      🧾 <span className="font-semibold">Facturación actualizada</span>
+                      {payload?.rol === 'lectura' && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">logística</span>
                       )}
                     </p>
                   ) : esEdicion ? (
