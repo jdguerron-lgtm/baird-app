@@ -13,7 +13,7 @@ import { PAGO_MINIMO_TECNICO_GARANTIA, calcularTarifaMABE, type ComplejidadServi
 import { cityTokenForMatch, normalizeForMatch } from '@/lib/utils/format'
 import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
-import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { rangoFechaVisita, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
 import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
@@ -502,6 +502,16 @@ export default function SolicitudDetalle() {
   // Franjas sin cupo para la fecha elegida — se MUESTRAN como aviso pero NO se
   // bloquean (el admin puede forzar). El guard real (no bloqueante) está en el route.
   const franjasLlenasReagenda = useFranjasLlenas(fechaReagenda)
+  // Rango admisible de la fecha (hoy / hoy+180 días CO): min/max del input y
+  // chequeo previo al POST con la MISMA función que el route (validarFechaVisita
+  // → 400). Así una fecha ya pasada o un año mal tecleado ("2006") no deja
+  // fecha_visita_at en un día imposible. "Hoy" pasa (el route lo avisa).
+  const [rangoFechaReagenda] = useState(() => rangoFechaVisita())
+  const errorRangoFechaReagenda = (() => {
+    if (!fechaReagenda) return null
+    const v = validarFechaVisita(fechaReagenda)
+    return v.ok ? null : v.error
+  })()
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -638,6 +648,7 @@ export default function SolicitudDetalle() {
   async function handleReagendar() {
     if (!solicitud) return
     if (!fechaReagenda) { setResultadoReagenda({ ok: false, mensaje: 'Elegí una fecha.' }); return }
+    if (errorRangoFechaReagenda) { setResultadoReagenda({ ok: false, mensaje: errorRangoFechaReagenda }); return }
     if (!franjaReagenda) { setResultadoReagenda({ ok: false, mensaje: 'Elegí una franja horaria.' }); return }
 
     const llena = franjasLlenasReagenda.includes(franjaReagenda)
@@ -2149,8 +2160,8 @@ export default function SolicitudDetalle() {
           Elegí la nueva fecha y franja en el calendario. Al guardar se{' '}
           <strong>notifica por WhatsApp</strong> al cliente, al técnico asignado y a
           los supervisores con visibilidad del servicio, y la fecha queda cargada en
-          la vista <strong>Calendario</strong>. Podés forzar fechas cercanas o franjas
-          llenas (se avisa, no se bloquea).
+          la vista <strong>Calendario</strong>. Podés forzar hoy o franjas llenas (se
+          avisa, no se bloquea); una fecha ya pasada no se admite.
         </p>
         {solicitud.horario_confirmado && (
           <p className="text-xs text-gray-500 mb-3">
@@ -2164,15 +2175,22 @@ export default function SolicitudDetalle() {
             <input
               type="date"
               value={fechaReagenda}
-              min={fechaColombiaYMD()}
+              min={rangoFechaReagenda.min}
+              max={rangoFechaReagenda.max}
               onChange={(e) => setFechaReagenda(e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              className={`border-2 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${
+                errorRangoFechaReagenda ? 'border-red-300' : 'border-gray-200'
+              }`}
             />
-            {fechaReagenda && (
+            {errorRangoFechaReagenda ? (
+              <span className="block text-[11px] text-red-600 mt-1">
+                ⚠️ {errorRangoFechaReagenda}
+              </span>
+            ) : fechaReagenda ? (
               <span className="block text-[11px] text-gray-500 mt-1 capitalize">
                 {formatFechaLargaLocal(fechaReagenda)}
               </span>
-            )}
+            ) : null}
           </label>
           <div className="flex-1">
             <span className="block text-xs font-semibold text-gray-700 mb-1">🕒 Franja horaria</span>
@@ -2212,7 +2230,7 @@ export default function SolicitudDetalle() {
           <button
             type="button"
             onClick={handleReagendar}
-            disabled={reagendando || !fechaReagenda || !franjaReagenda}
+            disabled={reagendando || !fechaReagenda || !franjaReagenda || !!errorRangoFechaReagenda}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {reagendando ? 'Reprogramando…' : '📅 Reprogramar y notificar'}

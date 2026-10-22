@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
-import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { slotDesdeFechaVisita } from '@/lib/utils/agenda-slots'
 
 /**
@@ -54,8 +54,14 @@ export type ValidacionAgenda =
 
 /**
  * Valida que un horario elegido por el cliente sea agendable:
- *   1. La fecha debe ser a partir de MAÑANA (TZ Colombia) — no mismo día.
- *   2. El slot (día + franja) debe tener cupo (< MAX_RESERVAS_POR_FRANJA).
+ *   1. `validarFechaVisita` (utils/fecha-visita): NO anterior a hoy CO y no
+ *      más de MAX_DIAS_FECHA_VISITA_ADELANTE hacia adelante. Desde 2026-10-22
+ *      `parsearFechaVisita` ya NO rota una fecha pasada al año siguiente
+ *      (salvo el cruce diciembre → enero), así que una opción vencida del
+ *      cliente ("29 de agosto" aceptada en septiembre, orden 9415568723) se
+ *      rechaza aquí en vez de quedar agendada un año después.
+ *   2. La fecha debe ser a partir de MAÑANA (TZ Colombia) — no mismo día.
+ *   3. El slot (día + franja) debe tener cupo (< MAX_RESERVAS_POR_FRANJA).
  *
  * Texto no parseable (sugerencias libres del formulario) → ok con
  * fechaVisitaAt null: no hay slot que validar; el admin coordina manualmente.
@@ -70,6 +76,8 @@ export async function validarHorarioAgendable(
   const fechaVisitaAt = parsearFechaVisita(horarioTexto)
   if (!fechaVisitaAt) return { ok: true, fechaVisitaAt: null }
 
+  const fecha = validarFechaVisita(fechaVisitaAt)
+  if (!fecha.ok) return { ok: false, error: fecha.error }
   if (fechaColombiaYMD(new Date(fechaVisitaAt)) < fechaColombiaMasDias(1)) {
     return {
       ok: false,
