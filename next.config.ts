@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // /admin/guia lee docs/GUIA-OPERACION-LOGISTICA.md con fs en el servidor:
+  // hay que incluir el archivo en el bundle serverless de Vercel (fuera de
+  // `src/`, el tracing automático no lo detecta).
+  outputFileTracingIncludes: {
+    '/admin/guia': ['./docs/GUIA-OPERACION-LOGISTICA.md'],
+  },
   images: {
     remotePatterns: [
       {
