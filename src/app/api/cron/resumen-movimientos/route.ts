@@ -9,6 +9,7 @@ import {
   ventanaResumen,
   TIPOS_EVENTO_MOVIMIENTO,
   ESTADOS_REPUESTO,
+  ORIGEN_REAGENDAMIENTO_ADMIN,
   type EventoMovimiento,
   type RepuestoResumen,
   type ResumenSupervisor,
@@ -35,6 +36,14 @@ export const maxDuration = 60
  * movió y, si el servicio espera un repuesto, el repuesto (SKU + descripción
  * de `repuestos_pendientes`, fallback `cotizacion.productos_necesarios`).
  * Si no hubo movimientos manda "sin movimientos hoy".
+ *
+ * "Cerrar para abrir después" (MABE, 2026-10-22): toda garantía que en la
+ * ventana quede agendada con la visita a más de DIAS_AGENDA_CERRAR_PARA_ABRIR
+ * días (4) del día del agendamiento sale en una sección propia al inicio y con
+ * una línea ⏸️ en su bloque, para que el supervisor cierre la orden en el
+ * sistema de MABE y la reabra cerca de la fecha. Incluye los reagendamientos
+ * del admin (evento `nota_admin` origen 'reagendamiento_admin') aunque no
+ * cambien el estado.
  *
  * Canal (ver docs/WHATSAPP_TEMPLATES.md § "Texto libre"):
  *   1. `enviarMensajeTexto` — texto libre, partido en varios mensajes si pasa
@@ -109,16 +118,31 @@ async function generarYEnviar(
   const supervisores = (sups ?? []) as SupervisorResumen[]
   if (supervisores.length === 0) return { supervisores: [], eventos: 0 }
 
-  // 2. Movimientos de la ventana (append-only → se lee tal cual).
+  // 2. Movimientos de la ventana (append-only → se lee tal cual). `payload`
+  //    solo se usa para la fecha de visita de los eventos de agendamiento.
   const { data: evs, error: evErr } = await supabase
     .from('solicitud_eventos')
-    .select('solicitud_id, tipo, estado_previo, estado_nuevo, actor, ocurrido_at')
+    .select('solicitud_id, tipo, estado_previo, estado_nuevo, actor, ocurrido_at, payload')
     .in('tipo', [...TIPOS_EVENTO_MOVIMIENTO])
     .gt('ocurrido_at', ventana.desde.toISOString())
     .lte('ocurrido_at', ventana.hasta.toISOString())
     .order('ocurrido_at', { ascending: true })
   if (evErr) throw new Error(`solicitud_eventos: ${evErr.message}`)
-  const eventos = ((evs ?? []) as EventoMovimiento[]).filter(e => e.estado_nuevo && e.estado_previo !== e.estado_nuevo)
+  const movimientos = ((evs ?? []) as EventoMovimiento[]).filter(e => e.estado_nuevo && e.estado_previo !== e.estado_nuevo)
+
+  // 2b. Reagendamientos del admin (2026-10-22): no cambian el estado (evento
+  //     `nota_admin` con payload.origen = 'reagendamiento_admin'), pero sí fijan
+  //     una fecha de visita → cuentan para "cerrar para abrir después" (MABE).
+  const { data: reagAdmin, error: reagErr } = await supabase
+    .from('solicitud_eventos')
+    .select('solicitud_id, tipo, estado_previo, estado_nuevo, actor, ocurrido_at, payload')
+    .eq('tipo', 'nota_admin')
+    .eq('payload->>origen', ORIGEN_REAGENDAMIENTO_ADMIN)
+    .gt('ocurrido_at', ventana.desde.toISOString())
+    .lte('ocurrido_at', ventana.hasta.toISOString())
+    .order('ocurrido_at', { ascending: true })
+  if (reagErr) console.warn('[cron/resumen-movimientos] reagendamientos admin no disponibles:', reagErr.message)
+  const eventos: EventoMovimiento[] = [...movimientos, ...((reagAdmin ?? []) as EventoMovimiento[])]
 
   // 3. Solicitudes involucradas + repuestos + técnicos (una query cada una).
   const solicitudIds = [...new Set(eventos.map(e => e.solicitud_id))]
@@ -128,7 +152,7 @@ async function generarYEnviar(
   if (solicitudIds.length > 0) {
     const { data: sols, error: solErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, estado, tecnico_asignado_id, cotizacion')
+      .select('id, cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, estado, tecnico_asignado_id, fecha_visita_at, cotizacion')
       .in('id', solicitudIds)
     if (solErr) throw new Error(`solicitudes_servicio: ${solErr.message}`)
     solicitudes = (sols ?? []).map(s => ({
@@ -141,6 +165,7 @@ async function generarYEnviar(
       numero_serie_factura: s.numero_serie_factura,
       estado: s.estado,
       tecnico_asignado_id: s.tecnico_asignado_id,
+      fecha_visita_at: s.fecha_visita_at,
     }))
 
     // Repuestos solo de los servicios que tocaron el ciclo de repuesto.

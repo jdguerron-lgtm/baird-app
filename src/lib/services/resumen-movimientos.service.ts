@@ -51,6 +51,19 @@ export const TIPOS_EVENTO_MOVIMIENTO = [
   'no_show_cliente',
 ] as const
 
+/**
+ * "Cerrar para abrir después" (regla interna MABE, 2026-10-22): cuando una
+ * garantía se agenda con la visita a MÁS de este número de días calendario
+ * (Colombia) contados desde el día en que se agendó, MABE cierra la orden en su
+ * sistema y la vuelve a abrir cerca de la fecha para que esos días no cuenten
+ * contra el tiempo de atención. El resumen diario lo marca para que el
+ * supervisor lo haga. Solo aplica a `es_garantia = true`.
+ */
+export const DIAS_AGENDA_CERRAR_PARA_ABRIR = 4
+
+/** `payload.origen` del evento `nota_admin` que deja /api/admin/reagendar-solicitud (no cambia el estado). */
+export const ORIGEN_REAGENDAMIENTO_ADMIN = 'reagendamiento_admin'
+
 /** Largo máximo de un mensaje de texto de WhatsApp (Meta: 4096). Se deja margen. */
 export const MAX_CHARS_MENSAJE = 3900
 
@@ -81,6 +94,8 @@ export interface EventoMovimiento {
   estado_nuevo: string | null
   actor: string | null
   ocurrido_at: string
+  /** Solo se usa para `fecha_visita_at` / `origen` de los eventos de agendamiento. */
+  payload?: Record<string, unknown> | null
 }
 
 export interface SolicitudResumen {
@@ -93,6 +108,18 @@ export interface SolicitudResumen {
   numero_serie_factura: string | null
   estado: string | null
   tecnico_asignado_id: string | null
+  /** Fecha/hora de la visita agendada (ISO). Fallback cuando el evento no la trae en el payload. */
+  fecha_visita_at?: string | null
+}
+
+/** Garantía agendada con la visita a más de DIAS_AGENDA_CERRAR_PARA_ABRIR días. */
+export interface AgendamientoLejano {
+  solicitud: SolicitudResumen
+  evento: EventoMovimiento
+  /** Día de la visita, YYYY-MM-DD Colombia. */
+  fechaVisitaYMD: string
+  /** Días calendario CO entre el día del agendamiento y el de la visita. */
+  dias: number
 }
 
 export interface RepuestoResumen {
@@ -122,6 +149,8 @@ export interface ResumenSupervisor {
   lineaCompacta: string
   /** Encabezado corto "N movimientos en M servicios" / "sin movimientos". */
   conteo: string
+  /** Garantías agendadas hoy con la visita a más de DIAS_AGENDA_CERRAR_PARA_ABRIR días. */
+  cerrarParaAbrir: number
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -179,6 +208,74 @@ export function fechaLargaResumen(fechaYMD: string): string {
 export function fechaCortaResumen(fechaYMD: string): string {
   const [, m, d] = fechaYMD.split('-').map(Number)
   return `${d} de ${MESES_ES[m - 1]}`
+}
+
+/** "sábado 31 de octubre" (sin año; la visita siempre es cercana). */
+export function fechaVisitaLegible(fechaYMD: string): string {
+  const [y, m, d] = fechaYMD.split('-').map(Number)
+  const dia = DIAS_ES[new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()]
+  return `${dia} ${d} de ${MESES_ES[m - 1]}`
+}
+
+/** Días calendario entre dos YYYY-MM-DD (b − a). */
+export function diasEntreYMD(a: string, b: string): number {
+  const [ya, ma, da] = a.split('-').map(Number)
+  const [yb, mb, db] = b.split('-').map(Number)
+  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86_400_000)
+}
+
+/**
+ * ¿Este evento fijó (o cambió) la fecha de la visita?
+ * - confirmación de horario: `cambio_estado` / `cambio_estado_admin` → `notificada`
+ *   desde `pendiente_horario` / `sin_agendar` (confirmar-horario, garantía);
+ * - `reagendamiento` (cliente reagendó vía link tras vencer la fecha);
+ * - `reagendamiento_confirmado` (visita de finalización tras el repuesto);
+ * - `nota_admin` con `payload.origen = 'reagendamiento_admin'` (admin cambió
+ *   la fecha; no cambia el estado, por eso no cuenta como movimiento).
+ */
+export function esEventoAgendamiento(e: EventoMovimiento): boolean {
+  if (e.tipo === 'reagendamiento' || e.tipo === 'reagendamiento_confirmado') return true
+  if (
+    (e.tipo === 'cambio_estado' || e.tipo === 'cambio_estado_admin') &&
+    e.estado_nuevo === 'notificada' &&
+    (e.estado_previo === 'pendiente_horario' || e.estado_previo === 'sin_agendar' || e.estado_previo === null)
+  ) return true
+  if (e.tipo === 'nota_admin' && e.payload?.origen === ORIGEN_REAGENDAMIENTO_ADMIN) return true
+  return false
+}
+
+/**
+ * Garantías que en la ventana quedaron agendadas con la visita a MÁS de
+ * `umbral` días (calendario Colombia) del día en que se agendaron → el
+ * supervisor MABE debe "cerrar la orden para abrirla después". Una entrada
+ * por servicio (el último agendamiento de la ventana manda). La fecha de la
+ * visita sale del `payload.fecha_visita_at` del evento o, si no lo trae, de
+ * `fecha_visita_at` de la solicitud (su valor actual).
+ */
+export function agendamientosLejanos(
+  eventos: EventoMovimiento[],
+  solicitudes: Map<string, SolicitudResumen>,
+  umbral: number = DIAS_AGENDA_CERRAR_PARA_ABRIR,
+): AgendamientoLejano[] {
+  const ultimoPorSol = new Map<string, EventoMovimiento>()
+  for (const e of [...eventos].sort((a, b) => Date.parse(a.ocurrido_at) - Date.parse(b.ocurrido_at))) {
+    if (!esEventoAgendamiento(e)) continue
+    if (!solicitudes.get(e.solicitud_id)?.es_garantia) continue
+    ultimoPorSol.set(e.solicitud_id, e)
+  }
+  const out: AgendamientoLejano[] = []
+  for (const [id, e] of ultimoPorSol) {
+    const sol = solicitudes.get(id)!
+    const visitaIso = (typeof e.payload?.fecha_visita_at === 'string' ? e.payload.fecha_visita_at : null) ?? sol.fecha_visita_at ?? null
+    if (!visitaIso) continue
+    const visita = new Date(visitaIso)
+    const agendado = new Date(e.ocurrido_at)
+    if (Number.isNaN(visita.getTime()) || Number.isNaN(agendado.getTime())) continue
+    const fechaVisitaYMD = fechaColombiaYMD(visita)
+    const dias = diasEntreYMD(fechaColombiaYMD(agendado), fechaVisitaYMD)
+    if (dias > umbral) out.push({ solicitud: sol, evento: e, fechaVisitaYMD, dias })
+  }
+  return out.sort((a, b) => a.fechaVisitaYMD.localeCompare(b.fechaVisitaYMD))
 }
 
 /** Hora "HH:mm" en Colombia de un ISO. */
@@ -296,6 +393,10 @@ export function armarResumenSupervisor(input: {
   const movimientos = bloques.reduce((n, b) => n + b.eventos.length, 0)
   const servicios = bloques.length
 
+  // Garantías agendadas hoy a más de DIAS_AGENDA_CERRAR_PARA_ABRIR días (MABE).
+  const lejanos = agendamientosLejanos(input.eventos, visibles)
+  const lejanoPorSol = new Map(lejanos.map(l => [l.solicitud.id, l]))
+
   const repuestosPorSol = new Map<string, RepuestoResumen[]>()
   for (const r of input.repuestos) {
     const lista = repuestosPorSol.get(r.solicitud_id) ?? []
@@ -308,11 +409,14 @@ export function armarResumenSupervisor(input: {
     `${capitalizar(fechaLargaResumen(ventana.fechaYMD))} · corte ${etiquetaHoraCorte()}`,
   ]
 
-  const conteo = movimientos === 0
+  const conteoBase = movimientos === 0
     ? 'sin movimientos'
     : `${movimientos} movimiento${movimientos === 1 ? '' : 's'} en ${servicios} servicio${servicios === 1 ? '' : 's'}`
+  const conteo = lejanos.length > 0
+    ? `${conteoBase} · ${lejanos.length} para cerrar y abrir después`
+    : conteoBase
 
-  if (movimientos === 0) {
+  if (movimientos === 0 && lejanos.length === 0) {
     const texto = [
       ...encabezado,
       `Hola ${primerNombre}: sin movimientos hoy en tus servicios.`,
@@ -326,11 +430,23 @@ export function armarResumenSupervisor(input: {
       texto,
       lineaCompacta: 'Sin movimientos hoy.',
       conteo,
+      cerrarParaAbrir: 0,
     }
   }
 
   const cuerpo: string[] = []
   const compactos: string[] = []
+
+  // Sección "cerrar para abrir después" arriba del detalle: es lo primero que
+  // el supervisor MABE tiene que hacer en su sistema.
+  if (lejanos.length > 0) {
+    const lineas = [
+      `⏸️ *Cerrar para abrir después* — visita a más de ${DIAS_AGENDA_CERRAR_PARA_ABRIR} días (${lejanos.length}):`,
+      ...lejanos.map(l => `• ${describirAgendamientoLejano(l)}`),
+    ]
+    cuerpo.push(lineas.join('\n'))
+  }
+
   for (const b of bloques) {
     const sol = b.solicitud
     const cabecera = [
@@ -350,12 +466,25 @@ export function armarResumenSupervisor(input: {
     if (b.enRepuesto) {
       lineas.push(`  🔩 Repuesto: ${describirRepuestos(repuestosPorSol.get(sol.id) ?? [])}`)
     }
+    const lejano = lejanoPorSol.get(sol.id)
+    if (lejano) {
+      lineas.push(`  ⏸️ Visita ${fechaVisitaLegible(lejano.fechaVisitaYMD)} (${lejano.dias} días) → cerrar para abrir después`)
+    }
     cuerpo.push(lineas.join('\n'))
 
     // Línea compacta: "Cliente (equipo): A → B → C, repuesto X"
     const cadena = [etiquetaEstado(b.eventos[0].estado_previo), ...b.eventos.map(e => etiquetaEstado(e.estado_nuevo))].join(' → ')
     const rep = b.enRepuesto ? `, repuesto ${describirRepuestos(repuestosPorSol.get(sol.id) ?? [])}` : ''
-    compactos.push(`${(sol.cliente_nombre ?? 'Cliente').trim()} (${describirEquipo(sol)}): ${cadena}${rep}`)
+    const cpa = lejano ? ` ⏸️ cerrar/abrir (visita en ${lejano.dias} días)` : ''
+    compactos.push(`${(sol.cliente_nombre ?? 'Cliente').trim()} (${describirEquipo(sol)}): ${cadena}${rep}${cpa}`)
+  }
+
+  // Agendamientos lejanos que no cambiaron de estado hoy (reagendamiento del
+  // admin): no tienen bloque, pero sí van en la línea compacta de la plantilla.
+  const conBloque = new Set(bloques.map(b => b.solicitud.id))
+  for (const l of lejanos) {
+    if (conBloque.has(l.solicitud.id)) continue
+    compactos.push(`${(l.solicitud.cliente_nombre ?? 'Cliente').trim()} (${describirEquipo(l.solicitud)}): ⏸️ cerrar/abrir (visita en ${l.dias} días)`)
   }
 
   const pie: string[] = []
@@ -363,8 +492,11 @@ export function armarResumenSupervisor(input: {
     pie.push(`Panel: ${input.appUrl.replace(/\/$/, '')}/supervisor/${supervisor.portal_token}`)
   }
 
+  const saludo = movimientos === 0
+    ? `Hola ${primerNombre}: sin cambios de estado hoy, pero ${lejanos.length} servicio${lejanos.length === 1 ? '' : 's'} para cerrar y abrir después.`
+    : `Hola ${primerNombre}: ${conteo}.`
   const texto = [
-    encabezado.join('\n') + `\nHola ${primerNombre}: ${conteo}.`,
+    encabezado.join('\n') + `\n${saludo}`,
     ...cuerpo,
     ...pie,
   ].join('\n\n')
@@ -378,7 +510,19 @@ export function armarResumenSupervisor(input: {
     texto,
     lineaCompacta: compactarLinea(compactos, MAX_CHARS_LINEA_COMPACTA),
     conteo,
+    cerrarParaAbrir: lejanos.length,
   }
+}
+
+/** "Juan Pérez · Nevera Mabe · Garantía 9415… · Bogotá · visita sábado 31 de octubre (7 días)". */
+export function describirAgendamientoLejano(l: AgendamientoLejano): string {
+  const sol = l.solicitud
+  return [
+    `*${(sol.cliente_nombre ?? 'Cliente').trim()}*`,
+    describirEquipo(sol),
+    sol.ciudad_pueblo?.trim() || null,
+    `visita ${fechaVisitaLegible(l.fechaVisitaYMD)} (${l.dias} días)`,
+  ].filter(Boolean).join(' · ')
 }
 
 /** "5:00 pm" para HORA_CORTE_BOGOTA=17 (formato 12 h). */

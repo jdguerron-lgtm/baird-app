@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   armarResumenSupervisor,
   compactarLinea,
+  diasEntreYMD,
+  esEventoAgendamiento,
+  DIAS_AGENDA_CERRAR_PARA_ABRIR,
   describirEquipo,
   describirRepuestos,
   etiquetaHoraCorte,
@@ -339,5 +342,91 @@ describe('compactarLinea', () => {
     const linea = compactarLinea(['Z'.repeat(500)], 100)
     expect(linea.length).toBe(100)
     expect(linea.endsWith('…')).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Cerrar para abrir después (MABE, 2026-10-22)
+// ─────────────────────────────────────────────────────────────────
+
+describe('cerrar para abrir después (garantía agendada a más de 4 días)', () => {
+  // Agendado el martes 2026-10-20 (10:32 Bogotá). Visita a 7 días = 2026-10-27.
+  const VISITA_7D = '2026-10-27T13:00:00Z' // 8:00 Bogotá
+  const VISITA_4D = '2026-10-24T13:00:00Z'
+
+  it('garantía confirmada a 7 días → sección arriba + línea ⏸️ en el bloque + conteo', () => {
+    const solicitudes = [sol({ id: 's1', estado: 'notificada', fecha_visita_at: VISITA_7D })]
+    const eventos = [ev({ solicitud_id: 's1', estado_previo: 'pendiente_horario', estado_nuevo: 'notificada', actor: 'cliente' })]
+    const r = armarResumenSupervisor({ supervisor: sup(), ventana: VENTANA, eventos, solicitudes, repuestos: [] })
+    expect(r.cerrarParaAbrir).toBe(1)
+    expect(r.vacio).toBe(false)
+    expect(r.conteo).toBe('1 movimiento en 1 servicio · 1 para cerrar y abrir después')
+    expect(r.texto).toContain('⏸️ *Cerrar para abrir después* — visita a más de 4 días (1):')
+    expect(r.texto).toContain('• *Juan Pérez* · Nevera Mabe · Garantía 9415091231 · Bogotá · visita martes 27 de octubre (7 días)')
+    expect(r.texto).toContain('  ⏸️ Visita martes 27 de octubre (7 días) → cerrar para abrir después')
+    expect(r.lineaCompacta).toContain('⏸️ cerrar/abrir (visita en 7 días)')
+    // La sección va ANTES del detalle del servicio.
+    expect(r.texto.indexOf('Cerrar para abrir después')).toBeLessThan(r.texto.indexOf('Pendiente horario → Notificada'))
+  })
+
+  it('a 4 días exactos NO se marca (la regla es "más de 4")', () => {
+    const solicitudes = [sol({ id: 's1', estado: 'notificada', fecha_visita_at: VISITA_4D })]
+    const eventos = [ev({ solicitud_id: 's1', estado_previo: 'pendiente_horario', estado_nuevo: 'notificada' })]
+    const r = armarResumenSupervisor({ supervisor: sup(), ventana: VENTANA, eventos, solicitudes, repuestos: [] })
+    expect(r.cerrarParaAbrir).toBe(0)
+    expect(r.texto).not.toContain('⏸️')
+    expect(r.conteo).toBe('1 movimiento en 1 servicio')
+  })
+
+  it('particular a 10 días NO se marca (regla solo de garantía MABE)', () => {
+    const solicitudes = [sol({ id: 's1', es_garantia: false, numero_serie_factura: null, estado: 'notificada', fecha_visita_at: '2026-10-30T13:00:00Z' })]
+    const eventos = [ev({ solicitud_id: 's1', estado_previo: 'pendiente_horario', estado_nuevo: 'notificada' })]
+    const r = armarResumenSupervisor({ supervisor: sup(), ventana: VENTANA, eventos, solicitudes, repuestos: [] })
+    expect(r.cerrarParaAbrir).toBe(0)
+    expect(r.texto).not.toContain('⏸️')
+  })
+
+  it('reagendamiento del admin (nota_admin, sin cambio de estado) cuenta y usa la fecha del payload', () => {
+    const solicitudes = [sol({ id: 's1', estado: 'asignada', fecha_visita_at: VISITA_4D })]
+    const eventos: EventoMovimiento[] = [
+      {
+        solicitud_id: 's1',
+        tipo: 'nota_admin',
+        estado_previo: 'asignada',
+        estado_nuevo: 'asignada',
+        actor: 'admin@baird.co',
+        ocurrido_at: '2026-10-20T15:32:00Z',
+        payload: { origen: 'reagendamiento_admin', fecha_visita_at: VISITA_7D },
+      },
+    ]
+    const r = armarResumenSupervisor({ supervisor: sup(), ventana: VENTANA, eventos, solicitudes, repuestos: [] })
+    expect(r.movimientos).toBe(0)
+    expect(r.vacio).toBe(false)
+    expect(r.cerrarParaAbrir).toBe(1)
+    expect(r.texto).toContain('sin cambios de estado hoy, pero 1 servicio para cerrar y abrir después')
+    expect(r.texto).toContain('visita martes 27 de octubre (7 días)')
+    expect(r.lineaCompacta).toBe('Juan Pérez (Nevera Mabe · Garantía 9415091231): ⏸️ cerrar/abrir (visita en 7 días)')
+  })
+
+  it('solo el supervisor con alcance la ve; el último agendamiento del día manda', () => {
+    const solicitudes = [sol({ id: 's1', marca_equipo: 'LG', estado: 'en_proceso', fecha_visita_at: VISITA_4D })]
+    const eventos: EventoMovimiento[] = [
+      ev({ solicitud_id: 's1', tipo: 'reagendamiento_confirmado', estado_previo: 'repuesto_recibido', estado_nuevo: 'en_proceso', actor: 'cliente', ocurrido_at: '2026-10-20T14:00:00Z', payload: { fecha_visita_at: VISITA_7D } }),
+      ev({ solicitud_id: 's1', tipo: 'nota_admin', estado_previo: 'en_proceso', estado_nuevo: 'en_proceso', ocurrido_at: '2026-10-20T16:00:00Z', payload: { origen: 'reagendamiento_admin', fecha_visita_at: VISITA_4D } }),
+    ]
+    const todos = armarResumenSupervisor({ supervisor: sup(), ventana: VENTANA, eventos, solicitudes, repuestos: [] })
+    expect(todos.cerrarParaAbrir).toBe(0) // el admin la acercó a 4 días → ya no aplica
+    const mabe = armarResumenSupervisor({ supervisor: sup({ ambito: 'garantia', marca: 'MABE' }), ventana: VENTANA, eventos, solicitudes, repuestos: [] })
+    expect(mabe.vacio).toBe(true) // LG no está en su alcance
+  })
+
+  it('helpers: esEventoAgendamiento y diasEntreYMD', () => {
+    expect(esEventoAgendamiento(ev({ solicitud_id: 'x', estado_previo: 'pendiente_horario', estado_nuevo: 'notificada' }))).toBe(true)
+    expect(esEventoAgendamiento(ev({ solicitud_id: 'x', estado_previo: 'asignada', estado_nuevo: 'notificada' }))).toBe(false)
+    expect(esEventoAgendamiento(ev({ solicitud_id: 'x', tipo: 'reagendamiento', estado_previo: 'notificada', estado_nuevo: 'notificada' }))).toBe(true)
+    expect(esEventoAgendamiento(ev({ solicitud_id: 'x', tipo: 'nota_admin', estado_nuevo: 'asignada', payload: { origen: 'otro' } }))).toBe(false)
+    expect(diasEntreYMD('2026-10-20', '2026-10-27')).toBe(7)
+    expect(diasEntreYMD('2026-10-31', '2026-11-02')).toBe(2)
+    expect(DIAS_AGENDA_CERRAR_PARA_ABRIR).toBe(4)
   })
 })
