@@ -24,6 +24,7 @@ import { ESTADO_AUXILIAR_LABELS, type AuxiliarRow, type EstadoVerificacionAuxili
 import { useRolAdmin } from '@/components/admin/RolAdminContext'
 import MediaEvidencia from '@/components/ui/MediaEvidencia'
 import EvidenciaAdminSeccion from '@/components/admin/EvidenciaAdminSeccion'
+import PagoExternoForm from '@/components/admin/PagoExternoForm'
 import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
 
 interface Solicitud {
@@ -334,6 +335,8 @@ export default function SolicitudDetalle() {
 
   const cargarPagosLedger = useCallback(async () => {
     try {
+    pasarela?: string
+    externo?: { referencia_externa: string | null; nota: string | null; actor: string | null; evidencias: Array<{ url: string; mime: string | null; nombre: string | null }> } | null
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const res = await fetch(`/api/admin/pagos?solicitudId=${encodeURIComponent(id)}`, {
@@ -1774,7 +1777,7 @@ export default function SolicitudDetalle() {
                               </span>
                               <span className="text-[11px] text-gray-500">
                                 {p.metodo ?? 'Wompi'} · {new Date(fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}
-                                {p.transaccion_id ? ` · #${p.transaccion_id}` : ''}
+                                {p.transaccion_id && !p.externo ? ` · #${p.transaccion_id}` : ''}
                               </span>
                               {devuelto ? (
                                 <span
@@ -1785,17 +1788,30 @@ export default function SolicitudDetalle() {
                                 </span>
                               ) : !aprobado ? (
                                 <span className="text-[11px] text-gray-400">{p.estado}</span>
+                              {p.externo && (
+                                <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                                  title={`Registrado por ${p.externo.actor ?? 'admin'}${p.externo.nota ? ` · ${p.externo.nota}` : ''}`}>
+                                  💵 Externo{p.externo.referencia_externa ? ` · ref. ${p.externo.referencia_externa}` : ''}
+                                  {p.externo.evidencias.map((ev, i) => (
+                                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="ml-1.5 underline">
+                                      📎{p.externo!.evidencias.length > 1 ? i + 1 : ' comprobante'}
+                                    </a>
+                                  ))}
+                                </span>
+                              )}
                               ) : !soloLectura ? (
                                 <span className="ml-auto flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => devolverPago(p, 'wompi')}
-                                    disabled={devolviendoId !== null}
-                                    className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
-                                    title="Reembolsa el pago completo al medio de pago original a través del API de Wompi"
-                                  >
-                                    {devolviendoId === p.id ? 'Devolviendo…' : '↩️ Devolver por Wompi'}
-                                  </button>
+                                  {!p.externo && (
+                                    <button
+                                      type="button"
+                                      onClick={() => devolverPago(p, 'wompi')}
+                                      disabled={devolviendoId !== null}
+                                      className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                                      title="Reembolsa el pago completo al medio de pago original a través del API de Wompi"
+                                    >
+                                      {devolviendoId === p.id ? 'Devolviendo…' : '↩️ Devolver por Wompi'}
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => devolverPago(p, 'manual')}
@@ -1820,7 +1836,7 @@ export default function SolicitudDetalle() {
                   )
                 })()}
                 <p className="text-[11px] text-gray-400">
-                  Solo pagos ONLINE (Wompi). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
+                  Pagos ONLINE (Wompi) y pagos externos con comprobante (💵). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
                   {!soloLectura && ' Las devoluciones por Wompi tardan de 1 a 15 días hábiles en verse en la cuenta del cliente según el banco.'}
                 </p>
               </div>
@@ -1828,6 +1844,15 @@ export default function SolicitudDetalle() {
                 {Number(cot?.total ?? 0) > 0
                   ? 'Desglose persistido en la cotización aprobada por el cliente.'
                   : 'Tarifa fija de catálogo — el desglose exacto se consolida con la cotización o el cierre.'}
+                {!soloLectura && !solicitud.es_garantia && solicitud.estado !== 'cancelada' && (
+                  <div className="pt-1">
+                    <PagoExternoForm
+                      solicitudId={id}
+                      montoSugerido={0}
+                      onRegistrado={async () => { await cargarPagosLedger(); await refrescarPagoSolicitud() }}
+                    />
+                  </div>
+                )}
               </p>
             </div>
           )
