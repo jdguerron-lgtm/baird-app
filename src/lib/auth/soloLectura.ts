@@ -9,7 +9,9 @@
  *
  * Qué bloquea (solo con método distinto de GET/HEAD/OPTIONS):
  *   - `/api/*` del mismo origen, salvo los exports de solo lectura listados en
- *     `API_LECTURA_PERMITIDAS` (son POST por el tamaño del body, pero no escriben).
+ *     `API_LECTURA_PERMITIDAS` (son POST por el tamaño del body, pero no escriben)
+ *     y la ÚNICA escritura permitida al rol lectura, `API_LECTURA_ESCRITURA_PERMITIDA`
+ *     (seguimiento de facturación, decisión 2026-10-22 — match exacto de ruta).
  *   - Supabase `/rest/v1/*` (insert/update/delete/rpc) y `/storage/v1/*`
  *     (uploads/borrados), salvo `/storage/v1/object/sign*` (firmar URL = leer).
  *
@@ -26,6 +28,17 @@ export const MENSAJE_SOLO_LECTURA =
 
 /** POST que NO escriben (generan archivos a partir de un filtro). El server también los admite para lectura. */
 export const API_LECTURA_PERMITIDAS: readonly string[] = ['/api/admin/export', '/api/admin/liquidaciones']
+
+/**
+ * Única ESCRITURA que el rol lectura puede hacer (decisión 2026-10-22): marcar
+ * un servicio completado como facturado / no aplica / pendiente. Es logística
+ * quien captura la FV en Siigo y debe poder dejar constancia. El server
+ * (`POST /api/admin/facturacion-estado` con `obtenerRolRequest`) es quien
+ * realmente la autoriza; acá solo se deja pasar esa ruta EXACTA (sin
+ * subrutas) para que el guard no la corte. Nada más se abre — ver
+ * docs/SEGURIDAD.md § "Rol lectura".
+ */
+export const API_LECTURA_ESCRITURA_PERMITIDA: readonly string[] = ['/api/admin/facturacion-estado']
 
 const METODOS_LECTURA = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -66,6 +79,7 @@ export function debeBloquearSoloLectura(
 
   // API propia del mismo origen
   if (u.origin === ctx.origen && u.pathname.startsWith('/api/')) {
+    if (API_LECTURA_ESCRITURA_PERMITIDA.includes(u.pathname)) return false
     return !API_LECTURA_PERMITIDAS.some((p) => u.pathname === p || u.pathname.startsWith(`${p}/`))
   }
 

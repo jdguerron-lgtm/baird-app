@@ -204,7 +204,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="sticky top-0 z-20 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs font-medium px-6 py-2 flex items-center gap-2">
             <span>🔒</span>
             <span>
-              <strong>Modo solo lectura.</strong> Puedes consultar todos los casos, pagos y repuestos, pero ninguna acción de edición está habilitada para esta cuenta.
+              <strong>Modo solo lectura.</strong> Puedes consultar todos los casos, pagos y repuestos. La única acción habilitada es marcar la <strong>facturación</strong> de cada servicio completado (bloque 🧾 en la ficha).
             </span>
           </div>
         )}

@@ -7,6 +7,7 @@ import { calcularTarifaMABE, type ComplejidadServicio } from '@/lib/constants/ta
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
+import { FACTURACION_ESTADO_LABEL, type FacturacionEstado } from '@/types/solicitud'
 import {
   SIIGO,
   codigoServicio,
@@ -133,6 +134,25 @@ interface SolicitudLiquidacion {
   descuento_codigo?: string | null
   descuento_tipo?: string | null
   descuento_valor?: number | string | null
+  // Seguimiento de facturación (2026-10-22, mig 20261022_facturacion_estado).
+  facturacion_estado?: FacturacionEstado | null
+  factura_numero?: string | null
+}
+
+/**
+ * Columna "Facturación" de las hojas de servicios (2026-10-22): estado del
+ * seguimiento + número de FV cuando ya se emitió. Se marca desde la ficha
+ * admin (`POST /api/admin/facturacion-estado`).
+ */
+function facturacionDe(sol: SolicitudLiquidacion): string {
+  const estado: FacturacionEstado = sol.facturacion_estado ?? 'pendiente'
+  const label = FACTURACION_ESTADO_LABEL[estado] ?? estado
+  return estado === 'facturada' && sol.factura_numero ? `${label} · ${sol.factura_numero}` : label
+}
+
+/** `true` si el servicio completado del período sigue sin facturar (para "Datos faltantes"). */
+function sinFacturar(sol: SolicitudLiquidacion): boolean {
+  return sol.estado === 'completada' && (sol.facturacion_estado ?? 'pendiente') === 'pendiente'
 }
 
 /** Fecha de cierre efectiva del servicio (con fallbacks explícitos). */
@@ -204,7 +224,7 @@ export async function POST(req: NextRequest) {
     // 1. Servicios completados (tope defensivo, mismo patrón que /api/admin/export)
     let solQuery = supabase
       .from('solicitudes_servicio')
-      .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at, descuento_codigo, descuento_tipo, descuento_valor')
+      .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at, descuento_codigo, descuento_tipo, descuento_valor, facturacion_estado, factura_numero')
       .order('created_at', { ascending: false })
       .limit(5000)
 
@@ -314,6 +334,7 @@ export async function POST(req: NextRequest) {
           'Tipo solicitud': sol.tipo_solicitud,
           'Pago proyectado BD (COP)': pagoProyectado,
           'Pago consolidado (COP)': pagoAPagar,
+          'Facturación': facturacionDe(sol),
           'Nota': sol.es_garantia && !consolidado ? 'Garantía sin complejidad en diagnóstico — revisar' : '',
           'Solicitud ID': sol.id,
         }
@@ -405,6 +426,7 @@ export async function POST(req: NextRequest) {
             'Ciudad': sol.ciudad_pueblo,
             'Equipo': `${sol.tipo_equipo} ${sol.marca_equipo}`,
             'Técnico': tec?.nombre_completo ?? '',
+            'Facturación': facturacionDe(sol),
             'Nota': 'Sin complejidad en diagnóstico — no se pudo liquidar, revisar manualmente',
             'Solicitud ID': sol.id,
           }
@@ -429,6 +451,7 @@ export async function POST(req: NextRequest) {
           'TOTAL A FACTURAR A MABE (COP)': r.totalMABE,
           'Pago técnico (COP)': r.pagoTecnico,
           'Margen Baird (COP)': r.margenBaird,
+          'Facturación': facturacionDe(sol),
           'Nota': '',
           'Solicitud ID': sol.id,
         }
@@ -503,6 +526,7 @@ export async function POST(req: NextRequest) {
           'Saldo online (COP)': online.saldo,
           'Recaudado online (COP)': recaudado,
           'Pendiente / por fuera (COP)': Math.max(0, totalCliente - recaudado),
+          'Facturación': facturacionDe(sol),
           'Solicitud ID': sol.id,
         }
       })
@@ -579,6 +603,7 @@ export async function POST(req: NextRequest) {
             'Pendiente por fuera (COP)': i === 0 ? pago.pendiente : '',
             'Vendedor Siigo': SIIGO.SELLER_FV2,
             'Observaciones': `${codigo} · ${sol.tipo_solicitud} ${sol.tipo_equipo} ${sol.marca_equipo} · Técnico: ${tec?.nombre_completo ?? '—'} · Ref. Wompi: *-${sol.id}`,
+            'Facturación': i === 0 ? facturacionDe(sol) : '',
             'Solicitud ID': sol.id,
           })
         })
@@ -589,6 +614,7 @@ export async function POST(req: NextRequest) {
         if (items.length === 1 && sol.cotizacion) faltas.push('Cotización sin desglose diagnóstico/servicio (anterior a 2026-08-25) → 1 ítem')
         if (descuento > 0) faltas.push(`Código de descuento ${sol.descuento_codigo ?? ''}: −$${descuento} sobre el total de ítems → registrar el descuento en la FV`)
         if (pago.pendiente > 0) faltas.push(`Saldo por fuera de Wompi: $${pago.pendiente} — confirmar cómo se cobró`)
+        if (sinFacturar(sol)) faltas.push('SIN FACTURAR: completado y aún no marcado como facturado → emitir la FV y marcarla en la ficha del servicio')
         faltantes.push({
           'Código servicio': codigo,
           'Flujo': 'Particular',
@@ -638,9 +664,19 @@ export async function POST(req: NextRequest) {
           'Bono (COP)': consolidado?.r.bono ?? '',
           'Recargo finde (COP)': consolidado?.r.recargoWeekend ?? '',
           'Valor a facturar (COP)': total,
+          'Facturación': facturacionDe(sol),
           'Nota': consolidado ? '' : 'Revisar manualmente',
           'Solicitud ID': sol.id,
         })
+        if (sinFacturar(sol)) {
+          faltantes.push({
+            'Código servicio': codigo,
+            'Flujo': 'Garantía',
+            'Cliente': sol.cliente_nombre,
+            'Pendientes para facturar': 'SIN FACTURAR: completado y aún no marcado como facturado → incluir en la FV consolidada a MABE y marcarlo en la ficha del servicio',
+            'Solicitud ID': sol.id,
+          })
+        }
       }
       const ivaMABE = desglosarIva(Math.round(totalMABEBase * (1 + IVA_TARIFA)))
       const fvMABE: Row[] = [
@@ -703,7 +739,7 @@ export async function POST(req: NextRequest) {
       if (faltanIds.length > 0) {
         const { data: extra } = await supabase
           .from('solicitudes_servicio')
-          .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at, descuento_codigo, descuento_tipo, descuento_valor')
+          .select('id, created_at, es_garantia, cliente_nombre, cliente_telefono, cliente_cedula, ciudad_pueblo, tipo_equipo, marca_equipo, tipo_solicitud, numero_serie_factura, direccion, estado, pago_tecnico, tecnico_asignado_id, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, anticipo_pagado_at, saldo_pagado_at, descuento_codigo, descuento_tipo, descuento_valor, facturacion_estado, factura_numero')
           .in('id', faltanIds)
         for (const s of (extra ?? []) as unknown as SolicitudLiquidacion[]) solLedgerMap.set(s.id, s)
       }
