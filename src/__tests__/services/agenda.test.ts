@@ -61,6 +61,16 @@ describe('validarHorarioAgendable', () => {
     expect(mockFrom).not.toHaveBeenCalled()
   })
 
+  // 2026-10-22: una fecha ya pasada ya no rota al año siguiente en
+  // parsearFechaVisita → tiene que rechazarse aquí (antes quedaba agendada
+  // un año después, orden 9415568723).
+  it('rechaza una fecha que ya pasó (no la salta al año siguiente)', async () => {
+    const r = await validarHorarioAgendable(horarioTexto(fechaColombiaMasDias(-10)))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('ya pasó')
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+
   it('acepta mañana cuando la franja tiene cupo', async () => {
     mockFrom.mockReturnValue(queryBuilder({ count: MAX_RESERVAS_POR_FRANJA - 1, error: null }))
     const ymd = fechaColombiaMasDias(2)

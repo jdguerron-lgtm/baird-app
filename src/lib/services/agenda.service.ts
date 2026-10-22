@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
-import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias, esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
 import { slotDesdeFechaVisita } from '@/lib/utils/agenda-slots'
 
 /**
@@ -55,6 +55,11 @@ export type ValidacionAgenda =
 /**
  * Valida que un horario elegido por el cliente sea agendable:
  *   1. La fecha debe ser a partir de MAÑANA (TZ Colombia) — no mismo día.
+ *      Una fecha ya pasada también se rechaza: desde 2026-10-22
+ *      `parsearFechaVisita` ya NO la rota al año siguiente (salvo el cruce
+ *      diciembre → enero), así que una opción vencida del formulario
+ *      ("29 de agosto" confirmada en septiembre) cae aquí en vez de quedar
+ *      agendada un año después.
  *   2. El slot (día + franja) debe tener cupo (< MAX_RESERVAS_POR_FRANJA).
  *
  * Texto no parseable (sugerencias libres del formulario) → ok con
@@ -70,6 +75,12 @@ export async function validarHorarioAgendable(
   const fechaVisitaAt = parsearFechaVisita(horarioTexto)
   if (!fechaVisitaAt) return { ok: true, fechaVisitaAt: null }
 
+  if (esFechaVisitaPasada(fechaVisitaAt)) {
+    return {
+      ok: false,
+      error: 'Esa fecha ya pasó. Elige una fecha a partir de mañana.',
+    }
+  }
   if (fechaColombiaYMD(new Date(fechaVisitaAt)) < fechaColombiaMasDias(1)) {
     return {
       ok: false,

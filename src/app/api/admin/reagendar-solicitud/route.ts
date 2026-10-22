@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import { procesarReagendamientoAdmin } from '@/lib/services/whatsapp.service'
 import { materializarFechaVisita, franjasLlenasParaFecha } from '@/lib/services/agenda.service'
-import { formatearFechaLargaCO, fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { formatearFechaLargaCO, fechaColombiaMasDias, validarFechaReagendaAdmin } from '@/lib/utils/fecha-visita'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 
 export const maxDuration = 30
@@ -21,6 +21,12 @@ const FRANJAS_VALIDAS = new Set<string>(FRANJAS_HORARIO.map(f => f.value))
  * El admin puede FORZAR fechas cercanas o franjas llenas: el mínimo "a partir de
  * mañana" y el cupo se devuelven como `avisos` (no bloquean). Reprogramar un
  * servicio en estado terminal sí se bloquea (lo valida el service).
+ *
+ * Lo que SÍ bloquea (400) es una fecha fuera del rango hoy−30 / hoy+180 días
+ * (`validarFechaReagendaAdmin`): un año mal tecleado en el input de fecha
+ * dejaba `fecha_visita_at` en 2006/2008 (órdenes 9415695001 y 9415696056,
+ * 2026-10-16) y el servicio desaparecía del calendario, el cupo y los
+ * incumplidos. La página usa el mismo rango como min/max del input.
  *
  * Body: { id: string, fecha: 'YYYY-MM-DD', franja: '8am-12pm', motivo?: string }
  */
@@ -42,6 +48,11 @@ export async function POST(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 })
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       return NextResponse.json({ error: 'fecha inválida (formato YYYY-MM-DD)' }, { status: 400 })
+    }
+    // Rango razonable (hoy CO − 30 días … hoy + 180 días) y día calendario real.
+    const errorFecha = validarFechaReagendaAdmin(fecha)
+    if (errorFecha) {
+      return NextResponse.json({ error: errorFecha }, { status: 400 })
     }
     if (!FRANJAS_VALIDAS.has(franja)) {
       return NextResponse.json({ error: 'franja inválida' }, { status: 400 })

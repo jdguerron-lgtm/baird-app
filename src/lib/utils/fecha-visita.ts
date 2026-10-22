@@ -14,7 +14,14 @@
  * Estrategia conservadora:
  *   - SI matchea "D de MES" → extrae día/mes
  *   - SI matchea "Nam-Mpm" o "N:00 am-..." → extrae hora de inicio
- *   - Año: el actual; si la fecha resultante ya pasó, +1 año
+ *   - Año: el de la referencia. Si la fecha ya pasó (más de ~1 día atrás) Y
+ *     la misma fecha del año siguiente queda a menos de 180 días de la
+ *     referencia, se asume el año siguiente (cruce de diciembre → enero).
+ *     Si no, se conserva el año de la referencia aunque la fecha quede en el
+ *     pasado: los call-sites (validarHorarioAgendable) la rechazan. Ver
+ *     `resolverAñoFechaVisita` — antes del 2026-10-22 se sumaba +1 año
+ *     siempre que la fecha hubiera pasado y una opción vencida ("29 de
+ *     agosto" confirmada en septiembre) quedaba agendada un año después.
  *   - SI NO matchea ninguno → null (admin lo edita si quiere)
  */
 
@@ -76,8 +83,9 @@ function extraerHoraInicio(texto: string): number | null {
  *
  * @param horarioTexto Ej: "lunes, 6 de mayo · 8am-12pm"
  * @param referenciaUTC Fecha de referencia para resolver el año (default: ahora).
- *                      Si la fecha parseada ya pasó respecto a esto, se asume
- *                      el año siguiente.
+ *                      Ver `resolverAñoFechaVisita`: solo se asume el año
+ *                      siguiente cuando la fecha pasó Y el año siguiente la
+ *                      deja a menos de MAX_DIAS_ROLLOVER_AÑO de la referencia.
  * @returns ISO timestamp en UTC, o null si no se pudo parsear.
  */
 export function parsearFechaVisita(horarioTexto: string, referenciaUTC: Date = new Date()): string | null {
@@ -94,20 +102,48 @@ export function parsearFechaVisita(horarioTexto: string, referenciaUTC: Date = n
   const textoSinFecha = horarioTexto.toLowerCase().replace(dm.matchTexto, ' ')
   const hora = extraerHoraInicio(textoSinFecha) ?? 8 // default 8am si no hay hora reconocible
 
-  // Año: el actual de la referencia. Si la fecha resultante ya pasó (más de 1
-  // día atrás para evitar drift por TZ), asumimos año siguiente.
-  let año = referenciaUTC.getUTCFullYear()
   // Construimos en hora local Colombia (UTC-5). Como Node corre en UTC en Vercel,
-  // restamos 5h al construir el Date para que represente las hh:00 hora local.
-  const candidato = new Date(Date.UTC(año, dm.mes, dm.dia, hora + 5, 0, 0))
+  // sumamos 5h al construir el Date para que represente las hh:00 hora local.
+  const año = resolverAñoFechaVisita(dm.mes, dm.dia, hora, referenciaUTC)
+  return new Date(Date.UTC(año, dm.mes, dm.dia, hora + 5, 0, 0)).toISOString()
+}
 
-  const ayer = new Date(referenciaUTC.getTime() - 24 * 60 * 60 * 1000)
-  if (candidato.getTime() < ayer.getTime()) {
-    año += 1
-    return new Date(Date.UTC(año, dm.mes, dm.dia, hora + 5, 0, 0)).toISOString()
-  }
+const MS_DIA = 24 * 60 * 60 * 1000
 
-  return candidato.toISOString()
+/**
+ * Tope para "rotar" al año siguiente: la fecha del año siguiente tiene que
+ * quedar a menos de esta distancia de la referencia. Cubre el único caso
+ * legítimo (el cliente escribe "5 de enero" el 20 de diciembre) y descarta
+ * inventar visitas a 10–12 meses vista, que es lo que pasaba con una opción
+ * vencida confirmada semanas después (orden 9415568723: "29 de agosto"
+ * confirmada en septiembre de 2026 quedó como 2027-08-29).
+ */
+export const MAX_DIAS_ROLLOVER_AÑO = 180
+
+/**
+ * Año que corresponde a un "D de MES" sin año explícito, dado un instante de
+ * referencia. Regla (2026-10-22):
+ *   1. Candidato = la fecha en el año de la referencia.
+ *   2. Si el candidato NO pasó (o pasó hace menos de 1 día — margen por TZ)
+ *      → año de la referencia.
+ *   3. Si pasó Y la misma fecha del año siguiente queda a menos de
+ *      MAX_DIAS_ROLLOVER_AÑO de la referencia → año siguiente.
+ *   4. Si no → año de la referencia (la fecha queda en el pasado y quien la
+ *      consume debe rechazarla; nunca inventamos un año a más de 6 meses).
+ *
+ * @param mes 0-indexed · @param dia 1-31 · @param hora inicio de franja (hora CO)
+ */
+export function resolverAñoFechaVisita(mes: number, dia: number, hora: number, referenciaUTC: Date): number {
+  const añoRef = referenciaUTC.getUTCFullYear()
+  const candidato = Date.UTC(añoRef, mes, dia, hora + 5, 0, 0)
+  const ayer = referenciaUTC.getTime() - MS_DIA
+  if (candidato >= ayer) return añoRef
+
+  const siguiente = Date.UTC(añoRef + 1, mes, dia, hora + 5, 0, 0)
+  const diasHastaSiguiente = (siguiente - referenciaUTC.getTime()) / MS_DIA
+  if (diasHastaSiguiente < MAX_DIAS_ROLLOVER_AÑO) return añoRef + 1
+
+  return añoRef
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -163,4 +199,55 @@ export function formatearFechaLargaCO(fechaYMD: string): string {
 export function esFechaVisitaPasada(fechaVisitaIso: string | null | undefined, ahora: Date = new Date()): boolean {
   if (!fechaVisitaIso) return false
   return fechaColombiaYMD(new Date(fechaVisitaIso)) < fechaColombiaYMD(ahora)
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Rango admisible para la fecha que el admin escribe a mano (reagendamiento
+// desde /admin/solicitudes/[id] → POST /api/admin/reagendar-solicitud).
+//
+// Un año mal tecleado en el <input type="date"> ("2006" por "2026") pasaba
+// derecho: el route solo validaba el formato y materializarFechaVisita acepta
+// cualquier año (órdenes 9415695001 y 9415696056 quedaron en 2006/2008 el
+// 2026-10-16). El route rechaza con 400 fuera de este rango y la página lo
+// usa como min/max del input. El aviso NO bloqueante de "hoy o anterior" se
+// mantiene aparte (el admin puede forzar fechas cercanas dentro del rango).
+// ──────────────────────────────────────────────────────────────────
+
+/** Días hacia atrás admitidos (registrar una visita reciente a posteriori). */
+export const REAGENDA_ADMIN_DIAS_ATRAS = 30
+/** Días hacia adelante admitidos. */
+export const REAGENDA_ADMIN_DIAS_ADELANTE = 180
+
+/** `{ min, max }` en YYYY-MM-DD (día CO) para la fecha del reagendamiento admin. */
+export function rangoFechaReagendaAdmin(ahora: Date = new Date()): { min: string; max: string } {
+  return {
+    min: fechaColombiaMasDias(-REAGENDA_ADMIN_DIAS_ATRAS, ahora),
+    max: fechaColombiaMasDias(REAGENDA_ADMIN_DIAS_ADELANTE, ahora),
+  }
+}
+
+/**
+ * true si `fechaYMD` es un día calendario real (formato YYYY-MM-DD y que no
+ * "ruede": "2026-02-30" o "2026-13-01" no lo son — Date.UTC los normalizaría
+ * en silencio a otro día).
+ */
+export function esFechaYMDValida(fechaYMD: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaYMD)) return false
+  const [y, m, d] = fechaYMD.split('-').map(Number)
+  const fecha = new Date(Date.UTC(y, m - 1, d))
+  return fecha.getUTCFullYear() === y && fecha.getUTCMonth() === m - 1 && fecha.getUTCDate() === d
+}
+
+/**
+ * Valida la fecha del reagendamiento admin. Devuelve el mensaje de error (para
+ * responder 400) o null si está dentro del rango. Comparación lexicográfica
+ * sobre YYYY-MM-DD (ver helpers de día calendario CO más arriba).
+ */
+export function validarFechaReagendaAdmin(fechaYMD: string, ahora: Date = new Date()): string | null {
+  if (!esFechaYMDValida(fechaYMD)) return 'fecha inválida (formato YYYY-MM-DD)'
+  const { min, max } = rangoFechaReagendaAdmin(ahora)
+  if (fechaYMD < min || fechaYMD > max) {
+    return `fecha fuera de rango: revisa el año (se admite entre ${min} y ${max})`
+  }
+  return null
 }
