@@ -231,7 +231,9 @@ export default function SolicitudesAdmin() {
         }
 
         if (facturacionFiltro) {
-          query = query.eq('facturacion_estado', facturacionFiltro)
+          // La columna es 'pendiente' por defecto en TODA solicitud: sin esto,
+          // "Sin facturar" listaba también las que ni siquiera se completaron.
+          query = query.eq('estado', 'completada').eq('facturacion_estado', facturacionFiltro)
         }
 
         const { data: solData, error } = await query

@@ -1380,6 +1380,54 @@ export default function SolicitudDetalle() {
         </div>
       )}
 
+      {/* Resumen de facturación (2026-10-22) — lo primero que se ve en cada
+          servicio: código del servicio (el que lleva el export de Siigo), N° de
+          la FV si ya se marcó, total cotizado y nota. Detalle/edición abajo en
+          el bloque "🧾 Facturación". */}
+      {(() => {
+        const estadoFact: FacturacionEstado = solicitud.facturacion_estado ?? 'pendiente'
+        const totalCot = Number((solicitud as unknown as { cotizacion?: { total?: number | null } | null }).cotizacion?.total ?? 0)
+        const estiloFact =
+          estadoFact === 'facturada' ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            : estadoFact === 'no_aplica' ? 'bg-gray-50 border-gray-200 text-gray-600'
+            : 'bg-amber-50 border-amber-200 text-amber-900'
+        return (
+          <div className={`mb-6 rounded-xl border p-4 flex flex-wrap items-center gap-x-8 gap-y-2 ${estiloFact}`}>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider opacity-70">Código del servicio</p>
+              <p className="font-mono text-sm font-semibold">{codigoServicio(solicitud.id)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider opacity-70">🧾 Factura</p>
+              <p className="text-sm font-semibold">
+                {estadoFact === 'facturada'
+                  ? <span className="font-mono">{solicitud.factura_numero ?? 'Facturada'}</span>
+                  : estadoFact === 'no_aplica' ? 'No aplica'
+                  : solicitud.estado === 'completada' ? 'Sin facturar' : 'Aún no aplica'}
+              </p>
+              {estadoFact === 'facturada' && solicitud.facturada_at && (
+                <p className="text-[11px] opacity-70">
+                  {new Date(solicitud.facturada_at).toLocaleDateString('es-CO')}
+                  {solicitud.facturada_por ? ` · ${solicitud.facturada_por}` : ''}
+                </p>
+              )}
+            </div>
+            {totalCot > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider opacity-70">Total cotizado</p>
+                <p className="text-sm font-semibold">${formatCOP(totalCot)} COP</p>
+              </div>
+            )}
+            {solicitud.facturacion_nota && (
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] uppercase tracking-wider opacity-70">Nota</p>
+                <p className="text-sm truncate" title={solicitud.facturacion_nota}>{solicitud.facturacion_nota}</p>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Client info */}
