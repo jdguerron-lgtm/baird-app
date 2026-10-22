@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { ESTADO_ESTILOS } from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
@@ -9,6 +10,7 @@ import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { precioClienteServicio } from '@/types/solicitud'
 import AgendaCalendario from '@/components/admin/AgendaCalendario'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
+import { FACTURACION_ESTADO_LABEL, type FacturacionEstado } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -38,6 +40,9 @@ interface Solicitud {
   // Repuesto(s) que espera el servicio (solo en estados de repuesto) — ver
   // cargarRepuestosPendientes. Vacío si no hay ninguno especificado.
   repuestos_pendientes?: RepuestoPendienteResumen[]
+  // Seguimiento de facturación (2026-10-22): solo tiene sentido en completadas.
+  facturacion_estado: FacturacionEstado | null
+  factura_numero: string | null
 }
 
 interface RepuestoPendienteResumen {
@@ -75,6 +80,20 @@ const FILTRO_SIN_TECNICO = 'sin_tecnico'
 // a cotizacion.productos_necesarios).
 const FILTRO_PENDIENTE_REPUESTO = 'pendiente_repuesto'
 const ESTADOS_REPUESTO = ['esperando_repuesto', 'repuesto_en_camino', 'repuesto_recibido'] as const
+
+// Filtro virtual (2026-10-22): servicios completados que contabilidad aún no
+// facturó (`facturacion_estado = 'pendiente'`). Se marca desde la ficha
+// (bloque "🧾 Facturación"); el dashboard enlaza aquí con ?filtro=sin_facturar.
+const FILTRO_SIN_FACTURAR = 'sin_facturar'
+
+// Selector "Facturación" (2026-10-22): '' = todas. Convive con el chip de
+// estado y el selector de técnico (los tres se aplican en la query).
+const FACTURACION_OPCIONES: Array<{ value: '' | FacturacionEstado; label: string }> = [
+  { value: '', label: '🧾 Facturación: todas' },
+  { value: 'pendiente', label: '🧾 Sin facturar' },
+  { value: 'facturada', label: '🧾 Facturadas' },
+  { value: 'no_aplica', label: '🧾 No aplica' },
+]
 
 /**
  * Repuestos que espera un servicio, para pintarlos en el listado. Fuente
@@ -124,6 +143,7 @@ const ESTADOS = [
   { value: 'todos', label: 'Todos', color: 'bg-gray-100 text-gray-700' },
   { value: FILTRO_SIN_TECNICO, label: '📣 Sin técnico', color: 'bg-orange-100 text-orange-800' },
   { value: FILTRO_PENDIENTE_REPUESTO, label: '🔩 Pendientes por repuesto', color: 'bg-fuchsia-100 text-fuchsia-800' },
+  { value: FILTRO_SIN_FACTURAR, label: '🧾 Sin facturar', color: 'bg-amber-100 text-amber-800' },
   { value: 'pendiente_horario', label: 'Pendiente horario', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'notificada', label: 'Notificada', color: 'bg-blue-100 text-blue-800' },
   { value: 'asignada', label: 'Asignada', color: 'bg-green-100 text-green-800' },
@@ -132,12 +152,20 @@ const ESTADOS = [
 ]
 
 export default function SolicitudesAdmin() {
+  const searchParams = useSearchParams()
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [vista, setVista] = useState<'lista' | 'calendario'>('lista')
-  const [filtro, setFiltro] = useState('todos')
+  // ?filtro= permite llegar con un chip activo (p. ej. el KPI "Sin facturar"
+  // del dashboard enlaza a ?filtro=sin_facturar).
+  const [filtro, setFiltro] = useState(() => {
+    const inicial = searchParams.get('filtro')
+    return inicial && ESTADOS.some(e => e.value === inicial) ? inicial : 'todos'
+  })
   // Filtro por técnico asignado (2026-10-20): '' = todos. Convive con el
   // filtro de estado (ambos se aplican en la query).
   const [tecnicoFiltro, setTecnicoFiltro] = useState('')
+  // Selector de facturación (2026-10-22): '' = todas.
+  const [facturacionFiltro, setFacturacionFiltro] = useState<'' | FacturacionEstado>('')
   const [tecnicosOpciones, setTecnicosOpciones] = useState<TecnicoOpcion[]>([])
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(true)
@@ -183,7 +211,7 @@ export default function SolicitudesAdmin() {
       try {
         let query = supabase
           .from('solicitudes_servicio')
-          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, ultimo_pago_at')
+          .select('id, cliente_nombre, cliente_telefono, ciudad_pueblo, zona_servicio, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, cotizacion, es_garantia, numero_serie_factura, created_at, tecnico_asignado_id, recargo_weekend_aplicado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, ultimo_pago_at, facturacion_estado, factura_numero')
           .order('created_at', { ascending: false })
 
         if (filtro === FILTRO_SIN_TECNICO) {
@@ -191,12 +219,19 @@ export default function SolicitudesAdmin() {
           query = query.eq('estado', 'notificada').is('tecnico_asignado_id', null)
         } else if (filtro === FILTRO_PENDIENTE_REPUESTO) {
           query = query.in('estado', [...ESTADOS_REPUESTO])
+        } else if (filtro === FILTRO_SIN_FACTURAR) {
+          // Completadas que contabilidad aún no facturó
+          query = query.eq('estado', 'completada').eq('facturacion_estado', 'pendiente')
         } else if (filtro !== 'todos') {
           query = query.eq('estado', filtro)
         }
 
         if (tecnicoFiltro) {
           query = query.eq('tecnico_asignado_id', tecnicoFiltro)
+        }
+
+        if (facturacionFiltro) {
+          query = query.eq('facturacion_estado', facturacionFiltro)
         }
 
         const { data: solData, error } = await query
@@ -242,6 +277,8 @@ export default function SolicitudesAdmin() {
           precio_cliente: precioClienteServicio(s.tipo_equipo, s.tipo_solicitud, s.es_garantia, s.cotizacion, s.recargo_weekend_aplicado),
           tecnico_nombre: s.tecnico_asignado_id ? tecnicoMap.get(s.tecnico_asignado_id) : undefined,
           repuestos_pendientes: repuestosMap.get(s.id) ?? [],
+          facturacion_estado: (s.facturacion_estado as FacturacionEstado | null) ?? null,
+          factura_numero: s.factura_numero ?? null,
         }))
 
         setSolicitudes(resultado)
@@ -253,7 +290,7 @@ export default function SolicitudesAdmin() {
     }
 
     cargar()
-  }, [filtro, tecnicoFiltro, refresco])
+  }, [filtro, tecnicoFiltro, facturacionFiltro, refresco])
 
   const toggleSeleccion = (id: string) => {
     setSeleccionados(prev => {
@@ -507,6 +544,20 @@ export default function SolicitudesAdmin() {
             ))}
           </select>
         </div>
+        <div className="sm:w-48">
+          <select
+            value={facturacionFiltro}
+            onChange={(e) => setFacturacionFiltro(e.target.value as '' | FacturacionEstado)}
+            title="Filtrar por seguimiento de facturación (se marca en la ficha de cada servicio completado)"
+            className={`w-full border rounded-xl py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent ${
+              facturacionFiltro ? 'border-amber-300 bg-amber-50 text-amber-900 font-medium' : 'border-gray-200 text-gray-600'
+            }`}
+          >
+            {FACTURACION_OPCIONES.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="flex-1 sm:max-w-xs">
           <input
             type="text"
@@ -685,6 +736,19 @@ export default function SolicitudesAdmin() {
                       <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${ESTADO_ESTILOS[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>
                         {s.estado}
                       </span>
+                      {s.estado === 'completada' && s.facturacion_estado === 'facturada' && (
+                        <p
+                          className="mt-1.5 text-[11px] leading-snug text-emerald-800"
+                          title={`Facturada en Siigo${s.factura_numero ? ` — ${s.factura_numero}` : ''}`}
+                        >
+                          🧾 <span className="font-mono font-semibold">{s.factura_numero ?? FACTURACION_ESTADO_LABEL.facturada}</span>
+                        </p>
+                      )}
+                      {s.estado === 'completada' && s.facturacion_estado === 'no_aplica' && (
+                        <p className="mt-1.5 text-[11px] leading-snug text-gray-400" title="Este servicio no genera factura">
+                          🧾 {FACTURACION_ESTADO_LABEL.no_aplica}
+                        </p>
+                      )}
                       {(ESTADOS_REPUESTO as readonly string[]).includes(s.estado) && (
                         <div className="mt-1.5 space-y-0.5" title="Repuesto que espera este servicio">
                           {s.repuestos_pendientes && s.repuestos_pendientes.length > 0 ? (
