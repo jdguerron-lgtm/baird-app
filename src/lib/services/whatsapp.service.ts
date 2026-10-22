@@ -14,6 +14,7 @@ import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
 import { MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
+import { obtenerConfigReparto, contarServiciosRecientes, dividirPorPrioridad } from '@/lib/services/reparto.service'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
@@ -422,7 +423,19 @@ export interface NotifyResult {
   errors: string[]
 }
 
-export async function notificarTecnicos(solicitudId: string): Promise<NotifyResult> {
+export interface NotificarTecnicosOpciones {
+  /**
+   * Segunda ola del reparto escalonado (cron `/api/cron/oferta-escalonada`):
+   * envía solo a los candidatos que aún NO tienen oferta para esta solicitud,
+   * sin técnico de preferencia ni prioridad.
+   */
+  soloNoNotificados?: boolean
+}
+
+export async function notificarTecnicos(
+  solicitudId: string,
+  opciones: NotificarTecnicosOpciones = {},
+): Promise<NotifyResult> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
 
   // 1. Obtener datos de la solicitud
@@ -535,23 +548,69 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
   }
 
   // 3b. Técnico de preferencia del cliente (2026-10-15). Solo en la PRIMERA
-  //     oferta (`notificados_at` NULL): si el cliente eligió a un técnico y
+  //     oferta (sin ofertas previas): si el cliente eligió a un técnico y
   //     este pasó los filtros de arriba, la oferta va únicamente a él. Los
   //     reenvíos (admin "Notificar técnicos" / reenvío masivo) ya tienen
-  //     `notificados_at` y salen a todos los candidatos, preferido incluido —
+  //     ofertas previas y salen a todos los candidatos, preferido incluido —
   //     así la preferencia no deja la solicitud colgada si él no responde.
   //     Si el preferido no pasó los filtros (dejó de estar verificado, cambió
   //     cobertura), se ignora y se avisa en `errors` sin bloquear nada.
   let tecnicos = tecnicosEnCiudad
   const preferidoId: string | null = sol.tecnico_preferido_id ?? null
-  if (preferidoId && !sol.notificados_at) {
+  let preferidoAplicado = false
+
+  // "Primera oferta" = la solicitud aún no tiene ninguna fila en
+  // notificaciones_whatsapp. NO usar `notificados_at`: confirmarHorarioSolicitud
+  // (el camino normal, particular y garantía) lo fija ANTES de llamar a esta
+  // función, así que con él toda oferta parecía un reenvío (2026-10-22).
+  const { data: ofertasPrevias } = await supabase
+    .from('notificaciones_whatsapp')
+    .select('tecnico_id')
+    .eq('solicitud_id', solicitudId)
+  const yaNotificados = new Set(((ofertasPrevias ?? []) as { tecnico_id: string }[]).map(n => n.tecnico_id))
+  const esPrimeraOferta = yaNotificados.size === 0
+
+  // 3a. Segunda ola del reparto escalonado: solo a quienes aún no la tienen.
+  if (opciones.soloNoNotificados) {
+    tecnicos = tecnicosEnCiudad.filter(t => !yaNotificados.has(t.id))
+    if (tecnicos.length === 0) {
+      return { notificados: 0, matched: 0, errors: [] }
+    }
+  } else if (preferidoId && esPrimeraOferta) {
     const preferido = tecnicosEnCiudad.find(t => t.id === preferidoId)
     if (preferido) {
       tecnicos = [preferido]
+      preferidoAplicado = true
     } else {
       sendErrors.push(
         'El técnico de preferencia del cliente ya no es candidato (verificación o cobertura) — la oferta salió abierta a todos.',
       )
+    }
+  }
+
+  // 3c. Reparto escalonado (2026-10-19, ver reparto.service.ts). Solo en la
+  //     PRIMERA oferta y sin técnico de preferencia: los que tienen menos
+  //     servicios en la semana la reciben primero; el cron la abre al resto
+  //     cuando vence `oferta_abierta_at`. Los reenvíos del admin (ya hay
+  //     ofertas previas) siguen saliendo a todos.
+  //     Con el reparto encendido, la oferta al técnico de preferencia también
+  //     se abre al resto si no la acepta en `minutos_ventaja` (así la
+  //     preferencia nunca deja la solicitud quieta esperando un reenvío manual).
+  let ofertaAbiertaAt: string | null = null
+  if (preferidoAplicado && tecnicosEnCiudad.length > 1) {
+    const config = await obtenerConfigReparto()
+    if (config.activo) {
+      ofertaAbiertaAt = new Date(Date.now() + config.minutos_ventaja * 60_000).toISOString()
+    }
+  } else if (!opciones.soloNoNotificados && esPrimeraOferta && tecnicos.length > 1) {
+    const config = await obtenerConfigReparto()
+    if (config.activo) {
+      const conteos = await contarServiciosRecientes(tecnicos.map(t => t.id))
+      const { prioritarios, resto } = dividirPorPrioridad(tecnicos, conteos, config.max_servicios_semana)
+      if (resto.length > 0) {
+        tecnicos = prioritarios
+        ofertaAbiertaAt = new Date(Date.now() + config.minutos_ventaja * 60_000).toISOString()
+      }
     }
   }
 
@@ -682,15 +741,27 @@ export async function notificarTecnicos(solicitudId: string): Promise<NotifyResu
   // 5. Actualizar estado de la solicitud. Guard `.is('tecnico_asignado_id', null)`:
   //    si un técnico aceptó entre el read inicial y este write, NO pisar
   //    'asignada' con 'notificada' (mismo patrón que la aceptación atómica).
+  //    `oferta_abierta_at` solo se escribe cuando hubo escalonamiento (así
+  //    este update no depende de la migración 20261019 en el resto de casos).
   if (notificados > 0) {
     await supabase
       .from('solicitudes_servicio')
       .update({
         estado: 'notificada',
         notificados_at: new Date().toISOString(),
+        ...(ofertaAbiertaAt ? { oferta_abierta_at: ofertaAbiertaAt } : {}),
       })
       .eq('id', solicitudId)
       .is('tecnico_asignado_id', null)
+  } else if (ofertaAbiertaAt) {
+    // A ninguno de los prioritarios le salió el WhatsApp: no hacer esperar
+    // la solicitud — abrir de una vez al resto.
+    const abierta = await notificarTecnicos(solicitudId, { soloNoNotificados: true })
+    return {
+      notificados: abierta.notificados,
+      matched: tecnicos.length + abierta.matched,
+      errors: [...sendErrors, ...abierta.errors],
+    }
   }
 
   return { notificados, matched: tecnicos.length, errors: sendErrors }
