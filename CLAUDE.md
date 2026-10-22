@@ -174,7 +174,7 @@ DAPTA_SILENCIO_REPUESTO_HORAS     # Silencio WhatsApp antes de escalar — repue
 
 ## Testing
 
-Vitest con **43 archivos de test (610 casos) en `src/__tests__/`** (utils, validations, services, lib/wompi, pdf). `npm test` corre todo en ~3 s. Un fallo SÍ es regresión (verificado 2026-10-19). Tests nuevos van en `src/__tests__/<area>/`. Ciclo completo (rama → `tsc`/lint/test → dev → PR → merge = deploy), réplica `baird-app-main` y respaldo: `docs/FLUJO-DESARROLLO.md`.
+Vitest con **45 archivos de test (≈630 casos) en `src/__tests__/`** (utils, validations, services, lib/wompi, pdf). `npm test` corre todo en ~3 s. Un fallo SÍ es regresión (verificado 2026-10-19). Tests nuevos van en `src/__tests__/<area>/`. Ciclo completo (rama → `tsc`/lint/test → dev → PR → merge = deploy), réplica `baird-app-main` y respaldo: `docs/FLUJO-DESARROLLO.md`.
 
 ## Legal Framework
 
