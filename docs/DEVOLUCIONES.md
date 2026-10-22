@@ -152,12 +152,8 @@ día siguiente: la dispersión diaria mueve el dinero a Bancolombia, el
 reembolso necesita saldo "Disponible" en Wompi y para PSE/Nequi ni siquiera
 hay anulación. Opciones, de menor a mayor esfuerzo (ninguna implementada):
 
-1. **Saldo "Disponible" permanente en Wompi.** Dejar un fondo (p. ej. el
-   equivalente a 3–5 anticipos) sin dispersar, o pedirle a Wompi que los
-   reembolsos se descuenten de la siguiente dispersión. Es un cambio de
-   configuración/operación, no de código. Por confirmar con el ejecutivo de
-   Wompi: si existe la opción de "retención para reembolsos" y si el
-   reembolso V2 acepta PSE/Nequi en producción.
+1. **Saldo "Disponible" permanente en Wompi (decisión 2026-10-22: dejar
+   ~$200.000).** Ver § 4.1 con los pasos. Es operación, no código.
 2. **Preferir reprogramar sobre devolver.** En la cancelación del cliente
    (`/servicio/{token}` y la plantilla de cancelación) ofrecer primero
    "conservar el anticipo para otra fecha" y dejar la devolución como segunda
@@ -190,6 +186,61 @@ hay anulación. Opciones, de menor a mayor esfuerzo (ninguna implementada):
 Recomendación: 1 + 2 primero (sin código o casi), luego 3 cuando haya más
 de un par de devoluciones por semana.
 
+### 4.1 Cómo dejar ~$200.000 en Wompi para devoluciones
+
+El saldo "Disponible" que Wompi exige para un reembolso vive en la **Wompi
+Cuenta**, la cuenta digital del producto **Pagos a Terceros**. Hoy está en
+cero porque Wompi traslada las ventas al Bancolombia de Baird al día hábil
+siguiente. La vía más simple es una **recarga única**, no retener ventas.
+
+**Pasos (panel de Wompi, usuario con permiso de manejo de saldos):**
+
+1. Menú izquierdo → **"Pagos a terceros"**. Si no aparece, el producto no
+   está activo: usar "Solicitar activación" (login.wompi.co) o pedirla al
+   ejecutivo de Wompi. La Wompi Cuenta se habilita con ese producto.
+2. **Pagos a terceros → Saldos → módulo "Wompi cuenta" → "Recargar
+   saldo"**. Se paga por el mismo checkout de Wompi (transferencia
+   Bancolombia ahorros/corriente, Nequi, PSE, QR Bre-B o Daviplata). Se
+   acredita de inmediato, máximo 5 recargas por día, con comprobante
+   descargable.
+3. Recargar **$200.000**. Desde ese momento "Devolver por Wompi" (reembolso
+   V2) descuenta de ese saldo; cada devolución lo consume (más la comisión
+   que Wompi no devuelve), así que revisar el saldo tras cada una y
+   recargar cuando baje de ~$80.000 (dos anticipos).
+4. Primer uso recomendado: la devolución pendiente de Juliana Hernández
+   ($68.250) — sirve de prueba real del reembolso V2 en producción.
+
+**Alternativa:** dejar el dinero de las ventas en la Wompi Cuenta en vez del
+traslado automático (Bancolombia anuncia que el comercio elige entre
+traslado al día hábil siguiente o mantener saldo hasta 180 días; pasado ese
+plazo Wompi lo abona solo). Obliga a dispersar a mano lo que sobre; solo
+tiene sentido si no se quiere adelantar plata desde el banco.
+
+**Confirmar con el ejecutivo de Wompi ANTES de activar** (la documentación
+pública no lo aclara):
+
+- **Costo de tener Pagos a Terceros activo.** El pago a terceros cuesta
+  $1.849 + 0,4 % + IVA por transferencia y los planes mensuales publicados
+  (Lite $210.000 + IVA/mes y superiores) son para agregar cuentas
+  Bancolombia como origen. Para solo mantener saldo y reembolsar no debería
+  hacer falta plan; pedirlo por escrito. **Si cobran un fijo mensual, no
+  vale la pena** por el volumen actual de devoluciones.
+- **Si el reembolso cubre PSE y Nequi.** El centro de ayuda habla solo de
+  tarjetas Visa/Mastercard/Amex (Redeban/Credibanco). Si PSE/Nequi quedan
+  por fuera, el saldo en Wompi solo sirve para devoluciones con tarjeta
+  hechas después del día del pago; PSE/Nequi siguen por transferencia.
+
+**Plan B mientras se confirma (o si hay costo fijo):** reservar los
+$200.000 en la cuenta Bancolombia de Baird (bolsillo o marca contable) y
+devolver por transferencia con "Registrar devolución manual" (§ 2.2 paso 4),
+que ya está en producción. Con tarjeta el mismo día seguir usando "Devolver
+por Wompi": anula sin costo y no necesita saldo.
+
+Fuentes: docs.wompi.co "Recarga Wompi Cuenta"; soporte.wompi.co "¿Cómo sé
+qué monto tengo disponible para dispersar?" y "¿Qué es reembolso total…?";
+prensa.bancolombia.com "Wompi te ayuda a administrar el dinero de las
+ventas virtuales"; wompi.com/es/co/soluciones/payouts (tarifas).
+
 ## 5. Checklist de puesta en marcha (pendiente)
 
 - [ ] Verificar que `devolucion_confirmada_cliente_v1` esté APPROVED:
@@ -200,4 +251,6 @@ de un par de devoluciones por semana.
       aceptó o si hubo que transferir.
 - [ ] Resolver la devolución pendiente de Juliana Hernández ($68.250 del
       doble cobro del 2026-10-20) con este flujo.
-- [ ] Preguntar a Wompi por la retención de saldo para reembolsos (§ 4.1).
+- [ ] Confirmar con Wompi el costo de activar Pagos a Terceros / Wompi
+      Cuenta y si el reembolso cubre PSE/Nequi (§ 4.1); luego recargar los
+      $200.000.
