@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -450,9 +450,13 @@ export default function SolicitudesAdmin() {
     }
   }
 
-  const filtradas = busqueda
+  // useDeferredValue (2026-10-22): el input de búsqueda se pinta de inmediato
+  // y la tabla filtrada se recalcula en una prioridad más baja — así teclear
+  // no espera a re-renderizar todas las filas (queja de lentitud al escribir).
+  const busquedaDiferida = useDeferredValue(busqueda)
+  const filtradas = useMemo(() => busquedaDiferida
     ? solicitudes.filter(s => {
-        const q = busqueda.toLowerCase()
+        const q = busquedaDiferida.toLowerCase()
         // Solo-dígitos para matchear teléfonos sin importar +57/espacios
         const qDigits = q.replace(/\D/g, '')
         return (
@@ -462,10 +466,10 @@ export default function SolicitudesAdmin() {
           (s.marca_equipo ?? '').toLowerCase().includes(q) ||
           (s.numero_serie_factura ?? '').toLowerCase().includes(q) ||
           (qDigits.length >= 4 && (s.cliente_telefono ?? '').replace(/\D/g, '').includes(qDigits)) ||
-          s.id.includes(busqueda)
+          s.id.includes(busquedaDiferida)
         )
       })
-    : solicitudes
+    : solicitudes, [busquedaDiferida, solicitudes])
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl">
