@@ -302,7 +302,12 @@ aceptación del técnico) y por el route admin (400 + `motivo`); la página pone
 siguiente si la fecha pasó Y el año siguiente la deja a < 180 días (cruce
 dic → ene); si no, conserva el año de la referencia y se rechaza como pasada.
 
-**Corrección de datos (NO ejecutada — Juan la aplica o da el OK):**
+**Corrección de datos — APLICADA en prod el 2026-10-22 vía MCP con OK explícito
+de Juan.** Antes: 9415568723 `2027-08-29` (completada), 9415695001 `2006-10-20`
+(completada), 9415696056 `2008-10-21` (esperando_repuesto). Después: las 3 en
+2026, la consulta de verificación devolvió 0 filas y ninguna de las 101
+solicitudes con `fecha_visita_at` queda a más de 180 días (rango
+2026-05-30 … 2026-10-31). Se deja el SQL para repetir la verificación:
 
 ```sql
 -- Antes: ver el estado actual de las 3 filas
