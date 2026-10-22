@@ -3,8 +3,9 @@ import {
   parsearFechaVisita,
   resolverAñoFechaVisita,
   MAX_DIAS_ROLLOVER_AÑO,
-  rangoFechaReagendaAdmin,
-  validarFechaReagendaAdmin,
+  MAX_DIAS_FECHA_VISITA_ADELANTE,
+  rangoFechaVisita,
+  validarFechaVisita,
   esFechaYMDValida,
   fechaColombiaMasDias,
 } from '@/lib/utils/fecha-visita'
@@ -72,36 +73,72 @@ describe('parsearFechaVisita — resolución del año', () => {
   })
 })
 
-describe('rango de fecha del reagendamiento admin', () => {
+// Función única de validación (pedido de Juan 2026-10-22): la usan
+// validarHorarioAgendable (todas las vías del cliente) y el route admin.
+describe('validarFechaVisita — validación única de fecha de visita', () => {
   // 2026-10-22 15:00Z = 10:00 CO
   const AHORA = new Date('2026-10-22T15:00:00Z')
 
-  it('rangoFechaReagendaAdmin = hoy CO −30 / +180 días', () => {
-    expect(rangoFechaReagendaAdmin(AHORA)).toEqual({ min: '2026-09-22', max: '2027-04-20' })
-    expect(fechaColombiaMasDias(-30, AHORA)).toBe('2026-09-22')
+  it('rangoFechaVisita = hoy CO / hoy + MAX_DIAS_FECHA_VISITA_ADELANTE', () => {
+    expect(MAX_DIAS_FECHA_VISITA_ADELANTE).toBe(180)
+    expect(rangoFechaVisita(AHORA)).toEqual({ min: '2026-10-22', max: '2027-04-20' })
+    expect(fechaColombiaMasDias(180, AHORA)).toBe('2027-04-20')
   })
 
-  it('acepta fechas dentro del rango (incluidos los bordes y hoy)', () => {
-    expect(validarFechaReagendaAdmin('2026-10-22', AHORA)).toBeNull()
-    expect(validarFechaReagendaAdmin('2026-09-22', AHORA)).toBeNull()
-    expect(validarFechaReagendaAdmin('2027-04-20', AHORA)).toBeNull()
-    expect(validarFechaReagendaAdmin('2026-10-20', AHORA)).toBeNull() // pasado reciente: aviso, no bloqueo
+  it('acepta hoy, mañana y el borde superior (YYYY-MM-DD)', () => {
+    expect(validarFechaVisita('2026-10-22', AHORA)).toEqual({ ok: true, fechaYMD: '2026-10-22' })
+    expect(validarFechaVisita('2026-10-23', AHORA)).toEqual({ ok: true, fechaYMD: '2026-10-23' })
+    expect(validarFechaVisita('2027-04-20', AHORA)).toEqual({ ok: true, fechaYMD: '2027-04-20' })
   })
 
-  it('rechaza un año mal tecleado (casos reales 2006 / 2008) con mensaje claro', () => {
-    const err = validarFechaReagendaAdmin('2006-10-20', AHORA)
-    expect(err).toContain('fuera de rango')
-    expect(err).toContain('revisa el año')
-    expect(validarFechaReagendaAdmin('2008-10-21', AHORA)).toContain('fuera de rango')
-    expect(validarFechaReagendaAdmin('2027-08-29', AHORA)).toContain('fuera de rango')
+  it('acepta un ISO timestamptz y lo normaliza al día CO', () => {
+    // 2026-10-23 03:00Z = 22:00 CO del 22 → sigue siendo "hoy" en Colombia
+    expect(validarFechaVisita('2026-10-23T03:00:00.000Z', AHORA)).toEqual({ ok: true, fechaYMD: '2026-10-22' })
+    expect(validarFechaVisita(iso(2026, 9, 25), AHORA)).toEqual({ ok: true, fechaYMD: '2026-10-25' })
   })
 
-  it('rechaza bordes exteriores y formatos inválidos', () => {
-    expect(validarFechaReagendaAdmin('2026-09-21', AHORA)).toContain('fuera de rango')
-    expect(validarFechaReagendaAdmin('2027-04-21', AHORA)).toContain('fuera de rango')
-    expect(validarFechaReagendaAdmin('2026-13-01', AHORA)).toContain('inválida')
-    expect(validarFechaReagendaAdmin('2026-02-30', AHORA)).toContain('inválida')
-    expect(validarFechaReagendaAdmin('22/10/2026', AHORA)).toContain('inválida')
+  it('rechaza una fecha anterior a hoy CO (motivo "pasada") — nunca la salta de año', () => {
+    const r = validarFechaVisita('2026-10-21', AHORA)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.motivo).toBe('pasada')
+      expect(r.error).toContain('ya pasó')
+      expect(r.error).toContain('2026-10-21')
+    }
+    // Caso real 9415568723: slot del 29 de agosto evaluado en octubre.
+    const r2 = validarFechaVisita(iso(2026, 7, 29), AHORA)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.motivo).toBe('pasada')
+  })
+
+  it('rechaza un año mal tecleado hacia atrás (casos reales 2006 / 2008) como "pasada"', () => {
+    for (const f of ['2006-10-20', '2008-10-21']) {
+      const r = validarFechaVisita(f, AHORA)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.motivo).toBe('pasada')
+        expect(r.error).toContain(f)
+      }
+    }
+  })
+
+  it('rechaza más de 180 días adelante (motivo "fuera_de_rango") con mensaje "revisa el año"', () => {
+    for (const f of ['2027-04-21', '2027-08-29', '2036-10-22']) {
+      const r = validarFechaVisita(f, AHORA)
+      expect(r.ok).toBe(false)
+      if (!r.ok) {
+        expect(r.motivo).toBe('fuera_de_rango')
+        expect(r.error).toContain('revisa el año')
+      }
+    }
+  })
+
+  it('rechaza formatos y días inexistentes (motivo "formato")', () => {
+    for (const f of ['2026-13-01', '2026-02-30', '22/10/2026', 'mañana', '']) {
+      const r = validarFechaVisita(f, AHORA)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.motivo).toBe('formato')
+    }
   })
 
   it('esFechaYMDValida no deja "rodar" días/meses inexistentes', () => {

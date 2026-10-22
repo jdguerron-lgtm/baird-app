@@ -17,7 +17,7 @@ vi.mock('@/lib/services/agenda.service', async (importOriginal) => {
 })
 
 import { POST } from '@/app/api/admin/reagendar-solicitud/route'
-import { fechaColombiaMasDias, rangoFechaReagendaAdmin } from '@/lib/utils/fecha-visita'
+import { fechaColombiaMasDias, fechaColombiaYMD, rangoFechaVisita } from '@/lib/utils/fecha-visita'
 
 function req(body: unknown) {
   return new NextRequest('http://localhost/api/admin/reagendar-solicitud', {
@@ -27,7 +27,7 @@ function req(body: unknown) {
   })
 }
 
-describe('POST /api/admin/reagendar-solicitud — rango de fecha', () => {
+describe('POST /api/admin/reagendar-solicitud — validarFechaVisita', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockObtenerEmailAdmin.mockResolvedValue('admin@bairdservice.com')
@@ -43,21 +43,35 @@ describe('POST /api/admin/reagendar-solicitud — rango de fecha', () => {
     const res = await POST(req({ id: 'abc', fecha: '2006-10-20', franja: '8am-12pm' }))
     expect(res.status).toBe(400)
     const data = await res.json()
-    expect(data.error).toContain('fuera de rango')
-    expect(data.error).toContain('revisa el año')
+    expect(data.motivo).toBe('pasada')
+    expect(data.error).toContain('ya pasó')
+    expect(data.error).toContain('2006-10-20')
     expect(mockProcesar).not.toHaveBeenCalled()
   })
 
-  it('rechaza con 400 una fecha a más de 180 días', async () => {
+  it('rechaza con 400 una fecha anterior a hoy (ayer) — ya no es solo un aviso', async () => {
+    const ayer = fechaColombiaMasDias(-1)
+    const res = await POST(req({ id: 'abc', fecha: ayer, franja: '3pm-6pm' }))
+    expect(res.status).toBe(400)
+    const data = await res.json()
+    expect(data.motivo).toBe('pasada')
+    expect(data.error).toContain('ya pasó')
+    expect(mockProcesar).not.toHaveBeenCalled()
+  })
+
+  it('rechaza con 400 una fecha a más de 180 días ("revisa el año")', async () => {
     const res = await POST(req({ id: 'abc', fecha: fechaColombiaMasDias(181), franja: '8am-12pm' }))
     expect(res.status).toBe(400)
-    expect((await res.json()).error).toContain('fuera de rango')
+    const data = await res.json()
+    expect(data.motivo).toBe('fuera_de_rango')
+    expect(data.error).toContain('revisa el año')
     expect(mockProcesar).not.toHaveBeenCalled()
   })
 
   it('rechaza con 400 un día calendario inexistente', async () => {
     const res = await POST(req({ id: 'abc', fecha: '2026-02-30', franja: '8am-12pm' }))
     expect(res.status).toBe(400)
+    expect((await res.json()).motivo).toBe('formato')
     expect(mockProcesar).not.toHaveBeenCalled()
   })
 
@@ -72,17 +86,17 @@ describe('POST /api/admin/reagendar-solicitud — rango de fecha', () => {
     expect(mockProcesar).toHaveBeenCalledWith('abc', expect.stringContaining('8am-12pm'), `${fecha}T13:00:00.000Z`)
   })
 
-  it('mantiene el aviso NO bloqueante para "hoy o anterior" dentro del rango', async () => {
-    const ayer = fechaColombiaMasDias(-1)
-    const res = await POST(req({ id: 'abc', fecha: ayer, franja: '3pm-6pm' }))
+  it('"hoy" sigue pasando con aviso NO bloqueante', async () => {
+    const hoy = fechaColombiaYMD()
+    const res = await POST(req({ id: 'abc', fecha: hoy, franja: '3pm-6pm' }))
     expect(res.status).toBe(200)
     const data = await res.json()
-    expect(data.avisos.join(' ')).toContain('hoy o anterior')
+    expect(data.avisos.join(' ')).toContain('hoy')
     expect(mockProcesar).toHaveBeenCalled()
   })
 
-  it('los bordes del rango (hoy−30 y hoy+180) pasan', async () => {
-    const { min, max } = rangoFechaReagendaAdmin()
+  it('los bordes del rango (hoy y hoy+180) pasan', async () => {
+    const { min, max } = rangoFechaVisita()
     expect((await POST(req({ id: 'abc', fecha: min, franja: '8am-12pm' }))).status).toBe(200)
     expect((await POST(req({ id: 'abc', fecha: max, franja: '8am-12pm' }))).status).toBe(200)
   })

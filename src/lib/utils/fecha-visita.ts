@@ -202,29 +202,35 @@ export function esFechaVisitaPasada(fechaVisitaIso: string | null | undefined, a
 }
 
 // ──────────────────────────────────────────────────────────────────
-// Rango admisible para la fecha que el admin escribe a mano (reagendamiento
-// desde /admin/solicitudes/[id] → POST /api/admin/reagendar-solicitud).
+// Validación ÚNICA de una fecha de visita (2026-10-22, pedido de Juan:
+// "pon una función de verificación de fechas y no permitas que se reserve en
+// fechas que ya pasaron").
 //
-// Un año mal tecleado en el <input type="date"> ("2006" por "2026") pasaba
-// derecho: el route solo validaba el formato y materializarFechaVisita acepta
-// cualquier año (órdenes 9415695001 y 9415696056 quedaron en 2006/2008 el
-// 2026-10-16). El route rechaza con 400 fuera de este rango y la página lo
-// usa como min/max del input. El aviso NO bloqueante de "hoy o anterior" se
-// mantiene aparte (el admin puede forzar fechas cercanas dentro del rango).
+// La usan TODOS los puntos donde se reserva o cambia la fecha de visita:
+//   - validarHorarioAgendable (agenda.service) → confirmar-horario del
+//     cliente, aceptación del técnico eligiendo "el otro horario" del cliente,
+//     reagendamiento por link (/servicio), reprogramación tras repuesto.
+//   - POST /api/admin/reagendar-solicitud (y el min/max del input de la ficha).
+//
+// Reglas: formato (YYYY-MM-DD real o ISO timestamptz) → día calendario CO →
+// NO anterior a hoy (nunca "+1 año") → NO más de MAX_DIAS_FECHA_VISITA_ADELANTE
+// hacia adelante (un año mal tecleado). "Hoy" pasa aquí; cada caller decide
+// si lo admite (el admin con aviso; los clientes no: "mínimo mañana").
+//
+// Casos reales que motivaron esto: órdenes 9415695001/9415696056 quedaron en
+// 2006/2008 por un año mal tecleado en el admin; 9415568723 quedó en 2027
+// porque el técnico aceptó con una opción del cliente ya vencida y
+// parsearFechaVisita la rotaba al año siguiente.
 // ──────────────────────────────────────────────────────────────────
 
-/** Días hacia atrás admitidos (registrar una visita reciente a posteriori). */
-export const REAGENDA_ADMIN_DIAS_ATRAS = 30
-/** Días hacia adelante admitidos. */
-export const REAGENDA_ADMIN_DIAS_ADELANTE = 180
+/** Tope hacia adelante para cualquier fecha de visita (días desde hoy CO). */
+export const MAX_DIAS_FECHA_VISITA_ADELANTE = 180
 
-/** `{ min, max }` en YYYY-MM-DD (día CO) para la fecha del reagendamiento admin. */
-export function rangoFechaReagendaAdmin(ahora: Date = new Date()): { min: string; max: string } {
-  return {
-    min: fechaColombiaMasDias(-REAGENDA_ADMIN_DIAS_ATRAS, ahora),
-    max: fechaColombiaMasDias(REAGENDA_ADMIN_DIAS_ADELANTE, ahora),
-  }
-}
+export type MotivoFechaVisitaInvalida = 'formato' | 'pasada' | 'fuera_de_rango'
+
+export type ValidacionFechaVisita =
+  | { ok: true; fechaYMD: string }
+  | { ok: false; motivo: MotivoFechaVisitaInvalida; error: string }
 
 /**
  * true si `fechaYMD` es un día calendario real (formato YYYY-MM-DD y que no
@@ -239,15 +245,53 @@ export function esFechaYMDValida(fechaYMD: string): boolean {
 }
 
 /**
- * Valida la fecha del reagendamiento admin. Devuelve el mensaje de error (para
- * responder 400) o null si está dentro del rango. Comparación lexicográfica
- * sobre YYYY-MM-DD (ver helpers de día calendario CO más arriba).
+ * Día calendario CO (YYYY-MM-DD) de una fecha recibida como YYYY-MM-DD (se
+ * toma tal cual, validando que sea un día real) o como ISO timestamptz
+ * (`fecha_visita_at`, se convierte a día CO). null si no es ninguna de las dos.
  */
-export function validarFechaReagendaAdmin(fechaYMD: string, ahora: Date = new Date()): string | null {
-  if (!esFechaYMDValida(fechaYMD)) return 'fecha inválida (formato YYYY-MM-DD)'
-  const { min, max } = rangoFechaReagendaAdmin(ahora)
-  if (fechaYMD < min || fechaYMD > max) {
-    return `fecha fuera de rango: revisa el año (se admite entre ${min} y ${max})`
+function diaColombiaDeFecha(fecha: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return esFechaYMDValida(fecha) ? fecha : null
+  const d = new Date(fecha)
+  if (Number.isNaN(d.getTime())) return null
+  return fechaColombiaYMD(d)
+}
+
+/** `{ min, max }` (YYYY-MM-DD, día CO) admitidos por `validarFechaVisita`. */
+export function rangoFechaVisita(ahora: Date = new Date()): { min: string; max: string } {
+  return {
+    min: fechaColombiaYMD(ahora),
+    max: fechaColombiaMasDias(MAX_DIAS_FECHA_VISITA_ADELANTE, ahora),
   }
-  return null
+}
+
+/**
+ * Valida una fecha de visita antes de reservarla o cambiarla.
+ *
+ * @param fecha  'YYYY-MM-DD' (input del admin) o ISO timestamptz
+ *               (`fecha_visita_at` materializado por parsearFechaVisita).
+ * @param ahora  instante de referencia (tests).
+ * @returns ok con el día CO normalizado, o `{ motivo, error }` listo para
+ *          responder 400. `motivo`: 'formato' | 'pasada' | 'fuera_de_rango'.
+ */
+export function validarFechaVisita(fecha: string, ahora: Date = new Date()): ValidacionFechaVisita {
+  const fechaYMD = typeof fecha === 'string' ? diaColombiaDeFecha(fecha.trim()) : null
+  if (!fechaYMD) {
+    return { ok: false, motivo: 'formato', error: 'fecha inválida (formato YYYY-MM-DD)' }
+  }
+  const { min, max } = rangoFechaVisita(ahora)
+  if (fechaYMD < min) {
+    return {
+      ok: false,
+      motivo: 'pasada',
+      error: `Esa fecha ya pasó (${fechaYMD}). Elige una fecha a partir de mañana.`,
+    }
+  }
+  if (fechaYMD > max) {
+    return {
+      ok: false,
+      motivo: 'fuera_de_rango',
+      error: `fecha fuera de rango: revisa el año (${fechaYMD}; se admite hasta ${max})`,
+    }
+  }
+  return { ok: true, fechaYMD }
 }

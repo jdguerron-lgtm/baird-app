@@ -294,12 +294,13 @@ admin, `/admin/incumplidos` y el resumen diario a supervisores):
    (orden 9415568723: "sábado, 29 de agosto · 8am-12pm", creada 2026-08-25,
    quedó `2027-08-29`).
 
-**Código (mismo PR):** el route rechaza con 400 fuera de hoy CO −30 / +180 días
-(`validarFechaReagendaAdmin`, `src/lib/utils/fecha-visita.ts`), la página pone
-ese rango como `min`/`max`, y `parsearFechaVisita` solo rota al año siguiente
-si la fecha pasó Y el año siguiente la deja a < 180 días (cruce dic → ene);
-si no, conserva el año de la referencia y `validarHorarioAgendable` la rechaza
-("Esa fecha ya pasó").
+**Código (mismo PR):** una sola función `validarFechaVisita`
+(`src/lib/utils/fecha-visita.ts`: no anterior a hoy CO, no > 180 días, día
+real) usada por `validarHorarioAgendable` (todas las vías del cliente y la
+aceptación del técnico) y por el route admin (400 + `motivo`); la página pone
+`rangoFechaVisita()` como `min`/`max`. `parsearFechaVisita` solo rota al año
+siguiente si la fecha pasó Y el año siguiente la deja a < 180 días (cruce
+dic → ene); si no, conserva el año de la referencia y se rechaza como pasada.
 
 **Corrección de datos (NO ejecutada — Juan la aplica o da el OK):**
 

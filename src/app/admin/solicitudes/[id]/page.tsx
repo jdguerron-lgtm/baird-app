@@ -13,7 +13,7 @@ import { PAGO_MINIMO_TECNICO_GARANTIA, calcularTarifaMABE, type ComplejidadServi
 import { cityTokenForMatch, normalizeForMatch } from '@/lib/utils/format'
 import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
-import { rangoFechaReagendaAdmin, validarFechaReagendaAdmin } from '@/lib/utils/fecha-visita'
+import { rangoFechaVisita, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
 import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
@@ -494,11 +494,16 @@ export default function SolicitudDetalle() {
   // Franjas sin cupo para la fecha elegida — se MUESTRAN como aviso pero NO se
   // bloquean (el admin puede forzar). El guard real (no bloqueante) está en el route.
   const franjasLlenasReagenda = useFranjasLlenas(fechaReagenda)
-  // Rango admisible de la fecha (hoy−30 / hoy+180 días CO): min/max del input
-  // y chequeo previo al POST. El route rechaza con 400 lo mismo — así un año
-  // mal tecleado ("2006") no deja fecha_visita_at en un año imposible.
-  const [rangoFechaReagenda] = useState(() => rangoFechaReagendaAdmin())
-  const errorRangoFechaReagenda = fechaReagenda ? validarFechaReagendaAdmin(fechaReagenda) : null
+  // Rango admisible de la fecha (hoy / hoy+180 días CO): min/max del input y
+  // chequeo previo al POST con la MISMA función que el route (validarFechaVisita
+  // → 400). Así una fecha ya pasada o un año mal tecleado ("2006") no deja
+  // fecha_visita_at en un día imposible. "Hoy" pasa (el route lo avisa).
+  const [rangoFechaReagenda] = useState(() => rangoFechaVisita())
+  const errorRangoFechaReagenda = (() => {
+    if (!fechaReagenda) return null
+    const v = validarFechaVisita(fechaReagenda)
+    return v.ok ? null : v.error
+  })()
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -2135,8 +2140,8 @@ export default function SolicitudDetalle() {
           Elegí la nueva fecha y franja en el calendario. Al guardar se{' '}
           <strong>notifica por WhatsApp</strong> al cliente, al técnico asignado y a
           los supervisores con visibilidad del servicio, y la fecha queda cargada en
-          la vista <strong>Calendario</strong>. Podés forzar fechas cercanas o franjas
-          llenas (se avisa, no se bloquea).
+          la vista <strong>Calendario</strong>. Podés forzar hoy o franjas llenas (se
+          avisa, no se bloquea); una fecha ya pasada no se admite.
         </p>
         {solicitud.horario_confirmado && (
           <p className="text-xs text-gray-500 mb-3">

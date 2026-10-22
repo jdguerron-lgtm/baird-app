@@ -3,7 +3,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import { procesarReagendamientoAdmin } from '@/lib/services/whatsapp.service'
 import { materializarFechaVisita, franjasLlenasParaFecha } from '@/lib/services/agenda.service'
-import { formatearFechaLargaCO, fechaColombiaMasDias, validarFechaReagendaAdmin } from '@/lib/utils/fecha-visita'
+import { formatearFechaLargaCO, fechaColombiaMasDias, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 
 export const maxDuration = 30
@@ -18,15 +18,18 @@ const FRANJAS_VALIDAS = new Set<string>(FRANJAS_HORARIO.map(f => f.value))
  *   1. Materializa `fecha_visita_at` → el servicio aparece en la vista Calendario.
  *   2. Notifica por WhatsApp a cliente, técnico asignado y supervisores.
  *
- * El admin puede FORZAR fechas cercanas o franjas llenas: el mínimo "a partir de
- * mañana" y el cupo se devuelven como `avisos` (no bloquean). Reprogramar un
- * servicio en estado terminal sí se bloquea (lo valida el service).
+ * El admin puede FORZAR "hoy" o franjas llenas: se devuelven como `avisos`
+ * (no bloquean). Reprogramar un servicio en estado terminal sí se bloquea
+ * (lo valida el service).
  *
- * Lo que SÍ bloquea (400) es una fecha fuera del rango hoy−30 / hoy+180 días
- * (`validarFechaReagendaAdmin`): un año mal tecleado en el input de fecha
- * dejaba `fecha_visita_at` en 2006/2008 (órdenes 9415695001 y 9415696056,
- * 2026-10-16) y el servicio desaparecía del calendario, el cupo y los
- * incumplidos. La página usa el mismo rango como min/max del input.
+ * Lo que SÍ bloquea (400) es `validarFechaVisita` (utils/fecha-visita, la
+ * misma función que usan todas las vías del cliente): fecha ANTERIOR a hoy CO
+ * (desde 2026-10-22, pedido de Juan: nunca reservar en fechas que ya pasaron),
+ * fecha a más de MAX_DIAS_FECHA_VISITA_ADELANTE días o día inexistente. Un año
+ * mal tecleado en el input dejaba `fecha_visita_at` en 2006/2008 (órdenes
+ * 9415695001 y 9415696056, 2026-10-16) y el servicio desaparecía del
+ * calendario, el cupo y los incumplidos. La página usa el mismo rango como
+ * min/max del input.
  *
  * Body: { id: string, fecha: 'YYYY-MM-DD', franja: '8am-12pm', motivo?: string }
  */
@@ -49,10 +52,10 @@ export async function POST(req: NextRequest) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       return NextResponse.json({ error: 'fecha inválida (formato YYYY-MM-DD)' }, { status: 400 })
     }
-    // Rango razonable (hoy CO − 30 días … hoy + 180 días) y día calendario real.
-    const errorFecha = validarFechaReagendaAdmin(fecha)
-    if (errorFecha) {
-      return NextResponse.json({ error: errorFecha }, { status: 400 })
+    // Validación única de fecha de visita: no pasada, no > 180 días, día real.
+    const fechaValida = validarFechaVisita(fecha)
+    if (!fechaValida.ok) {
+      return NextResponse.json({ error: fechaValida.error, motivo: fechaValida.motivo }, { status: 400 })
     }
     if (!FRANJAS_VALIDAS.has(franja)) {
       return NextResponse.json({ error: 'franja inválida' }, { status: 400 })
@@ -65,10 +68,11 @@ export async function POST(req: NextRequest) {
 
     const horario = `${formatearFechaLargaCO(fecha)} · ${franja}`
 
-    // Avisos NO bloqueantes (el admin puede forzar): fecha cercana / franja llena.
+    // Avisos NO bloqueantes (el admin puede forzar): hoy / franja llena.
+    // (Una fecha anterior a hoy ya no llega aquí: validarFechaVisita la rechaza.)
     const avisos: string[] = []
     if (fecha < fechaColombiaMasDias(1)) {
-      avisos.push('La fecha es hoy o anterior — normalmente se agenda a partir de mañana.')
+      avisos.push('La fecha es hoy — normalmente se agenda a partir de mañana.')
     }
     try {
       const llenas = await franjasLlenasParaFecha(fecha)
