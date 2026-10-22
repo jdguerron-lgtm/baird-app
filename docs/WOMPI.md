@@ -144,7 +144,12 @@ wompi.ts → listarTransaccionesPorReferencia ← GET /v1/transactions?reference
   `/api/wompi/webhook` reenvíe a Conexa los eventos ajenos (proxy). Vuelve a la
   app punto único de falla de la tienda.
 
-### Devoluciones desde el admin (2026-10-21)
+### Devoluciones desde el admin (2026-10-21; en prod 2026-10-22, PR #5)
+
+> Instructivo operativo (admin + cliente) y mejoras pendientes en
+> `docs/DEVOLUCIONES.md`. Ojo: el centro de ayuda de Wompi dice que el
+> reembolso requiere saldo en "Disponible" de la cuenta Wompi, aplica a
+> tarjetas Visa/Mastercard/Amex y **no devuelve la comisión de Wompi**.
 
 Caso típico: el servicio se cancela después de que el cliente pagó el
 anticipo. En la ficha admin (`/admin/solicitudes/[id]` → "Cobros al
