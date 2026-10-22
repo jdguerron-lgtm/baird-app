@@ -548,10 +548,10 @@ export async function notificarTecnicos(
   }
 
   // 3b. Técnico de preferencia del cliente (2026-10-15). Solo en la PRIMERA
-  //     oferta (`notificados_at` NULL): si el cliente eligió a un técnico y
+  //     oferta (sin ofertas previas): si el cliente eligió a un técnico y
   //     este pasó los filtros de arriba, la oferta va únicamente a él. Los
   //     reenvíos (admin "Notificar técnicos" / reenvío masivo) ya tienen
-  //     `notificados_at` y salen a todos los candidatos, preferido incluido —
+  //     ofertas previas y salen a todos los candidatos, preferido incluido —
   //     así la preferencia no deja la solicitud colgada si él no responde.
   //     Si el preferido no pasó los filtros (dejó de estar verificado, cambió
   //     cobertura), se ignora y se avisa en `errors` sin bloquear nada.
@@ -559,18 +559,24 @@ export async function notificarTecnicos(
   const preferidoId: string | null = sol.tecnico_preferido_id ?? null
   let preferidoAplicado = false
 
+  // "Primera oferta" = la solicitud aún no tiene ninguna fila en
+  // notificaciones_whatsapp. NO usar `notificados_at`: confirmarHorarioSolicitud
+  // (el camino normal, particular y garantía) lo fija ANTES de llamar a esta
+  // función, así que con él toda oferta parecía un reenvío (2026-10-22).
+  const { data: ofertasPrevias } = await supabase
+    .from('notificaciones_whatsapp')
+    .select('tecnico_id')
+    .eq('solicitud_id', solicitudId)
+  const yaNotificados = new Set(((ofertasPrevias ?? []) as { tecnico_id: string }[]).map(n => n.tecnico_id))
+  const esPrimeraOferta = yaNotificados.size === 0
+
   // 3a. Segunda ola del reparto escalonado: solo a quienes aún no la tienen.
   if (opciones.soloNoNotificados) {
-    const { data: yaNotificados } = await supabase
-      .from('notificaciones_whatsapp')
-      .select('tecnico_id')
-      .eq('solicitud_id', solicitudId)
-    const ids = new Set(((yaNotificados ?? []) as { tecnico_id: string }[]).map(n => n.tecnico_id))
-    tecnicos = tecnicosEnCiudad.filter(t => !ids.has(t.id))
+    tecnicos = tecnicosEnCiudad.filter(t => !yaNotificados.has(t.id))
     if (tecnicos.length === 0) {
       return { notificados: 0, matched: 0, errors: [] }
     }
-  } else if (preferidoId && !sol.notificados_at) {
+  } else if (preferidoId && esPrimeraOferta) {
     const preferido = tecnicosEnCiudad.find(t => t.id === preferidoId)
     if (preferido) {
       tecnicos = [preferido]
@@ -585,10 +591,18 @@ export async function notificarTecnicos(
   // 3c. Reparto escalonado (2026-10-19, ver reparto.service.ts). Solo en la
   //     PRIMERA oferta y sin técnico de preferencia: los que tienen menos
   //     servicios en la semana la reciben primero; el cron la abre al resto
-  //     cuando vence `oferta_abierta_at`. Los reenvíos del admin
-  //     (`notificados_at` ya puesto) siguen saliendo a todos.
+  //     cuando vence `oferta_abierta_at`. Los reenvíos del admin (ya hay
+  //     ofertas previas) siguen saliendo a todos.
+  //     Con el reparto encendido, la oferta al técnico de preferencia también
+  //     se abre al resto si no la acepta en `minutos_ventaja` (así la
+  //     preferencia nunca deja la solicitud quieta esperando un reenvío manual).
   let ofertaAbiertaAt: string | null = null
-  if (!opciones.soloNoNotificados && !preferidoAplicado && !sol.notificados_at && tecnicos.length > 1) {
+  if (preferidoAplicado && tecnicosEnCiudad.length > 1) {
+    const config = await obtenerConfigReparto()
+    if (config.activo) {
+      ofertaAbiertaAt = new Date(Date.now() + config.minutos_ventaja * 60_000).toISOString()
+    }
+  } else if (!opciones.soloNoNotificados && esPrimeraOferta && tecnicos.length > 1) {
     const config = await obtenerConfigReparto()
     if (config.activo) {
       const conteos = await contarServiciosRecientes(tecnicos.map(t => t.id))

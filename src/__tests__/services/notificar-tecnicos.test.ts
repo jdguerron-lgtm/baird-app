@@ -251,11 +251,12 @@ describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
     { tecnico_id: 'tec-002', especialidad: 'Neveras y Nevecones' },
   ]
 
-  function setup(sol: Record<string, unknown>) {
+  function setup(sol: Record<string, unknown>, ofertasPrevias: { tecnico_id: string }[] = []) {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'solicitudes_servicio') return queryBuilder({ data: sol, error: null })
       if (table === 'especialidades_tecnico') return queryBuilder({ data: ESPS, error: null })
       if (table === 'tecnicos') return queryBuilder({ data: [TEC_A, TEC_B], error: null })
+      if (table === 'notificaciones_whatsapp') return queryBuilder({ data: ofertasPrevias, error: null })
       return queryBuilder({ data: null, error: null })
     })
   }
@@ -278,8 +279,21 @@ describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
     expect(body.to).toBe('573001112233')
   })
 
-  it('reenvío (notificados_at ya fijado): la oferta va a todos, preferido incluido', async () => {
+  it('primera oferta tras confirmar horario (notificados_at ya fijado, sin ofertas previas): solo al preferido', async () => {
+    // confirmarHorarioSolicitud fija notificados_at ANTES de llamar a notificarTecnicos.
     setup({ ...SOLICITUD, tecnico_preferido_id: 'tec-002', notificados_at: '2026-10-15T10:00:00Z' })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.notificados).toBe(1)
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).to).toBe('573001112233')
+  })
+
+  it('reenvío (ya hay ofertas previas): la oferta va a todos, preferido incluido', async () => {
+    setup(
+      { ...SOLICITUD, tecnico_preferido_id: 'tec-002', notificados_at: '2026-10-15T10:00:00Z' },
+      [{ tecnico_id: 'tec-002' }],
+    )
 
     const result = await notificarTecnicos('sol-001')
 
@@ -312,7 +326,7 @@ describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
     const GERMAN = { ...TECNICO, id: 'tec-german', nombre_completo: 'German Lento', whatsapp: '3002222222' }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function montar(config: any, solicitud: any = SOLICITUD) {
+    function montar(config: any, solicitud: any = SOLICITUD, previas: { tecnico_id: string }[] = []) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updatesSolicitud: any[] = []
       mockFrom.mockImplementation((table: string) => {
@@ -333,8 +347,19 @@ describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
         if (table === 'tecnicos') return queryBuilder({ data: [CARLOS, GERMAN], error: null })
         if (table === 'config_reparto') return queryBuilder({ data: config ? [config] : null, error: null })
         if (table === 'notificaciones_whatsapp') {
-          // Carlos aceptó 5 servicios esta semana; Germán ninguno.
-          return queryBuilder({ data: Array(5).fill({ tecnico_id: 'tec-carlos' }), error: null })
+          // Conteo semanal (eq estado='aceptado'): Carlos aceptó 5, Germán 0.
+          // Ofertas previas de esta solicitud (eq solicitud_id): `previas`.
+          const b = queryBuilder({ data: null, error: null })
+          let esConteo = false
+          b.eq = vi.fn((col: string, val: unknown) => {
+            if (col === 'estado' && val === 'aceptado') esConteo = true
+            return b
+          })
+          b.then = (resolve: (v: unknown) => void) => Promise.resolve({
+            data: esConteo ? Array(5).fill({ tecnico_id: 'tec-carlos' }) : previas,
+            error: null,
+          }).then(resolve)
+          return b
         }
         return queryBuilder({ data: null, error: null })
       })
@@ -370,21 +395,73 @@ describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
       expect(result.notificados).toBe(2)
     })
 
-    it('los reenvíos (notificados_at ya puesto) salen a todos', async () => {
+    it('primera oferta tras confirmar horario (notificados_at ya fijado) también se escalona', async () => {
       montar(
         { activo: true, minutos_ventaja: 10, max_servicios_semana: 3 },
         { ...SOLICITUD, notificados_at: '2026-10-19T13:00:00Z' },
+      )
+      const result = await notificarTecnicos('sol-001')
+      expect(result.notificados).toBe(1)
+      expect(destinos()).toEqual(['573002222222'])
+    })
+
+    it('los reenvíos (ya hay ofertas previas) salen a todos', async () => {
+      montar(
+        { activo: true, minutos_ventaja: 10, max_servicios_semana: 3 },
+        { ...SOLICITUD, notificados_at: '2026-10-19T13:00:00Z' },
+        [{ tecnico_id: 'tec-otro' }],
       )
       const result = await notificarTecnicos('sol-001')
       expect(result.notificados).toBe(2)
     })
 
     it('segunda ola: solo a quienes aún no tienen la oferta', async () => {
-      montar({ activo: true, minutos_ventaja: 10, max_servicios_semana: 3 })
-      // El mock de notificaciones devuelve a Carlos como ya notificado.
+      montar({ activo: true, minutos_ventaja: 10, max_servicios_semana: 3 }, SOLICITUD, [{ tecnico_id: 'tec-carlos' }])
       const result = await notificarTecnicos('sol-001', { soloNoNotificados: true })
       expect(result.notificados).toBe(1)
       expect(destinos()).toEqual(['573002222222'])
     })
+  })
+})
+
+describe('notificarTecnicos — preferido con reparto encendido', () => {
+  const TEC_A = { ...TECNICO, id: 'tec-001', whatsapp: '3009876543' }
+  const TEC_B = { ...TECNICO, id: 'tec-002', whatsapp: '3001112233' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'msg-1' }] }) })
+  })
+
+  it('va solo al preferido y programa abrirse al resto', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updates: any[] = []
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'solicitudes_servicio') {
+        const b = queryBuilder({ data: { ...SOLICITUD, tecnico_preferido_id: 'tec-002' }, error: null })
+        b.update = vi.fn((p: unknown) => { updates.push(p); return b })
+        return b
+      }
+      if (table === 'especialidades_tecnico') {
+        return queryBuilder({
+          data: [
+            { tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' },
+            { tecnico_id: 'tec-002', especialidad: 'Neveras y Nevecones' },
+          ],
+          error: null,
+        })
+      }
+      if (table === 'tecnicos') return queryBuilder({ data: [TEC_A, TEC_B], error: null })
+      if (table === 'config_reparto') {
+        return queryBuilder({ data: [{ activo: true, minutos_ventaja: 10, max_servicios_semana: 3 }], error: null })
+      }
+      return queryBuilder({ data: [], error: null })
+    })
+
+    const result = await notificarTecnicos('sol-001')
+
+    expect(result.notificados).toBe(1)
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).to).toBe('573001112233')
+    expect(updates.find(u => u.estado === 'notificada').oferta_abierta_at).toBeDefined()
   })
 })
