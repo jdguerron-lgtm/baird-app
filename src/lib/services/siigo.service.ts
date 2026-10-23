@@ -7,6 +7,8 @@
  * Doc: docs/FACTURACION.md § 12.
  */
 
+import { SIIGO } from '@/lib/utils/facturacion'
+
 const BASE = 'https://api.siigo.com'
 
 function partnerId(): string {
@@ -54,6 +56,12 @@ async function siigo<T>(path: string, init: { method?: string; body?: unknown } 
     throw new SiigoError(`Siigo ${res.status}: ${msg || 'error'}`, res.status, data)
   }
   return data as T
+}
+
+/** Vendedor de la cotización: env `SIIGO_SELLER_ID` o Henry Mosquera (808). */
+export function vendedorCotizacionId(): number {
+  const env = Number(process.env.SIIGO_SELLER_ID)
+  return Number.isFinite(env) && env > 0 ? env : SIIGO.SELLER_COTIZACION
 }
 
 /** Id del tipo de comprobante "Cotización": env `SIIGO_COTIZACION_DOC_ID` o el primero activo de tipo C. */

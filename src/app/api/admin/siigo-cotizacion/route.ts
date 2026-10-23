@@ -11,6 +11,7 @@ import {
   SiigoError,
   siigoConfigurado,
   documentoCotizacionId,
+  vendedorCotizacionId,
   existeCliente,
   crearCliente,
   crearCotizacion,
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
       descuento,
       codigoServicio: codigoServicio(sol.id),
       tecnico,
+      sellerId: vendedorCotizacionId(),
     })
     const cot = await crearCotizacion(payload)
 
