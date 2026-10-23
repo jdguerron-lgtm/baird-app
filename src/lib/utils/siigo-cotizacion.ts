@@ -100,7 +100,7 @@ export interface PayloadCotizacion {
  */
 export function armarCotizacionSiigo(
   sol: DatosCotizacionSiigo,
-  opts: { documentId: number; fechaYMD: string; totalBruto: number; descuento: number; codigoServicio: string; tecnico?: string | null },
+  opts: { documentId: number; fechaYMD: string; totalBruto: number; descuento: number; codigoServicio: string; tecnico?: string | null; sellerId?: number },
 ): { payload: PayloadCotizacion; items: ItemFactura[] } {
   const ident = identificacionCliente(sol.cliente_cedula)
   const items = itemsFacturaParticular(sol, opts.totalBruto)
@@ -128,11 +128,16 @@ export function armarCotizacionSiigo(
       document: { id: opts.documentId },
       date: opts.fechaYMD,
       customer: { identification: ident.identificacion, branch_office: 0 },
-      seller: SIIGO.SELLER_FV2,
+      seller: opts.sellerId ?? SIIGO.SELLER_COTIZACION,
       observations,
-      items: items.map((i) => ({
+      // Siigo NO persiste `observations` en cotizaciones (verificado 2026-10-23
+      // con C-1-152), así que cuando el tercero es "consumidor final" los
+      // datos del cliente viajan en la descripción del primer ítem.
+      items: items.map((i, idx) => ({
         code: i.codigo,
-        description: `${i.descripcion} · ${opts.codigoServicio}`,
+        description: (idx === 0 && ident.tipoNombre === 'Consumidor final'
+          ? `${i.descripcion} · ${opts.codigoServicio} · ${datos}`
+          : `${i.descripcion} · ${opts.codigoServicio}`).slice(0, 500),
         quantity: i.cantidad,
         price: i.base,
         ...(pct > 0 ? { discount: pct } : {}),

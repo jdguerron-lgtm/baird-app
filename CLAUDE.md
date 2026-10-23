@@ -158,6 +158,7 @@ SIIGO_USERNAME                    # Usuario de la API de Siigo (mismo que usa el
 SIIGO_ACCESS_KEY                  # credentials.env). Sin ambas, POST /api/admin/siigo-cotizacion responde 503
                                   # (kill-switch). Se obtienen en Siigo Nube → Configuración → Integraciones / API.
 SIIGO_PARTNER_ID                  # OPCIONAL — header Partner-Id, solo letras/números (default BairdApp)
+SIIGO_SELLER_ID                   # OPCIONAL — vendedor de la cotización (default 808 = Henry Mosquera)
 SIIGO_COTIZACION_DOC_ID           # OPCIONAL — id del tipo de comprobante "Cotización"; si falta usa el primer type=C
 FACTURACION_MABE_NIT              # OPCIONAL — NIT de la marca a la que se factura la garantía (hoja "FV MABE")
 FACTURACION_MABE_NOMBRE           # OPCIONAL — razón social (default "MABE COLOMBIA S.A.S.")

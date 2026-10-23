@@ -30,8 +30,13 @@ export const SIIGO = {
   PAGO_BANCOS: 1885,
   PAGO_CREDITO: 1883,
   PAGO_CONTADO: 1882,
-  /** Vendedor que firma las FV-2 (impuestos@). */
-  SELLER_FV2: 802,
+  /**
+   * Vendedor de las FV-2 y de las cotizaciones creadas desde la plataforma:
+   * Henry Mosquera (decisión Juan 2026-10-23; antes 802 Yeferson Medina,
+   * impuestos@). En Siigo el vendedor NO se puede editar después de crear.
+   */
+  SELLER_FV2: 808,
+  SELLER_COTIZACION: 808,
   /** Consumidor final (ya existe como tercero en Siigo). */
   CONSUMIDOR_FINAL_NIT: '222222222222',
   /** Códigos DIAN de tipo de identificación. */
