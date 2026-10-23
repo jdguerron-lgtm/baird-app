@@ -14,6 +14,7 @@ import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
 import { MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
+import { aceptacionCuentaComoConfirmacion } from '@/lib/utils/confirmacion-visita'
 import { obtenerConfigReparto, contarServiciosRecientes, dividirPorPrioridad } from '@/lib/services/reparto.service'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
@@ -423,7 +424,40 @@ export interface NotifyResult {
   errors: string[]
 }
 
-export interface NotificarTecnicosOpciones {
+/**
+ * Texto del pago al técnico: deja claro cuánto es DE ÉL (neto, sin IVA ni
+ * comisión Baird), con "$" y rótulo explícito. Se usa en el primer mensaje
+ * (la oferta) y en la asignación. El diagnóstico paga fijo $35.000.
+ */
+function pagoNetoTecnicoTexto(pagoTecnico: number, tipoSolicitud?: string): string {
+  const visita = tipoSolicitud === 'Diagnóstico' || tipoSolicitud === 'Reparación'
+  return `$${formatCOP(pagoTecnico)} COP — es lo que ganas tú${visita ? ' por la visita' : ' por este servicio'}`
+}
+
+export interface NotificarTecnicosOpts {
+  /**
+   * Técnico que NO debe recibir la oferta (el que acaba de ser liberado —
+   * "No alcanzo" / admin). Ver confirmacion-visita.service.liberarTecnico.
+   */
+  excluirTecnicoId?: string
+  /**
+   * Reoferta por liberación: el parámetro de horario sale con el prefijo
+   * "🚨 URGENTE" para que los demás técnicos la tomen con prioridad.
+   */
+  urgente?: boolean
+  /**
+   * Invitación dirigida (admin, 2026-10-22): la oferta va ÚNICAMENTE a este
+   * técnico, con el prefijo "⭐ PRIORIDAD PARA TI" en el param de horario (sin
+   * plantilla nueva). No lo asigna: él sigue teniendo que aceptar con su
+   * token. Debe ser candidato (especialidad + verificado + ciudad); los
+   * perfiles ocultos al cliente (`visible_para_cliente=false`) SÍ son válidos
+   * aquí. Si no es candidato se retorna error sin enviar nada. Tiene
+   * prioridad sobre `tecnico_preferido_id` del cliente. Con el reparto
+   * escalonado activo, si no acepta en `minutos_ventaja` el cron abre la
+   * oferta al resto (igual que el preferido); si está apagado, el admin la
+   * reabre con "Notificar técnicos".
+   */
+  soloTecnicoId?: string
   /**
    * Segunda ola del reparto escalonado (cron `/api/cron/oferta-escalonada`):
    * envía solo a los candidatos que aún NO tienen oferta para esta solicitud,
@@ -432,9 +466,12 @@ export interface NotificarTecnicosOpciones {
   soloNoNotificados?: boolean
 }
 
+/** Alias del nombre que usa main desde 2026-10-22 (reparto escalonado). */
+export type NotificarTecnicosOpciones = NotificarTecnicosOpts
+
 export async function notificarTecnicos(
   solicitudId: string,
-  opciones: NotificarTecnicosOpciones = {},
+  opts: NotificarTecnicosOpts = {},
 ): Promise<NotifyResult> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
 
@@ -570,8 +607,19 @@ export async function notificarTecnicos(
   const yaNotificados = new Set(((ofertasPrevias ?? []) as { tecnico_id: string }[]).map(n => n.tecnico_id))
   const esPrimeraOferta = yaNotificados.size === 0
 
-  // 3a. Segunda ola del reparto escalonado: solo a quienes aún no la tienen.
-  if (opciones.soloNoNotificados) {
+  if (opts.soloTecnicoId) {
+    // 3a. Invitación dirigida del admin (2026-10-22): solo ese técnico, y solo
+    //     si es candidato real. Un id fuera de la lista NO manda nada.
+    const dirigido = tecnicosEnCiudad.find(t => t.id === opts.soloTecnicoId)
+    if (!dirigido) {
+      return {
+        notificados: 0, matched: 0,
+        errors: ['El técnico elegido no es candidato para esta solicitud (especialidad, verificación o ciudad) — no se envió nada.'],
+      }
+    }
+    tecnicos = [dirigido]
+  } else if (opts.soloNoNotificados) {
+    // 3a'. Segunda ola del reparto escalonado: solo a quienes aún no la tienen.
     tecnicos = tecnicosEnCiudad.filter(t => !yaNotificados.has(t.id))
     if (tecnicos.length === 0) {
       return { notificados: 0, matched: 0, errors: [] }
@@ -588,21 +636,34 @@ export async function notificarTecnicos(
     }
   }
 
-  // 3c. Reparto escalonado (2026-10-19, ver reparto.service.ts). Solo en la
+  // 3c. Reoferta por liberación (2026-10-22): el técnico que acaba de soltar
+  //     el servicio no vuelve a recibir la oferta.
+  if (opts.excluirTecnicoId) {
+    tecnicos = tecnicos.filter(t => t.id !== opts.excluirTecnicoId)
+    if (tecnicos.length === 0) {
+      return {
+        notificados: 0, matched: 0,
+        errors: ['No hay otros técnicos verificados en la ciudad para reofertar — asignar a mano desde el admin.'],
+      }
+    }
+  }
+
+  // 3d. Reparto escalonado (2026-10-19, ver reparto.service.ts). Solo en la
   //     PRIMERA oferta y sin técnico de preferencia: los que tienen menos
   //     servicios en la semana la reciben primero; el cron la abre al resto
   //     cuando vence `oferta_abierta_at`. Los reenvíos del admin (ya hay
   //     ofertas previas) siguen saliendo a todos.
-  //     Con el reparto encendido, la oferta al técnico de preferencia también
-  //     se abre al resto si no la acepta en `minutos_ventaja` (así la
-  //     preferencia nunca deja la solicitud quieta esperando un reenvío manual).
+  //     Con el reparto encendido, la oferta al técnico de preferencia y la
+  //     invitación dirigida del admin también se abren al resto si no la
+  //     aceptan en `minutos_ventaja` (así ninguna deja la solicitud quieta
+  //     esperando un reenvío manual).
   let ofertaAbiertaAt: string | null = null
-  if (preferidoAplicado && tecnicosEnCiudad.length > 1) {
+  if ((preferidoAplicado || opts.soloTecnicoId) && tecnicosEnCiudad.length > 1) {
     const config = await obtenerConfigReparto()
     if (config.activo) {
       ofertaAbiertaAt = new Date(Date.now() + config.minutos_ventaja * 60_000).toISOString()
     }
-  } else if (!opciones.soloNoNotificados && esPrimeraOferta && tecnicos.length > 1) {
+  } else if (!opts.soloNoNotificados && esPrimeraOferta && tecnicos.length > 1) {
     const config = await obtenerConfigReparto()
     if (config.activo) {
       const conteos = await contarServiciosRecientes(tecnicos.map(t => t.id))
@@ -637,7 +698,14 @@ export async function notificarTecnicos(
     .map((parte) => parte?.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .join(', ')
-  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
+  // Reoferta por liberación (2026-10-22): prefijo URGENTE en el horario para
+  // que los demás técnicos la tomen con prioridad (sin plantilla nueva).
+  const horarioBase = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
+  const horario = opts.urgente
+    ? `🚨 URGENTE (técnico liberado) · ${horarioBase}`
+    : opts.soloTecnicoId
+      ? `⭐ PRIORIDAD PARA TI (te la ofrecemos primero) · ${horarioBase}`
+      : horarioBase
 
   // Pre-generar tokens y registrar todas las notificaciones en paralelo
   const tokens = tecnicos.map(() => crypto.randomUUID())
@@ -681,7 +749,8 @@ export async function notificarTecnicos(
           { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: token }] },
         ])
       }
-      const pagoDiagnostico = `${formatCOP(sol.pago_tecnico)} COP`
+      // Solo lo que GANA el técnico (neto; diagnóstico = $35.000 fijo), nunca el precio al cliente.
+      const pagoDiagnostico = pagoNetoTecnicoTexto(sol.pago_tecnico, sol.tipo_solicitud)
       return enviarPlantilla(tecnico.whatsapp, 'solicitud_particular_tecnico_v2', 'es', [
         {
           type: 'body',
@@ -753,7 +822,26 @@ export async function notificarTecnicos(
       })
       .eq('id', solicitudId)
       .is('tecnico_asignado_id', null)
-  } else if (ofertaAbiertaAt) {
+
+    // Bitácora de la invitación dirigida (2026-10-22). Reusa `nota_admin`
+    // (no se toca el CHECK de solicitud_eventos.tipo) con payload.origen,
+    // igual que receptor/evidencia_admin. Best-effort.
+    if (opts.soloTecnicoId) {
+      try {
+        await supabase.from('solicitud_eventos').insert({
+          solicitud_id: solicitudId,
+          tipo: 'nota_admin',
+          estado_previo: sol.estado,
+          estado_nuevo: 'notificada',
+          actor: 'admin',
+          motivo: `Oferta dirigida solo a ${tecnicos[0]?.nombre_completo ?? opts.soloTecnicoId} (invitación prioritaria, sin asignar)`,
+          payload: { origen: 'oferta_dirigida', tecnico_id: opts.soloTecnicoId, oferta_abierta_at: ofertaAbiertaAt },
+        })
+      } catch (err) {
+        console.warn('[notificarTecnicos] no se pudo registrar evento oferta_dirigida:', err)
+      }
+    }
+  } else if (ofertaAbiertaAt && !opts.soloTecnicoId) {
     // A ninguno de los prioritarios le salió el WhatsApp: no hacer esperar
     // la solicitud — abrir de una vez al resto.
     const abierta = await notificarTecnicos(solicitudId, { soloNoNotificados: true })
@@ -888,6 +976,14 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     }
   }
 
+  // Confirmación de visita (2026-10-22): aceptar con la visita a ≤36h ES
+  // confirmar — no se le vuelve a pedir en el recordatorio del día anterior.
+  // Va en el mismo UPDATE para que el trigger limpiar_confirmacion_visita
+  // (que borra la confirmación al cambiar de técnico) la respete.
+  const confirmacionPorAceptacion = aceptacionCuentaComoConfirmacion(slotEfectivo)
+    ? { visita_confirmada_at: new Date().toISOString(), visita_confirmada_por: 'aceptacion' }
+    : {}
+
   // UPDATE atómico — solo asigna si aún no tiene técnico (evita race condition)
   const { data: updated, error: updateErr } = await supabase
     .from('solicitudes_servicio')
@@ -895,6 +991,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       tecnico_asignado_id: notif.tecnico_id,
       estado: estadoAsignacion,
       ...horarioUpdate,
+      ...confirmacionPorAceptacion,
     })
     .eq('id', notif.solicitud_id)
     .is('tecnico_asignado_id', null)  // ← clave anti race-condition
@@ -1012,7 +1109,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // 1.3447 × 0.8, o $35.000 fijo en diagnóstico); se lo mostramos tal cual.
     const pago = sol.es_garantia
       ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
-      : `$${formatCOP(sol.pago_tecnico)} COP`
+      : pagoNetoTecnicoTexto(sol.pago_tecnico, sol.tipo_solicitud)
     const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
 
     // Send assignment template to technician (with client contact + portal link)
@@ -2662,7 +2759,7 @@ export async function enviarServicioAsignadoTecnico(
 ): Promise<{ ok: boolean; error?: string }> {
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, es_garantia, numero_serie_factura, direccion, zona_servicio, pago_tecnico, tecnico_asignado_id')
+    .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, tipo_solicitud, es_garantia, numero_serie_factura, direccion, zona_servicio, pago_tecnico, tecnico_asignado_id')
     .eq('id', solicitudId)
     .single()
 
@@ -2689,7 +2786,7 @@ export async function enviarServicioAsignadoTecnico(
 
   const pago = sol.es_garantia
     ? `Servicio en garantía — pago desde $${formatCOP(PAGO_MINIMO_TECNICO_GARANTIA)} COP`
-    : `$${formatCOP(sol.pago_tecnico)} COP`
+    : pagoNetoTecnicoTexto(sol.pago_tecnico, sol.tipo_solicitud)
 
   try {
     const r = await enviarPlantilla(tecnico.whatsapp, 'servicio_asignado_tecnico_v4', 'es', [

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import {
   enviarEncuestaConfirmacionCliente,
   enviarPagoSaldoCliente,
@@ -42,8 +42,8 @@ const ESTADOS_COBRO_FINAL = new Set(['confirmacion_pendiente', 'completada'])
  */
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await verificarAdmin(req)
-    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const adminEmail = await obtenerEmailAdmin(req)
+    if (!adminEmail) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
@@ -147,9 +147,9 @@ export async function POST(req: NextRequest) {
         tipo: 'cambio_estado_admin',
         estado_previo: sol.estado,
         estado_nuevo: sol.estado,
-        actor: 'admin',
+        actor: adminEmail, // email del admin que firma la request (2026-10-22: antes 'admin' genérico)
         motivo: `Cobro final fijado: $${valorAnterior.toLocaleString('es-CO')} → $${valor.toLocaleString('es-CO')}${motivo ? ` (${motivo})` : ''}`,
-        payload: { valor_anterior: valorAnterior, valor_nuevo: valor, cobro_final: true },
+        payload: { valor_anterior: valorAnterior, valor_nuevo: valor, cobro_final: true, nota: motivo },
       })
       if (auditErr) console.error('[cobro-final] audit falló:', auditErr)
     } catch (err) {

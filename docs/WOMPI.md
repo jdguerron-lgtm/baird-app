@@ -205,6 +205,15 @@ el servicio sigue vivo y el guard quedó vacío, volver a encontrar la misma
 transacción APPROVED en Wompi es un no-op (índice único por
 `transaccion_id`) — no se "re-registra" un pago devuelto.
 
+## Pagos fuera de Wompi `[pagos]` (2026-10-22)
+
+Para pagos de emergencia (transferencia, consignación, efectivo, Nequi/Daviplata) en la ficha `/admin/solicitudes/[id]` → "💵 Registrar pago fuera de Wompi" (`PagoExternoForm` → `POST /api/admin/pagos/externo` → `registrarPagoExterno`). **Exige comprobante** (foto/PDF, subido a `evidencias-servicio/{solicitud}/admin_pago_*`), referencia del pago, fecha y nota del porqué; el actor queda en el historial. Solo admin con escritura; no aplica a garantía ni canceladas.
+
+- Misma tabla `pagos`: `pasarela='externo'`, `transaccion_id='externo-{uuid}'`, `raw._externo={actor, referencia_externa, nota, evidencias}`. El trigger de resumen, `auditar_pagos()` y el Excel de facturación lo cuentan como un pago más. Sin migración.
+- Marca `{tipo}_pagado_at` si cierra el momento (anticipo/abono siempre; saldo solo si el ledger APPROVED cubre el total − descuento; si no, el evento dice cuánto falta). Evento `pago_registrado` 💵 + alerta al equipo; **no** avisa al cliente/técnico.
+- Un pago externo no se devuelve por Wompi (botón oculto, el servicio lo rechaza): usar "Registrar devolución manual".
+- Ojo: `calcularMontoSaldo` solo descuenta anticipos/abonos, no pagos tipo `saldo` (ni Wompi ni externos): si el cliente pagó parte del saldo, el link de Wompi sigue por el total.
+
 ## Reglas de seguridad (no negociables)
 
 1. El monto NUNCA viene del cliente: checkout firmado

@@ -99,6 +99,8 @@ Endpoints protegidos con `verificarAdmin`:
 | `/api/admin/reagendar-solicitud` | POST | Reagendar con calendario (fecha + franja): materializa `fecha_visita_at` y notifica cliente + técnico + supervisores. Avisos no bloqueantes de cupo/fecha (variante `obtenerEmailAdmin`) |
 | `/api/admin/actualizar-valor` | POST | Ajustar el valor al cliente de un servicio particular; reabre aprobación y notifica |
 | `/api/admin/pedir-repuesto-supervisores` | POST | Enviar pedido de repuesto en garantía a supervisores con visibilidad de la marca (variante `obtenerEmailAdmin`) |
+| `/api/admin/confirmar-visita` | POST | Marcar la visita como confirmada por llamada con el técnico (`visita_confirmada_por='admin'`, evento `visita_confirmada`). Variante `obtenerEmailAdmin` (2026-10-22) |
+| `/api/admin/liberar-tecnico` | POST | Soltar al técnico asignado (solo desde `asignada`): vuelve a `notificada`, evento `tecnico_liberado`, aviso al técnico y reoferta URGENTE a los demás. Variante `obtenerEmailAdmin` (2026-10-22) |
 | `/api/carga-masiva` | POST + DELETE | Bulk upload BITÁCORA Excel y borrado masivo |
 | `/api/whatsapp/notify` | POST | Re-notificar técnicos o re-enviar plantilla horario |
 | `/api/cotizacion-precios` | POST | Admin fija precios + tiempo entrega (gate de pricing) |
@@ -119,6 +121,7 @@ No usan Supabase Auth — usan tokens opacos UUID v4. Cada token tiene un propó
 | `/api/diagnostico` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/completar-servicio` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/tecnico/receptor` | `portal_token` (técnico) + `tecnico_asignado_id` | `tecnicos.portal_token` (2026-10-13) |
+| `/api/tecnico/confirmar-visita` | `portal_token` (técnico) + `tecnico_asignado_id` | `tecnicos.portal_token` — "Confirmo" / "No alcanzo" (libera + reoferta) solo sobre servicios propios en `asignada` (2026-10-22) |
 | `/api/receptor/aceptar` | `receptor_token` | `solicitudes_servicio.receptor_token` (UNIQUE parcial, 2026-10-13) |
 | `/api/whatsapp/accept` | token de notificación | `notificaciones_whatsapp.token` |
 | `/api/supervisor/solicitudes` | `portal_token` (supervisor) | `supervisores.portal_token` |
@@ -207,6 +210,8 @@ if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
 | `/api/cron/repuesto-recordatorio` | Diario 09:45 UTC | Recordatorios del ciclo de repuesto (supervisores en garantía, cliente tras la guía) |
 | `/api/cron/wompi-conciliar` | Cada 5 min (pg_cron) | Conciliación de pagos contra Wompi |
 | `/api/cron/resumen-movimientos` | Diario 22:00 UTC (5 pm Bogotá) | Resumen de cambios de estado del día a cada supervisor activo, SOLO sus servicios (alcance server-side `solicitudEnAlcance`). Envía WhatsApp → con `CRON_SECRET` sin configurar cualquiera podría disparar reenvíos (`?force=1`); la bitácora `supervisor_resumenes` evita duplicados por corte |
+| `/api/cron/agenda-tecnicos` | Diario 22:15 UTC (5:15 pm Bogotá) | Recordatorio de agenda de mañana a cada técnico con visitas (servicios Baird + compromisos propios, link al portal). Envía WhatsApp; `tecnicos.agenda_aviso_at` evita duplicados por día salvo `?force=1`. Kill-switch `AGENDA_TECNICOS_ENABLED=false` (2026-10-22) |
+| `/api/cron/alerta-visitas` | Diario 01:00 UTC (8 pm Bogotá) | Texto libre a `WHATSAPP_ALERT_PHONE` con las visitas de mañana sin confirmar / sin técnico y link a cada ficha. Sin estado: dispararlo a mano repite la alerta (2026-10-22) |
 
 Configurados en `vercel.json` (Hobby: diarios; `wompi-conciliar` lo dispara `pg_cron` desde Supabase).
 

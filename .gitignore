@@ -55,3 +55,6 @@ scripts/_*.js
 
 # office lock files (Word/Excel/PowerPoint cuando hay un .docx/.xlsx/.pptx abierto)
 ~$*
+
+# Worktrees de sesiones paralelas (git worktree add .wt/<nombre>)
+.wt/

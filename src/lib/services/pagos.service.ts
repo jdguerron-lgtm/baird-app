@@ -459,6 +459,137 @@ async function registrarEventoPago(
 }
 
 // ─────────────────────────────────────────
+// Pagos recibidos FUERA de Wompi (2026-10-22)
+// ─────────────────────────────────────────
+
+export const METODOS_PAGO_EXTERNO = ['TRANSFERENCIA', 'CONSIGNACION', 'EFECTIVO', 'NEQUI_DAVIPLATA', 'OTRO'] as const
+export type MetodoPagoExterno = typeof METODOS_PAGO_EXTERNO[number]
+
+/** Tope de cordura para un pago externo (COP): evita un cero de más al digitar. */
+export const MAX_PAGO_EXTERNO = 20_000_000
+
+export interface ResultadoPagoExterno {
+  ok: boolean
+  error?: string
+  pagoId?: string
+  /** true si con este pago el momento (anticipo/abono/saldo) quedó marcado como pagado. */
+  cerrado?: boolean
+  /** Lo que aún falta por pagar del total (informativo, relevante en saldo). */
+  faltante?: number
+}
+
+/**
+ * Registra un pago de emergencia recibido por fuera de Wompi (transferencia,
+ * consignación, efectivo…). Exige EVIDENCIA (URLs ya validadas por el caller)
+ * y el actor queda en el historial. Escribe en el MISMO ledger `pagos` con
+ * `pasarela='externo'` y `transaccion_id='externo-{uuid}'`, así el trigger de
+ * resumen, la auditoría y el Excel de facturación lo cuentan igual que a uno
+ * de Wompi. No avisa por WhatsApp al cliente/técnico (una persona ya gestionó
+ * el pago): solo deja evento y alerta al equipo.
+ *
+ * Marca `{tipo}_pagado_at` (guard) cuando el pago cierra el momento: siempre
+ * en anticipo/abono; en saldo solo si el ledger APPROVED cubre el total
+ * (menos descuento) — si no, el evento dice cuánto falta.
+ */
+export async function registrarPagoExterno(params: {
+  solicitudId: string
+  tipo: TipoPago
+  monto: number
+  metodo: MetodoPagoExterno
+  referenciaExterna: string
+  fechaPago: string
+  nota: string
+  evidencias: Array<{ url: string; mime: string | null; nombre: string | null }>
+  actor: string
+}): Promise<ResultadoPagoExterno> {
+  const { solicitudId, tipo, monto, metodo, actor } = params
+  if (!Number.isInteger(monto) || monto <= 0 || monto > MAX_PAGO_EXTERNO) {
+    return { ok: false, error: 'Monto inválido' }
+  }
+  if (params.evidencias.length === 0) return { ok: false, error: 'La evidencia es obligatoria' }
+
+  const sol = await cargarSolicitudPago(solicitudId)
+  if (!sol) return { ok: false, error: 'Solicitud no encontrada' }
+  if (sol.es_garantia) return { ok: false, error: 'Las garantías las paga la marca: no aplica pago del cliente' }
+  if (sol.estado === 'cancelada') return { ok: false, error: 'La solicitud está cancelada' }
+
+  const pagadoAt = new Date(params.fechaPago).toISOString()
+  const { data: fila, error: insErr } = await supabase.from('pagos').insert({
+    solicitud_id: solicitudId,
+    tipo,
+    estado: 'APPROVED',
+    monto,
+    moneda: 'COP',
+    pasarela: 'externo',
+    referencia: referenciaPago(tipo, solicitudId),
+    transaccion_id: `externo-${crypto.randomUUID()}`,
+    metodo,
+    pagado_at: pagadoAt,
+    raw: {
+      _origen: 'admin_externo',
+      _externo: {
+        actor,
+        referencia_externa: params.referenciaExterna,
+        nota: params.nota,
+        evidencias: params.evidencias,
+        registrado_at: new Date().toISOString(),
+      },
+    },
+  }).select('id').single()
+  if (insErr || !fila) {
+    console.error('[pagos] pago externo: insert falló:', insErr)
+    return { ok: false, error: insErr?.message ?? 'No se pudo registrar el pago' }
+  }
+
+  await actualizarResumenPago(solicitudId)
+
+  // ¿El ledger cubre ya el cobro? (todos los APPROVED, sea cual sea el tipo)
+  const { data: aprobados } = await supabase
+    .from('pagos').select('monto').eq('solicitud_id', solicitudId).eq('estado', 'APPROVED')
+  const pagado = (aprobados ?? []).reduce((a, p) => a + (p.monto ?? 0), 0)
+  const total = Math.max(0, totalClienteParaCobro(sol) - descuentoClienteParaCobro(sol))
+  const faltante = Math.max(0, total - pagado)
+
+  let cerrado = false
+  if (tipo !== 'saldo' || (total > 0 && faltante === 0)) {
+    const columna = tipo === 'anticipo' ? 'anticipo_pagado_at' : tipo === 'abono' ? 'abono_pagado_at' : 'saldo_pagado_at'
+    const { data: marcada } = await supabase
+      .from('solicitudes_servicio')
+      .update({ [columna]: pagadoAt })
+      .eq('id', solicitudId)
+      .is(columna, null)
+      .select('id')
+      .maybeSingle()
+    cerrado = Boolean(marcada)
+  }
+
+  const etiqueta = tipo === 'abono' ? 'abono de repuestos' : tipo
+  try {
+    await supabase.from('solicitud_eventos').insert({
+      solicitud_id: solicitudId,
+      tipo: 'pago_registrado',
+      estado_previo: sol.estado,
+      estado_nuevo: sol.estado,
+      actor,
+      motivo: `💵 Pago EXTERNO (${metodo}) de ${etiqueta} por $${formatCOP(monto)} COP registrado por ${actor} — ${params.nota}` +
+        (tipo === 'saldo' && faltante > 0 ? ` · aún faltan $${formatCOP(faltante)} COP` : ''),
+      payload: {
+        pasarela: 'externo', tipo, monto, metodo, pago_id: fila.id,
+        referencia_externa: params.referenciaExterna, fecha_pago: pagadoAt,
+        evidencias: params.evidencias, cerrado, faltante,
+      },
+    })
+  } catch (err) {
+    console.error('[pagos] pago externo: evento falló:', err)
+  }
+  await alertarPagoEquipoBaird(sol,
+    `💵 Pago EXTERNO registrado — ${etiqueta} $${formatCOP(monto)} (${metodo}) por ${actor}\n` +
+    `Cliente: ${sol.cliente_nombre} · servicio ${solicitudId.slice(0, 8)}`)
+
+  return { ok: true, pagoId: fila.id as string, cerrado, faltante }
+}
+
+// ─────────────────────────────────────────
 // Devoluciones desde el admin (2026-10-21)
 // ─────────────────────────────────────────
 
@@ -547,7 +678,9 @@ export async function devolverPagoWompi(params: {
   let respuesta: unknown = null
 
   if (modo === 'wompi') {
-    if (!pago.transaccion_id) return { ok: false, error: 'El pago no tiene transacción de Wompi asociada', ...base }
+    if (!pago.transaccion_id || pago.transaccion_id.startsWith('externo-')) {
+      return { ok: false, error: 'El pago no tiene transacción de Wompi asociada (pago externo): registra la devolución manual', ...base }
+    }
     const motivoWompi = nota ?? `Devolución del ${etiqueta} — servicio ${solicitudId.slice(0, 8)}`
     const reembolso = await crearReembolsoWompi({
       transactionId: pago.transaccion_id,
@@ -704,11 +837,14 @@ export async function listarPagosSolicitud(solicitudId: string): Promise<Array<{
   pagado_at: string | null
   created_at: string
   origen: string | null
+  /** 'externo' = recibido fuera de Wompi (con evidencia en `externo`). */
+  pasarela: string
+  externo: { referencia_externa: string | null; nota: string | null; actor: string | null; evidencias: Array<{ url: string; mime: string | null; nombre: string | null }> } | null
   devolucion: { via: string; at: string; actor: string; nota: string | null; referencia_wompi: string | null } | null
 }>> {
   const { data, error } = await supabase
     .from('pagos')
-    .select('id, tipo, estado, monto, metodo, transaccion_id, pagado_at, created_at, raw')
+    .select('id, tipo, estado, monto, metodo, transaccion_id, pagado_at, created_at, pasarela, raw')
     .eq('solicitud_id', solicitudId)
     .order('created_at', { ascending: true })
   if (error) {
@@ -718,7 +854,22 @@ export async function listarPagosSolicitud(solicitudId: string): Promise<Array<{
   return (data ?? []).map(p => {
     const raw = (p.raw ?? {}) as Record<string, unknown>
     const dev = raw._devolucion as Record<string, unknown> | undefined
+    const ext = raw._externo as Record<string, unknown> | undefined
     return {
+      pasarela: (p.pasarela as string | null) ?? 'wompi',
+      externo: ext
+        ? {
+            referencia_externa: typeof ext.referencia_externa === 'string' ? ext.referencia_externa : null,
+            nota: typeof ext.nota === 'string' ? ext.nota : null,
+            actor: typeof ext.actor === 'string' ? ext.actor : null,
+            evidencias: Array.isArray(ext.evidencias)
+              ? (ext.evidencias as Array<Record<string, unknown>>).flatMap(e =>
+                  typeof e?.url === 'string'
+                    ? [{ url: e.url, mime: typeof e.mime === 'string' ? e.mime : null, nombre: typeof e.nombre === 'string' ? e.nombre : null }]
+                    : [])
+              : [],
+          }
+        : null,
       id: p.id as string,
       tipo: p.tipo as TipoPago,
       estado: p.estado as string,

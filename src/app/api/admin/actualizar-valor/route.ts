@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import {
   enviarValorActualizadoCliente,
@@ -35,8 +35,8 @@ export const maxDuration = 30
  */
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await verificarAdmin(req)
-    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const adminEmail = await obtenerEmailAdmin(req)
+    if (!adminEmail) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
@@ -139,9 +139,9 @@ export async function POST(req: NextRequest) {
         tipo: 'cambio_estado_admin',
         estado_previo: estadoPrevio,
         estado_nuevo: 'cotizacion_enviada',
-        actor: 'admin',
-        motivo: motivo ?? `Valor al cliente actualizado: ${valorAnterior} → ${nuevoValor}`,
-        payload: { valor_anterior: valorAnterior, valor_nuevo: nuevoValor },
+        actor: adminEmail, // email del admin que firma la request (2026-10-22: antes 'admin' genérico)
+        motivo: `Valor al cliente actualizado: $${Number(valorAnterior).toLocaleString('es-CO')} → $${nuevoValor.toLocaleString('es-CO')}${motivo ? ` (${motivo})` : ''}`,
+        payload: { valor_anterior: valorAnterior, valor_nuevo: nuevoValor, nota: motivo },
       })
       if (auditErr) console.error('[actualizar-valor] audit falló:', auditErr)
     } catch (err) {

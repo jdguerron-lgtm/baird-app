@@ -17,7 +17,7 @@
  * cliente vía NEXT_PUBLIC es aceptable y necesario para el guard client-side.
  */
 
-const DEFAULT_ADMIN_EMAILS = ['jdguerron@bairdservice.com']
+const DEFAULT_ADMIN_EMAILS = ['jdguerron@bairdservice.com', 'hmosquera@encompasslatam.com']
 
 function parseList(raw: string | undefined): string[] {
   if (!raw) return []

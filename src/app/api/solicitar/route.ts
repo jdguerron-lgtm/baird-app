@@ -116,9 +116,12 @@ export async function POST(req: NextRequest) {
     // es de un técnico elegible para esta ciudad + tipo de equipo (verificado,
     // visible_para_cliente, con cobertura). Id manipulado u oculto → null =
     // oferta abierta como siempre. notificarTecnicos manda la PRIMERA oferta
-    // solo a él; los reenvíos del admin llegan a todos.
+    // solo a él; los reenvíos del admin llegan a todos. En garantía se ignora
+    // (2026-10-22): el formulario no muestra el selector y la marca manda la
+    // orden, así que un id que llegue igual (form viejo cacheado, request a
+    // mano) no debe desviar la oferta.
     const tecnicoPreferidoId = await resolverTecnicoPreferido({
-      tecnicoId: tecnico_preferido_id,
+      tecnicoId: formData.es_garantia ? null : tecnico_preferido_id,
       ciudad: formData.ciudad_pueblo,
       tipoEquipo: formData.tipo_equipo,
     })

@@ -274,6 +274,13 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Propósito**: antes estos avisos eran SOLO texto libre y Meta los rechazaba si el técnico no había escrito a la línea en 24h.
 - **Fallback**: el texto libre de siempre. Si ambos fallan, `pagos.service` deja un evento ⚠️ `pago_registrado` con `requiere_intervencion_admin` para avisar a mano.
 
+#### `agenda_manana_tecnico_v1` (nueva 2026-10-22 — **en script, SIN subir a Meta**)
+- **Disparo**: cron `GET /api/cron/agenda-tecnicos` (diario 22:15 UTC = 5:15 pm Bogotá) → `enviarAgendaTecnicos()` en `confirmacion-visita.service.ts`. Es el **fallback** del recordatorio diario de agenda: primero va texto libre con la agenda completa (servicios Baird ✅/⏳ + compromisos propios de `agenda_tecnico_bloqueos`); si Meta lo rechaza por ventana 24h cerrada (131047) sale esta plantilla. Idempotente por día CO (`tecnicos.agenda_aviso_at`). Ver `docs/PROTOCOLO-VISITA.md` § Fase 0.
+- **Destino**: técnico con ≥1 visita Baird mañana
+- **Body** (4 params): `tecnico` (primer nombre), `fecha larga` ("viernes, 23 de octubre"), `resumen` ("2 servicios Baird y 1 compromiso propio"), `lista en una línea` (≤650 chars: "8am - 12pm Juan Pérez (Lavadora Mabe, Chapinero) · … · Propio 3pm - 6pm: Taller")
+- **Botón URL dinámica**: `{APP_URL}/tecnico/{{1}}` (portal_token) — display "Abrir mi portal"; ahí confirma cada visita (✅ Confirmo) o marca ❌ No alcanzo (libera + reoferta URGENTE).
+- **Subir**: `node --env-file=.env.local scripts/upload-templates.mjs agenda_manana_tecnico_v1`. Mientras no esté APPROVED, el recordatorio solo llega a los técnicos con ventana 24h abierta.
+
 ### Post-diagnóstico (cliente decide)
 
 #### `verificar_siguiente_paso_v2`

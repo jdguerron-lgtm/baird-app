@@ -347,7 +347,9 @@ Referencia rápida. Valor DB = columna `estado` de `solicitudes_servicio`; label
 
 **Nombres legacy en la historia** — `solicitud_eventos` puede contener `pendiente`, `diagnostico_pendiente`, `cotizacion_aprobada`, `reagendamiento_pendiente`, `verificacion_pendiente`, `en_verificacion` y `cancelada_cliente` (append-only, no se reescriben); `ESTADO_LABELS`/`ESTADO_ESTILOS` mantienen aliases para renderizarlos.
 
-**Reagendar no cambia el estado** — el reagendamiento self-service conserva el estado actual (`asignada` post-aceptación; `notificada`/`pendiente_horario` pre-aceptación) y solo actualiza `horario_confirmado` + `fecha_visita_at`.
+**Reagendar no cambia el estado** — el reagendamiento self-service conserva el estado actual (`asignada` post-aceptación; `notificada`/`pendiente_horario` pre-aceptación) y solo actualiza `horario_confirmado` + `fecha_visita_at` (y, por trigger, borra `visita_confirmada_at`).
+
+**`asignada → notificada` por liberación del técnico (2026-10-22)** — única transición "hacia atrás" permitida: el técnico marca "No alcanzo" en su portal o el admin pulsa "Liberar técnico y reofertar" en la ficha. `liberarTecnico()` (`confirmacion-visita.service.ts`) quita el técnico, suma `tecnico_liberado_count`, deja evento `tecnico_liberado` y reoferta como URGENTE a los demás técnicos. Solo desde `asignada`. Ver `docs/PROTOCOLO-VISITA.md` § Fase 0.
 
 **Estados desde los que el cliente puede cancelar/reagendar** están definidos en `src/types/solicitud.ts` como `ESTADOS_CANCELABLES_POR_CLIENTE` y `ESTADOS_REAGENDABLES_POR_CLIENTE`. Tope: `MAX_REAGENDAMIENTOS_CLIENTE = 2` por solicitud.
 
