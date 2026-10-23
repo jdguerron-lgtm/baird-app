@@ -2078,6 +2078,57 @@ const TEMPLATES = [
       { type: 'FOOTER', text: 'Baird Service' },
     ],
   },
+
+  // 39. Recordatorio diario de agenda al TÉCNICO (2026-10-22). Fallback del
+  //   cron /api/cron/agenda-tecnicos (5:15 pm Bogotá) cuando el texto libre
+  //   no llega (ventana 24h cerrada): resume sus visitas Baird de mañana +
+  //   sus compromisos propios del calendario y lo manda al portal a confirmar
+  //   cada visita o marcar "No alcanzo". Ver docs/PROTOCOLO-VISITA.md § Fase 0.
+  //   {{1}}=primer nombre · {{2}}=fecha larga ("jueves, 23 de octubre") ·
+  //   {{3}}=resumen ("2 servicios Baird y 1 compromiso propio") ·
+  //   {{4}}=lista en una línea ("8am - 12pm Juan Pérez (Lavadora Mabe, Chapinero) ·
+  //   12pm - 3pm Ana Gómez (Nevera LG, Suba) ✓ · Propio 3pm - 6pm: Taller").
+  //   Botón: portal del técnico (portal_token).
+  //   Subir: node --env-file=.env.local scripts/upload-templates.mjs agenda_manana_tecnico_v1
+  {
+    name: 'agenda_manana_tecnico_v1',
+    category: 'UTILITY',
+    language: 'es',
+    components: [
+      {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: 'Tu agenda de mañana',
+      },
+      {
+        type: 'BODY',
+        text:
+          'Hola {{1}}, mañana {{2}} tienes {{3}}:\n\n' +
+          '{{4}}\n\n' +
+          'Entra a tu portal y confirma cada visita Baird. 🔧 Si no alcanzas a alguna, márcala como "No alcanzo" y la reasignamos a tiempo.',
+        example: {
+          body_text: [[
+            'Carlos',
+            'jueves, 23 de octubre',
+            '2 servicios Baird y 1 compromiso propio',
+            '8am - 12pm Juan Pérez (Lavadora Mabe, Chapinero) · 12pm - 3pm Ana Gómez (Nevera LG, Suba) ✓ · Propio 3pm - 6pm: Taller particular',
+          ]],
+        },
+      },
+      { type: 'FOOTER', text: 'Baird Service' },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'URL',
+            text: 'Abrir mi portal',
+            url: `${APP_URL}/tecnico/{{1}}`,
+            example: [`${APP_URL}/tecnico/00000000-0000-0000-0000-000000000000`],
+          },
+        ],
+      },
+    ],
+  },
 ]
 
 async function listExisting() {

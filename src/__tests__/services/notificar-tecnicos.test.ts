@@ -307,3 +307,73 @@ describe('notificarTecnicos — técnico de preferencia (2026-10-15)', () => {
     expect(result.notificados).toBe(2)
   })
 })
+
+describe('notificarTecnicos — invitación dirigida del admin (soloTecnicoId, 2026-10-22)', () => {
+  const TEC_A = { ...TECNICO, id: 'tec-001', nombre_completo: 'Carlos Tecnico', whatsapp: '3009876543' }
+  const TEC_B = { ...TECNICO, id: 'tec-002', nombre_completo: 'Nestor Tecnico', whatsapp: '3001112233' }
+  const ESPS = [
+    { tecnico_id: 'tec-001', especialidad: 'Neveras y Nevecones' },
+    { tecnico_id: 'tec-002', especialidad: 'Neveras y Nevecones' },
+  ]
+  const inserts: Array<{ table: string; row: Record<string, unknown> }> = []
+
+  function setup(sol: Record<string, unknown>) {
+    inserts.length = 0
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'solicitudes_servicio') return queryBuilder({ data: sol, error: null })
+      if (table === 'especialidades_tecnico') return queryBuilder({ data: ESPS, error: null })
+      if (table === 'tecnicos') return queryBuilder({ data: [TEC_A, TEC_B], error: null })
+      const qb = queryBuilder({ data: null, error: null })
+      qb.insert = vi.fn().mockImplementation((row: Record<string, unknown>) => {
+        inserts.push({ table, row })
+        return qb
+      })
+      return qb
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ messages: [{ id: 'msg-1' }] }) })
+  })
+
+  it('manda SOLO al técnico elegido, con prefijo de prioridad y sin asignarlo', async () => {
+    setup({ ...SOLICITUD, estado: 'notificada', notificados_at: '2026-10-20T10:00:00Z' })
+
+    const result = await notificarTecnicos('sol-001', { soloTecnicoId: 'tec-002' })
+
+    expect(result.matched).toBe(1)
+    expect(result.notificados).toBe(1)
+    expect(result.errors).toHaveLength(0)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.to).toBe('573001112233')
+    const params = body.template.components[0].parameters.map((p: { text: string }) => p.text)
+    expect(params.some((t: string) => t.startsWith('⭐ PRIORIDAD PARA TI'))).toBe(true)
+    // Bitácora: nota_admin con payload.origen='oferta_dirigida' (sin tocar el CHECK de tipos)
+    const evento = inserts.find(i => i.table === 'solicitud_eventos')
+    expect(evento?.row.tipo).toBe('nota_admin')
+    expect((evento?.row.payload as { origen: string }).origen).toBe('oferta_dirigida')
+  })
+
+  it('gana sobre el técnico preferido del cliente en la primera oferta', async () => {
+    setup({ ...SOLICITUD, tecnico_preferido_id: 'tec-002', notificados_at: null })
+
+    const result = await notificarTecnicos('sol-001', { soloTecnicoId: 'tec-001' })
+
+    expect(result.notificados).toBe(1)
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.to).toBe('573009876543')
+  })
+
+  it('id que no es candidato: no envía nada y lo dice en errors', async () => {
+    setup({ ...SOLICITUD, notificados_at: '2026-10-20T10:00:00Z' })
+
+    const result = await notificarTecnicos('sol-001', { soloTecnicoId: 'tec-999' })
+
+    expect(result.notificados).toBe(0)
+    expect(result.matched).toBe(0)
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(result.errors[0]).toContain('no es candidato')
+  })
+})

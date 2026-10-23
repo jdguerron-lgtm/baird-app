@@ -438,6 +438,15 @@ export interface SolicitudServicio extends Omit<SolicitudFormData, 'pago_tecnico
   cancelado_tarde?: boolean
   reagendamientos_count?: number
   ultimo_reagendado_at?: string
+  // Confirmación de visita por el técnico (2026-10-22, mig
+  // 20261022_confirmacion_visita): el técnico confirma desde su portal, la
+  // aceptación a ≤36h cuenta como confirmación, o el admin confirma por
+  // llamada. Se limpia sola (trigger) si cambia la fecha o el técnico.
+  // Ver docs/PROTOCOLO-VISITA.md § "Fase 0".
+  fecha_visita_at?: string | null
+  visita_confirmada_at?: string | null
+  visita_confirmada_por?: 'tecnico' | 'aceptacion' | 'admin' | null
+  tecnico_liberado_count?: number
 }
 
 // Evento append-only en la tabla solicitud_eventos.

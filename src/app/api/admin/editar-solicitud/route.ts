@@ -1,6 +1,6 @@
 import { after, NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import { geocodificarYGuardar } from '@/lib/services/geocoding.service'
 import { TIPOS_EQUIPO } from '@/types/solicitud'
 import { phoneToDigits, isMobileColombiano } from '@/lib/utils/phone'
@@ -30,7 +30,7 @@ export const maxDuration = 30
  *
  * Toda edición queda registrada en `solicitud_eventos` con:
  *   tipo = 'nota_admin'
- *   actor = 'admin'
+ *   actor = email del admin autenticado
  *   payload = { cambios: { campo: { previo, nuevo } } }
  *
  * NO envía WhatsApp automáticamente — si el admin quiere notificar al
@@ -38,8 +38,8 @@ export const maxDuration = 30
  */
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await verificarAdmin(req)
-    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const adminEmail = await obtenerEmailAdmin(req)
+    if (!adminEmail) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
         tipo: 'nota_admin',
         estado_previo: actual.estado,
         estado_nuevo: actual.estado, // no cambia el estado por una edición de campos
-        actor: 'admin',
+        actor: adminEmail, // email del admin que firma la request (2026-10-22: antes 'admin' genérico)
         motivo: motivo ?? 'Edición manual de campos por admin',
         payload: { campos_modificados: diff },
       })

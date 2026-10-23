@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import Script from 'next/script'
+import { Analytics } from '@vercel/analytics/next'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
 import RedireccionRecuperacion from '@/components/RedireccionRecuperacion'
@@ -58,6 +60,12 @@ export default function RootLayout({
         {children}
         <RedireccionRecuperacion />
         <BotonWhatsAppFlotante />
+        {/* Vercel Web Analytics + Speed Insights (plan Pro, 2026-10-22): tráfico
+            por ruta y Core Web Vitals reales (LCP, INP = latencia al teclear/
+            interactuar) por página. No hacen nada hasta activarlos en el
+            dashboard del proyecto (Analytics / Speed Insights → Enable). */}
+        <Analytics />
+        <SpeedInsights />
 
         {/* Google tag (gtag.js) — un solo loader para Google Ads (conversiones)
             y Google Analytics 4 (tráfico + eventos). Ambos config comparten

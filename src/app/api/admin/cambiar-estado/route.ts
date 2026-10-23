@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { verificarAdmin } from '@/lib/auth/admin'
+import { obtenerEmailAdmin } from '@/lib/auth/admin'
 import { ESTADOS_VALIDOS } from '@/lib/constants/estados'
 import {
   notificarCambioEstado,
@@ -27,12 +27,12 @@ export const maxDuration = 30
  * avisar al cliente/técnico, usa el botón "Reenviar último mensaje".
  *
  * Toda transición queda registrada en `solicitud_eventos`:
- *   tipo = 'cambio_estado_admin', actor = 'admin'
+ *   tipo = 'cambio_estado_admin', actor = email del admin autenticado
  */
 export async function POST(req: NextRequest) {
   try {
-    const isAdmin = await verificarAdmin(req)
-    if (!isAdmin) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    const adminEmail = await obtenerEmailAdmin(req)
+    if (!adminEmail) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
         tipo: 'cambio_estado_admin',
         estado_previo: actual.estado,
         estado_nuevo: nuevoEstado,
-        actor: 'admin',
+        actor: adminEmail, // email del admin que firma la request (2026-10-22: antes 'admin' genérico)
         motivo: motivo ?? 'Cambio manual de estado por admin',
       })
       if (auditErr) console.error('[cambiar-estado] audit falló:', auditErr)

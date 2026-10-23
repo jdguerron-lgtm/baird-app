@@ -10,7 +10,11 @@ import {
 /**
  * POST /api/whatsapp/notify
  *
- * Requiere autenticación de admin. Body: { solicitudId: string }
+ * Requiere autenticación de admin. Body: { solicitudId: string, soloTecnicoId?: string }
+ *
+ * `soloTecnicoId` (2026-10-22, invitación dirigida): la oferta va solo a ese
+ * técnico con prefijo "⭐ PRIORIDAD PARA TI". No lo asigna — él acepta con su
+ * token como siempre. Candidatos válidos: GET /api/admin/candidatos-oferta.
  *
  * Branch por estado (customer-first scheduling, v2):
  *  - pendiente_horario o sin_agendar (cliente no ha confirmado horario, o
@@ -32,6 +36,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
     const { solicitudId } = body
+    const soloTecnicoId: string | undefined =
+      typeof body.soloTecnicoId === 'string' && body.soloTecnicoId.trim() ? body.soloTecnicoId.trim() : undefined
 
     if (!solicitudId || typeof solicitudId !== 'string') {
       return NextResponse.json(
@@ -115,8 +121,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Cliente ya confirmó horario → re-notificar técnicos compatibles.
-    const result = await notificarTecnicos(solicitudId)
+    // Cliente ya confirmó horario → re-notificar técnicos compatibles
+    // (o solo al elegido, si el admin dirigió la oferta).
+    const result = await notificarTecnicos(solicitudId, soloTecnicoId ? { soloTecnicoId } : {})
 
     return NextResponse.json({
       success: true,
@@ -125,8 +132,11 @@ export async function POST(req: NextRequest) {
       matched: result.matched,
       errors: result.errors.length,
       diagnostico: result.errors,
+      dirigida: !!soloTecnicoId,
       mensaje: result.notificados > 0
-        ? `${result.notificados} tecnico(s) notificado(s) por WhatsApp`
+        ? soloTecnicoId
+          ? 'Oferta enviada solo a ese técnico con prioridad. Si no acepta, vuelve a "Notificar técnicos" para abrirla a todos.'
+          : `${result.notificados} tecnico(s) notificado(s) por WhatsApp`
         : result.matched > 0
           ? `Se encontraron ${result.matched} tecnico(s) pero fallo el envio: ${result.errors.join('; ')}`
           : result.errors.length > 0

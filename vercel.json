@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["gru1"],
+  "regions": ["iad1"],
   "crons": [
     {
       "path": "/api/cron/horario-recordatorio",
@@ -17,6 +17,14 @@
     {
       "path": "/api/cron/resumen-movimientos",
       "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cron/agenda-tecnicos",
+      "schedule": "15 22 * * *"
+    },
+    {
+      "path": "/api/cron/alerta-visitas",
+      "schedule": "0 1 * * *"
     }
   ]
 }
