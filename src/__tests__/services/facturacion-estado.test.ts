@@ -138,7 +138,7 @@ describe('guard solo lectura — excepción de facturación', () => {
   const b = (url: string, metodo: string) => debeBloquearSoloLectura(url, metodo, ctx)
 
   it('la única escritura permitida es exactamente /api/admin/facturacion-estado', () => {
-    expect(API_LECTURA_ESCRITURA_PERMITIDA).toEqual(['/api/admin/facturacion-estado'])
+    expect(API_LECTURA_ESCRITURA_PERMITIDA).toEqual(['/api/admin/facturacion-estado', '/api/admin/siigo-cotizacion'])
     expect(b('/api/admin/facturacion-estado', 'POST')).toBe(false)
     expect(b('https://lineablanca.bairdservice.com/api/admin/facturacion-estado', 'POST')).toBe(false)
   })

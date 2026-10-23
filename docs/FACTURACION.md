@@ -352,6 +352,12 @@ de allowlist, 200 con rol lectura y con admin, 400/404/409).
 
 ---
 
+## 12. Cotización precargada en Siigo (2026-10-22)
+
+Botón **📄 Cotización en Siigo** en el bloque 🧾 de `/admin/solicitudes/[id]` (solo particular con facturación `pendiente`; admin y rol lectura). `POST /api/admin/siigo-cotizacion` busca el tercero por cédula/NIT (lo crea si no existe; sin documento usa consumidor final y deja nombre/tel/dirección en observaciones) y crea la cotización con los ítems de `itemsFacturaParticular` (precio sin IVA + IVA 19 %, descuento por código como % por ítem). Email del cliente: el del pagador Wompi si existe. Deja evento `nota_admin` `origen='siigo_cotizacion'` (evita duplicados; 409 salvo `forzar`). Código: `siigo.service.ts`, `utils/siigo-cotizacion.ts`.
+
+Env (sin ellas el endpoint responde 503): `SIIGO_USERNAME`, `SIIGO_ACCESS_KEY`; opcionales `SIIGO_PARTNER_ID`, `SIIGO_COTIZACION_DOC_ID` (si falta, usa el primer tipo de comprobante `type=C`). **Sin probar contra Siigo real** — falta validar el alta de tercero (ciudad DANE) y el tipo de cotización.
+
 ## Archivos
 
 | Archivo | Rol |
