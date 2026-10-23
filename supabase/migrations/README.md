@@ -68,6 +68,8 @@ Migraciones del proyecto. **Aplican manualmente** en el SQL editor del dashboard
 | `20261015_tecnico_preferido.sql` | ✅ Aplicada en prod 2026-10-15 (vía MCP Supabase; verificadas 2 columnas + índice; Henry Mosquera y Juan David Guerrón en `visible_para_cliente=false`) | Técnico de preferencia del cliente: `tecnicos.visible_para_cliente boolean NOT NULL DEFAULT true` (false = perfil interno: no sale en el selector de `/solicitar` pero sigue recibiendo ofertas abiertas; el UPDATE del archivo deja en false a Henry Mosquera y Juan David Guerrón) + `solicitudes_servicio.tecnico_preferido_id uuid` FK a `tecnicos` ON DELETE SET NULL con índice parcial. Incluye `NOTIFY pgrst`. Aditiva e idempotente. Sin aplicar: el selector no aparece (`listarTecnicosElegibles` falla al seleccionar la columna → `[]`) y `/api/solicitar` no incluye la columna en el insert cuando no hay preferencia, así que nada se rompe. Rollback en el encabezado |
 | `20261019_codigos_descuento.sql` | ✅ Aplicada en prod 2026-10-20 (vía MCP Supabase; verificadas tabla con RLS + 4 columnas; flujo /pago/saldo probado con una solicitud QA ya borrada) | Códigos de descuento (2026-10-19): tabla `codigos_descuento` (`codigo` UNIQUE con CHECK de formato, `tipo` porcentaje/valor, `valor` > 0 y ≤ 100 si es %, `activo`, `vigente_desde/hasta`, `max_usos`, `creado_por`; RLS habilitada sin policies = solo service_role) + columnas snapshot en `solicitudes_servicio`: `codigo_descuento_id uuid` FK ON DELETE SET NULL, `descuento_codigo text`, `descuento_tipo text` CHECK, `descuento_valor numeric(12,2)` + índice parcial. Incluye `NOTIFY pgrst`. Aditiva e idempotente; sin código el sistema no cambia. ⚠️ El select `CAMPOS_SOLICITUD_PAGO` de `pagos.service.ts` nombra las columnas nuevas: desplegar el código sin la migración rompe `/pago/anticipo`, `/pago/saldo` y la conciliación (PGRST204/42703). Rollback en el encabezado |
 | `20261020_supervisor_resumenes.sql` | ✅ Aplicada en prod 2026-10-21 (vía MCP Supabase; verificado RLS on + 0 policies, 11 columnas, índice y CHECK de `canal`; INSERT de prueba en transacción revertida) | Resumen diario de movimientos a supervisores: tabla `supervisor_resumenes` (bitácora por supervisor + corte 17:00 CO: `canal` con CHECK texto/plantilla/filtrado/error/dry, conteos, `partes`, `error`, `texto`; FK a `supervisores` CASCADE; índice `(supervisor_id, corte_at DESC)`; RLS on sin policies = solo service_role). La lee/escribe `GET /api/cron/resumen-movimientos` para no reenviar el mismo corte si Vercel reintenta. Incluye `NOTIFY pgrst`. Aditiva e idempotente. **Sin aplicar el cron funciona igual** (loguea `supervisor_resumenes no disponible` y envía), solo pierde la idempotencia. Rollback: `DROP TABLE IF EXISTS public.supervisor_resumenes;` |
+| `20261019_reparto_escalonado.sql` | ✅ Aplicada en prod 2026-10-22 (vía MCP Supabase; verificadas fila `config_reparto` activo/10 min/tope 3, RLS on, columna `oferta_abierta_at` y job `oferta-escalonada-1min` activo) | Reparto escalonado de ofertas: tabla `config_reparto` (1 fila, RLS sin policies; arranca `activo=true`, 10 min, tope 3 servicios/7 días) + `solicitudes_servicio.oferta_abierta_at timestamptz` con índice parcial + job pg_cron `oferta-escalonada-1min` (secreto desde Vault `cron_secret`). Aditiva e idempotente. Sin aplicar: ofertas a todos como antes y `/admin/reparto` muestra aviso. Rollback en el encabezado |
+| `20261022_facturacion_estado.sql` | ✅ **Aplicada en prod 2026-10-22** (vía MCP Supabase; 5 columnas, CHECK e índice verificados; 54 completadas quedaron `pendiente`). Antes decía: aplicar ANTES de desplegar el código (vía MCP Supabase o SQL editor; verificación SQL en el encabezado del archivo) | Seguimiento de facturación (2026-10-22): 5 columnas en `solicitudes_servicio` — `facturacion_estado TEXT NOT NULL DEFAULT 'pendiente'` con CHECK `pendiente/facturada/no_aplica`, `factura_numero TEXT` (FV de Siigo, obligatorio al marcar facturada), `facturada_at`, `facturada_por` (email del panel), `facturacion_nota` — + índice parcial `idx_solicitudes_facturacion_pendiente (estado, facturacion_estado) WHERE completada AND pendiente`. Las escribe solo `POST /api/admin/facturacion-estado` (admin **o rol lectura**, con evento `nota_admin` origen `facturacion_estado`); las leen la lista/ficha admin, el KPI "Sin facturar" y los exports de liquidaciones. Incluye `NOTIFY pgrst`. Aditiva e idempotente. ⚠️ Sin aplicar, la lista y la ficha de `/admin/solicitudes` fallan al seleccionar `facturacion_estado` (42703). Rollback en el encabezado |
 | `20261013_tecnico_auxiliares.sql` | ✅ Aplicada en prod 2026-10-14 (vía MCP Supabase; primer auxiliar insertado a mano: Lynn Mari Bonilla → Néstor Castro, pendiente de verificar) | Equipo que visita: tabla `tecnico_auxiliares` (auxiliares del técnico: nombre, tipo/número de documento con CHECK, `foto_perfil_url` NOT NULL, `whatsapp`, `estado_verificacion` CHECK pendiente/verificado/rechazado + `fecha_verificacion`/`verificado_por`/`nota_verificacion`, `acompana_por_defecto`, `activo` (baja lógica), `autorizacion_datos_at` NOT NULL + `autorizacion_version`; FK a `tecnicos` CASCADE; índice por técnico; único parcial `(tecnico_id, numero_documento) WHERE activo`; RLS on sin policies — solo service_role) + columna `solicitudes_servicio.auxiliares_ids UUID[]` (NULL = nunca definido, `{}` = va solo). Incluye `NOTIFY pgrst`. Aditiva e idempotente. Sin aplicar, todo degrada a "sin equipo" (solo `POST /api/tecnico/equipo` responde 503). Rollback en el encabezado |
 | `20261013_liquidaciones_tecnico.sql` | ✅ Aplicada en prod 2026-10-13 (vía MCP Supabase, verificado RLS on + índice único) | Pagos a técnicos: tablas `liquidaciones_tecnico` (cabecera: técnico, estado pendiente/pagada/anulada con CHECK, servicios, total, nota, `referencia_pago`, `pagada_at`/`anulada_at`/`anulada_detalle`, quién creó/pagó/anuló) y `liquidaciones_tecnico_items` (un renglón por servicio completado con `monto` snapshot, `es_garantia`, `fecha_cierre`, `detalle` JSONB del cálculo; FK a cabecera CASCADE y a `solicitudes_servicio`/`tecnicos` RESTRICT; **índice único por `solicitud_id`** = un servicio no se liquida dos veces). RLS on sin policies (solo service_role). Incluye `NOTIFY pgrst`. Aditiva e idempotente. Sin aplicar, `/admin/pagos-tecnicos` responde error al cargar (el resto del sistema no cambia). Rollback en el encabezado |
 | `20261011_agenda_tecnico_bloqueos.sql` | aplicada vía MCP (2026-10-11; verificado rls_on=true, 0 policies) | Agenda del técnico: tabla `agenda_tecnico_bloqueos` (compromisos fuera de la plataforma por día + franja: `tecnico_id` FK CASCADE, `fecha DATE`, `franja` CHECK con los 4 valores de `FRANJAS_HORARIO`, `titulo` ≤ 80, `nota` ≤ 300, `bloquea_franja`). Índice `(tecnico_id, fecha)`. RLS on sin policies — solo service_role (`/api/tecnico/agenda`, `agenda.service`). Si la lectura de bloqueos falla, `/api/tecnico/agenda` responde `bloqueosDisponibles:false` (el calendario sigue mostrando los servicios Baird) y `tecnicoOcupadoEnSlot` cuenta 0 bloqueos (fail-open). Incluye `NOTIFY pgrst`. Aditiva e idempotente. Rollback: `DROP TABLE public.agenda_tecnico_bloqueos;` |
@@ -271,6 +273,66 @@ FROM tecnicos
 WHERE coalesce(array_length(ciudades_cobertura, 1), 0) = 0
   AND ciudad_pueblo IS NOT NULL AND btrim(ciudad_pueblo) <> '';
 ```
+
+## Correcciones manuales de datos (sin migración)
+
+Ajustes puntuales a filas de producción que NO cambian el schema. Se aplican a
+mano en el SQL Editor **solo con OK explícito de Juan**; quedan aquí como
+registro y para poder repetir la verificación.
+
+### 2026-10-22 — `fecha_visita_at` con año imposible (3 solicitudes)
+
+**Causa.** Dos vías dejaban un año absurdo en `solicitudes_servicio.fecha_visita_at`
+(la fecha materializada de la visita: alimenta el cupo por franja, el calendario
+admin, `/admin/incumplidos` y el resumen diario a supervisores):
+
+1. `POST /api/admin/reagendar-solicitud` solo validaba el formato `YYYY-MM-DD` y
+   `materializarFechaVisita` acepta cualquier año → un año mal tecleado en el
+   `<input type="date">` de `/admin/solicitudes/[id]` pasaba derecho
+   (órdenes 9415695001 → `2006-10-20` y 9415696056 → `2008-10-21`, ambas con
+   evento `nota_admin` / `payload.origen='reagendamiento_admin'` del 2026-10-16).
+2. `parsearFechaVisita` sumaba +1 año a cualquier fecha ya pasada → una opción
+   vencida del formulario confirmada semanas después quedaba un año adelante
+   (orden 9415568723: "sábado, 29 de agosto · 8am-12pm", creada 2026-08-25,
+   quedó `2027-08-29`).
+
+**Código (mismo PR):** una sola función `validarFechaVisita`
+(`src/lib/utils/fecha-visita.ts`: no anterior a hoy CO, no > 180 días, día
+real) usada por `validarHorarioAgendable` (todas las vías del cliente y la
+aceptación del técnico) y por el route admin (400 + `motivo`); la página pone
+`rangoFechaVisita()` como `min`/`max`. `parsearFechaVisita` solo rota al año
+siguiente si la fecha pasó Y el año siguiente la deja a < 180 días (cruce
+dic → ene); si no, conserva el año de la referencia y se rechaza como pasada.
+
+**Corrección de datos — APLICADA en prod el 2026-10-22 vía MCP con OK explícito
+de Juan.** Antes: 9415568723 `2027-08-29` (completada), 9415695001 `2006-10-20`
+(completada), 9415696056 `2008-10-21` (esperando_repuesto). Después: las 3 en
+2026, la consulta de verificación devolvió 0 filas y ninguna de las 101
+solicitudes con `fecha_visita_at` queda a más de 180 días (rango
+2026-05-30 … 2026-10-31). Se deja el SQL para repetir la verificación:
+
+```sql
+-- Antes: ver el estado actual de las 3 filas
+SELECT numero_serie_factura, horario_confirmado, fecha_visita_at, estado, created_at
+FROM solicitudes_servicio
+WHERE numero_serie_factura IN ('9415695001', '9415696056', '9415568723');
+
+-- Corrección (el horario_confirmado ya dice el día correcto; solo se arregla el año)
+UPDATE solicitudes_servicio SET fecha_visita_at = '2026-10-20T13:00:00Z' WHERE numero_serie_factura = '9415695001';
+UPDATE solicitudes_servicio SET fecha_visita_at = '2026-10-21T13:00:00Z' WHERE numero_serie_factura = '9415696056';
+UPDATE solicitudes_servicio SET fecha_visita_at = '2026-08-29T13:00:00Z' WHERE numero_serie_factura = '9415568723';
+
+-- Verificación: no debe quedar ninguna fila con año fuera de 2026
+SELECT id, numero_serie_factura, horario_confirmado, fecha_visita_at, estado
+FROM solicitudes_servicio
+WHERE fecha_visita_at < '2026-01-01' OR fecha_visita_at >= '2027-01-01';
+```
+
+> Los tres timestamps son las 8:00 hora Colombia (franja `8am-12pm`) del día
+> que dice `horario_confirmado`, igual que los materializa el código (hora de
+> inicio de franja + 5 h). La consulta de verificación hay que ajustarla al
+> cambiar de año (en enero de 2027 la ventana válida pasa a `2026-07-01` /
+> `2027-07-01`, por ejemplo).
 
 ## Rollback
 

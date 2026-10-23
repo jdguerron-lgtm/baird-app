@@ -13,7 +13,7 @@ import { PAGO_MINIMO_TECNICO_GARANTIA, calcularTarifaMABE, type ComplejidadServi
 import { cityTokenForMatch, normalizeForMatch } from '@/lib/utils/format'
 import { TIPOS_EQUIPO, precioClienteServicio, type ChecklistServicio } from '@/types/solicitud'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
-import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { rangoFechaVisita, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
 import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
@@ -26,6 +26,8 @@ import MediaEvidencia from '@/components/ui/MediaEvidencia'
 import EvidenciaAdminSeccion from '@/components/admin/EvidenciaAdminSeccion'
 import PagoExternoForm from '@/components/admin/PagoExternoForm'
 import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
+import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
+import type { FacturacionEstado } from '@/types/solicitud'
 
 interface Solicitud {
   id: string
@@ -75,6 +77,12 @@ interface Solicitud {
   visita_confirmada_at?: string | null
   visita_confirmada_por?: 'tecnico' | 'aceptacion' | 'admin' | null
   tecnico_liberado_count?: number | null
+  // Seguimiento de facturación (2026-10-22, mig 20261022_facturacion_estado).
+  facturacion_estado?: FacturacionEstado | null
+  factura_numero?: string | null
+  facturada_at?: string | null
+  facturada_por?: string | null
+  facturacion_nota?: string | null
 }
 
 interface Tecnico {
@@ -511,6 +519,16 @@ export default function SolicitudDetalle() {
   // Franjas sin cupo para la fecha elegida — se MUESTRAN como aviso pero NO se
   // bloquean (el admin puede forzar). El guard real (no bloqueante) está en el route.
   const franjasLlenasReagenda = useFranjasLlenas(fechaReagenda)
+  // Rango admisible de la fecha (hoy / hoy+180 días CO): min/max del input y
+  // chequeo previo al POST con la MISMA función que el route (validarFechaVisita
+  // → 400). Así una fecha ya pasada o un año mal tecleado ("2006") no deja
+  // fecha_visita_at en un día imposible. "Hoy" pasa (el route lo avisa).
+  const [rangoFechaReagenda] = useState(() => rangoFechaVisita())
+  const errorRangoFechaReagenda = (() => {
+    if (!fechaReagenda) return null
+    const v = validarFechaVisita(fechaReagenda)
+    return v.ok ? null : v.error
+  })()
 
   const handleDescargarResumen = async () => {
     setErrorExport(null)
@@ -647,6 +665,7 @@ export default function SolicitudDetalle() {
   async function handleReagendar() {
     if (!solicitud) return
     if (!fechaReagenda) { setResultadoReagenda({ ok: false, mensaje: 'Elegí una fecha.' }); return }
+    if (errorRangoFechaReagenda) { setResultadoReagenda({ ok: false, mensaje: errorRangoFechaReagenda }); return }
     if (!franjaReagenda) { setResultadoReagenda({ ok: false, mensaje: 'Elegí una franja horaria.' }); return }
 
     const llena = franjasLlenasReagenda.includes(franjaReagenda)
@@ -1156,6 +1175,7 @@ export default function SolicitudDetalle() {
       e.tipo === 'comprobante_envio' ||
       e.tipo === 'pago_registrado' ||
       (e.tipo === 'nota_admin' && !!(e.payload as { campos_modificados?: unknown } | null)?.campos_modificados) ||
+      (e.tipo === 'nota_admin' && (e.payload as { origen?: unknown } | null)?.origen === 'facturacion_estado') ||
       esEventoEvidenciaAdmin(e) ||
       (e.tipo !== 'nota_admin' && e.tipo !== 'llamada_admin' && e.tipo !== 'llamada_tecnico' && e.tipo !== 'comprobante_envio' && e.tipo !== 'mensaje_cliente' && e.tipo !== 'pago_registrado' && e.estado_previo !== e.estado_nuevo),
     ))
@@ -1407,6 +1427,54 @@ export default function SolicitudDetalle() {
           {errorExport}
         </div>
       )}
+
+      {/* Resumen de facturación (2026-10-22) — lo primero que se ve en cada
+          servicio: código del servicio (el que lleva el export de Siigo), N° de
+          la FV si ya se marcó, total cotizado y nota. Detalle/edición abajo en
+          el bloque "🧾 Facturación". */}
+      {(() => {
+        const estadoFact: FacturacionEstado = solicitud.facturacion_estado ?? 'pendiente'
+        const totalCot = Number((solicitud as unknown as { cotizacion?: { total?: number | null } | null }).cotizacion?.total ?? 0)
+        const estiloFact =
+          estadoFact === 'facturada' ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+            : estadoFact === 'no_aplica' ? 'bg-gray-50 border-gray-200 text-gray-600'
+            : 'bg-amber-50 border-amber-200 text-amber-900'
+        return (
+          <div className={`mb-6 rounded-xl border p-4 flex flex-wrap items-center gap-x-8 gap-y-2 ${estiloFact}`}>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider opacity-70">Código del servicio</p>
+              <p className="font-mono text-sm font-semibold">{codigoServicio(solicitud.id)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider opacity-70">🧾 Factura</p>
+              <p className="text-sm font-semibold">
+                {estadoFact === 'facturada'
+                  ? <span className="font-mono">{solicitud.factura_numero ?? 'Facturada'}</span>
+                  : estadoFact === 'no_aplica' ? 'No aplica'
+                  : solicitud.estado === 'completada' ? 'Sin facturar' : 'Aún no aplica'}
+              </p>
+              {estadoFact === 'facturada' && solicitud.facturada_at && (
+                <p className="text-[11px] opacity-70">
+                  {new Date(solicitud.facturada_at).toLocaleDateString('es-CO')}
+                  {solicitud.facturada_por ? ` · ${solicitud.facturada_por}` : ''}
+                </p>
+              )}
+            </div>
+            {totalCot > 0 && (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider opacity-70">Total cotizado</p>
+                <p className="text-sm font-semibold">${formatCOP(totalCot)} COP</p>
+              </div>
+            )}
+            {solicitud.facturacion_nota && (
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] uppercase tracking-wider opacity-70">Nota</p>
+                <p className="text-sm truncate" title={solicitud.facturacion_nota}>{solicitud.facturacion_nota}</p>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -1892,6 +1960,17 @@ export default function SolicitudDetalle() {
           )
         })()}
 
+        {/* 🧾 Facturación (2026-10-22) — seguimiento facturada / no facturada por
+            servicio, en ambos flujos. Único bloque operable por el rol lectura
+            (logística): POST /api/admin/facturacion-estado. */}
+        <FacturacionSolicitud
+          solicitud={solicitud}
+          onActualizada={(f) => {
+            setSolicitud((prev) => (prev ? { ...prev, ...f } : prev))
+            recargarEventos()
+          }}
+        />
+
         {/* Diagnosis & Fault Code — visible para warranty Y particular cuando hay diagnóstico */}
         {(() => {
           const triaje = (solicitud as unknown as Record<string, unknown>).triaje_resultado as Record<string, unknown> | null
@@ -2188,8 +2267,8 @@ export default function SolicitudDetalle() {
           Elegí la nueva fecha y franja en el calendario. Al guardar se{' '}
           <strong>notifica por WhatsApp</strong> al cliente, al técnico asignado y a
           los supervisores con visibilidad del servicio, y la fecha queda cargada en
-          la vista <strong>Calendario</strong>. Podés forzar fechas cercanas o franjas
-          llenas (se avisa, no se bloquea).
+          la vista <strong>Calendario</strong>. Podés forzar hoy o franjas llenas (se
+          avisa, no se bloquea); una fecha ya pasada no se admite.
         </p>
         {solicitud.horario_confirmado && (
           <p className="text-xs text-gray-500 mb-3">
@@ -2203,15 +2282,22 @@ export default function SolicitudDetalle() {
             <input
               type="date"
               value={fechaReagenda}
-              min={fechaColombiaYMD()}
+              min={rangoFechaReagenda.min}
+              max={rangoFechaReagenda.max}
               onChange={(e) => setFechaReagenda(e.target.value)}
-              className="border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              className={`border-2 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${
+                errorRangoFechaReagenda ? 'border-red-300' : 'border-gray-200'
+              }`}
             />
-            {fechaReagenda && (
+            {errorRangoFechaReagenda ? (
+              <span className="block text-[11px] text-red-600 mt-1">
+                ⚠️ {errorRangoFechaReagenda}
+              </span>
+            ) : fechaReagenda ? (
               <span className="block text-[11px] text-gray-500 mt-1 capitalize">
                 {formatFechaLargaLocal(fechaReagenda)}
               </span>
-            )}
+            ) : null}
           </label>
           <div className="flex-1">
             <span className="block text-xs font-semibold text-gray-700 mb-1">🕒 Franja horaria</span>
@@ -2251,7 +2337,7 @@ export default function SolicitudDetalle() {
           <button
             type="button"
             onClick={handleReagendar}
-            disabled={reagendando || !fechaReagenda || !franjaReagenda}
+            disabled={reagendando || !fechaReagenda || !franjaReagenda || !!errorRangoFechaReagenda}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {reagendando ? 'Reprogramando…' : '📅 Reprogramar y notificar'}
@@ -3386,6 +3472,7 @@ export default function SolicitudDetalle() {
               subido_por?: string
               plantilla?: string
               origen?: string
+              rol?: string
             } | null
             const esEdicion = e.tipo === 'nota_admin' && !!payload?.campos_modificados
             const esEvidenciaAdmin = esEventoEvidenciaAdmin(e)
@@ -3466,6 +3553,13 @@ export default function SolicitudDetalle() {
                       💬 <span className="font-semibold">WhatsApp al cliente</span>
                       {payload?.plantilla && (
                         <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-700">{payload.plantilla}</span>
+                      )}
+                    </p>
+                  ) : payload?.origen === 'facturacion_estado' ? (
+                    <p className="text-sm text-slate-900">
+                      🧾 <span className="font-semibold">Facturación actualizada</span>
+                      {payload?.rol === 'lectura' && (
+                        <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">logística</span>
                       )}
                     </p>
                   ) : esEdicion ? (

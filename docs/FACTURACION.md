@@ -7,7 +7,9 @@
 >
 > Creado 2026-09-09. Estado: exports implementados (fase 1); integración
 > automática con Siigo y venta de repuestos al técnico son **opciones a
-> decidir** (§ 6 y § 7).
+> decidir** (§ 6 y § 7). Desde 2026-10-22 hay **seguimiento facturado /
+> no facturado** por servicio (§ 11): la facturación sigue siendo manual
+> asistida, pero ya se sabe qué servicio completado tiene FV.
 
 ---
 
@@ -105,6 +107,12 @@ Presets de rango: quincena anterior, quincena actual, mes actual.
 Excel acotado a esa sola venta, en cualquier estado (la hoja Parámetros deja
 el estado explícito; la FV se emite al completar). Archivo
 `ficha-facturacion-BS-XXXXXXXX.xlsx`.
+
+**Columna "Facturación" (2026-10-22):** todas las hojas de servicios (FV
+particulares, Relación órdenes MABE, Liquidación MABE, Liquidación
+particulares, Detalle servicios) traen el estado del seguimiento (§ 11) y el
+N° de FV cuando ya se emitió; "Datos faltantes" agrega una fila `SIN FACTURAR`
+por cada completada del período que siga `pendiente`.
 
 Los otros tres exports (técnicos, MABE, particulares) siguen igual; el de
 **técnicos** ganó la hoja **Documento soporte** (una fila por técnico con
@@ -271,6 +279,76 @@ a mano.
 - [ ] Snapshot inmutable de liquidaciones al cierre (`completada_at` + tabla `liquidaciones`).
 - [ ] Registrar pagos en sitio (QR Bre-B) para que el ledger cierre al 100%.
 - [ ] Validar con el contador la tarifa de retefuente por técnico (4% / 6%) y reteICA Bogotá.
+- [x] **Seguimiento facturado / no facturado** (decidido y hecho 2026-10-22, § 11): filtro en `/admin/solicitudes` + cambio de estado desde la ficha; el rol LECTURA puede marcarlo. Pendiente operativo: aplicar `20261022_facturacion_estado.sql` en prod antes del deploy.
+
+---
+
+## 11. Seguimiento facturado / no facturado (2026-10-22)
+
+**Problema que resuelve:** sin Siigo conectado (decisión 2026-10-22), nadie
+sabía qué servicio completado ya tenía factura. Ahora cada solicitud lleva su
+propio estado de facturación, que contabilidad/logística marca a mano cuando
+emite la FV a partir del export de § 3.
+
+**Modelo** (migración `supabase/migrations/20261022_facturacion_estado.sql`,
+columnas en `solicitudes_servicio`):
+
+| Columna | Qué guarda |
+|---|---|
+| `facturacion_estado` | `pendiente` (default, todas las existentes arrancan así) · `facturada` · `no_aplica` (CHECK) |
+| `factura_numero` | N° de la FV en Siigo, p. ej. `FV-2-1524`. **Obligatorio** al marcar `facturada` |
+| `facturada_at` / `facturada_por` | Cuándo y quién (email del panel) lo marcó; `pendiente` los limpia |
+| `facturacion_nota` | Nota libre (p. ej. "va en la FV consolidada de MABE de la quincena 2") |
+
+Índice parcial `(estado, facturacion_estado) WHERE completada AND pendiente`
+para la consulta operativa "sin facturar".
+
+**Reglas** (`src/lib/services/facturacion-estado.service.ts`, puras y
+testeadas):
+
+- Solo se marca en servicios **`completada`** (otros estados → 409). Si el
+  servicio se reabre, el UPDATE lleva guard `eq('estado','completada')` y
+  responde 409 sin escribir.
+- `facturada` exige número; `pendiente` limpia número/fecha/quién;
+  `no_aplica` no pide número (cortesías, servicios ya incluidos en otra FV).
+- Cada cambio deja un evento `nota_admin` en `solicitud_eventos` con
+  `payload.origen='facturacion_estado'`, `antes`/`despues`, `nota` y `rol`;
+  la ficha lo muestra en "Historial de estados" (🧾) y en "Notas".
+
+**Dónde se opera:**
+
+| Pantalla | Qué hay |
+|---|---|
+| `/admin/solicitudes/[id]` → bloque **🧾 Facturación** (ambos flujos) | Estado, N° de FV, fecha, quién y nota. Botones **Marcar facturada** (pide el N° de FV y nota opcional), **No aplica**, **Volver a pendiente**, y **Corregir N° de factura** cuando ya está facturada. En servicios no completados es informativo. `src/components/admin/FacturacionSolicitud.tsx` |
+| `/admin/solicitudes` | Chip **🧾 Sin facturar** (completadas con `pendiente`, también vía `?filtro=sin_facturar`), selector **Facturación** (todas / sin facturar / facturadas / no aplica) que convive con el chip de estado y el técnico, y badge `🧾 FV-2-…` bajo el estado de las completadas facturadas |
+| `/admin` | KPI **🧾 Sin facturar** (conteo de completadas pendientes) enlazado a la lista con el chip activo |
+| `/admin/liquidaciones` | Columna "Facturación" en las hojas de servicios + fila `SIN FACTURAR` en "Datos faltantes" (ver § 3) |
+
+**Endpoint:** `POST /api/admin/facturacion-estado`
+`{ solicitud_id, facturacion_estado, factura_numero?, facturacion_nota? }`
+(Zod). Responde `{ success, solicitud, rol }`.
+
+**Quién puede marcarlo — excepción del rol lectura:** por decisión del
+2026-10-22, **el rol LECTURA (logística, `LECTURA_EMAILS`) sí puede cambiar el
+estado de facturación**, porque es quien captura la FV en Siigo. Es la única
+escritura que ese rol tiene: el endpoint autoriza con `obtenerRolRequest`
+(admin **o** lectura) y guarda `facturada_por` con el email del rol; el guard
+de `window.fetch` del layout admin deja pasar esa ruta exacta
+(`API_LECTURA_ESCRITURA_PERMITIDA` en `src/lib/auth/soloLectura.ts`). Nada más
+se abre — detalle en `docs/SEGURIDAD.md` § "Rol lectura".
+
+**Flujo operativo sugerido (quincenal):** descargar el paquete `facturacion`
+de la quincena → revisar "Datos faltantes" (las filas `SIN FACTURAR` son el
+pendiente) → emitir cada FV-2 en Siigo (particular) y la FV consolidada a MABE
+(garantía) → entrar a cada ficha y **Marcar facturada** con el número (en
+garantía, el mismo N° de la FV consolidada en todas las órdenes que incluye;
+la nota sirve para dejar la quincena) → el KPI "Sin facturar" del dashboard
+debe quedar en 0.
+
+**Tests:** `src/__tests__/services/facturacion-estado.test.ts` (schema,
+transiciones, guard del navegador) y
+`src/__tests__/lib/facturacion-estado-route.test.ts` (401 sin token / fuera
+de allowlist, 200 con rol lectura y con admin, 400/404/409).
 
 ---
 
@@ -279,6 +357,9 @@ a mano.
 | Archivo | Rol |
 |---|---|
 | `src/lib/utils/facturacion.ts` | Helpers puros: IDs Siigo, tercero del cliente, ítems de FV, forma de pago, código de servicio, quincenas, base retefuente |
+| `src/lib/services/facturacion-estado.service.ts` + `src/app/api/admin/facturacion-estado/route.ts` | Seguimiento facturado / no facturado (§ 11): schema Zod, reglas de transición y endpoint (admin + rol lectura) |
+| `src/components/admin/FacturacionSolicitud.tsx` | Bloque "🧾 Facturación" de la ficha admin |
+| `supabase/migrations/20261022_facturacion_estado.sql` | Columnas `facturacion_estado`, `factura_numero`, `facturada_at`, `facturada_por`, `facturacion_nota` + índice parcial |
 | `src/app/api/admin/liquidaciones/route.ts` | Tipo `facturacion` (4 hojas + parámetros) y hoja "Documento soporte" del tipo `tecnicos` |
 | `src/app/admin/liquidaciones/page.tsx` | Tarjeta "Facturación (Siigo)" + presets de quincena |
 | `src/app/admin/solicitudes/[id]/page.tsx` | Bloque "Venta al cliente BS-…" + botón Ficha de facturación por servicio |

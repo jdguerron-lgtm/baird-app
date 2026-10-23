@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       dirigida: !!soloTecnicoId,
       mensaje: result.notificados > 0
         ? soloTecnicoId
-          ? 'Oferta enviada solo a ese técnico con prioridad. Si no acepta, vuelve a "Notificar técnicos" para abrirla a todos.'
+          ? 'Oferta enviada solo a ese técnico con prioridad. Si no acepta: con el reparto escalonado activo se abre sola al resto al vencer la ventaja; si está apagado, vuelve a "Notificar técnicos" para abrirla a todos.'
           : `${result.notificados} tecnico(s) notificado(s) por WhatsApp`
         : result.matched > 0
           ? `Se encontraron ${result.matched} tecnico(s) pero fallo el envio: ${result.errors.join('; ')}`

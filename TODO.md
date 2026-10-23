@@ -33,6 +33,7 @@ El proyecto está en **fase de producción activa** servido desde **`https://lin
 - [x] **Confirmación de servicio por el cliente** — página `/confirmar/{token}` con satisfecho/reportar problema
 
 ### Flujo del técnico
+- [x] **Reparto escalonado de ofertas (EN PROD 2026-10-22, PR #2)** — la primera oferta va antes a quien lleva < N servicios aceptados en 7 días; si nadie acepta en X min, el job pg_cron `oferta-escalonada-1min` la abre al resto. Panel `/admin/reparto`. Corrige además el técnico de preferencia, que no se respetaba en el camino normal (`notificados_at` se fijaba antes de notificar). Ver `docs/GOTCHAS.md`.
 - [x] Formulario de registro de técnicos
 - [x] Selección de múltiples especialidades
 - [x] Carga de foto de perfil con validación (JPG/PNG, máx 2MB)
