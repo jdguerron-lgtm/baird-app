@@ -80,7 +80,11 @@ export default function FacturacionSolicitud({ solicitud, onActualizada }: Props
         setResultado({ ok: false, texto: data?.error ?? `Error ${res.status}` })
         return
       }
-      setResultado({ ok: true, texto: `Cotización ${data.cotizacion} creada en Siigo${data.cliente_creado ? ' (cliente nuevo creado)' : ''}.` })
+      setResultado({
+        ok: true,
+        texto: `Cotización ${data.cotizacion} creada en Siigo${data.cliente_creado ? ' (cliente nuevo creado)' : ''}.`
+          + (data.ciudad_por_defecto ? ' ⚠️ La ciudad no está en el mapa DANE: quedó Bogotá, corrígela en Siigo.' : ''),
+      })
     } catch (e) {
       setResultado({ ok: false, texto: e instanceof Error ? e.message : 'Error de red' })
     } finally {

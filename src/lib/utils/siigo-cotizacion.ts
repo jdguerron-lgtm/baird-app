@@ -7,6 +7,7 @@
  */
 
 import { SIIGO, identificacionCliente, itemsFacturaParticular, type ItemFactura } from '@/lib/utils/facturacion'
+import { ciudadDane } from '@/lib/constants/dane'
 
 export interface DatosClienteSiigo {
   cliente_nombre: string
@@ -44,21 +45,42 @@ function telefonoSiigo(tel: string): string {
   return d.startsWith('57') && d.length === 12 ? d.slice(2) : d
 }
 
-/** Payload de `POST /v1/customers`. Solo se usa si el tercero no existe. */
+/**
+ * Correo de contacto cuando el cliente no tiene uno: Siigo lo exige en
+ * `contacts[].email`. Decisión 2026-10-22 (docs/FACTURACION.md § 10): nunca
+ * bloquea el alta; se usa el buzón de Baird y la FV se entrega por WhatsApp.
+ */
+export const EMAIL_CONTACTO_FALLBACK = 'baird@bairdservice.com'
+
+/**
+ * Payload de `POST /v1/customers`. Solo se usa si el tercero no existe.
+ * Campos obligatorios de Siigo cubiertos: person_type, id_type, identification,
+ * name, address.city (DANE), contacts[].email, fiscal_responsibilities.
+ */
 export function armarClienteSiigo(c: DatosClienteSiigo) {
   const ident = identificacionCliente(c.cliente_cedula)
   const esEmpresa = ident.tipoNombre === 'NIT'
-  const email = emailValido(c.email)
+  const email = emailValido(c.email) ?? EMAIL_CONTACTO_FALLBACK
   const [nombres, apellidos] = partirNombre(c.cliente_nombre)
+  const ciudad = ciudadDane(c.ciudad_pueblo)
   return {
     type: 'Customer',
     person_type: esEmpresa ? 'Company' : 'Person',
     id_type: ident.tipoCodigo,
     identification: ident.identificacion,
     name: esEmpresa ? [c.cliente_nombre.trim()] : [nombres, apellidos],
-    address: { address: [c.direccion, c.ciudad_pueblo].filter(Boolean).join(', ') || c.ciudad_pueblo },
-    phones: [{ number: telefonoSiigo(c.cliente_telefono) }],
-    contacts: [{ first_name: nombres, last_name: apellidos === '.' ? '' : apellidos, ...(email ? { email } : {}) }],
+    active: true,
+    vat_responsible: false,
+    // R-99-PN = "No aplica – Otros" (DIAN). Vale para persona natural y para
+    // empresa no responsable de IVA; contabilidad lo ajusta en Siigo si aplica.
+    fiscal_responsibilities: [{ code: 'R-99-PN' }],
+    address: {
+      address: (c.direccion ?? '').trim() || c.ciudad_pueblo,
+      city: { country_code: ciudad.country_code, state_code: ciudad.state_code, city_code: ciudad.city_code },
+    },
+    phones: [{ indicative: '57', number: telefonoSiigo(c.cliente_telefono) }],
+    contacts: [{ first_name: nombres, last_name: apellidos === '.' ? nombres : apellidos, email }],
+    comments: ciudad.exacta ? undefined : `Ciudad "${c.ciudad_pueblo}" sin código DANE en Baird — quedó Bogotá por defecto, corregir.`,
   }
 }
 

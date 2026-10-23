@@ -30,6 +30,18 @@ describe('armarClienteSiigo', () => {
     expect(c.phones[0].number).toBe('3134951164')
     expect(c.contacts[0]).toMatchObject({ email: 'ju@correo.com' })
   })
+  it('cubre lo obligatorio de Siigo: ciudad DANE, responsabilidad fiscal y email de contacto', () => {
+    const c = armarClienteSiigo({ ...SOL, email: null, ciudad_pueblo: 'Bogotá D.C.' })
+    expect(c.address.city).toEqual({ country_code: 'Co', state_code: '11', city_code: '11001' })
+    expect(c.fiscal_responsibilities).toEqual([{ code: 'R-99-PN' }])
+    expect(c.contacts[0].email).toBe('baird@bairdservice.com')
+    expect(c.comments).toBeUndefined()
+  })
+  it('ciudad desconocida cae en Bogotá y lo avisa en comments', () => {
+    const c = armarClienteSiigo({ ...SOL, ciudad_pueblo: 'Villa de Leyva' })
+    expect(c.address.city.city_code).toBe('11001')
+    expect(c.comments).toContain('Villa de Leyva')
+  })
   it('NIT → empresa con razón social', () => {
     const c = armarClienteSiigo({ ...SOL, cliente_cedula: '900123456', cliente_nombre: 'ACME SAS' })
     expect(c).toMatchObject({ person_type: 'Company', id_type: '31', name: ['ACME SAS'] })

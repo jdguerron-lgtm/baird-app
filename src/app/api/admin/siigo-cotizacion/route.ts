@@ -91,9 +91,12 @@ export async function POST(req: NextRequest) {
     const cliente = { ...sol, email }
     const ident = identificacionCliente(sol.cliente_cedula)
     let clienteCreado = false
+    let ciudadPorDefecto = false
     if (ident.tipoNombre !== 'Consumidor final' && !(await existeCliente(ident.identificacion))) {
-      await crearCliente(armarClienteSiigo(cliente))
+      const payloadCliente = armarClienteSiigo(cliente)
+      await crearCliente(payloadCliente)
       clienteCreado = true
+      ciudadPorDefecto = Boolean(payloadCliente.comments)
     }
 
     const descuento = montoDescuento(totalBruto, descuentoDeSolicitud(sol))
@@ -114,11 +117,11 @@ export async function POST(req: NextRequest) {
       estado_nuevo: sol.estado,
       actor: rol.email,
       motivo: `Cotización ${cot.name} creada en Siigo`,
-      payload: { origen: 'siigo_cotizacion', cotizacion: cot.name, siigo_id: cot.id, cliente_creado: clienteCreado, rol: rol.rol },
+      payload: { origen: 'siigo_cotizacion', cotizacion: cot.name, siigo_id: cot.id, cliente_creado: clienteCreado, ciudad_por_defecto: ciudadPorDefecto, rol: rol.rol },
     })
     if (evErr) console.error('[admin/siigo-cotizacion] evento no registrado:', evErr)
 
-    return NextResponse.json({ success: true, cotizacion: cot.name, siigo_id: cot.id, cliente_creado: clienteCreado })
+    return NextResponse.json({ success: true, cotizacion: cot.name, siigo_id: cot.id, cliente_creado: clienteCreado, ciudad_por_defecto: ciudadPorDefecto })
   } catch (err) {
     if (err instanceof SiigoError) {
       console.error('[admin/siigo-cotizacion] Siigo:', err.message, JSON.stringify(err.detalle))
