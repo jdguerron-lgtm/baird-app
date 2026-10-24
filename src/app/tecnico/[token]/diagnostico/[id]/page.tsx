@@ -25,7 +25,8 @@ import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
-import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_EVIDENCIAS_DIAGNOSTICO } from '@/lib/utils/media'
+import { inferExtension, videoSizeAdvice, tipoArchivoEvidencia, crearMiniatura, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_EVIDENCIAS_DIAGNOSTICO } from '@/lib/utils/media'
+import { subirArchivoStorage, ejecutarConLimite, comprimirConLimite, crearAgregadorProgreso, mensajeProgresoSubida } from '@/lib/utils/subida-evidencia'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
@@ -93,6 +94,10 @@ export default function DiagnosticoPage() {
   // si la visita cayó en sábado/domingo/festivo — cambio 2026-07-21).
   const [pagoTecnicoApi, setPagoTecnicoApi] = useState<number | null>(null)
   const [progreso, setProgreso] = useState('')
+  // % global de la subida de evidencias (barra bajo el spinner, 2026-10-24).
+  const [progresoPct, setProgresoPct] = useState(0)
+  // true mientras se generan las miniaturas de las fotos recién elegidas.
+  const [preparandoPreviews, setPreparandoPreviews] = useState(false)
 
   // Form state
   const [diagnosticoTexto, setDiagnosticoTexto] = useState('')
@@ -254,39 +259,56 @@ export default function DiagnosticoPage() {
   // (MAX_VIDEO_SIZE_BYTES, 50 MB desde 2026-10-10) y se validan antes porque no
   // se comprimen client-side. Por eso el mensaje accionable solo se muestra
   // cuando el archivo grande es un video.
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files) return
     const newFiles: File[] = []
-    const newPreviews: string[] = []
     let advice: string | null = null
 
-    for (let i = 0; i < files.length && evidencias.length + newFiles.length < MAX_EVIDENCIAS; i++) {
-      const file = files[i]
-      const isVideo = file.type.startsWith('video/')
-      const isImage = file.type.startsWith('image/')
-      if (!isImage && !isVideo) continue
+    for (const file of Array.from(files)) {
+      if (evidencias.length + newFiles.length >= MAX_EVIDENCIAS) break
+      // tipoArchivoEvidencia también clasifica por extensión cuando el MIME
+      // viene vacío (galería de algunos Android): antes esos archivos se
+      // descartaban en silencio y el técnico veía que "no pasaba nada".
+      const tipo = tipoArchivoEvidencia(file)
+      if (!tipo) continue
 
       // Solo rechazamos por tamaño *antes* si es video — las imágenes las comprime
-      // compressImageIfNeeded antes del upload.
-      if (isVideo && file.size > MAX_VIDEO_SIZE_BYTES) {
+      // comprimirConLimite antes del upload.
+      if (tipo === 'video' && file.size > MAX_VIDEO_SIZE_BYTES) {
         advice = videoSizeAdvice()
         continue
       }
       newFiles.push(file)
-      newPreviews.push(isImage ? URL.createObjectURL(file) : 'video')
+    }
+
+    setError(advice) // null si todos los archivos pasaron; mensaje guía si rechazamos un video grande
+    if (newFiles.length === 0) return
+
+    // Miniaturas livianas (320 px) en vez del object URL del original: con
+    // 10-20 fotos de la biblioteca el navegador tenía que decodificar cada
+    // original completo para pintar un cuadrito y el celular se quedaba
+    // "pensando". Se generan en serie y con indicador.
+    setPreparandoPreviews(true)
+    const newPreviews: string[] = []
+    try {
+      for (const file of newFiles) {
+        newPreviews.push(tipoArchivoEvidencia(file) === 'video' ? 'video' : await crearMiniatura(file))
+      }
+    } finally {
+      setPreparandoPreviews(false)
     }
 
     setEvidencias(prev => [...prev, ...newFiles])
     setPreviews(prev => [...prev, ...newPreviews])
-    setError(advice) // null si todos los archivos pasaron; mensaje guía si rechazamos un video grande
   }
 
-  const handlePlacaSelect = (files: FileList | null) => {
+  const handlePlacaSelect = async (files: FileList | null) => {
     const file = files?.[0]
-    if (!file || !file.type.startsWith('image/')) return
+    if (!file || tipoArchivoEvidencia(file) !== 'imagen') return
+    const preview = await crearMiniatura(file)
     if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
     setFotoPlaca(file)
-    setFotoPlacaPreview(URL.createObjectURL(file))
+    setFotoPlacaPreview(preview)
   }
 
   const removeEvidencia = (idx: number) => {
@@ -369,50 +391,51 @@ export default function DiagnosticoPage() {
       //   nombre del archivo de `capture="environment"`.
       // - Timestamp + idx + random suffix evita colisiones si el técnico hace
       //   submit dos veces seguidas tras un error de red.
-      setProgreso('Procesando evidencias...')
+      // 2026-10-24: subida con progreso real, corte por inactividad y
+      // reintentos (subirArchivoStorage), de a 3 archivos a la vez
+      // (ejecutarConLimite) y compresión con tope de tiempo. Antes todo iba en
+      // paralelo con fetch sin timeout: con 10-20 fotos de la biblioteca o un
+      // video de 40 MB el técnico veía el mismo spinner minutos y, si la red se
+      // caía, para siempre ("se queda pensando").
       const stamp = Date.now()
       const rand = Math.random().toString(36).slice(2, 8)
 
-      const uploadPromises = evidencias.map(async (rawFile, i) => {
-        const file = await compressImageIfNeeded(rawFile)
-        const ext = inferExtension(file)
-        const path = `${servicio.id}/diagnostico_${stamp}_${rand}_${i}.${ext}`
+      // La placa va de última en la misma cola (path con prefijo placa_).
+      const archivosASubir: File[] = [...evidencias, fotoPlaca!]
+      const total = archivosASubir.length
+      const agregador = crearAgregadorProgreso(
+        archivosASubir.map(f => f.size),
+        (pct, listos) => {
+          setProgresoPct(pct)
+          setProgreso(mensajeProgresoSubida(listos, total, pct))
+        },
+      )
+      setProgresoPct(0)
+      setProgreso(`Preparando ${total} archivo${total === 1 ? '' : 's'}...`)
 
-        const { error: uploadErr } = await supabase.storage
-          .from('evidencias-servicio')
-          .upload(path, file, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: file.type || undefined,
-          })
-
-        if (uploadErr) {
-          console.error(`[diagnostico] upload archivo ${i} falló:`, uploadErr)
-          return null
-        }
-        const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
-        return urlData?.publicUrl ?? null
-      })
-
-      // Foto de la placa: mismo pipeline de compresión/subida, path con
-      // prefijo placa_ para distinguirla en Storage y en las galerías.
-      const placaUploadPromise = (async () => {
-        const file = await compressImageIfNeeded(fotoPlaca!)
-        const ext = inferExtension(file)
-        const path = `${servicio.id}/placa_${stamp}_${rand}.${ext}`
-        const { error: uploadErr } = await supabase.storage
-          .from('evidencias-servicio')
-          .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || undefined })
-        if (uploadErr) {
-          console.error('[diagnostico] upload foto placa falló:', uploadErr)
-          return null
-        }
-        const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
-        return urlData?.publicUrl ?? null
-      })()
-
-      setProgreso('Subiendo evidencias...')
-      const [results, fotoPlacaUrl] = await Promise.all([Promise.all(uploadPromises), placaUploadPromise])
+      const subidas = await ejecutarConLimite(
+        archivosASubir.map((rawFile, i) => async () => {
+          const esPlaca = i === total - 1
+          const file = await comprimirConLimite(rawFile)
+          const ext = inferExtension(file)
+          const path = esPlaca
+            ? `${servicio.id}/placa_${stamp}_${rand}.${ext}`
+            : `${servicio.id}/diagnostico_${stamp}_${rand}_${i}.${ext}`
+          try {
+            const { publicUrl } = await subirArchivoStorage('evidencias-servicio', path, file, {
+              onProgreso: p => agregador.reportar(i, p),
+            })
+            agregador.terminar(i)
+            return publicUrl
+          } catch (e) {
+            console.error(`[diagnostico] upload archivo ${esPlaca ? 'placa' : i} falló:`, e)
+            agregador.terminar(i)
+            return null
+          }
+        }),
+      )
+      const fotoPlacaUrl = subidas[total - 1]
+      const results = subidas.slice(0, total - 1)
       const evidenciaUrls = results.filter((u): u is string => !!u)
 
       if (evidenciaUrls.length === 0) {
@@ -1082,6 +1105,7 @@ export default function DiagnosticoPage() {
           )}
 
           <p className="text-[10px] text-gray-400">
+            {preparandoPreviews && <span className="text-purple-600 font-medium">Preparando vistas previas… </span>}
             {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos del fallo y/o videos (máx {MAX_VIDEO_SIZE_MB} MB cada uno)
           </p>
         </div>
@@ -1165,6 +1189,11 @@ export default function DiagnosticoPage() {
               <span className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
               {progreso}
             </p>
+            {progresoPct > 0 && progresoPct < 100 && (
+              <div className="mt-2 h-1.5 w-full rounded-full bg-blue-100 overflow-hidden">
+                <div className="h-full bg-blue-500 transition-[width] duration-300" style={{ width: `${progresoPct}%` }} />
+              </div>
+            )}
           </div>
         )}
 
