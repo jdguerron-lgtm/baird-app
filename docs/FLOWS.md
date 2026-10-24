@@ -602,12 +602,12 @@ Audit:                                Audit:
 
 ## Side flow: Receptor del servicio (2026-10-13)
 
-Transversal a ambos flujos. Cuando quien recibe al técnico en el domicilio **no es el titular**, el técnico lo registra **al comenzar el diagnóstico** (bloque "¿Quién recibe el servicio?" en `/tecnico/{token}/diagnostico/{id}`; también en `/tecnico/{token}/completar/{id}` porque Mantenimiento / Cambio de filtro no pasan por diagnóstico). Default: "El titular" (un toque, nada que llenar).
+Transversal a ambos flujos. Cuando quien recibe al técnico en el domicilio **no es el titular**, el técnico lo registra **al comenzar el diagnóstico** (bloque "¿Quién recibe el servicio?" en `/tecnico/{token}/diagnostico/{id}` y en `/tecnico/{token}/completar/{id}` — en AMBOS formularios, siempre). **Desde 2026-10-24** los campos nombre + celular están siempre visibles (ya no hay chips "El titular / Otra persona"), la relación es opcional (NULL en BD) y no hay casilla de consentimiento: el consentimiento lo da la propia persona al aceptar T&C desde su WhatsApp. Vacío = recibe el titular.
 
 ```
 Técnico en el domicilio → bloque "¿Quién recibe el servicio?"
-   │  "Otra persona": nombre + celular + relación (familiar / empleado(a) del hogar /
-   │  administración / arrendatario / otro) + check "está de acuerdo con que Baird le escriba"
+   │  nombre + celular (siempre visibles) + relación opcional (familiar / empleado(a) del
+   │  hogar / administración / arrendatario / otro). "Quitar: recibe el titular" lo revierte.
    ▼
 POST /api/tecnico/receptor  (guarda DE INMEDIATO, independiente del submit del diagnóstico)
    │  receptor_* + receptor_token nuevo + receptor_registrado_at; evento nota_admin (actor tecnico)

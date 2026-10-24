@@ -39,6 +39,16 @@ describe('validarReceptor', () => {
     expect(validarReceptor(null).ok).toBe(false)
   })
 
+  it('relación opcional (2026-10-24): vacía o ausente → null; fuera de la lista → error', () => {
+    const r1 = validarReceptor({ nombre: 'Marta', telefono: '3105551234', relacion: '' })
+    expect(r1.ok).toBe(true)
+    if (r1.ok) expect(r1.receptor.relacion).toBeNull()
+    const r2 = validarReceptor({ nombre: 'Marta', telefono: '3105551234' })
+    expect(r2.ok).toBe(true)
+    if (r2.ok) expect(r2.receptor.relacion).toBeNull()
+    expect(validarReceptor({ nombre: 'Marta', telefono: '3105551234', relacion: 'vecino' }).ok).toBe(false)
+  })
+
   it('rechaza el mismo número del titular (no tiene sentido duplicar)', () => {
     const r = validarReceptor({ nombre: 'Marta', telefono: '300 123 4567', relacion: 'familiar' }, '+57 300 123 4567')
     expect(r.ok).toBe(false)
