@@ -1,0 +1,61 @@
+# CI — las mismas tres verificaciones que docs/FLUJO-DESARROLLO.md § 3 exige antes
+# de cualquier push, pero ejecutadas por GitHub en cada PR y en cada push a main.
+# No despliega nada ni toca Supabase/Vercel: solo pinta el check en verde o rojo.
+# Para que sea bloqueante: GitHub → Settings → Branches → main → "Require status
+# checks to pass" → seleccionar "verificar".
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: verificar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Valores ficticios: tsc/lint/test no se conectan a nada (los tests fijan los
+      # suyos en src/__tests__/setup.ts). Evitan que un import de src/lib/supabase.ts
+      # lance por env faltante durante el typecheck.
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+      NEXT_PUBLIC_APP_URL: https://ci.baird.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tipos (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Lint + frontera del módulo de pagos
+        run: npm run lint
+
+      - name: Tests (vitest)
+        run: npm test
+
+      - name: Migraciones nuevas documentadas en supabase/migrations/README.md
+        # Aviso (no bloquea): cada .sql agregado o modificado en el PR debe estar
+        # listado en el README de migraciones, que hace de historial de aplicación.
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          git fetch --no-tags --depth=1 origin "$base" >/dev/null 2>&1 || true
+          for f in $(git diff --name-only "$base" HEAD -- 'supabase/migrations/*.sql' || true); do
+            b=$(basename "$f")
+            if ! grep -q "$b" supabase/migrations/README.md; then
+              echo "::warning file=$f::$b no aparece en supabase/migrations/README.md (estado aplicada/pendiente)"
+            fi
+          done
