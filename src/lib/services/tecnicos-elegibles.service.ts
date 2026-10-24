@@ -66,6 +66,12 @@ export function tecnicoCubreCiudad(
 export async function listarTecnicosElegibles(params: {
   ciudad: string
   tipoEquipo: string
+  /**
+   * true = incluir también los perfiles con `visible_para_cliente=false`
+   * (Henry, Juan, auxiliares con perfil propio). SOLO para el admin
+   * (invitación dirigida, 2026-10-22): el selector público nunca lo pasa.
+   */
+  incluirOcultos?: boolean
 }): Promise<TecnicoElegible[]> {
   const ciudad = (params.ciudad ?? '').trim()
   const tipoEquipo = (params.tipoEquipo ?? '').trim()
@@ -101,7 +107,7 @@ export async function listarTecnicosElegibles(params: {
   return (tecnicos as TecnicoRow[])
     // `visible_para_cliente` NULL (migración sin aplicar / fila vieja) cuenta
     // como visible — el default de la columna es true.
-    .filter(t => t.visible_para_cliente !== false)
+    .filter(t => params.incluirOcultos || t.visible_para_cliente !== false)
     .filter(t => tecnicoCubreCiudad(t, ciudad))
     .map(t => ({
       id: t.id,

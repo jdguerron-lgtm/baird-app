@@ -101,6 +101,12 @@ describe('listarTecnicosElegibles', () => {
     expect(Object.keys(carlos ?? {}).sort()).toEqual(['especialidades', 'foto_url', 'id', 'nombre'])
   })
 
+  it('incluirOcultos (admin, invitación dirigida): suma los visible_para_cliente=false, sigue filtrando ciudad', async () => {
+    setup()
+    const r = await listarTecnicosElegibles({ ciudad: 'Bogotá', tipoEquipo: 'Lavadora', incluirOcultos: true })
+    expect(r.map(t => t.id).sort()).toEqual(['tec-null', 'tec-oculto', 'tec-visible'])
+  })
+
   it('filtra por la especialidad del tipo de equipo', async () => {
     setup()
     const r = await listarTecnicosElegibles({ ciudad: 'Bogotá', tipoEquipo: 'Aire Acondicionado' })

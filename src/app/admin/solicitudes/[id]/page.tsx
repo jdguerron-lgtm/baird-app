@@ -24,6 +24,7 @@ import { ESTADO_AUXILIAR_LABELS, type AuxiliarRow, type EstadoVerificacionAuxili
 import { useRolAdmin } from '@/components/admin/RolAdminContext'
 import MediaEvidencia from '@/components/ui/MediaEvidencia'
 import EvidenciaAdminSeccion from '@/components/admin/EvidenciaAdminSeccion'
+import PagoExternoForm from '@/components/admin/PagoExternoForm'
 import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
 import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
 import type { FacturacionEstado } from '@/types/solicitud'
@@ -71,6 +72,11 @@ interface Solicitud {
   // Equipo que visita (2026-10-13): ids de tecnico_auxiliares que acompañan
   // al técnico en este servicio. Se resuelven vía GET /api/admin/auxiliares.
   auxiliares_ids?: string[] | null
+  // Confirmación de visita por el técnico (2026-10-22, mig 20261022).
+  fecha_visita_at?: string | null
+  visita_confirmada_at?: string | null
+  visita_confirmada_por?: 'tecnico' | 'aceptacion' | 'admin' | null
+  tecnico_liberado_count?: number | null
   // Seguimiento de facturación (2026-10-22, mig 20261022_facturacion_estado).
   facturacion_estado?: FacturacionEstado | null
   factura_numero?: string | null
@@ -196,6 +202,9 @@ export default function SolicitudDetalle() {
 
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [tecnicoAsignado, setTecnicoAsignado] = useState<Tecnico | null>(null)
+  // Confirmación de visita (2026-10-22): "Confirmada por llamada" / "Liberar técnico y reofertar".
+  const [procesandoVisita, setProcesandoVisita] = useState(false)
+  const [resultadoVisita, setResultadoVisita] = useState<{ ok: boolean; mensaje: string } | null>(null)
   // Nombre del técnico de preferencia elegido por el cliente (si lo hubo)
   const [tecnicoPreferidoNombre, setTecnicoPreferidoNombre] = useState<string | null>(null)
   // Auxiliares del técnico asignado (equipo que visita, 2026-10-13).
@@ -207,6 +216,12 @@ export default function SolicitudDetalle() {
   const [cargando, setCargando] = useState(true)
   const [reenvioResult, setReenvioResult] = useState<Record<string, unknown> | null>(null)
   const [reenviando, setReenviando] = useState(false)
+  // Invitación dirigida (2026-10-22): candidatos a los que el admin puede
+  // mandar la oferta solo a uno. '' = todos los candidatos (comportamiento
+  // histórico). Se cargan de GET /api/admin/candidatos-oferta (incluye los
+  // perfiles ocultos al cliente).
+  const [candidatosOferta, setCandidatosOferta] = useState<Array<{ id: string; nombre: string; especialidades: string[] }>>([])
+  const [destinoOferta, setDestinoOferta] = useState<string>('')
   const [editando, setEditando] = useState(false)
   const [edicionDireccion, setEdicionDireccion] = useState('')
   const [edicionCiudad, setEdicionCiudad] = useState('')
@@ -334,6 +349,8 @@ export default function SolicitudDetalle() {
     transaccion_id: string | null
     pagado_at: string | null
     created_at: string
+    pasarela?: string
+    externo?: { referencia_externa: string | null; nota: string | null; actor: string | null; evidencias: Array<{ url: string; mime: string | null; nombre: string | null }> } | null
     devolucion: { via: string; at: string; actor: string; nota: string | null; referencia_wompi: string | null } | null
   }
   const [pagosLedger, setPagosLedger] = useState<PagoLedgerUI[]>([])
@@ -1151,6 +1168,7 @@ export default function SolicitudDetalle() {
     // TODO lo que le pasó al servicio, en orden cronológico.
     setHistorial(eventos.filter(e =>
       e.tipo === 'recordatorio_horario' ||
+      e.tipo === 'visita_confirmada' ||
       e.tipo === 'mensaje_cliente' ||
       e.tipo === 'llamada_admin' ||
       e.tipo === 'llamada_tecnico' ||
@@ -1227,6 +1245,25 @@ export default function SolicitudDetalle() {
         setTecnicoPreferidoNombre(pref?.nombre_completo ?? null)
       } else {
         setTecnicoPreferidoNombre(null)
+      }
+
+      // 2c. Candidatos para la invitación dirigida (2026-10-22). Solo tiene
+      // sentido sin técnico asignado; best-effort (sin lista → solo "todos").
+      if (!sol.tecnico_asignado_id) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            const res = await fetch(`/api/admin/candidatos-oferta?solicitudId=${encodeURIComponent(id)}`, {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            })
+            const body = await res.json().catch(() => ({}))
+            setCandidatosOferta(Array.isArray(body?.candidatos) ? body.candidatos : [])
+          }
+        } catch {
+          setCandidatosOferta([])
+        }
+      } else {
+        setCandidatosOferta([])
       }
 
       // 3. Fetch notifications
@@ -1842,8 +1879,19 @@ export default function SolicitudDetalle() {
                               </span>
                               <span className="text-[11px] text-gray-500">
                                 {p.metodo ?? 'Wompi'} · {new Date(fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}
-                                {p.transaccion_id ? ` · #${p.transaccion_id}` : ''}
+                                {p.transaccion_id && !p.externo ? ` · #${p.transaccion_id}` : ''}
                               </span>
+                              {p.externo && (
+                                <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                                  title={`Registrado por ${p.externo.actor ?? 'admin'}${p.externo.nota ? ` · ${p.externo.nota}` : ''}`}>
+                                  💵 Externo{p.externo.referencia_externa ? ` · ref. ${p.externo.referencia_externa}` : ''}
+                                  {p.externo.evidencias.map((ev, i) => (
+                                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="ml-1.5 underline">
+                                      📎{p.externo!.evidencias.length > 1 ? i + 1 : ' comprobante'}
+                                    </a>
+                                  ))}
+                                </span>
+                              )}
                               {devuelto ? (
                                 <span
                                   className="text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5"
@@ -1855,15 +1903,17 @@ export default function SolicitudDetalle() {
                                 <span className="text-[11px] text-gray-400">{p.estado}</span>
                               ) : !soloLectura ? (
                                 <span className="ml-auto flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => devolverPago(p, 'wompi')}
-                                    disabled={devolviendoId !== null}
-                                    className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
-                                    title="Reembolsa el pago completo al medio de pago original a través del API de Wompi"
-                                  >
-                                    {devolviendoId === p.id ? 'Devolviendo…' : '↩️ Devolver por Wompi'}
-                                  </button>
+                                  {!p.externo && (
+                                    <button
+                                      type="button"
+                                      onClick={() => devolverPago(p, 'wompi')}
+                                      disabled={devolviendoId !== null}
+                                      className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-violet-300 text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                                      title="Reembolsa el pago completo al medio de pago original a través del API de Wompi"
+                                    >
+                                      {devolviendoId === p.id ? 'Devolviendo…' : '↩️ Devolver por Wompi'}
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => devolverPago(p, 'manual')}
@@ -1887,8 +1937,17 @@ export default function SolicitudDetalle() {
                     </div>
                   )
                 })()}
+                {!soloLectura && !solicitud.es_garantia && solicitud.estado !== 'cancelada' && (
+                  <div className="pt-1">
+                    <PagoExternoForm
+                      solicitudId={id}
+                      montoSugerido={0}
+                      onRegistrado={async () => { await cargarPagosLedger(); await refrescarPagoSolicitud() }}
+                    />
+                  </div>
+                )}
                 <p className="text-[11px] text-gray-400">
-                  Solo pagos ONLINE (Wompi). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
+                  Pagos ONLINE (Wompi) y pagos externos con comprobante (💵). Un pago en sitio con QR no aparece aquí — el detalle está en el historial (evento 💰).
                   {!soloLectura && ' Las devoluciones por Wompi tardan de 1 a 15 días hábiles en verse en la cuenta del cliente según el banco.'}
                 </p>
               </div>
@@ -2536,6 +2595,36 @@ export default function SolicitudDetalle() {
             </h2>
             <p className="text-xs text-gray-500 mb-3">{descripcion}</p>
 
+            {/* Invitación dirigida (2026-10-22): mandar la oferta a UN técnico
+                con prioridad, sin asignarlo (él acepta con su token). Si no
+                responde, se vuelve a enviar a todos con la opción por defecto. */}
+            {!necesitaHorarioCliente && !yaTieneTecnico && candidatosOferta.length > 0 && (
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-gray-600 mb-1" htmlFor="destino-oferta">
+                  Enviar a
+                </label>
+                <select
+                  id="destino-oferta"
+                  value={destinoOferta}
+                  onChange={e => setDestinoOferta(e.target.value)}
+                  className="w-full sm:w-auto min-w-[16rem] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                >
+                  <option value="">Todos los candidatos ({candidatosOferta.length}) — el primero en aceptar gana</option>
+                  {candidatosOferta.map(c => (
+                    <option key={c.id} value={c.id}>
+                      Solo a {c.nombre}{solicitud.tecnico_preferido_id === c.id ? ' (preferido por el cliente)' : ''} — invitación prioritaria
+                    </option>
+                  ))}
+                </select>
+                {destinoOferta && (
+                  <p className="text-[11px] text-sky-800 mt-1">
+                    ⭐ Le llega solo a él con &quot;PRIORIDAD PARA TI&quot;. No queda asignado: debe aceptar desde su WhatsApp.
+                    Si no responde, elige &quot;Todos los candidatos&quot; y vuelve a notificar.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={async () => {
@@ -2554,7 +2643,10 @@ export default function SolicitudDetalle() {
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${session.access_token}`,
                       },
-                      body: JSON.stringify({ solicitudId: id }),
+                      body: JSON.stringify({
+                        solicitudId: id,
+                        ...(destinoOferta && !necesitaHorarioCliente ? { soloTecnicoId: destinoOferta } : {}),
+                      }),
                     })
                     const data = await res.json()
                     setReenvioResult(data)
@@ -2582,7 +2674,11 @@ export default function SolicitudDetalle() {
                     : 'bg-green-600 hover:bg-green-700'
                 }`}
               >
-                {reenviando ? 'Enviando...' : labelBoton}
+                {reenviando
+                  ? 'Enviando...'
+                  : destinoOferta && !necesitaHorarioCliente
+                    ? 'Invitar solo a ese técnico'
+                    : labelBoton}
               </button>
 
               {yaTieneTecnico && (
@@ -3078,6 +3174,132 @@ export default function SolicitudDetalle() {
       </div>
       )}
 
+      {/* Confirmación de la visita por el técnico (2026-10-22,
+          docs/PROTOCOLO-VISITA.md § Fase 0). Sin liberación automática: el
+          cron solo recuerda (técnico) y alerta (equipo); acá el admin confirma
+          por llamada o suelta al técnico y reoferta URGENTE. */}
+      {(solicitud.estado === 'asignada' || solicitud.visita_confirmada_at) && solicitud.tecnico_asignado_id && (
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            📅 Confirmación de la visita
+          </h2>
+          <p className="text-sm text-slate-900">
+            {solicitud.visita_confirmada_at ? (
+              <>
+                ✅ <span className="font-semibold">Confirmada</span>
+                {' '}
+                {solicitud.visita_confirmada_por === 'aceptacion'
+                  ? 'al aceptar (visita a menos de 36 h)'
+                  : solicitud.visita_confirmada_por === 'admin'
+                    ? 'por el equipo (llamada)'
+                    : 'por el técnico desde su portal'}
+                {' · '}
+                {new Date(solicitud.visita_confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' })}
+              </>
+            ) : (
+              <>⏳ <span className="font-semibold">El técnico aún no ha confirmado</span> que va a esta visita.</>
+            )}
+            {solicitud.horario_confirmado && (
+              <span className="ml-2 text-xs text-gray-500">Visita: {solicitud.horario_confirmado}</span>
+            )}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Todos los días a las 5:15 pm el técnico recibe su agenda de mañana (servicios Baird + compromisos propios) y confirma
+            cada visita en su portal, o marca &quot;No alcanzo&quot;. A las 8:00 pm el equipo recibe la lista de visitas de mañana sin confirmar.
+            {(solicitud.tecnico_liberado_count ?? 0) > 0 && (
+              <> Este servicio ya fue liberado {solicitud.tecnico_liberado_count} {solicitud.tecnico_liberado_count === 1 ? 'vez' : 'veces'}.</>
+            )}
+          </p>
+          {!soloLectura && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {!solicitud.visita_confirmada_at && (
+                <button
+                  type="button"
+                  disabled={procesandoVisita}
+                  onClick={async () => {
+                    setProcesandoVisita(true)
+                    setResultadoVisita(null)
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession()
+                      if (!session) { setResultadoVisita({ ok: false, mensaje: 'Sesión expirada. Inicia sesión de nuevo.' }); return }
+                      const res = await fetch('/api/admin/confirmar-visita', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                        body: JSON.stringify({ solicitudId: id }),
+                      })
+                      const data = await res.json()
+                      if (!res.ok) { setResultadoVisita({ ok: false, mensaje: data.error || 'No se pudo confirmar.' }); return }
+                      setSolicitud(prev => (prev ? { ...prev, visita_confirmada_at: new Date().toISOString(), visita_confirmada_por: 'admin' } : prev))
+                      setResultadoVisita({ ok: true, mensaje: 'Visita marcada como confirmada por llamada.' })
+                    } catch (e) {
+                      setResultadoVisita({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
+                    } finally {
+                      setProcesandoVisita(false)
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  ✅ Confirmada por llamada
+                </button>
+              )}
+              {solicitud.estado === 'asignada' && (
+                <button
+                  type="button"
+                  disabled={procesandoVisita}
+                  onClick={async () => {
+                    const ok = window.confirm(
+                      `¿Liberar a ${tecnicoAsignado?.nombre_completo ?? 'el técnico'} de este servicio?\n\n` +
+                      'El servicio vuelve a "Notificada", el técnico recibe un aviso y la oferta sale como URGENTE a los demás técnicos de la ciudad.',
+                    )
+                    if (!ok) return
+                    const motivo = window.prompt('Motivo (opcional, queda en el historial):', '') ?? ''
+                    setProcesandoVisita(true)
+                    setResultadoVisita(null)
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession()
+                      if (!session) { setResultadoVisita({ ok: false, mensaje: 'Sesión expirada. Inicia sesión de nuevo.' }); return }
+                      const res = await fetch('/api/admin/liberar-tecnico', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                        body: JSON.stringify({ solicitudId: id, motivo: motivo.trim() || undefined }),
+                      })
+                      const data = await res.json()
+                      if (!res.ok) { setResultadoVisita({ ok: false, mensaje: data.error || 'No se pudo liberar.' }); return }
+                      const reoferta = data.reoferta as { notificados?: number; matched?: number; errors?: string[] } | null
+                      setSolicitud(prev => (prev ? {
+                        ...prev,
+                        tecnico_asignado_id: null,
+                        estado: 'notificada',
+                        visita_confirmada_at: null,
+                        visita_confirmada_por: null,
+                        tecnico_liberado_count: (prev.tecnico_liberado_count ?? 0) + 1,
+                      } : prev))
+                      setTecnicoAsignado(null)
+                      setResultadoVisita({
+                        ok: true,
+                        mensaje: `Técnico liberado. Reoferta urgente: ${reoferta?.notificados ?? 0} técnico(s) notificado(s)` +
+                          (reoferta?.errors?.length ? ` · ${reoferta.errors.join(' · ')}` : '.'),
+                      })
+                    } catch (e) {
+                      setResultadoVisita({ ok: false, mensaje: e instanceof Error ? e.message : 'Error de conexión.' })
+                    } finally {
+                      setProcesandoVisita(false)
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Quita al técnico, deja el servicio en Notificada y lo reoferta como URGENTE a los demás técnicos"
+                >
+                  🔓 Liberar técnico y reofertar
+                </button>
+              )}
+            </div>
+          )}
+          {resultadoVisita && (
+            <p className={`mt-2 text-xs ${resultadoVisita.ok ? 'text-emerald-700' : 'text-red-600'}`}>{resultadoVisita.mensaje}</p>
+          )}
+        </div>
+      )}
+
       {/* Registro de llamadas del equipo (2026-08-07) — el admin carga a mano
           cada llamada con el cliente (hora + qué se habló). Va al audit log
           append-only (tipo llamada_admin) via /api/admin/llamadas. NO envía
@@ -3309,6 +3531,16 @@ export default function SolicitudDetalle() {
                   ) : e.tipo === 'pago_registrado' ? (
                     <p className="text-sm text-slate-900">
                       💰 <span className="font-semibold">Pago registrado (Wompi)</span>
+                      <span className="ml-2 text-xs text-gray-600">{e.motivo}</span>
+                    </p>
+                  ) : e.tipo === 'visita_confirmada' ? (
+                    <p className="text-sm text-slate-900">
+                      📅 <span className="font-semibold">Visita confirmada</span>
+                      <span className="ml-2 text-xs text-gray-600">{e.motivo}</span>
+                    </p>
+                  ) : e.tipo === 'tecnico_liberado' ? (
+                    <p className="text-sm text-slate-900">
+                      🔓 <span className="font-semibold">Técnico liberado — reoferta urgente</span>
                       <span className="ml-2 text-xs text-gray-600">{e.motivo}</span>
                     </p>
                   ) : e.tipo === 'llamada_tecnico' ? (

@@ -122,3 +122,23 @@ export const SIGUIENTE_PASO_LABELS: Record<string, string> = {
   no_reparable: 'Imposibilidad de arreglo',
   negativa_cliente: 'Negativa del cliente',
 }
+
+// Ciclo de repuesto desde el portal del TÉCNICO (2026-10-23). Viven aquí (y
+// no en repuesto-recibido.service.ts) porque la card del portal es client-side
+// y no puede importar nada que arrastre supabase-admin.
+/** Estados en los que la card muestra "📦 Llegó el repuesto" junto a "Llamar". */
+export const ESTADOS_REPUESTO_MARCABLE_TECNICO: ReadonlySet<string> = new Set([
+  'esperando_repuesto',
+  'repuesto_en_camino',
+])
+/**
+ * Estados de repuesto desde los que el técnico puede ir directo a "Completar
+ * servicio". Esperar un repuesto ya NO bloquea el cierre: si lo consiguió por
+ * otra vía o resolvió sin él, completa y /api/completar-servicio cierra los
+ * repuestos pendientes.
+ */
+export const ESTADOS_REPUESTO_COMPLETABLES: ReadonlySet<string> = new Set([
+  'esperando_repuesto',
+  'repuesto_en_camino',
+  'repuesto_recibido',
+])

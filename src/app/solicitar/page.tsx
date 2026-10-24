@@ -505,14 +505,18 @@ export default function SolicitarServicio() {
                     />
 
                     {/* Técnico de preferencia (2026-10-15, opcional). Solo aparece
-                        cuando hay técnicos elegibles para ciudad + tipo de equipo.
-                        '' = sin preferencia → oferta abierta como siempre. */}
-                    <TecnicoPreferidoSelector
-                      ciudad={formData.ciudad_pueblo}
-                      tipoEquipo={formData.tipo_equipo}
-                      value={formData.tecnico_preferido_id ?? ''}
-                      onChange={(id) => setField('tecnico_preferido_id', id)}
-                    />
+                        cuando hay técnicos elegibles para ciudad + tipo de equipo y
+                        SOLO en particular (2026-10-22): en garantía la marca manda la
+                        orden y el cliente no elige técnico. '' = sin preferencia →
+                        oferta abierta como siempre. */}
+                    {!formData.es_garantia && (
+                      <TecnicoPreferidoSelector
+                        ciudad={formData.ciudad_pueblo}
+                        tipoEquipo={formData.tipo_equipo}
+                        value={formData.tecnico_preferido_id ?? ''}
+                        onChange={(id) => setField('tecnico_preferido_id', id)}
+                      />
+                    )}
 
                     {/* Código de descuento (2026-10-19, opcional, solo particular:
                         en garantía paga la marca). Se valida en vivo y de nuevo

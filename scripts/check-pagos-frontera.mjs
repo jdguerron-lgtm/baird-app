@@ -25,6 +25,7 @@ const FRONTERA = [
   'src/app/api/cron/wompi-conciliar/route.ts',
   'src/app/api/admin/pagos/verificar/route.ts',
   'src/app/api/admin/pagos/devolver/route.ts',
+  'src/app/api/admin/pagos/externo/route.ts',
   'src/app/pago/anticipo/[token]/page.tsx',
   'src/app/pago/saldo/[token]/page.tsx',
   'src/lib/auth/cron.ts',

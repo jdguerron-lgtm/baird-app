@@ -7,7 +7,12 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
-import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
+import {
+  ESTADO_ESTILOS,
+  ESTADO_LABELS,
+  ESTADOS_REPUESTO_COMPLETABLES,
+  ESTADOS_REPUESTO_MARCABLE_TECNICO,
+} from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
@@ -17,6 +22,9 @@ import { estadoPagoCliente, esServicioPrecioFijo } from '@/lib/constants/pago-cl
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 import CarnetTecnico from '@/components/ui/CarnetTecnico'
 import EquipoServicioSelector, { type AuxiliarSelector } from '@/components/tecnico/EquipoServicioSelector'
+import { etiquetaFranjaCorta, proximidadVisita } from '@/lib/utils/confirmacion-visita'
+import { slotDesdeFechaVisita } from '@/lib/utils/agenda-slots'
+import { formatearFechaLargaCO } from '@/lib/utils/fecha-visita'
 import {
   CARNET_TECNICO_SELECT,
   construirCarnet,
@@ -58,6 +66,10 @@ interface Servicio {
   abono_pagado_at: string | null
   saldo_pagado_at: string | null
   tipo_solicitud: string | null
+  // Confirmación de visita (2026-10-22): el técnico confirma o marca
+  // "No alcanzo" desde la card. Ver docs/PROTOCOLO-VISITA.md § Fase 0.
+  fecha_visita_at: string | null
+  visita_confirmada_at: string | null
 }
 
 export default function PortalTecnicoPage() {
@@ -67,6 +79,8 @@ export default function PortalTecnicoPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'activos' | 'historial'>('activos')
+  // Aviso tras "No alcanzo" (el servicio desaparece de la lista).
+  const [avisoConfirmacion, setAvisoConfirmacion] = useState<string | null>(null)
   // Carnet digital (2026-10-10): el técnico lo muestra al cliente al llegar.
   const [carnet, setCarnet] = useState<CarnetTecnicoData | null>(null)
   const [verCarnet, setVerCarnet] = useState(false)
@@ -118,7 +132,7 @@ export default function PortalTecnicoPage() {
           // Sin cotizacion ni monto_pagado_online a propósito: el técnico no
           // debe ver el precio al cliente (margen Baird). La etapa de pago se
           // deriva solo de las fechas (sin montos).
-          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, tecnico_asignado_id, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at')
+          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, tecnico_asignado_id, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, fecha_visita_at, visita_confirmada_at')
           .eq('tecnico_asignado_id', tec.id)
           .order('created_at', { ascending: false })
       )
@@ -155,6 +169,8 @@ export default function PortalTecnicoPage() {
           abono_pagado_at: s.abono_pagado_at ?? null,
           saldo_pagado_at: s.saldo_pagado_at ?? null,
           tipo_solicitud: s.tipo_solicitud ?? null,
+          fecha_visita_at: s.fecha_visita_at ?? null,
+          visita_confirmada_at: s.visita_confirmada_at ?? null,
         })))
       }
 
@@ -370,6 +386,12 @@ export default function PortalTecnicoPage() {
 
         {/* Service list */}
         <div className="space-y-3">
+          {avisoConfirmacion && tab === 'activos' && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs text-emerald-800 flex items-start justify-between gap-3">
+              <span>✅ {avisoConfirmacion}</span>
+              <button type="button" onClick={() => setAvisoConfirmacion(null)} className="text-emerald-700 font-semibold shrink-0">Cerrar</button>
+            </div>
+          )}
           {tab === 'activos' && (
             <>
               {[...activos, ...enVerificacion].length === 0 ? (
@@ -385,6 +407,20 @@ export default function PortalTecnicoPage() {
                     token={token}
                     auxiliares={auxiliares}
                     equipoServicio={s.id in equipoPorServicio ? equipoPorServicio[s.id] : null}
+                    onConfirmacion={(id, resultado) => {
+                      if (resultado === 'liberada') {
+                        // Ya no es suyo: sale de la lista y se avisa arriba.
+                        setServicios(prev => prev.filter(x => x.id !== id))
+                        setAvisoConfirmacion('Listo, liberamos ese servicio y lo ofrecimos de inmediato a otros técnicos. Gracias por avisar a tiempo.')
+                      } else {
+                        setServicios(prev => prev.map(x => (x.id === id ? { ...x, visita_confirmada_at: new Date().toISOString() } : x)))
+                      }
+                    }}
+                    onRepuestoRecibido={id => {
+                      // El servicio sigue siendo suyo: pasa a repuesto_recibido
+                      // (el cliente elige fecha) y "Completar servicio" sigue visible.
+                      setServicios(prev => prev.map(x => (x.id === id ? { ...x, estado: 'repuesto_recibido' } : x)))
+                    }}
                   />
                 ))
               )}
@@ -474,6 +510,8 @@ function ServiceCard({
   token,
   auxiliares = [],
   equipoServicio = null,
+  onConfirmacion,
+  onRepuestoRecibido,
 }: {
   servicio: Servicio
   token: string
@@ -481,6 +519,10 @@ function ServiceCard({
   auxiliares?: AuxiliarSelector[]
   /** auxiliares_ids de este servicio (null = nunca definido / sin dato). */
   equipoServicio?: string[] | null
+  /** Confirmación de visita (2026-10-22): el padre actualiza la lista. */
+  onConfirmacion?: (id: string, resultado: 'confirmada' | 'liberada') => void
+  /** "📦 Llegó el repuesto" (2026-10-23): el padre pasa la card a repuesto_recibido. */
+  onRepuestoRecibido?: (id: string) => void
 }) {
   // El técnico puede iniciar diagnóstico tras aceptar (estado 'asignada',
   // ambos flujos — fusión 2026-07-09).
@@ -492,7 +534,16 @@ function ServiceCard({
   // cliente no quiso), que /api/diagnostico sí permite.
   const precioFijo = esServicioPrecioFijo(s)
   const needsDiagnostic = s.estado === 'asignada'
-  const canComplete = (s.estado === 'en_proceso' || (precioFijo && s.estado === 'asignada')) && !s.tiene_evidencia
+  //
+  // REPUESTO (2026-10-23): esperar un repuesto ya NO bloquea el cierre. En
+  // esperando_repuesto / repuesto_en_camino / repuesto_recibido el técnico
+  // también ve "Completar servicio" (si consiguió el repuesto por otra vía o
+  // resolvió sin él); /api/completar-servicio cierra los repuestos pendientes.
+  const enCicloRepuesto = ESTADOS_REPUESTO_COMPLETABLES.has(s.estado)
+  const canComplete = (s.estado === 'en_proceso' || (precioFijo && s.estado === 'asignada') || enCicloRepuesto) && !s.tiene_evidencia
+  // "📦 Llegó el repuesto": solo mientras nadie lo haya marcado (admin,
+  // supervisor o él mismo) y el cliente no haya agendado la visita final.
+  const puedeMarcarRepuesto = ESTADOS_REPUESTO_MARCABLE_TECNICO.has(s.estado)
   // "Llamar" solo en servicios vivos — en el historial ya no hay a quién
   // coordinar y esconderlo evita llamadas por error a clientes cerrados.
   const esActivo = ![
@@ -542,6 +593,13 @@ function ServiceCard({
           <p><span className="font-semibold text-gray-500">Zona:</span> {s.zona_servicio}, {s.ciudad_pueblo}</p>
         </div>
 
+        {/* Confirmación de visita (2026-10-22): "✅ Confirmo" / "❌ No alcanzo"
+            solo en 'asignada' (antes del diagnóstico). "No alcanzo" libera el
+            servicio y lo reoferta URGENTE a otros técnicos. */}
+        {s.estado === 'asignada' && (
+          <ConfirmacionVisita servicio={s} token={token} onConfirmacion={onConfirmacion} />
+        )}
+
         {/* Equipo que va a este servicio (2026-10-13): solo en servicios vivos
             y si el técnico tiene auxiliares. Cada cambio avisa al cliente. */}
         {esActivo && auxiliares.length > 0 && (
@@ -581,22 +639,27 @@ function ServiceCard({
             Completar) a la derecha. El botón registra la INTENCIÓN de llamada
             en el audit log (best-effort) y abre el marcador con tel:. */}
         <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-          {esActivo && s.cliente_telefono ? (
-            <a
-              href={`tel:+${phoneToDigits(s.cliente_telefono)}`}
-              onClick={() => {
-                // Fire-and-forget: no bloquea la llamada si falla
-                fetch('/api/tecnico/llamada-intento', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
-                }).catch(() => {})
-              }}
-              className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
-            >
-              📞 Llamar
-            </a>
-          ) : <span />}
+          <div className="flex items-center gap-2 flex-wrap">
+            {esActivo && s.cliente_telefono && (
+              <a
+                href={`tel:+${phoneToDigits(s.cliente_telefono)}`}
+                onClick={() => {
+                  // Fire-and-forget: no bloquea la llamada si falla
+                  fetch('/api/tecnico/llamada-intento', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
+                  }).catch(() => {})
+                }}
+                className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
+              >
+                📞 Llamar
+              </a>
+            )}
+            {puedeMarcarRepuesto && (
+              <RepuestoRecibidoBoton servicio={s} token={token} onRepuestoRecibido={onRepuestoRecibido} />
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-gray-300">
               {new Date(s.created_at).toLocaleDateString('es-CO')}
@@ -631,7 +694,220 @@ function ServiceCard({
             )}
           </div>
         </div>
+        {/* En el ciclo de repuesto el botón "Completar" convive con la
+            espera: la línea aclara qué está pasando y que no está bloqueado. */}
+        {enCicloRepuesto && canComplete && esperaInfo && (
+          <p className="mt-2 text-[11px] text-amber-700 leading-snug">
+            ⏳ {esperaInfo}. Si ya tienes el repuesto y terminaste la reparación, puedes completar el servicio sin esperar.
+          </p>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * RepuestoRecibidoBoton — "📦 Llegó el repuesto" junto a "📞 Llamar"
+ * (2026-10-23). Solo en esperando_repuesto / repuesto_en_camino. Pide
+ * confirmación inline, llama a POST /api/tecnico/repuesto-recibido y avisa
+ * al padre para pasar la card a repuesto_recibido (el cliente recibe el
+ * WhatsApp para elegir la fecha de la visita de finalización).
+ */
+function RepuestoRecibidoBoton({
+  servicio: s,
+  token,
+  onRepuestoRecibido,
+}: {
+  servicio: Servicio
+  token: string
+  onRepuestoRecibido?: (id: string) => void
+}) {
+  const [confirmando, setConfirmando] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function marcar() {
+    setEnviando(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/tecnico/repuesto-recibido', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(typeof body?.error === 'string' ? body.error : `Error ${res.status}`)
+        setEnviando(false)
+        return
+      }
+      setConfirmando(false)
+      onRepuestoRecibido?.(s.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error de red')
+    }
+    setEnviando(false)
+  }
+
+  if (!confirmando) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirmando(true)}
+        className="bg-sky-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-sky-700 transition-colors"
+      >
+        📦 Llegó el repuesto
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2">
+      <p className="text-[11px] text-sky-900 leading-snug">
+        ¿Confirmas que ya tienes el repuesto? Le avisamos a {s.cliente_nombre.split(' ')[0]} para que elija la fecha de la visita.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={marcar}
+          disabled={enviando}
+          className="bg-sky-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-sky-700 disabled:opacity-60"
+        >
+          {enviando ? 'Enviando…' : 'Sí, ya lo tengo'}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setConfirmando(false); setError(null) }}
+          disabled={enviando}
+          className="text-xs text-gray-500 underline"
+        >
+          Cancelar
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+/**
+ * ConfirmacionVisita — bloque de la card para confirmar la visita o avisar
+ * "No alcanzo" (docs/PROTOCOLO-VISITA.md § Fase 0, 2026-10-22).
+ *
+ *   - Visita hoy / mañana sin confirmar → banner ámbar con los dos botones.
+ *   - Visita más adelante sin confirmar → línea discreta con los mismos botones.
+ *   - Confirmada → ✅ + link pequeño "No alcanzo" por si cambia algo.
+ *   - Sin fecha materializada → solo "No alcanzo" (no hay qué confirmar).
+ *
+ * POST /api/tecnico/confirmar-visita; el padre actualiza la lista vía
+ * onConfirmacion (confirmada → badge; liberada → la card desaparece).
+ */
+function ConfirmacionVisita({
+  servicio: s,
+  token,
+  onConfirmacion,
+}: {
+  servicio: Servicio
+  token: string
+  onConfirmacion?: (id: string, resultado: 'confirmada' | 'liberada') => void
+}) {
+  const [enviando, setEnviando] = useState<'confirmar' | 'no_alcanzo' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const prox = proximidadVisita(s.fecha_visita_at)
+  const slot = slotDesdeFechaVisita(s.fecha_visita_at)
+  const franja = slot ? etiquetaFranjaCorta(slot.franja) : ''
+  const confirmada = !!s.visita_confirmada_at
+  const puedeConfirmar = !!slot && prox !== 'pasada' && !confirmada
+  const cuando =
+    prox === 'hoy' ? `HOY ${franja}`
+    : prox === 'manana' ? `MAÑANA ${franja}`
+    : slot ? `${formatearFechaLargaCO(slot.fecha)} · ${franja}`
+    : s.horario_confirmado || 'fecha por confirmar'
+
+  const enviar = async (accion: 'confirmar' | 'no_alcanzo') => {
+    let motivo: string | undefined
+    if (accion === 'no_alcanzo') {
+      const ok = window.confirm(
+        '¿Seguro que no alcanzas a esta visita?\n\nEl servicio se libera y se ofrece DE INMEDIATO a otros técnicos. No podrás recuperarlo desde aquí.',
+      )
+      if (!ok) return
+      const txt = window.prompt('Cuéntanos brevemente por qué (opcional):', '')
+      motivo = txt?.trim() || undefined
+    }
+    setEnviando(accion)
+    setError(null)
+    try {
+      const res = await fetch('/api/tecnico/confirmar-visita', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ portalToken: token, solicitudId: s.id, accion, motivo }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error || 'No se pudo registrar. Intenta de nuevo.')
+        return
+      }
+      onConfirmacion?.(s.id, accion === 'confirmar' ? 'confirmada' : 'liberada')
+    } catch {
+      setError('Error de conexión. Intenta de nuevo.')
+    } finally {
+      setEnviando(null)
+    }
+  }
+
+  const botonNoAlcanzo = (
+    <button
+      type="button"
+      onClick={() => enviar('no_alcanzo')}
+      disabled={enviando !== null}
+      className="text-xs font-semibold px-3 py-2 rounded-xl border border-red-200 text-red-700 bg-white hover:bg-red-50 disabled:opacity-50"
+    >
+      {enviando === 'no_alcanzo' ? 'Liberando…' : '❌ No alcanzo'}
+    </button>
+  )
+
+  if (confirmada) {
+    return (
+      <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+        <span className="font-semibold text-emerald-700">✅ Visita confirmada · {cuando}</span>
+        <button
+          type="button"
+          onClick={() => enviar('no_alcanzo')}
+          disabled={enviando !== null}
+          className="text-[11px] text-gray-500 underline hover:text-red-700 disabled:opacity-50"
+        >
+          {enviando === 'no_alcanzo' ? 'Liberando…' : 'Ya no alcanzo'}
+        </button>
+        {error && <p className="w-full text-[11px] text-red-600">{error}</p>}
+      </div>
+    )
+  }
+
+  const urgente = prox === 'hoy' || prox === 'manana'
+  return (
+    <div className={`mb-3 rounded-xl px-3 py-2.5 border ${urgente ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200'}`}>
+      <p className={`text-xs font-semibold ${urgente ? 'text-amber-900' : 'text-slate-700'}`}>
+        {puedeConfirmar ? `⏳ Visita ${cuando}. ¿Vas?` : `📅 ${cuando}`}
+      </p>
+      <p className="text-[11px] text-gray-600 mt-0.5">
+        {puedeConfirmar
+          ? 'Confírmala para que el cliente te espere. Si no alcanzas, avísanos ya y la reasignamos.'
+          : 'Si no alcanzas a este servicio, avísanos y lo reasignamos.'}
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        {puedeConfirmar && (
+          <button
+            type="button"
+            onClick={() => enviar('confirmar')}
+            disabled={enviando !== null}
+            className="text-xs font-semibold px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {enviando === 'confirmar' ? 'Confirmando…' : '✅ Confirmo'}
+          </button>
+        )}
+        {botonNoAlcanzo}
+      </div>
+      {error && <p className="mt-1.5 text-[11px] text-red-600">{error}</p>}
     </div>
   )
 }

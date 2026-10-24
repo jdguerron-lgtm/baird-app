@@ -583,6 +583,10 @@ export default function SupervisorDetalle() {
                             <span className="ml-2 text-xs text-gray-500">({fechaHora(e.payload!.hora_llamada as string)})</span>
                           )}
                         </span>
+                      ) : e.tipo === 'visita_confirmada' ? (
+                        <span className="font-medium">📅 El técnico confirmó la visita</span>
+                      ) : e.tipo === 'tecnico_liberado' ? (
+                        <span className="font-medium">🔓 Técnico liberado — el servicio se reofertó a otros técnicos</span>
                       ) : e.tipo === 'llamada_tecnico' ? (
                         <span className="font-medium">📞 El técnico intentó llamar al cliente</span>
                       ) : e.estado_previo && e.estado_nuevo && e.estado_previo !== e.estado_nuevo ? (

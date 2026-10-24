@@ -3,7 +3,7 @@
 > Procedimiento de verificación de presencia del cliente antes y durante
 > la visita técnica, y manejo de no-show con evidencia documentada.
 >
-> **Última actualización: 2026-05-10.**
+> **Última actualización: 2026-10-22** (Fase 0 implementada: recordatorio diario de agenda a técnicos, Confirmo / No alcanzo en el portal, alerta al equipo a las 8 pm, liberación manual con reoferta urgente — sin liberación automática por decisión del 2026-10-22; base 2026-05-10).
 >
 > 🧭 **Ver también**:
 > - [docs/TARIFAS.md](./TARIFAS.md) — modelo "no-show: nadie paga".
@@ -14,13 +14,14 @@
 ## Tabla de contenido
 
 1. [Por qué existe este protocolo](#por-qué-existe-este-protocolo)
-2. [Lado Baird — automatización WhatsApp + cron](#lado-baird--automatización-whatsapp--cron)
-3. [Lado técnico — en la app](#lado-técnico--en-la-app)
-4. [Protocolo de no-show](#protocolo-de-no-show)
-5. [Estados, columnas y tablas DB](#estados-columnas-y-tablas-db)
-6. [Política de gracia con clientes recurrentes](#política-de-gracia-con-clientes-recurrentes)
-7. [Plantillas WhatsApp pendientes](#plantillas-whatsapp-pendientes)
-8. [Cláusula informativa en T&C](#cláusula-informativa-en-tc)
+2. [**Fase 0 — Confirmación del técnico a T-24h con liberación y reoferta urgente**](#fase-0--confirmación-del-técnico-a-t-24h-con-liberación-y-reoferta-urgente) ← implementada 2026-10-22
+3. [Lado Baird — automatización WhatsApp + cron (cliente, Fase B)](#lado-baird--automatización-whatsapp--cron)
+4. [Lado técnico — en la app](#lado-técnico--en-la-app)
+5. [Protocolo de no-show](#protocolo-de-no-show)
+6. [Estados, columnas y tablas DB](#estados-columnas-y-tablas-db)
+7. [Política de gracia con clientes recurrentes](#política-de-gracia-con-clientes-recurrentes)
+8. [Plantillas WhatsApp pendientes](#plantillas-whatsapp-pendientes)
+9. [Cláusula informativa en T&C](#cláusula-informativa-en-tc)
 
 ---
 
@@ -38,7 +39,120 @@ Aún así, el protocolo de evidencia es **obligatorio** porque:
 
 ---
 
+## Fase 0 — Confirmación del técnico a T-24h con liberación y reoferta urgente
+
+> **Implementada el 2026-10-22** (código en rama, migración `20261022_confirmacion_visita.sql`
+> pendiente de aplicar en prod, plantilla `agenda_manana_tecnico_v1` pendiente de subir).
+> Esta fase se antepone a los Momentos 1–3 (que verifican al **cliente**) porque los
+> datos de prod dicen que hoy el que falla es el **técnico**, no el cliente.
+>
+> **Decisión de alcance (user, 2026-10-22): sin liberación automática.** El sistema
+> recuerda y alerta; sueltan al técnico solo él mismo ("No alcanzo") o el admin
+> ("Liberar técnico y reofertar"). La versión estricta (liberar a las 20:00 sin
+> confirmación) queda documentada al final como paso siguiente si las alertas no
+> alcanzan.
+
+### Por qué el técnico primero (datos de prod, 60 días al 2026-10-22)
+
+54 reservas con `fecha_visita_at` ya vencida, clasificadas con la misma
+lógica de `incumplidos.service.ts`:
+
+| Resultado | Garantía | Particular | Total |
+|---|---|---|---|
+| Cumplida el día reservado | 3 | 7 | 10 |
+| Atendida días después (`tarde`) | 6 | 4 | 10 |
+| Vencida con técnico asignado y sin visita | 6 | 6 | 12 |
+| Vencida sin que nadie aceptara | 7 | 1 | 8 |
+| Cerrada sin marcador (completada/cancelada) | 5 | 9 | 14 |
+
+- Reservar con más anticipación **no** mejora nada: 5+ días → 3 cumplidas de 22; 1 día → 3 de 10.
+- El cupo no explica: slots con un solo servicio fallan 53 %; un técnico con un solo servicio en el día falla 69 %.
+- No-show de cliente: 2 en 60 días.
+- Un técnico aceptó 45 de 54 asignaciones y cumplió 9. Los demás aceptan casi nada (0–5 de 50–97 ofertas).
+- Las 10 `tarde` tienen casi todas `reagendamientos_count = 0`: el técnico movió la visita por fuera del sistema.
+
+Conclusión: la palanca es que **cada visita quede confirmada por el técnico
+el día anterior y que avisar "no alcanzo" sea más fácil que no aparecer**, con
+el equipo enterado a tiempo para reasignar. La confirmación del cliente
+(Momentos 1–2) sigue siendo útil pero es fase B.
+
+### Qué hace (hora Colombia)
+
+| Cuándo | Qué | Dónde |
+|---|---|---|
+| **17:15** diario | **Recordatorio de agenda a cada técnico** con visitas Baird mañana: sus servicios (✅ confirmada / ⏳ sin confirmar) **+ sus compromisos propios** del calendario (`agenda_tecnico_bloqueos`), y el link al portal para confirmar o marcar "No alcanzo". Texto libre; si la ventana 24h está cerrada cae a la plantilla `agenda_manana_tecnico_v1`. Idempotente por día (`tecnicos.agenda_aviso_at`). | `GET /api/cron/agenda-tecnicos` (`vercel.json` `15 22 * * *`) → `enviarAgendaTecnicos()` |
+| **20:00** diario | **Alerta al equipo** (`WHATSAPP_ALERT_PHONE`, texto libre) con las visitas de mañana **con técnico y sin confirmar** y las **sin técnico**, cada una con link a su ficha. Si todo está confirmado no manda nada. | `GET /api/cron/alerta-visitas` (`0 1 * * *`) → `enviarAlertaAdminVisitas()` |
+| Cuando el técnico quiera | **Card del portal** (`/tecnico/{token}`, estado `asignada`): banner "⏳ Visita MAÑANA 8am - 12pm. ¿Vas?" con **✅ Confirmo** / **❌ No alcanzo** (ámbar si es hoy o mañana, discreto si es más adelante). Confirmada → "✅ Visita confirmada" + link "Ya no alcanzo". | `POST /api/tecnico/confirmar-visita` |
+| Al aceptar | Aceptar un servicio con la visita a **≤ 36 h** cuenta como confirmación (`visita_confirmada_por='aceptacion'`): no se le vuelve a pedir. | `procesarAceptacion` → `aceptacionCuentaComoConfirmacion()` |
+| Cuando el admin quiera | Ficha `/admin/solicitudes/[id]`, bloque **"📅 Confirmación de la visita"**: estado de la confirmación, **"✅ Confirmada por llamada"** y **"🔓 Liberar técnico y reofertar"**. Historial muestra `visita_confirmada` y `tecnico_liberado`. | `POST /api/admin/confirmar-visita`, `POST /api/admin/liberar-tecnico` |
+
+**Liberar** (`liberarTecnico()` en `confirmacion-visita.service.ts`), tanto por
+"No alcanzo" como por el admin:
+
+1. Solo desde **`asignada`** (en `repuesto_recibido` el técnico tiene la pieza; en `en_proceso` ya hubo diagnóstico: ahí el admin reasigna con las herramientas de siempre).
+2. **UPDATE atómico** `tecnico_asignado_id = NULL, estado = 'notificada', tecnico_liberado_count + 1` condicionado al técnico y estado leídos (si alguien se adelantó, no toca nada).
+3. Evento `tecnico_liberado` (actor `tecnico` o email del admin; payload con técnico, motivo, detalle, fecha). `notificarCambioEstado(asignada → notificada)` → historial + supervisores que filtren ese estado.
+4. Si lo soltó el admin, texto libre al técnico (best-effort; si no tiene ventana abierta, el admin lo llama).
+5. **Reoferta URGENTE**: `notificarTecnicos(id, { excluirTecnicoId, urgente: true })` — va a todos los técnicos de la ciudad menos el liberado (preferido incluido, porque `notificados_at` ya está) con el horario prefijado **"🚨 URGENTE (técnico liberado) ·"**. Sin plantilla nueva. Si no hay otros técnicos, lo dice en `errors` y el admin asigna a mano.
+6. El cliente **no** recibe mensaje (no hay plantilla y avisar sin reemplazo genera más llamadas que valor). Fase B: `visita_en_reasignacion_cliente_v1`.
+
+Es también el "quitar técnico" limpio que faltaba: el guard de 2026-09-08 en
+`notificarTecnicos` prohíbe reofertar con técnico puesto porque no había forma
+segura de soltarlo.
+
+### Datos (`supabase/migrations/20261022_confirmacion_visita.sql`)
+
+- `solicitudes_servicio.visita_confirmada_at`, `visita_confirmada_por` (`tecnico | aceptacion | admin`), `tecnico_liberado_count`; índice parcial para las visitas con técnico sin confirmar.
+- `tecnicos.agenda_aviso_at` (idempotencia del recordatorio por día CO).
+- Trigger `limpiar_confirmacion_visita` (BEFORE UPDATE): si cambia `fecha_visita_at` o `tecnico_asignado_id` **y el mismo UPDATE no está confirmando**, pone en null la confirmación. Cubre los tres caminos de reagendamiento (cliente, admin, aceptación con otro horario) y cualquier reasignación sin tocar su código.
+- `solicitud_eventos.tipo` CHECK **superset 18 → 20** (`visita_confirmada`, `tecnico_liberado`). ⚠️ Antes de aplicar, confirmar que el vigente sigue siendo el de `20260825_repuesto_recordatorios.sql`.
+- ⚠️ **Aplicar la migración ANTES de desplegar**: el portal del técnico ya selecciona `visita_confirmada_at`; sin la columna, la lista de servicios del técnico falla.
+
+### Archivos
+
+| Archivo | Qué |
+|---|---|
+| `src/lib/utils/confirmacion-visita.ts` | Puro (server + browser): `proximidadVisita`, `aceptacionCuentaComoConfirmacion` (36 h), `armarAgendaTecnico` (texto + línea para plantilla), `armarAlertaAdmin`, `nombreCorto`, `ESTADOS_LIBERABLES`. |
+| `src/lib/services/confirmacion-visita.service.ts` | `confirmarVisita`, `liberarTecnico`, `enviarAgendaTecnicos`, `enviarAlertaAdminVisitas`. |
+| `src/lib/services/whatsapp.service.ts` | `notificarTecnicos(id, { excluirTecnicoId, urgente })`; `procesarAceptacion` marca confirmada si la visita es ≤ 36 h. |
+| `src/app/api/cron/agenda-tecnicos`, `src/app/api/cron/alerta-visitas` | Crons diarios (`cronAutorizado`, `?dry=1`, `?fecha=YYYY-MM-DD`; agenda además `?force=1`). Kill-switch `AGENDA_TECNICOS_ENABLED=false`. |
+| `src/app/api/tecnico/confirmar-visita` | `{ portalToken, solicitudId, accion: 'confirmar' \| 'no_alcanzo', motivo? }`. |
+| `src/app/api/admin/confirmar-visita`, `src/app/api/admin/liberar-tecnico` | Solo admin (`obtenerEmailAdmin` rechaza rol lectura). |
+| `src/app/tecnico/[token]/page.tsx` | Componente `ConfirmacionVisita` en la card; aviso verde tras "No alcanzo". |
+| `src/app/admin/solicitudes/[id]/page.tsx`, `src/app/supervisor/[token]/[id]/page.tsx` | Bloque admin + etiquetas de los eventos nuevos. |
+| `scripts/upload-templates.mjs` | `agenda_manana_tecnico_v1` (4 params + botón portal). |
+| `src/__tests__/utils/confirmacion-visita.test.ts`, `src/__tests__/services/confirmacion-visita.test.ts` | 35 casos: proximidad, 36 h, textos, guards y atomicidad de `liberarTecnico`, idempotencia de `confirmarVisita`. |
+
+Variables de entorno:
+
+```
+AGENDA_TECNICOS_ENABLED   # OPCIONAL — 'false' apaga los dos crons (agenda + alerta). Default: encendido.
+WHATSAPP_ALERT_PHONE      # destino de la alerta de las 20:00 (ya existía; default 573153019192).
+CRON_SECRET               # sigue SIN configurar en Vercel → estos crons quedan abiertos como los demás.
+```
+
+### Puesta en marcha
+
+1. Aplicar `20261022_confirmacion_visita.sql` en prod (verificar el CHECK vigente primero) → **antes** del deploy.
+2. Subir la plantilla: `node --env-file=.env.local scripts/upload-templates.mjs agenda_manana_tecnico_v1` y esperar APPROVED (`--check`). Mientras tanto el recordatorio llega solo a los técnicos con ventana 24h abierta (el texto libre); la alerta al equipo y los botones funcionan desde el deploy.
+3. Probar sin enviar: `GET /api/cron/agenda-tecnicos?dry=1` y `GET /api/cron/alerta-visitas?dry=1` devuelven los textos.
+4. Avisar a los técnicos: *"Todos los días a las 5 pm te llega tu agenda de mañana. Entra al portal y confirma cada visita; si no alcanzas a alguna, márcala como 'No alcanzo' y la reasignamos de inmediato."* Agregar la regla a `public/guia-plataforma.html`.
+5. Medir en `/admin/incumplidos` (pendiente agregar la columna "Confirmó") si las confirmadas se cumplen y cuántas se liberan a tiempo.
+
+### Qué quedó fuera a propósito (siguiente paso si las alertas no alcanzan)
+
+- **Liberación automática a las 20:00** de toda visita de mañana sin confirmar, con último aviso a las 18:00 y segunda reoferta a las 06:30. Requiere un tick horario (pg_cron + pg_net, como `wompi-conciliar`, porque Vercel en este plan solo permite crons diarios), una plantilla de pedido de confirmación con botón, gracia de 2 h para reagendamientos tardíos, y un modo `aviso` previo. Todo el modelo de datos de esta fase ya lo soporta.
+- Reagendamiento propuesto por el técnico (hoy "No alcanzo" libera; no propone otra fecha).
+- Ranking de ofertas por cumplimiento y cupo diario por técnico.
+- Respuesta por texto ("confirmo") en WhatsApp: el webhook no procesa botones ni texto como acción; el técnico usa el portal.
+- Aviso al cliente cuando su visita queda sin técnico; recordatorio al cliente (Momentos 1–2); protocolo de llegada (Momento 3).
+- Cláusula en `/contrato-tecnico` sobre la obligación de confirmar el día anterior (subir `CONTRATO_TECNICO_VERSION` si cambia el texto).
+
+---
+
 ## Lado Baird — automatización WhatsApp + cron
+
+> **Fase B (cliente).** Los Momentos 1–3 verifican al cliente. Se implementan después de la Fase 0 (técnico), que es donde están los incumplimientos hoy.
 
 ### Momento 1 — T-24h antes de la visita (cron)
 
@@ -232,6 +346,7 @@ Sin penalidad económica al cliente, pero con consecuencias claras. Texto base p
 
 | Fase | Trabajo | Bloqueador |
 |---|---|---|
+| **0** | **Confirmación del técnico a T-24h** (sección arriba): recordatorio diario de agenda + Confirmo / No alcanzo + alerta al equipo + liberación manual con reoferta urgente. **Código listo 2026-10-22.** | Aplicar `20261022_confirmacion_visita.sql` antes del deploy; subir `agenda_manana_tecnico_v1`; `CRON_SECRET` en Vercel |
 | 1 | Migración SQL: `no_show_cliente` estado + columnas evidencia + tabla `cliente_historial` | — |
 | 2 | UI técnico: botón "Llegué" → ping GPS + protocolo no-show (foto, llamadas, espera 15 min, marcar) | Migración Fase 1 |
 | 3 | Plantillas WhatsApp: subir 4 plantillas a Meta y esperar aprobación | Diseño copy + JSON |
