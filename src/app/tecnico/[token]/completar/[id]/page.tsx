@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { formatCOP } from '@/lib/utils/format'
 import type { ChecklistServicio } from '@/types/solicitud'
+import { diasSolucionBono, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import ReceptorServicio from '@/components/tecnico/ReceptorServicio'
@@ -38,6 +39,11 @@ interface Servicio {
   // estadoPrevio para el historial y para cerrar repuestos pendientes si se
   // completa desde el ciclo de repuesto (2026-10-23).
   estado: string | null
+  // Bonos garantía (2026-10-24) — ver src/lib/utils/bono-garantia.ts.
+  diagnosticado_at?: string | null
+  siguiente_paso?: string | null
+  siguiente_paso_at?: string | null
+  repuesto_recibido_at?: string | null
   // Receptor del servicio (2026-10-13) — ver components/tecnico/ReceptorServicio
   cliente_telefono?: string | null
   receptor_nombre?: string | null
@@ -109,13 +115,16 @@ export default function CompletarServicioPage() {
   const pagoBreakdown = useMemo(() => {
     if (!servicio?.es_garantia) return null
     const complejidad = (servicio.triaje_resultado?.complejidad ?? null) as ComplejidadServicio | null
-    const diasSolucion = Math.floor(
-      (Date.now() - new Date(servicio.created_at).getTime()) / (1000 * 60 * 60 * 24)
-    )
+    // Días netos (pausa por repuesto descontada) y recargo por trabajo real
+    // en finde/festivo (bono-garantia.ts). El cierre de hoy cuenta: si hoy
+    // es sáb/dom/festivo, el recargo aplica al completar.
+    const ahora = new Date()
+    const diasSolucion = diasSolucionBono(servicio, ahora.toISOString()).netos
     return estimarPagoTecnicoGarantia({
       complejidad,
       diasSolucion,
       horarioConfirmado: servicio.horario_confirmado,
+      finDeSemana: finDeSemanaTrabajo(servicio, { completado_at: ahora.toISOString() }).aplica,
       asumirOptimista: true,
     })
   }, [servicio])
@@ -138,7 +147,7 @@ export default function CompletarServicioPage() {
         querySupabase(() =>
           supabase
             .from('solicitudes_servicio')
-            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, es_garantia, created_at, horario_confirmado, triaje_resultado, tecnico_asignado_id, estado')
+            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, es_garantia, created_at, horario_confirmado, triaje_resultado, tecnico_asignado_id, estado, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at')
             .eq('id', id)
             .single()
         ),

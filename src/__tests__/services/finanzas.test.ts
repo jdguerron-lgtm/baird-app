@@ -80,7 +80,8 @@ describe('finanzas.service — calcularResumenFinanciero', () => {
 
   it('ignora no completadas, agrupa por mes de cierre y parte por flujo', () => {
     const r = calcularResumenFinanciero({ solicitudes, evidencias, pagos, desde: '2026-01-01', hasta: '2026-12-31' })
-    const g = calcularTarifaMABE({ complejidad: 'baja', diasSolucion: 4.1, cumpleTA: true, cumpleEncuesta: true, esFinDeSemana: false })
+    // g1 cerró el sábado 5 sep 2026 → recargo finde por trabajo real (bono-garantia.ts, 2026-10-24).
+    const g = calcularTarifaMABE({ complejidad: 'baja', diasSolucion: 4.1, cumpleTA: true, cumpleEncuesta: true, esFinDeSemana: true })
 
     expect(r.periodo.total.servicios).toBe(3)
     expect(r.periodo.garantia.servicios).toBe(1)

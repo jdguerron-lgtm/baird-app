@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { verificarLectura } from '@/lib/auth/admin'
 import { calcularTarifaMABE, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
+import { diasSolucionBono, encuestaDeEvidencia, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
+import { mapaFinPausaRepuesto } from '@/lib/services/bono-garantia.service'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
@@ -83,9 +85,7 @@ const bodySchema = z
 
 type Row = Record<string, unknown>
 
-const CALIFICACION_RE = /Calificacion:\s*(\d{1,2})\/10/
 
-const MS_DIA = 24 * 60 * 60 * 1000
 
 function fmtFecha(value: string | null | undefined): string {
   if (!value) return ''
@@ -128,6 +128,8 @@ interface SolicitudLiquidacion {
   siguiente_paso: string | null
   siguiente_paso_at: string | null
   repuesto_recibido_at: string | null
+  /** Derivado de solicitud_eventos (mapaFinPausaRepuesto) — ver bono-garantia.ts. */
+  fin_pausa_repuesto_at?: string | null
   anticipo_pagado_at: string | null
   saldo_pagado_at: string | null
   // Código de descuento (2026-10-19): se resta del saldo final; Baird lo asume.
@@ -163,34 +165,9 @@ function fechaCierre(sol: SolicitudLiquidacion, ev: Evidencia | undefined): { is
   return { iso: sol.created_at, origen: 'creación' }
 }
 
-/**
- * Días de solución para el bono MABE: creación → cierre, restando la pausa
- * de espera de repuesto (diagnóstico con esperar_repuesto → repuesto recibido).
- * Fallback: dias_transcurridos registrados en el diagnóstico.
- */
-function diasSolucion(sol: SolicitudLiquidacion, cierreIso: string): number {
-  const inicio = new Date(sol.created_at).getTime()
-  const fin = new Date(cierreIso).getTime()
-  if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin < inicio) {
-    return Number(sol.triaje_resultado?.dias_transcurridos ?? 0) || 0
-  }
-  let pausaMs = 0
-  if (sol.siguiente_paso === 'esperar_repuesto' && sol.siguiente_paso_at && sol.repuesto_recibido_at) {
-    const p0 = new Date(sol.siguiente_paso_at).getTime()
-    const p1 = new Date(sol.repuesto_recibido_at).getTime()
-    if (Number.isFinite(p0) && Number.isFinite(p1) && p1 > p0) pausaMs = p1 - p0
-  }
-  const dias = (fin - inicio - pausaMs) / MS_DIA
-  return Math.max(0, Math.round(dias * 10) / 10)
-}
-
-function encuestaDeEvidencia(ev: Evidencia | undefined): { contestada: boolean; calificacion: number | null } {
-  const match = ev?.cliente_comentario?.match(CALIFICACION_RE)
-  if (ev?.confirmado === true && match) {
-    return { contestada: true, calificacion: Number(match[1]) }
-  }
-  return { contestada: false, calificacion: null }
-}
+// Días de solución (con pausa por repuesto), encuesta y recargo finde/festivo
+// salen de src/lib/utils/bono-garantia.ts (2026-10-24) — misma regla que la
+// ficha admin y finanzas.
 
 /** Suma una fila TOTAL al final con la suma de las columnas numéricas dadas. */
 function agregarTotales(rows: Row[], columnasSuma: string[], etiquetaCol: string): void {
@@ -255,6 +232,11 @@ export async function POST(req: NextRequest) {
       .select('solicitud_id, completado_at, confirmado, confirmado_at, cliente_comentario')
       .in('solicitud_id', solIds)
 
+    // Fin de la pausa por repuesto cuando nadie marcó "recibido" (evento de
+    // salida del ciclo) — una sola consulta para el lote.
+    const finPausaMap = await mapaFinPausaRepuesto(solIds)
+    for (const sol of solicitudes) sol.fin_pausa_repuesto_at = finPausaMap.get(sol.id) ?? null
+
     const evidenciaMap = new Map<string, Evidencia>()
     for (const ev of (evidenciasRaw ?? []) as Evidencia[]) {
       // Si hay varias evidencias, gana la que tenga completado_at.
@@ -295,7 +277,12 @@ export async function POST(req: NextRequest) {
       const complejidad = sol.triaje_resultado?.complejidad as ComplejidadServicio | undefined
       if (!complejidad || !['baja', 'media', 'alta'].includes(complejidad)) return null
       const encuesta = encuestaDeEvidencia(ev)
-      const dias = diasSolucion(sol, cierre.iso)
+      const diasInfo = diasSolucionBono(sol, cierre.iso)
+      const dias = diasInfo.netos
+      // Recargo finde/festivo por TRABAJO REAL (diagnóstico o cierre en
+      // sáb/dom/festivo) — antes se leía recargo_weekend_aplicado, que en
+      // garantía nunca se escribe (2026-10-24).
+      const finde = finDeSemanaTrabajo(sol, ev)
       const r = calcularTarifaMABE({
         complejidad,
         diasSolucion: dias,
@@ -303,9 +290,9 @@ export async function POST(req: NextRequest) {
         // criterio del detalle admin. La columna "TA" muestra el dato crudo.
         cumpleTA: sol.cumple_ta ?? true,
         cumpleEncuesta: encuesta.contestada,
-        esFinDeSemana: (sol.recargo_weekend_aplicado ?? 0) > 0,
+        esFinDeSemana: finde.aplica,
       })
-      return { r, complejidad, dias, encuesta }
+      return { r, complejidad, dias, encuesta, pausa: diasInfo.pausa, finde }
     }
 
     const wb = XLSX.utils.book_new()
@@ -431,7 +418,7 @@ export async function POST(req: NextRequest) {
             'Solicitud ID': sol.id,
           }
         }
-        const { r, complejidad, dias, encuesta } = consolidado
+        const { r, complejidad, dias, encuesta, pausa, finde } = consolidado
         return {
           'N° orden MABE': sol.numero_serie_factura ?? '',
           'Fecha cierre': fmtFecha(cierre.iso),
@@ -441,10 +428,11 @@ export async function POST(req: NextRequest) {
           'Técnico': tec?.nombre_completo ?? '',
           'Complejidad': complejidad,
           'Días solución': dias,
+          'Pausa repuesto (días)': pausa.aplica ? pausa.dias : '',
           'TA cumplido': sol.cumple_ta === null ? '— (asumido sí)' : sol.cumple_ta ? 'Sí' : 'No',
           'Encuesta contestada': encuesta.contestada ? 'Sí' : 'No',
           'Calificación cliente': encuesta.calificacion ?? '',
-          'Fin de semana/festivo': r.recargoWeekend > 0 ? 'Sí' : 'No',
+          'Fin de semana/festivo': r.recargoWeekend > 0 ? `Sí (${finde.motivo ?? ''}${finde.fecha ? ' ' + finde.fecha : ''})` : 'No',
           'Tarifa base (COP)': r.tarifaBase,
           'Bono (COP)': r.bono,
           'Recargo finde (COP)': r.recargoWeekend,

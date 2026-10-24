@@ -27,6 +27,8 @@ import EvidenciaAdminSeccion from '@/components/admin/EvidenciaAdminSeccion'
 import PagoExternoForm from '@/components/admin/PagoExternoForm'
 import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
 import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
+import BonoGarantiaResumen from '@/components/admin/BonoGarantiaResumen'
+import { ESTADOS_PAUSA_REPUESTO, resumenBonoGarantia, type SolicitudBono } from '@/lib/utils/bono-garantia'
 import type { FacturacionEstado } from '@/types/solicitud'
 
 interface Solicitud {
@@ -1729,19 +1731,24 @@ export default function SolicitudDetalle() {
                 </div>
               )
             }
-            const dias = Number(triaje?.dias_transcurridos ?? 0) || 0
-            const cumpleTa = (solicitud as unknown as { cumple_ta?: boolean | null }).cumple_ta
-            const conRecargo = Number((solicitud as unknown as { recargo_weekend_aplicado?: number | null }).recargo_weekend_aplicado ?? 0) > 0
-            const r = calcularTarifaMABE({
-              complejidad,
-              diasSolucion: dias,
-              cumpleTA: cumpleTa ?? true,
-              cumpleEncuesta: true,
-              esFinDeSemana: conRecargo,
-            })
+            // Bonos (2026-10-24): TA, días con pausa por repuesto, recargo por
+            // trabajo real en finde/festivo y encuesta — misma regla que la
+            // liquidación (src/lib/utils/bono-garantia.ts). El fin de la pausa
+            // cuando nadie marcó "recibido" sale del historial (salida del
+            // ciclo de repuesto → en_proceso / confirmacion_pendiente).
+            const finPausaEvento = [...historial]
+              .filter(e => ESTADOS_PAUSA_REPUESTO.has(e.estado_previo ?? '') && (e.estado_nuevo === 'en_proceso' || e.estado_nuevo === 'confirmacion_pendiente'))
+              .sort((a, b) => a.ocurrido_at.localeCompare(b.ocurrido_at))[0]
+            const solBono = solicitud as unknown as SolicitudBono
+            const resumen = resumenBonoGarantia(
+              { ...solBono, fin_pausa_repuesto_at: finPausaEvento?.ocurrido_at ?? null },
+              evidencia ? { completado_at: evidencia.completado_at, confirmado: evidencia.confirmado, confirmado_at: evidencia.confirmado_at, cliente_comentario: evidencia.cliente_comentario } : null,
+            )
+            const r = resumen.tarifa ?? calcularTarifaMABE({ complejidad, diasSolucion: 0, cumpleTA: true, cumpleEncuesta: true, esFinDeSemana: false })
             return (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">💰 Cuentas del servicio — Garantía MABE</h2>
+                <BonoGarantiaResumen resumen={resumen} />
                 <div className="space-y-1.5">
                   <Fila label={`Tarifa base MABE (complejidad ${complejidad})`} valor={r.tarifaBase} />
                   {r.bono > 0 && <Fila label="Bono por tiempo de solución" valor={r.bono} />}
@@ -1751,9 +1758,9 @@ export default function SolicitudDetalle() {
                   <Fila label="Margen Baird (22% base + 10% bonos)" valor={r.margenBaird} bold />
                 </div>
                 <p className="mt-3 text-[11px] text-gray-400">
-                  Proyección con encuesta de satisfacción respondida
-                  {cumpleTa === null || cumpleTa === undefined ? ' y TA asumido cumplido' : cumpleTa ? ' (TA cumplido)' : ' (TA NO cumplido — bono anulado)'}.
-                  El consolidado final se fija al cierre del servicio.
+                  {resumen.consolidado
+                    ? `Consolidado con el cierre del ${new Date(resumen.cierre.iso).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' })}${resumen.taAsumido ? ' (TA sin dato, asumido cumplido)' : ''}. Es lo que liquida /admin/liquidaciones.`
+                    : `Proyección a hoy: ${resumen.encuestaAsumida ? 'encuesta asumida contestada' : 'encuesta contestada'}${resumen.taAsumido ? ', TA asumido cumplido' : ''}. El consolidado se fija al cierre del servicio.`}
                 </p>
               </div>
             )

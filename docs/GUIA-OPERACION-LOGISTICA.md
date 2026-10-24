@@ -266,9 +266,17 @@ Bloques, de arriba hacia abajo:
    celular, tipo o marca de equipo (queda en el historial).
 2. **Equipo y servicio**: tipo de equipo, marca, tipo de solicitud, problema
    reportado, si es **Garantía** y el **N° de orden / garantía MABE**.
-3. **💰 Cuentas del servicio**: en garantía, el desglose MABE (tarifa por
-   complejidad, bono por tiempo de solución, recargo fin de semana, total que
-   factura Baird a MABE, pago al técnico, margen Baird). En particular, el
+3. **💰 Cuentas del servicio**: en garantía, arriba una tira de chips con los
+   factores del bono — **⏱️ TA** (horas entre el horario confirmado y el
+   diagnóstico; límite 24 h), **📅 días de solución** (brutos, pausa y netos,
+   con la fila de la tabla MABE que aplica), **📦 pausa por repuesto** (desde el
+   diagnóstico hasta que el repuesto se recibe en el sistema; "abierta" si aún
+   se espera), **🗓️ finde/festivo** (aplica si el técnico diagnosticó o cerró en
+   sábado, domingo o festivo) y **⭐ encuesta** (calificación del cliente) — y
+   debajo el desglose MABE (tarifa por complejidad, bono por tiempo de
+   solución, recargo fin de semana, total que factura Baird a MABE, pago al
+   técnico, margen Baird). Dice si es **proyección** (servicio abierto) o
+   **consolidado** (lo que liquida 💰 Liquidaciones). En particular, el
    código `BS-…`, el total que paga el cliente (IVA incluido), base gravable,
    IVA, pago al técnico, margen, descuento aplicado si lo hay, y el botón
    **🧾 Ficha de facturación** (§ 9.2). Antes del diagnóstico el bloque dice
