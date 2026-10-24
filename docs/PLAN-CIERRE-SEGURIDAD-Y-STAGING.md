@@ -25,6 +25,8 @@
 | H6 | **Sin CI ni protección de rama.** `tsc`/`lint`/`test` se corren a mano; no hay `.github/workflows` ni hooks. | Repo. La protección de `main` en GitHub no se pudo verificar (sin `gh`). | 🟠 |
 | H7 | Las tablas base `solicitudes_servicio` y `tecnicos` **no se crean en ninguna migración** (nacieron en el dashboard). Las 55 migraciones solas no levantan un staging. | `grep CREATE TABLE supabase/migrations`. | 🟡 (afecta staging) |
 | H8 | Plan Free de Supabase: sin backups automáticos de la BD de producción (solo `git bundle` del código). Leaked-password protection y branching requieren Pro. | Advisor auth; `get_cost` devuelve 0 USD para un proyecto nuevo en la org (cabe un 3º proyecto gratis). | 🟠 (decisión) |
+| H10 | **Dependencias con parches de seguridad pendientes.** `npm audit --omit=dev`: 10 vulnerabilidades (2 críticas, 7 altas, 1 moderada). `next` 16.1.6 acumula 38 advisories hasta 16.4.3 (4 RCE críticas en Image Optimization y `use cache`, bypass de middleware, DoS). `zod` 4.3.6 (DoS por memoria, fix 4.6.6), `xlsx` 0.18.5 (prototype pollution + ReDoS, **sin fix en npm**), `jspdf` arrastra `dompurify` 3.4.12 (XSS), `@supabase/supabase-js` 2.95 arrastra `ws` 8.19 (DoS). Dev: `vitest` 4.0 crítica. | `npm audit` 2026-10-24; detalle en § 3 C11 | 🟠 (crítica en el listado, mitigada en parte por Vercel; ver C11) |
+| H11 | **Un 3º proyecto Supabase Free no está permitido**: el límite es 2 proyectos Free activos por usuario y están ocupados por prod y por `Ventas` (CRM de cartera, en uso: 1.868 pagos, 290 filas de auditoría). `get_cost` devolvía 0 USD pero `create_project` lo rechaza. | Intento 2026-10-24 | 🟠 (bloquea S1; opciones en § 4.1) |
 | H9 | Buckets `tecnicos-documentos` (cédulas), `tecnicos-fotos` y `evidencias-servicio` públicos por URL exacta. | `storage.buckets.public = true`. | 🟠 |
 
 ---
@@ -153,6 +155,25 @@ Cada ficha tiene: qué, quién lo ejecuta, prerrequisitos, riesgo, qué pasa si 
 - **Qué:** Upstash Ratelimit o Vercel Firewall en las rutas que disparan WhatsApp; `/api/notificar-registro` pasa a exigir `verificarAdmin` o un token.
 - **Impacto:** solo si el límite queda demasiado bajo (un cliente legítimo ve 429). Se calibra en staging con los límites actuales de `middleware.ts`.
 
+### C11 · Parches de dependencias  ·  riesgo bajo-medio · requiere preview + ventana
+
+Estado al 2026-10-24 (`npm audit`, lockfile de `main`):
+
+| Paquete | Instalada | Fix | Exposición real en Baird | Acción |
+|---|---|---|---|---|
+| `next` | 16.1.6 | **16.4.3** (misma major) | Las 4 RCE críticas están en el optimizador de imágenes self-hosted (sharp) y en `use cache`; **en Vercel el optimizador es el de la plataforma y el proyecto no usa `use cache`**, así que no aplican tal cual. Sí aplican los **bypass de middleware** (en Baird el middleware solo hace rate limit, headers y noindex; la autorización vive en cada handler, así que el impacto es perder rate limit/noindex, no acceso) y varios **DoS** en Server Components/Actions. | Subir a 16.4.3 + `eslint-config-next` 16.4.3 en un PR propio, probar en preview y local (`npm run build`, flujos de técnico y admin), deploy en ventana. |
+| `zod` | 4.3.6 | 4.6.7 | DoS por memoria validando colecciones grandes: `/api/solicitar` y `/api/diagnostico` validan payloads públicos. | Subir en el mismo PR; correr `npm test` (hay tests de los schemas). |
+| `xlsx` (SheetJS) | 0.18.5 | **Ninguno en npm** (el paquete npm está abandonado; los fixes están en 0.20.x publicados solo en cdn.sheetjs.com) | Prototype pollution + ReDoS al **parsear** Excel: `/api/carga-masiva` y `/admin/carga-masiva` (solo admin autenticado sube archivos). Los exports (`/api/admin/export`, `/api/admin/liquidaciones`) solo escriben. | Opción A: instalar `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` (misma API). Opción B: migrar la lectura a `exceljs`. Riesgo acotado (admin-only) → semana 2. |
+| `jspdf` → `dompurify` | 4.2.1 → 3.4.12 | `npm audit fix` sube dompurify | XSS en `html()` de jsPDF; Baird genera PDFs desde datos, no desde HTML de terceros. | `npm audit fix` (transitivo). |
+| `@supabase/supabase-js` → `ws` | 2.95.3 → 8.19 | 2.118.0 / `npm audit fix` | DoS en WebSocket (Realtime); la app no usa Realtime. | Subir supabase-js (minor) o `npm audit fix`. |
+| `postcss`, `source-map-js`, `nanoid`, `baseline-browser-mapping` | transitivas | vía `next` 16.4.3 + `npm audit fix` | Build-time; sin exposición en runtime. | Salen solas con el upgrade de Next. |
+| `vitest` (dev) | 4.0.18 | 5.0.5 (major) | Solo CI/local. | PR aparte; revisar breaking changes de Vitest 5. |
+
+- **Runtime:** Vercel ejecuta `nodejs24.x` (LTS vigente). Postgres de prod y Ventas en 17.6.1.063 (canal GA; si el dashboard ofrece *upgrade*, va en ventana y requiere Pro para backup previo).
+- **Orden:** (1) `npm audit fix` sin `--force` + Next/zod/supabase-js en un PR → CI → preview → ventana. (2) `xlsx` y `vitest` en PRs aparte. **Nunca `npm audit fix --force`** (haría saltos de major sin control).
+- **Si sale mal:** build roto se ve en el preview antes del merge; regresión en runtime → Instant Rollback.
+- **Ventana:** el deploy del PR de Next en 22:00–23:00; el resto a cualquier hora porque son cambios de build.
+
 ---
 
 ## 4. Ambiente de pruebas: diseño
@@ -174,6 +195,19 @@ Cada ficha tiene: qué, quién lo ejecuta, prerrequisitos, riesgo, qué pasa si 
 **Qué cambia para producción:** nada. Las env vars de scope Production no se tocan; solo se agregan las de Preview.
 
 **Limitaciones que hay que aceptar:** los archivos de Storage no se copian (las fotos del seed son placeholders); los textos libres (diagnóstico, notas) se copian tal cual; las plantillas de WhatsApp son las mismas de prod (no hay "plantillas de staging" en Meta), por eso la whitelist es obligatoria.
+
+### 4.1 Cómo desbloquear el proyecto de staging (decisión pendiente)
+
+El límite de Supabase es **2 proyectos Free activos por usuario** (prod + `Ventas`). Opciones, de menor a mayor costo:
+
+| Opción | Qué implica | Costo aprox. | Pros | Contras |
+|---|---|---|---|---|
+| **A. Pasar la organización a Pro** y crear `baird-staging` ahí | Pro 25 USD/mes incluye 10 USD de crédito de cómputo; cada proyecto Micro cuesta 10 USD/mes → prod + Ventas + staging ≈ 25 + 30 − 10 | ~45 USD/mes | Prod gana **backups diarios (7 días)**, leaked-password protection y branching; staging queda en la misma org. Es la C5 del plan. | Costo recurrente; conviene confirmar el precio en la pantalla de upgrade. |
+| **B. Nueva organización Pro solo para staging** | Org nueva en Pro con un único proyecto | ~25 USD/mes | No toca la org actual. | Prod sigue sin backups; dos facturas. |
+| **C. Supabase local con Docker** (`npx supabase start`) | Instalar Docker Desktop (WSL2) en el PC; stack completo (Postgres, Auth, Storage, pg_cron) en localhost | 0 USD | Gratis y aislado; ideal para probar migraciones y RLS. | Solo sirve para **local**: las previews de Vercel no pueden apuntar a localhost. Docker Desktop pesa ~2 GB (hay 103 GB libres). |
+| **D. Pausar `Ventas`** | Liberar el cupo Free | 0 USD | Inmediato. | `Ventas` está en uso (CRM de cartera): **descartada**. |
+
+**Recomendación:** A (resuelve también los backups de prod, que hoy no existen). Si el costo no se aprueba ahora, C cubre lo más valioso a corto plazo (probar migraciones y las Fases 2–4.2 de RLS en local) y se complementa con previews de Vercel que sigan apuntando a prod **solo para navegación de lectura**.
 
 ### Pasos y dueño
 
@@ -228,13 +262,16 @@ Se suman a `docs/FLUJO-DESARROLLO.md` § 3:
 
 | Fecha | Cambio | Ambiente | Resultado | Rollback usado |
 |---|---|---|---|---|
-| 2026-10-24 | Plan, evidencia, migración escrita (sin aplicar), CI, kit de staging | repo | rama `seguridad/plan-cierre-y-staging`, sin merge | — |
+| 2026-10-24 | Plan, evidencia, migración escrita (sin aplicar), CI, kit de staging | repo | rama `seguridad/plan-cierre-y-staging`, commit `398a6cf`, sin push ni merge | — |
+| 2026-10-24 | Intento de crear `baird-staging` (MCP `create_project`, costo confirmado 0 USD) | Supabase | **Rechazado**: límite de 2 proyectos Free por usuario (prod + Ventas). Opciones en § 4.1 | — |
+| 2026-10-24 | `npm audit` + comparación de versiones (Next, zod, xlsx, supabase-js, vitest) | repo | Hallazgo H10 / ficha C11; sin cambios de código todavía | — |
 
 ---
 
 ## 8. Decisiones que necesito de ti
 
-1. **OK para crear `baird-staging`** en Supabase (0 USD, misma org).
+1. **Cómo desbloquear `baird-staging`** (§ 4.1): A (org a Pro, ~45 USD/mes, con backups de prod), B (org Pro aparte, ~25), o C (Docker local, 0 USD, sin previews).
+1b. **OK para el PR de parches** (C11): Next 16.4.3 + zod + supabase-js + `npm audit fix`, probado en preview antes de la ventana.
 2. **Quién copia `cron_secret` de Vault a Vercel** (C1): lo haces tú en la ventana; yo verifico antes y después.
 3. **Plan Pro de Supabase** (C5, 25 USD/mes): ahora, antes de la Fase 4.2, o no.
 4. **WhatsApp en staging:** mismo número con whitelist (más simple) o número de prueba de Meta.
