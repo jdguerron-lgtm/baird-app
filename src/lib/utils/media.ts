@@ -29,15 +29,29 @@
 /** Tamaño debajo del cual no vale la pena recomprimir si ya es JPEG/PNG/WebP. */
 const SKIP_COMPRESSION_THRESHOLD_BYTES = 500 * 1024
 
+/** Tope de video por defecto = techo por archivo del plan Free de Supabase. */
+const VIDEO_MB_DEFAULT = 50
+
 /**
  * Límite de tamaño para VIDEOS de evidencia (diagnóstico y pruebas de
  * completación). Subido de 10 → 50 MB el 2026-10-10: los videos van directo
  * del navegador a Supabase Storage (no pasan por Vercel, así que el tope de
- * 4.5 MB por request no aplica) y el bucket `evidencias-servicio` no tiene
- * `file_size_limit` propio — el techo real es el límite global del proyecto
- * Supabase (50 MB). Las fotos siguen con su propio tope post-compresión.
+ * 4.5 MB por request no aplica ni el plan de Vercel cambia nada) y el bucket
+ * `evidencias-servicio` no tiene `file_size_limit` propio — el techo real es
+ * el límite global del proyecto Supabase (50 MB en Free).
+ *
+ * Desde 2026-10-24 se lee de `NEXT_PUBLIC_EVIDENCIA_VIDEO_MAX_MB` (default 50)
+ * para poder subirlo SIN tocar código cuando el proyecto pase a Supabase Pro:
+ * (1) Supabase → Storage → Settings → "Upload file size limit" ≥ el valor,
+ * (2) la env en Vercel, (3) redeploy. Si la env supera el límite real de
+ * Supabase, el upload falla con "Payload too large" — primero (1), luego (2).
+ * Las fotos siguen con su propio tope post-compresión.
  */
-export const MAX_VIDEO_SIZE_MB = 50
+function leerVideoMaxMb(): number {
+  const raw = Number(process.env.NEXT_PUBLIC_EVIDENCIA_VIDEO_MAX_MB)
+  return Number.isFinite(raw) && raw >= 10 && raw <= 5000 ? Math.floor(raw) : VIDEO_MB_DEFAULT
+}
+export const MAX_VIDEO_SIZE_MB = leerVideoMaxMb()
 export const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024
 
 /**
@@ -50,13 +64,14 @@ export const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
 /**
  * Topes de archivos por formulario (2026-10-20: 4 → 10 en diagnóstico,
- * 6 → 12 en completar, 20 para la evidencia adicional del admin). El video
- * sigue limitado a MAX_VIDEO_SIZE_MB por archivo (techo del plan Supabase),
- * así que "un video más largo" se sube como varios clips de ≤ 50 MB.
+ * 6 → 12 en completar, 20 para la evidencia adicional del admin;
+ * 2026-10-24: 20 / 20 / 30 porque seguían quedando cortos). El video sigue
+ * limitado a MAX_VIDEO_SIZE_MB por archivo, así que "un video más largo" se
+ * sube como varios clips de ≤ ese tamaño.
  */
-export const MAX_EVIDENCIAS_DIAGNOSTICO = 10
-export const MAX_ARCHIVOS_COMPLETAR = 12
-export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = 20
+export const MAX_EVIDENCIAS_DIAGNOSTICO = 20
+export const MAX_ARCHIVOS_COMPLETAR = 20
+export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = 30
 
 /** Resolución y calidad por defecto de las fotos de evidencia (lado mayor en px / calidad JPEG). */
 export const EVIDENCIA_MAX_DIMENSION = 4000
@@ -231,12 +246,22 @@ export function videoSizeAdvice(): string {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
   const isIPhone = /iPhone|iPad|iPod/.test(ua)
   const isAndroid = /Android/.test(ua)
+  const seg = segundosVideoAprox(MAX_VIDEO_SIZE_MB)
 
   if (isIPhone) {
-    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de 40 segundos. Si necesitas mostrar más, sube varios clips.`
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de ${seg} segundos. Si necesitas mostrar más, sube varios clips.`
   }
   if (isAndroid) {
-    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de 40 segundos. Si necesitas mostrar más, sube varios clips.`
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de ${seg} segundos. Si necesitas mostrar más, sube varios clips.`
   }
-  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (20-30 s) o usa resolución 1080p en lugar de 4K. Puedes subir varios clips.`
+  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (menos de ${seg} s) o usa resolución 1080p en lugar de 4K. Puedes subir varios clips.`
+}
+
+/**
+ * Duración aproximada (segundos) que cabe en `mb` a 1080p/30 fps en un
+ * celular típico (~1,25 MB/s). Es una guía para el técnico, no un cálculo
+ * exacto: 50 MB ≈ 40 s, 200 MB ≈ 160 s. Redondeado a múltiplos de 10.
+ */
+export function segundosVideoAprox(mb: number): number {
+  return Math.max(10, Math.floor((mb / 1.25) / 10) * 10)
 }
