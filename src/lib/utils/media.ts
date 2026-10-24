@@ -156,8 +156,10 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
     forceReencode = false,
   } = opts
 
-  // Videos no se comprimen client-side.
-  if (!file.type.startsWith('image/')) return file
+  // Videos (y cualquier cosa que no sea imagen) no se comprimen client-side.
+  // Se clasifica con tipoArchivoEvidencia para que una foto que llega con
+  // MIME vacío desde la galería de algunos Android también pase por acá.
+  if (tipoArchivoEvidencia(file) !== 'imagen') return file
 
   // Archivo ya razonable y formato compatible — devolvemos tal cual.
   if (file.size <= skipThresholdBytes && COMPATIBLE_IMAGE_TYPES.has(file.type.toLowerCase())) {
@@ -210,6 +212,68 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
 }
 
 const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm', 'mkv', '3gp', 'm4v'])
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'bmp', 'avif'])
+
+export type TipoArchivoEvidencia = 'imagen' | 'video'
+
+/**
+ * Clasifica un archivo elegido por el técnico. Primero por MIME; si viene
+ * vacío (pasa con la galería de algunos Android y con archivos compartidos
+ * desde WhatsApp), por la extensión del nombre. `null` = no es evidencia
+ * (PDF, audio, etc.). Antes un MIME vacío se descartaba en silencio y el
+ * técnico veía que "no pasaba nada" al elegir fotos.
+ */
+export function tipoArchivoEvidencia(file: { type: string; name?: string }): TipoArchivoEvidencia | null {
+  const mime = (file.type || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'imagen'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime) return null
+  const ext = (file.name || '').toLowerCase().split('.').pop() || ''
+  if (IMAGE_EXTENSIONS.has(ext)) return 'imagen'
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video'
+  return null
+}
+
+/** Lado mayor de las miniaturas de vista previa (px). */
+export const MINIATURA_MAX_DIMENSION = 320
+
+/**
+ * Miniatura liviana para la vista previa de una foto recién elegida.
+ *
+ * Antes la galería del formulario mostraba `URL.createObjectURL(original)`:
+ * el navegador tenía que decodificar cada original completo (12–48 MP) para
+ * pintar un cuadrito de 80 px, y con 10–20 fotos de la biblioteca a la vez el
+ * celular se quedaba "pensando" o Safari recargaba la pestaña. Acá se decodifica
+ * con `createImageBitmap(file, { resizeWidth })` (el navegador puede
+ * decodificar a escala) y se exporta un JPEG de `MINIATURA_MAX_DIMENSION` px.
+ * Si algo falla (HEIC en un navegador sin soporte, canvas sin contexto) vuelve
+ * al object URL del original, como antes.
+ */
+export async function crearMiniatura(file: File, maxDim: number = MINIATURA_MAX_DIMENSION): Promise<string> {
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') {
+    return URL.createObjectURL(file)
+  }
+  let bitmap: ImageBitmap | null = null
+  try {
+    // Primer decode ya reducido cuando el navegador lo soporta (Chrome/Safari 15+).
+    bitmap = await createImageBitmap(file, { resizeWidth: maxDim, resizeQuality: 'low' } as ImageBitmapOptions)
+      .catch(() => createImageBitmap(file))
+    const { width: w, height: h } = bitmap
+    const escala = Math.max(w, h) > maxDim ? maxDim / Math.max(w, h) : 1
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(w * escala))
+    canvas.height = Math.max(1, Math.round(h * escala))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return URL.createObjectURL(file)
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8))
+    return blob ? URL.createObjectURL(blob) : URL.createObjectURL(file)
+  } catch {
+    return URL.createObjectURL(file)
+  } finally {
+    bitmap?.close()
+  }
+}
 
 /** Extensión (minúsculas, sin query string) de una URL de Storage; '' si no tiene. */
 function extensionDeUrl(url: string): string {

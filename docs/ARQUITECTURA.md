@@ -329,14 +329,18 @@ const { data, error } = await querySupabase(() =>
 
 ### `compressImageIfNeeded()` — compresión client-side (`src/lib/utils/media.ts`)
 
-Convierte fotos del teléfono (típicamente HEIC iPhone 5 MB, JPEG Android 3 MB) a JPEG ≤ 2560px, calidad 0.9 → resultado ~700 KB. Las páginas `diagnostico` y `completar` la llaman antes de `supabase.storage.upload`, en paralelo con `Promise.all`.
+Convierte fotos del teléfono (típicamente HEIC iPhone 5 MB, JPEG Android 3 MB) a JPEG ≤ 4000px, calidad 0.92 (desde 2026-10-20) → resultado ~1,5-2,5 MB. Las páginas `diagnostico` y `completar` la llaman (envuelta en `comprimirConLimite`) justo antes de subir cada archivo.
 
 **Efectos:**
 - 5-10× más rápido en 4G colombiano.
 - HEIC → JPEG arregla la previa en el panel admin (Chrome/Firefox no decodifican HEIC).
 - No comprime videos (requeriría ffmpeg.wasm — backlog).
 
-`inferExtension(file)` deriva la extensión correcta de `file.type` (no del nombre, porque `capture="environment"` a veces devuelve nombres genéricos).
+`inferExtension(file)` deriva la extensión correcta de `file.type` (no del nombre, porque `capture="environment"` a veces devuelve nombres genéricos). `tipoArchivoEvidencia(file)` clasifica imagen/video por MIME y, si viene vacío, por extensión. `crearMiniatura(file)` genera la vista previa de 320 px que muestran los formularios.
+
+### `subirArchivoStorage()` — subida con progreso, corte por inactividad y reintentos (`src/lib/utils/subida-evidencia.ts`, 2026-10-24)
+
+Sustituye a `supabase.storage.upload()` en los formularios del técnico (diagnóstico y completar). Hace el mismo `POST /storage/v1/object/{bucket}/{path}` por `XMLHttpRequest` (cuerpo binario crudo) para tener `upload.onprogress`; aborta y reintenta si pasan 45 s sin subir un byte (3 intentos; un duplicado en el reintento cuenta como éxito) y cae una vez a supabase-js si el endpoint responde un 4xx distinto de duplicado. `ejecutarConLimite` corre las subidas de a 3 (antes iban las 10-20 a la vez y el celular se congelaba); `crearAgregadorProgreso` + `mensajeProgresoSubida` alimentan el texto "Subiendo 3 de 8 archivos · 42 %" y la barra. Motivo: técnicos reportaban que al subir de la biblioteca "la aplicación se quedaba pensando" — ver `docs/GOTCHAS.md`.
 
 ## Observabilidad
 
