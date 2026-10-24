@@ -304,9 +304,13 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
                                   │
                                   ▼  (cliente agenda → 6c; o camino alterno admin ↓)
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ 6b. (Camino alterno sin guía) ADMIN MARCA REPUESTO RECIBIDO              │
+│ 6b. (Camino alterno sin guía) ADMIN / TÉCNICO MARCA REPUESTO RECIBIDO    │
 │ Página /admin/repuestos                                                  │
 │ POST /api/repuesto-recibido { repuestoId }                               │
+│ — o el TÉCNICO desde su card (2026-10-23): "📦 Llegó el repuesto" junto  │
+│   a "📞 Llamar" en esperando_repuesto | repuesto_en_camino               │
+│   POST /api/tecnico/repuesto-recibido { portalToken, solicitudId }       │
+│   (mismos efectos, evento actor 'tecnico', sin aviso al propio técnico)  │
 │                                                                           │
 │ Cuando todos los repuestos de la solicitud están 'recibido':             │
 │ DB:  estado=esperando_repuesto → repuesto_recibido                       │
@@ -341,6 +345,12 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │   Botón: "Abrir portal" → /tecnico/{portal_token}                        │
 │   La fecha es TENTATIVA: el técnico la confirma según su disponibilidad. │
 └──────────────────────────────────────────────────────────────────────────┘
+
+> ℹ️ **Esperar repuesto NO bloquea el cierre (2026-10-23).** En los tres estados
+> de repuesto la card del técnico sigue mostrando "Completar servicio": si
+> consiguió el repuesto por otra vía o resolvió sin él, completa normal (paso 7)
+> y `/api/completar-servicio` (con `estadoPrevio`) marca los `repuestos_pendientes`
+> como recibidos y deja un evento `nota_admin` (`origen='completar_desde_repuesto'`).
 
 > ℹ️ **Gap conocido (verificado 2026-06-02): segunda visita SIN repuesto.**
 > Los pasos 6b/6c de arriba solo se disparan vía `esperar_repuesto` (exige SKU).

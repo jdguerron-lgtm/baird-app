@@ -7,7 +7,12 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
-import { ESTADO_ESTILOS, ESTADO_LABELS } from '@/lib/constants/estados'
+import {
+  ESTADO_ESTILOS,
+  ESTADO_LABELS,
+  ESTADOS_REPUESTO_COMPLETABLES,
+  ESTADOS_REPUESTO_MARCABLE_TECNICO,
+} from '@/lib/constants/estados'
 import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
@@ -411,6 +416,11 @@ export default function PortalTecnicoPage() {
                         setServicios(prev => prev.map(x => (x.id === id ? { ...x, visita_confirmada_at: new Date().toISOString() } : x)))
                       }
                     }}
+                    onRepuestoRecibido={id => {
+                      // El servicio sigue siendo suyo: pasa a repuesto_recibido
+                      // (el cliente elige fecha) y "Completar servicio" sigue visible.
+                      setServicios(prev => prev.map(x => (x.id === id ? { ...x, estado: 'repuesto_recibido' } : x)))
+                    }}
                   />
                 ))
               )}
@@ -501,6 +511,7 @@ function ServiceCard({
   auxiliares = [],
   equipoServicio = null,
   onConfirmacion,
+  onRepuestoRecibido,
 }: {
   servicio: Servicio
   token: string
@@ -510,6 +521,8 @@ function ServiceCard({
   equipoServicio?: string[] | null
   /** Confirmación de visita (2026-10-22): el padre actualiza la lista. */
   onConfirmacion?: (id: string, resultado: 'confirmada' | 'liberada') => void
+  /** "📦 Llegó el repuesto" (2026-10-23): el padre pasa la card a repuesto_recibido. */
+  onRepuestoRecibido?: (id: string) => void
 }) {
   // El técnico puede iniciar diagnóstico tras aceptar (estado 'asignada',
   // ambos flujos — fusión 2026-07-09).
@@ -521,7 +534,16 @@ function ServiceCard({
   // cliente no quiso), que /api/diagnostico sí permite.
   const precioFijo = esServicioPrecioFijo(s)
   const needsDiagnostic = s.estado === 'asignada'
-  const canComplete = (s.estado === 'en_proceso' || (precioFijo && s.estado === 'asignada')) && !s.tiene_evidencia
+  //
+  // REPUESTO (2026-10-23): esperar un repuesto ya NO bloquea el cierre. En
+  // esperando_repuesto / repuesto_en_camino / repuesto_recibido el técnico
+  // también ve "Completar servicio" (si consiguió el repuesto por otra vía o
+  // resolvió sin él); /api/completar-servicio cierra los repuestos pendientes.
+  const enCicloRepuesto = ESTADOS_REPUESTO_COMPLETABLES.has(s.estado)
+  const canComplete = (s.estado === 'en_proceso' || (precioFijo && s.estado === 'asignada') || enCicloRepuesto) && !s.tiene_evidencia
+  // "📦 Llegó el repuesto": solo mientras nadie lo haya marcado (admin,
+  // supervisor o él mismo) y el cliente no haya agendado la visita final.
+  const puedeMarcarRepuesto = ESTADOS_REPUESTO_MARCABLE_TECNICO.has(s.estado)
   // "Llamar" solo en servicios vivos — en el historial ya no hay a quién
   // coordinar y esconderlo evita llamadas por error a clientes cerrados.
   const esActivo = ![
@@ -617,22 +639,27 @@ function ServiceCard({
             Completar) a la derecha. El botón registra la INTENCIÓN de llamada
             en el audit log (best-effort) y abre el marcador con tel:. */}
         <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-          {esActivo && s.cliente_telefono ? (
-            <a
-              href={`tel:+${phoneToDigits(s.cliente_telefono)}`}
-              onClick={() => {
-                // Fire-and-forget: no bloquea la llamada si falla
-                fetch('/api/tecnico/llamada-intento', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
-                }).catch(() => {})
-              }}
-              className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
-            >
-              📞 Llamar
-            </a>
-          ) : <span />}
+          <div className="flex items-center gap-2 flex-wrap">
+            {esActivo && s.cliente_telefono && (
+              <a
+                href={`tel:+${phoneToDigits(s.cliente_telefono)}`}
+                onClick={() => {
+                  // Fire-and-forget: no bloquea la llamada si falla
+                  fetch('/api/tecnico/llamada-intento', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
+                  }).catch(() => {})
+                }}
+                className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
+              >
+                📞 Llamar
+              </a>
+            )}
+            {puedeMarcarRepuesto && (
+              <RepuestoRecibidoBoton servicio={s} token={token} onRepuestoRecibido={onRepuestoRecibido} />
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-gray-300">
               {new Date(s.created_at).toLocaleDateString('es-CO')}
@@ -667,7 +694,97 @@ function ServiceCard({
             )}
           </div>
         </div>
+        {/* En el ciclo de repuesto el botón "Completar" convive con la
+            espera: la línea aclara qué está pasando y que no está bloqueado. */}
+        {enCicloRepuesto && canComplete && esperaInfo && (
+          <p className="mt-2 text-[11px] text-amber-700 leading-snug">
+            ⏳ {esperaInfo}. Si ya tienes el repuesto y terminaste la reparación, puedes completar el servicio sin esperar.
+          </p>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * RepuestoRecibidoBoton — "📦 Llegó el repuesto" junto a "📞 Llamar"
+ * (2026-10-23). Solo en esperando_repuesto / repuesto_en_camino. Pide
+ * confirmación inline, llama a POST /api/tecnico/repuesto-recibido y avisa
+ * al padre para pasar la card a repuesto_recibido (el cliente recibe el
+ * WhatsApp para elegir la fecha de la visita de finalización).
+ */
+function RepuestoRecibidoBoton({
+  servicio: s,
+  token,
+  onRepuestoRecibido,
+}: {
+  servicio: Servicio
+  token: string
+  onRepuestoRecibido?: (id: string) => void
+}) {
+  const [confirmando, setConfirmando] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function marcar() {
+    setEnviando(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/tecnico/repuesto-recibido', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ solicitudId: s.id, portalToken: token }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(typeof body?.error === 'string' ? body.error : `Error ${res.status}`)
+        setEnviando(false)
+        return
+      }
+      setConfirmando(false)
+      onRepuestoRecibido?.(s.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error de red')
+    }
+    setEnviando(false)
+  }
+
+  if (!confirmando) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirmando(true)}
+        className="bg-sky-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-sky-700 transition-colors"
+      >
+        📦 Llegó el repuesto
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2">
+      <p className="text-[11px] text-sky-900 leading-snug">
+        ¿Confirmas que ya tienes el repuesto? Le avisamos a {s.cliente_nombre.split(' ')[0]} para que elija la fecha de la visita.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={marcar}
+          disabled={enviando}
+          className="bg-sky-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-sky-700 disabled:opacity-60"
+        >
+          {enviando ? 'Enviando…' : 'Sí, ya lo tengo'}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setConfirmando(false); setError(null) }}
+          disabled={enviando}
+          className="text-xs text-gray-500 underline"
+        >
+          Cancelar
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-600">{error}</p>}
     </div>
   )
 }

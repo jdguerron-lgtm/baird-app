@@ -34,6 +34,10 @@ interface Servicio {
   created_at: string
   horario_confirmado: string | null
   triaje_resultado: { complejidad?: ComplejidadServicio | null } | null
+  // Estado al abrir la página: /api/completar-servicio lo recibe como
+  // estadoPrevio para el historial y para cerrar repuestos pendientes si se
+  // completa desde el ciclo de repuesto (2026-10-23).
+  estado: string | null
   // Receptor del servicio (2026-10-13) — ver components/tecnico/ReceptorServicio
   cliente_telefono?: string | null
   receptor_nombre?: string | null
@@ -134,7 +138,7 @@ export default function CompletarServicioPage() {
         querySupabase(() =>
           supabase
             .from('solicitudes_servicio')
-            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, es_garantia, created_at, horario_confirmado, triaje_resultado, tecnico_asignado_id')
+            .select('id, cliente_nombre, tipo_equipo, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, es_garantia, created_at, horario_confirmado, triaje_resultado, tecnico_asignado_id, estado')
             .eq('id', id)
             .single()
         ),
@@ -438,6 +442,7 @@ export default function CompletarServicioPage() {
           body: JSON.stringify({
             solicitudId: servicio.id,
             portalToken: token,
+            estadoPrevio: servicio.estado,
           }),
         })
         const waBody = await waRes.json().catch(() => ({}))

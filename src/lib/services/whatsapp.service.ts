@@ -1870,8 +1870,9 @@ function inferirActorTransicion(estadoPrevio: string | null, estadoNuevo: string
       return estadoPrevio === 'asignada' ? 'tecnico' : 'cliente'
     case 'repuesto_en_camino': return 'supervisor'  // subió la guía de envío (/api/supervisor/guia-envio)
     case 'repuesto_recibido': return 'admin'        // marcó el repuesto recibido (/api/repuesto-recibido).
-                                                    // El supervisor también puede (/api/supervisor/repuesto-entregado),
-                                                    // pero ese endpoint registra su propio evento (registrarEvento: false).
+                                                    // El supervisor (/api/supervisor/repuesto-entregado) y el técnico
+                                                    // (/api/tecnico/repuesto-recibido, 2026-10-23) también pueden, pero
+                                                    // esos endpoints registran su propio evento (registrarEvento: false).
     case 'en_proceso': return 'cliente'             // aprobó reparar/cotización o eligió fecha tras repuesto
     case 'confirmacion_pendiente': return 'tecnico' // completó el servicio (/api/completar-servicio)
     case 'completada':

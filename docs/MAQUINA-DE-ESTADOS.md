@@ -84,6 +84,9 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
 4b. PARTS RCV     Admin marks parts as received in /admin/repuestos
                   (camino alterno si no hubo guía del supervisor)
                   → POST /api/repuesto-recibido
+                  o el TÉCNICO desde su card ("📦 Llegó el repuesto", 2026-10-23)
+                  → POST /api/tecnico/repuesto-recibido (mismos efectos; evento
+                    cambio_estado actor 'tecnico'; sin aviso al propio técnico)
                   → If all parts received: estado → repuesto_recibido
                                            + repuesto_recibido_at = now()
                                            + reprogramacion_token (uuid) generado
@@ -101,6 +104,10 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                     (la fecha es TENTATIVA: el técnico la confirma según disponibilidad)
 
 5. COMPLETION     Tech opens /tecnico/{token}/completar/{id}
+                  (desde en_proceso — y, desde 2026-10-23, también desde
+                   esperando_repuesto / repuesto_en_camino / repuesto_recibido:
+                   esperar el repuesto NO bloquea el cierre; /api/completar-servicio
+                   recibe estadoPrevio y cierra los repuestos_pendientes)
                   → Uploads photos, checklist, digital signature
                   → GPS ping (fase: 'completado')
                   → POST /api/completar-servicio → estado: confirmacion_pendiente
@@ -280,12 +287,14 @@ WARRANTY:
                      │      └── esperar_repuesto ──→ esperando_repuesto (DIRECTO 2026-08-02)
                      │                                     │
                      │                 ┌───────────────────┼──────────────────┐
-                     │                 ▼ supervisor sube guía                 ▼ admin marca recibido
+                     │                 ▼ supervisor sube guía                 ▼ admin / supervisor / TÉCNICO marca recibido
                      │           repuesto_en_camino                    repuesto_recibido
                      │                 │ cliente agenda visita final          │ cliente elige fecha
                      │                 └───────────────┬──────────────────────┘
                      │                                 ▼ /api/reprogramar-repuesto
                      │                            en_proceso
+                     │                 (los 3 estados de repuesto también → confirmacion_pendiente
+                     │                  directo si el técnico completa, 2026-10-23)
                      │                                 │
                      │                                 ▼
                      │                          confirmacion_pendiente → completada | en_disputa

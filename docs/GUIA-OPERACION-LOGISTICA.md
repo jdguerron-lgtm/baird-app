@@ -400,9 +400,16 @@ Diagnóstico con "esperar repuesto"  →  esperando_repuesto
      garantía: supervisores reciben el requerimiento (SKU x cantidad)
      particular: cliente paga abono → técnico compra
 → supervisor sube la guía de envío  →  repuesto_en_camino  → cliente agenda visita final
-→ supervisor marca "entregado" o admin marca "recibido"  →  repuesto_recibido  → cliente elige fecha
+→ supervisor marca "entregado", admin marca "recibido" o el técnico pulsa
+  "📦 Llegó el repuesto" en su portal  →  repuesto_recibido  → cliente elige fecha
 → cliente agenda  →  en_proceso  →  técnico completa
 ```
+
+- El técnico **no queda bloqueado** por el repuesto: en cualquiera de los tres
+  estados de repuesto su portal le deja "Completar servicio". Si lo hace, los
+  repuestos pendientes de esa solicitud pasan solos a *recibido* y en el
+  historial de la ficha queda la nota "completó el servicio mientras estaba
+  en esperando_repuesto". No hay que marcarlos a mano.
 
 ### 6.2 Pantalla Repuestos (`/admin/repuestos`)
 

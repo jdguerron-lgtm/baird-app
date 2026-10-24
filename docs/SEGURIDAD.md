@@ -122,6 +122,7 @@ No usan Supabase Auth — usan tokens opacos UUID v4. Cada token tiene un propó
 | `/api/completar-servicio` | `portal_token` (técnico) | `tecnicos.portal_token` |
 | `/api/tecnico/receptor` | `portal_token` (técnico) + `tecnico_asignado_id` | `tecnicos.portal_token` (2026-10-13) |
 | `/api/tecnico/confirmar-visita` | `portal_token` (técnico) + `tecnico_asignado_id` | `tecnicos.portal_token` — "Confirmo" / "No alcanzo" (libera + reoferta) solo sobre servicios propios en `asignada` (2026-10-22) |
+| `/api/tecnico/repuesto-recibido` | `portal_token` (técnico) + `tecnico_asignado_id` | `tecnicos.portal_token` — "Llegó el repuesto" solo sobre servicios propios en `esperando_repuesto` / `repuesto_en_camino`; UPDATE atómico con guard de estado (2026-10-23) |
 | `/api/receptor/aceptar` | `receptor_token` | `solicitudes_servicio.receptor_token` (UNIQUE parcial, 2026-10-13) |
 | `/api/whatsapp/accept` | token de notificación | `notificaciones_whatsapp.token` |
 | `/api/supervisor/solicitudes` | `portal_token` (supervisor) | `supervisores.portal_token` |
