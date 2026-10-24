@@ -29,15 +29,29 @@
 /** Tamaño debajo del cual no vale la pena recomprimir si ya es JPEG/PNG/WebP. */
 const SKIP_COMPRESSION_THRESHOLD_BYTES = 500 * 1024
 
+/** Tope de video por defecto = techo por archivo del plan Free de Supabase. */
+const VIDEO_MB_DEFAULT = 50
+
 /**
  * Límite de tamaño para VIDEOS de evidencia (diagnóstico y pruebas de
  * completación). Subido de 10 → 50 MB el 2026-10-10: los videos van directo
  * del navegador a Supabase Storage (no pasan por Vercel, así que el tope de
- * 4.5 MB por request no aplica) y el bucket `evidencias-servicio` no tiene
- * `file_size_limit` propio — el techo real es el límite global del proyecto
- * Supabase (50 MB). Las fotos siguen con su propio tope post-compresión.
+ * 4.5 MB por request no aplica ni el plan de Vercel cambia nada) y el bucket
+ * `evidencias-servicio` no tiene `file_size_limit` propio — el techo real es
+ * el límite global del proyecto Supabase (50 MB en Free).
+ *
+ * Desde 2026-10-24 se lee de `NEXT_PUBLIC_EVIDENCIA_VIDEO_MAX_MB` (default 50)
+ * para poder subirlo SIN tocar código cuando el proyecto pase a Supabase Pro:
+ * (1) Supabase → Storage → Settings → "Upload file size limit" ≥ el valor,
+ * (2) la env en Vercel, (3) redeploy. Si la env supera el límite real de
+ * Supabase, el upload falla con "Payload too large" — primero (1), luego (2).
+ * Las fotos siguen con su propio tope post-compresión.
  */
-export const MAX_VIDEO_SIZE_MB = 50
+function leerVideoMaxMb(): number {
+  const raw = Number(process.env.NEXT_PUBLIC_EVIDENCIA_VIDEO_MAX_MB)
+  return Number.isFinite(raw) && raw >= 10 && raw <= 5000 ? Math.floor(raw) : VIDEO_MB_DEFAULT
+}
+export const MAX_VIDEO_SIZE_MB = leerVideoMaxMb()
 export const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024
 
 /**
@@ -50,13 +64,14 @@ export const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
 /**
  * Topes de archivos por formulario (2026-10-20: 4 → 10 en diagnóstico,
- * 6 → 12 en completar, 20 para la evidencia adicional del admin). El video
- * sigue limitado a MAX_VIDEO_SIZE_MB por archivo (techo del plan Supabase),
- * así que "un video más largo" se sube como varios clips de ≤ 50 MB.
+ * 6 → 12 en completar, 20 para la evidencia adicional del admin;
+ * 2026-10-24: 20 / 20 / 30 porque seguían quedando cortos). El video sigue
+ * limitado a MAX_VIDEO_SIZE_MB por archivo, así que "un video más largo" se
+ * sube como varios clips de ≤ ese tamaño.
  */
-export const MAX_EVIDENCIAS_DIAGNOSTICO = 10
-export const MAX_ARCHIVOS_COMPLETAR = 12
-export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = 20
+export const MAX_EVIDENCIAS_DIAGNOSTICO = 20
+export const MAX_ARCHIVOS_COMPLETAR = 20
+export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = 30
 
 /** Resolución y calidad por defecto de las fotos de evidencia (lado mayor en px / calidad JPEG). */
 export const EVIDENCIA_MAX_DIMENSION = 4000
@@ -141,8 +156,10 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
     forceReencode = false,
   } = opts
 
-  // Videos no se comprimen client-side.
-  if (!file.type.startsWith('image/')) return file
+  // Videos (y cualquier cosa que no sea imagen) no se comprimen client-side.
+  // Se clasifica con tipoArchivoEvidencia para que una foto que llega con
+  // MIME vacío desde la galería de algunos Android también pase por acá.
+  if (tipoArchivoEvidencia(file) !== 'imagen') return file
 
   // Archivo ya razonable y formato compatible — devolvemos tal cual.
   if (file.size <= skipThresholdBytes && COMPATIBLE_IMAGE_TYPES.has(file.type.toLowerCase())) {
@@ -195,6 +212,68 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
 }
 
 const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'webm', 'mkv', '3gp', 'm4v'])
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif', 'bmp', 'avif'])
+
+export type TipoArchivoEvidencia = 'imagen' | 'video'
+
+/**
+ * Clasifica un archivo elegido por el técnico. Primero por MIME; si viene
+ * vacío (pasa con la galería de algunos Android y con archivos compartidos
+ * desde WhatsApp), por la extensión del nombre. `null` = no es evidencia
+ * (PDF, audio, etc.). Antes un MIME vacío se descartaba en silencio y el
+ * técnico veía que "no pasaba nada" al elegir fotos.
+ */
+export function tipoArchivoEvidencia(file: { type: string; name?: string }): TipoArchivoEvidencia | null {
+  const mime = (file.type || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'imagen'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime) return null
+  const ext = (file.name || '').toLowerCase().split('.').pop() || ''
+  if (IMAGE_EXTENSIONS.has(ext)) return 'imagen'
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video'
+  return null
+}
+
+/** Lado mayor de las miniaturas de vista previa (px). */
+export const MINIATURA_MAX_DIMENSION = 320
+
+/**
+ * Miniatura liviana para la vista previa de una foto recién elegida.
+ *
+ * Antes la galería del formulario mostraba `URL.createObjectURL(original)`:
+ * el navegador tenía que decodificar cada original completo (12–48 MP) para
+ * pintar un cuadrito de 80 px, y con 10–20 fotos de la biblioteca a la vez el
+ * celular se quedaba "pensando" o Safari recargaba la pestaña. Acá se decodifica
+ * con `createImageBitmap(file, { resizeWidth })` (el navegador puede
+ * decodificar a escala) y se exporta un JPEG de `MINIATURA_MAX_DIMENSION` px.
+ * Si algo falla (HEIC en un navegador sin soporte, canvas sin contexto) vuelve
+ * al object URL del original, como antes.
+ */
+export async function crearMiniatura(file: File, maxDim: number = MINIATURA_MAX_DIMENSION): Promise<string> {
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') {
+    return URL.createObjectURL(file)
+  }
+  let bitmap: ImageBitmap | null = null
+  try {
+    // Primer decode ya reducido cuando el navegador lo soporta (Chrome/Safari 15+).
+    bitmap = await createImageBitmap(file, { resizeWidth: maxDim, resizeQuality: 'low' } as ImageBitmapOptions)
+      .catch(() => createImageBitmap(file))
+    const { width: w, height: h } = bitmap
+    const escala = Math.max(w, h) > maxDim ? maxDim / Math.max(w, h) : 1
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(w * escala))
+    canvas.height = Math.max(1, Math.round(h * escala))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return URL.createObjectURL(file)
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8))
+    return blob ? URL.createObjectURL(blob) : URL.createObjectURL(file)
+  } catch {
+    return URL.createObjectURL(file)
+  } finally {
+    bitmap?.close()
+  }
+}
 
 /** Extensión (minúsculas, sin query string) de una URL de Storage; '' si no tiene. */
 function extensionDeUrl(url: string): string {
@@ -231,12 +310,22 @@ export function videoSizeAdvice(): string {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
   const isIPhone = /iPhone|iPad|iPod/.test(ua)
   const isAndroid = /Android/.test(ua)
+  const seg = segundosVideoAprox(MAX_VIDEO_SIZE_MB)
 
   if (isIPhone) {
-    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de 40 segundos. Si necesitas mostrar más, sube varios clips.`
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En iPhone: Ajustes → Cámara → Grabar video → elige "1080p HD a 30 fps" (o menor) y graba menos de ${seg} segundos. Si necesitas mostrar más, sube varios clips.`
   }
   if (isAndroid) {
-    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de 40 segundos. Si necesitas mostrar más, sube varios clips.`
+    return `El video supera ${MAX_VIDEO_SIZE_MB} MB. En Android: abre la app Cámara → ajustes → resolución 1080p (o 720p) y graba menos de ${seg} segundos. Si necesitas mostrar más, sube varios clips.`
   }
-  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (20-30 s) o usa resolución 1080p en lugar de 4K. Puedes subir varios clips.`
+  return `El video supera ${MAX_VIDEO_SIZE_MB} MB. Graba un clip más corto (menos de ${seg} s) o usa resolución 1080p en lugar de 4K. Puedes subir varios clips.`
+}
+
+/**
+ * Duración aproximada (segundos) que cabe en `mb` a 1080p/30 fps en un
+ * celular típico (~1,25 MB/s). Es una guía para el técnico, no un cálculo
+ * exacto: 50 MB ≈ 40 s, 200 MB ≈ 160 s. Redondeado a múltiplos de 10.
+ */
+export function segundosVideoAprox(mb: number): number {
+  return Math.max(10, Math.floor((mb / 1.25) / 10) * 10)
 }

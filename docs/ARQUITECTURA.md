@@ -207,7 +207,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | `/api/admin/editar-solicitud` | POST | Admin: corrige manualmente `tipo_equipo`, horario, dirección, ciudad, zona. Auditado en `solicitud_eventos` con diff. | Both |
 | `/api/admin/cambiar-estado` | POST | Admin: fuerza el `estado` de una solicitud cuando el flujo automático quedó atascado. Auditado en `solicitud_eventos` (`tipo='cambio_estado_admin'`). NO envía WhatsApp al cliente/técnico, pero SÍ notifica supervisores (`notificarCambioEstado`). | Both |
 | `/api/admin/notas` | POST | Admin: agrega una **nota interna** a una solicitud (sección "Notas del administrador" en `/admin/solicitudes/[id]`). Inserta en `solicitud_eventos` (`tipo='nota_admin'`, `actor`=email del admin, `motivo`=texto, `payload.origen='nota_manual'`). Append-only: sin editar/borrar. NO envía WhatsApp. Body `{solicitudId, texto}` (máx 2000 chars). Auth `obtenerEmailAdmin`. | Both |
-| `/api/admin/evidencias` | POST | Admin (2026-10-20): registra **evidencia adicional del equipo** (fotos, videos ≤ 50 MB, PDF) que el admin sube desde `/admin/solicitudes/[id]` § "Evidencia adicional del equipo" (`EvidenciaAdminSeccion`). Los archivos los sube el navegador directo al bucket `evidencias-servicio` bajo `{solicitud_id}/admin_*` (sin pasar por Vercel); el endpoint valida las URLs (`esUrlEvidenciaAdminValida`, `src/lib/utils/evidencia-admin.ts`) y escribe UN evento `nota_admin` con `payload.origen='evidencia_admin'` + `payload.archivos[{url,mime,nombre,bytes}]` (sin migración). Body `{solicitudId, nota?, archivos[]}` (máx 20). Rol lectura rechazado. | Both |
+| `/api/admin/evidencias` | POST | Admin (2026-10-20): registra **evidencia adicional del equipo** (fotos, videos ≤ `MAX_VIDEO_SIZE_MB` — 50 MB por defecto, env `NEXT_PUBLIC_EVIDENCIA_VIDEO_MAX_MB` —, PDF) que el admin sube desde `/admin/solicitudes/[id]` § "Evidencia adicional del equipo" (`EvidenciaAdminSeccion`). Los archivos los sube el navegador directo al bucket `evidencias-servicio` bajo `{solicitud_id}/admin_*` (sin pasar por Vercel); el endpoint valida las URLs (`esUrlEvidenciaAdminValida`, `src/lib/utils/evidencia-admin.ts`) y escribe UN evento `nota_admin` con `payload.origen='evidencia_admin'` + `payload.archivos[{url,mime,nombre,bytes}]` (sin migración). Body `{solicitudId, nota?, archivos[]}` (máx 30, `MAX_ARCHIVOS_EVIDENCIA_ADMIN`). Rol lectura rechazado. | Both |
 | `/api/admin/reenviar-ultimo-mensaje` | POST | Admin: re-dispara la plantilla WhatsApp correspondiente al estado actual de la solicitud (útil si el cliente o el técnico borró el mensaje). Incluye `repuesto_recibido` → `repuesto_recibido_cliente_v2`. | Both |
 | `/api/admin/tecnicos/reenviar-portal` | POST | Admin: reenvía a cada técnico con servicios activos `servicio_asignado_tecnico_v4` de su servicio más reciente (botón Abrir portal). Body opcional `{tecnicoId}`. Recuperación cuando el envío de asignación falló (Meta 132018) | Both |
 | `/api/admin/supervisores` | GET/POST/PUT/DELETE | Admin CRUD de la tabla `supervisores` (destinatarios de `notificarCambioEstado`). Auth `verificarAdmin`. En **POST**, si el supervisor queda activo, dispara `enviarBienvenidaSupervisor` (plantilla `supervisor_bienvenida_v1`) y devuelve `whatsapp_bienvenida` en la respuesta. | N/A |
@@ -329,14 +329,18 @@ const { data, error } = await querySupabase(() =>
 
 ### `compressImageIfNeeded()` — compresión client-side (`src/lib/utils/media.ts`)
 
-Convierte fotos del teléfono (típicamente HEIC iPhone 5 MB, JPEG Android 3 MB) a JPEG ≤ 2560px, calidad 0.9 → resultado ~700 KB. Las páginas `diagnostico` y `completar` la llaman antes de `supabase.storage.upload`, en paralelo con `Promise.all`.
+Convierte fotos del teléfono (típicamente HEIC iPhone 5 MB, JPEG Android 3 MB) a JPEG ≤ 4000px, calidad 0.92 (desde 2026-10-20) → resultado ~1,5-2,5 MB. Las páginas `diagnostico` y `completar` la llaman (envuelta en `comprimirConLimite`) justo antes de subir cada archivo.
 
 **Efectos:**
 - 5-10× más rápido en 4G colombiano.
 - HEIC → JPEG arregla la previa en el panel admin (Chrome/Firefox no decodifican HEIC).
 - No comprime videos (requeriría ffmpeg.wasm — backlog).
 
-`inferExtension(file)` deriva la extensión correcta de `file.type` (no del nombre, porque `capture="environment"` a veces devuelve nombres genéricos).
+`inferExtension(file)` deriva la extensión correcta de `file.type` (no del nombre, porque `capture="environment"` a veces devuelve nombres genéricos). `tipoArchivoEvidencia(file)` clasifica imagen/video por MIME y, si viene vacío, por extensión. `crearMiniatura(file)` genera la vista previa de 320 px que muestran los formularios.
+
+### `subirArchivoStorage()` — subida con progreso, corte por inactividad y reintentos (`src/lib/utils/subida-evidencia.ts`, 2026-10-24)
+
+Sustituye a `supabase.storage.upload()` en los formularios del técnico (diagnóstico y completar). Hace el mismo `POST /storage/v1/object/{bucket}/{path}` por `XMLHttpRequest` (cuerpo binario crudo) para tener `upload.onprogress`; aborta y reintenta si pasan 45 s sin subir un byte (3 intentos; un duplicado en el reintento cuenta como éxito) y cae una vez a supabase-js si el endpoint responde un 4xx distinto de duplicado. `ejecutarConLimite` corre las subidas de a 3 (antes iban las 10-20 a la vez y el celular se congelaba); `crearAgregadorProgreso` + `mensajeProgresoSubida` alimentan el texto "Subiendo 3 de 8 archivos · 42 %" y la barra. Motivo: técnicos reportaban que al subir de la biblioteca "la aplicación se quedaba pensando" — ver `docs/GOTCHAS.md`.
 
 ## Observabilidad
 

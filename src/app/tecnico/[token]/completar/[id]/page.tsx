@@ -11,7 +11,8 @@ import { diasSolucionBono, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import ReceptorServicio from '@/components/tecnico/ReceptorServicio'
-import { compressImageIfNeeded, inferExtension, videoSizeAdvice, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_IMAGE_SIZE_BYTES, MAX_IMAGE_SIZE_MB, MAX_ARCHIVOS_COMPLETAR } from '@/lib/utils/media'
+import { inferExtension, videoSizeAdvice, tipoArchivoEvidencia, crearMiniatura, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_IMAGE_SIZE_BYTES, MAX_IMAGE_SIZE_MB, MAX_ARCHIVOS_COMPLETAR } from '@/lib/utils/media'
+import { subirArchivoStorage, ejecutarConLimite, comprimirConLimite, crearAgregadorProgreso, mensajeProgresoSubida } from '@/lib/utils/subida-evidencia'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
@@ -64,6 +65,11 @@ export default function CompletarServicioPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
+  // Texto y % de la subida de archivos (2026-10-24): antes el botón solo decía
+  // "Enviando evidencia..." sin importar si llevaba 2 s o 3 min.
+  const [progreso, setProgreso] = useState('')
+  const [progresoPct, setProgresoPct] = useState(0)
+  const [preparandoPreviews, setPreparandoPreviews] = useState(false)
   const [exito, setExito] = useState(false)
   const [waSent, setWaSent] = useState<boolean | null>(null)
   const [waFiltered, setWaFiltered] = useState<boolean>(false)
@@ -206,7 +212,7 @@ export default function CompletarServicioPage() {
   //   en memoria para que el técnico pueda quitarla sin haber gastado decode.
   // - Los videos no se pueden comprimir client-side sin ffmpeg.wasm (~25 MB).
   //   Si el video supera MAX_VIDEO_SIZE_BYTES lo rechazamos acá con un mensaje accionable.
-  const handlePhotos = (files: FileList | null) => {
+  const handlePhotos = async (files: FileList | null) => {
     if (!files) return
     const slots = MAX_ARCHIVOS - fotos.length
     if (slots <= 0) return
@@ -214,29 +220,36 @@ export default function CompletarServicioPage() {
     const aceptados: File[] = []
     let advice: string | null = null
     for (const file of Array.from(files).slice(0, slots)) {
-      const isImage = file.type.startsWith('image/')
-      const isVideo = file.type.startsWith('video/')
-      if (!isImage && !isVideo) continue
-      if (isVideo && file.size > MAX_VIDEO_SIZE_BYTES) {
+      // Clasifica por MIME y, si viene vacío (galería de algunos Android), por
+      // extensión — antes esos archivos se descartaban en silencio.
+      const tipo = tipoArchivoEvidencia(file)
+      if (!tipo) continue
+      if (tipo === 'video' && file.size > MAX_VIDEO_SIZE_BYTES) {
         advice = videoSizeAdvice()
         continue
       }
       aceptados.push(file)
     }
 
-    if (aceptados.length === 0) {
-      if (advice) setError(advice)
-      return
+    setError(advice) // null si todos pasaron; guía si rechazamos un video grande
+    if (aceptados.length === 0) return
+
+    // Previews: miniatura liviana (320 px) para imágenes — decodificar 10-20
+    // originales de la biblioteca para pintar cuadritos congelaba el celular —
+    // y placeholder 'video' (se renderiza con icono 🎬). Se agregan a las
+    // existentes sin recrear las anteriores.
+    setPreparandoPreviews(true)
+    const nuevasPreviews: string[] = []
+    try {
+      for (const f of aceptados) {
+        nuevasPreviews.push(tipoArchivoEvidencia(f) === 'video' ? 'video' : await crearMiniatura(f))
+      }
+    } finally {
+      setPreparandoPreviews(false)
     }
 
-    const allFiles = [...fotos, ...aceptados]
-    setFotos(allFiles)
-
-    // Previews: imagen usa object URL; video usa placeholder 'video' (se renderiza con icono 🎬).
-    const previews = allFiles.map(f => (f.type.startsWith('video/') ? 'video' : URL.createObjectURL(f)))
-    fotoPreviews.forEach(p => { if (p !== 'video') URL.revokeObjectURL(p) })
-    setFotoPreviews(previews)
-    setError(advice) // null si todos pasaron; guía si rechazamos un video grande
+    setFotos(prev => [...prev, ...aceptados])
+    setFotoPreviews(prev => [...prev, ...nuevasPreviews])
   }
 
   const removePhoto = (idx: number) => {
@@ -333,14 +346,30 @@ export default function CompletarServicioPage() {
       const stamp = Date.now()
       const rand = Math.random().toString(36).slice(2, 8)
 
-      const uploadResults = await Promise.all(
-        fotos.map(async (rawFile, i) => {
-          const file = await compressImageIfNeeded(rawFile)
+      // 2026-10-24: subida con progreso real, corte por inactividad y
+      // reintentos (subirArchivoStorage), de a 3 archivos a la vez
+      // (ejecutarConLimite) y compresión con tope de tiempo — ver
+      // src/lib/utils/subida-evidencia.ts.
+      const total = fotos.length
+      const agregador = crearAgregadorProgreso(
+        fotos.map(f => f.size),
+        (pct, listos) => {
+          setProgresoPct(pct)
+          setProgreso(mensajeProgresoSubida(listos, total, pct))
+        },
+      )
+      setProgresoPct(0)
+      setProgreso(`Preparando ${total} archivo${total === 1 ? '' : 's'}...`)
+
+      const uploadResults = await ejecutarConLimite(
+        fotos.map((rawFile, i) => async () => {
+          const file = await comprimirConLimite(rawFile)
           // Defensa post-compresión: si tras comprimir aún excede el límite (caso raro,
           // ej. un video grande adjuntado), no lo subimos.
-          const esVideo = file.type.startsWith('video/')
+          const esVideo = tipoArchivoEvidencia(file) === 'video'
           const limite = esVideo ? MAX_VIDEO_SIZE_BYTES : MAX_FILE_SIZE
           if (file.size > limite) {
+            agregador.terminar(i)
             return {
               ok: false as const,
               idx: i,
@@ -351,13 +380,17 @@ export default function CompletarServicioPage() {
           }
           const ext = inferExtension(file)
           const path = `${servicio.id}/${stamp}_${rand}_${i}.${ext}`
-          const { error: uploadErr } = await supabase.storage
-            .from('evidencias-servicio')
-            .upload(path, file, { contentType: file.type || undefined, cacheControl: '3600', upsert: false })
-          if (uploadErr) return { ok: false as const, idx: i, error: `Archivo ${i + 1}: ${uploadErr.message}` }
-          const { data: urlData } = supabase.storage.from('evidencias-servicio').getPublicUrl(path)
-          return { ok: true as const, idx: i, url: urlData.publicUrl }
-        })
+          try {
+            const { publicUrl } = await subirArchivoStorage('evidencias-servicio', path, file, {
+              onProgreso: p => agregador.reportar(i, p),
+            })
+            agregador.terminar(i)
+            return { ok: true as const, idx: i, url: publicUrl }
+          } catch (e) {
+            agregador.terminar(i)
+            return { ok: false as const, idx: i, error: `Archivo ${i + 1}: ${e instanceof Error ? e.message : 'error al subir'}` }
+          }
+        }),
       )
 
       const fotoUrls = uploadResults.flatMap(r => (r.ok ? [r.url] : []))
@@ -370,6 +403,8 @@ export default function CompletarServicioPage() {
           : 'No se pudo subir ningún archivo. Verifica tu conexión.'
         throw new Error(errMsg)
       }
+
+      setProgreso('Guardando el servicio...')
 
       // 2. Upload signature if present
       let firmaUrl: string | null = null
@@ -478,6 +513,8 @@ export default function CompletarServicioPage() {
     }
 
     setEnviando(false)
+    setProgreso('')
+    setProgresoPct(0)
   }
 
   if (cargando) {
@@ -693,6 +730,7 @@ export default function CompletarServicioPage() {
           )}
 
           <p className="text-[10px] text-gray-400">
+            {preparandoPreviews && <span className="text-slate-700 font-medium">Preparando vistas previas… </span>}
             {fotos.length}/{MAX_ARCHIVOS} archivos · Fotos se comprimen al subir; video máx {MAX_VIDEO_SIZE_MB} MB.
           </p>
 
@@ -848,6 +886,21 @@ export default function CompletarServicioPage() {
           )
         })()}
 
+        {/* Progreso de la subida */}
+        {enviando && progreso && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3">
+            <p className="text-sm text-blue-700 flex items-center gap-2">
+              <span className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+              {progreso}
+            </p>
+            {progresoPct > 0 && progresoPct < 100 && (
+              <div className="mt-2 h-1.5 w-full rounded-full bg-blue-100 overflow-hidden">
+                <div className="h-full bg-blue-500 transition-[width] duration-300" style={{ width: `${progresoPct}%` }} />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Submit */}
         <button
           onClick={handleSubmit}
@@ -857,7 +910,7 @@ export default function CompletarServicioPage() {
           {enviando ? (
             <span className="flex items-center justify-center gap-2">
               <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-              Enviando evidencia...
+              {progreso || 'Enviando evidencia...'}
             </span>
           ) : (
             'Completar y enviar al cliente'
