@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     }
 
     await registrarEvento(sol.id, sol.estado, tecnico.nombre_completo,
-      `${tecnico.nombre_completo} registró como receptor a ${receptor.nombre} (+${receptor.telefono}, ${labelRelacionReceptor(receptor.relacion)}) — titular: ${sol.cliente_nombre}`,
+      `${tecnico.nombre_completo} registró como receptor a ${receptor.nombre} (+${receptor.telefono}${receptor.relacion ? `, ${labelRelacionReceptor(receptor.relacion)}` : ''}) — titular: ${sol.cliente_nombre}`,
       {
         receptor_nombre: { previo: sol.receptor_nombre ?? null, nuevo: receptor.nombre },
         receptor_telefono: { previo: sol.receptor_telefono ?? null, nuevo: receptor.telefono },

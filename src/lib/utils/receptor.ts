@@ -33,7 +33,8 @@ export interface ReceptorValidado {
   nombre: string
   /** Dígitos con 57 (573XXXXXXXXX). */
   telefono: string
-  relacion: RelacionReceptor
+  /** Opcional desde 2026-10-24 (pedido de Juan): null si el técnico no la indicó. */
+  relacion: RelacionReceptor | null
 }
 
 /**
@@ -61,11 +62,13 @@ export function validarReceptor(
     return { ok: false, error: 'Ese es el mismo número del titular: no hace falta registrarlo como receptor.' }
   }
 
-  if (!RELACIONES_RECEPTOR.some(r => r.value === relacion)) {
-    return { ok: false, error: 'Indica qué relación tiene con el titular del servicio.' }
+  // Relación OPCIONAL (2026-10-24): vacía → null (el CHECK de la columna admite
+  // NULL). Si viene, tiene que ser de la lista cerrada.
+  if (relacion && !RELACIONES_RECEPTOR.some(r => r.value === relacion)) {
+    return { ok: false, error: 'La relación con el titular no es válida.' }
   }
 
-  return { ok: true, receptor: { nombre, telefono, relacion: relacion as RelacionReceptor } }
+  return { ok: true, receptor: { nombre, telefono, relacion: relacion ? (relacion as RelacionReceptor) : null } }
 }
 
 export function primerNombre(nombre: string | null | undefined): string {
