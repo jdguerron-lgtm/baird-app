@@ -38,7 +38,7 @@ export const API_LECTURA_PERMITIDAS: readonly string[] = ['/api/admin/export', '
  * subrutas) para que el guard no la corte. Nada más se abre — ver
  * docs/SEGURIDAD.md § "Rol lectura".
  */
-export const API_LECTURA_ESCRITURA_PERMITIDA: readonly string[] = ['/api/admin/facturacion-estado']
+export const API_LECTURA_ESCRITURA_PERMITIDA: readonly string[] = ['/api/admin/facturacion-estado', '/api/admin/siigo-cotizacion']
 
 const METODOS_LECTURA = new Set(['GET', 'HEAD', 'OPTIONS'])
 

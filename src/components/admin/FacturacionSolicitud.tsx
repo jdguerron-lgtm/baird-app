@@ -23,6 +23,7 @@ import { FACTURACION_ESTADO_LABEL, type FacturacionEstado } from '@/types/solici
 export interface SolicitudFacturacionView {
   id: string
   estado: string
+  es_garantia?: boolean
   facturacion_estado?: FacturacionEstado | null
   factura_numero?: string | null
   facturada_at?: string | null
@@ -50,12 +51,46 @@ export default function FacturacionSolicitud({ solicitud, onActualizada }: Props
   const { soloLectura } = useRolAdmin()
   const estado: FacturacionEstado = solicitud.facturacion_estado ?? 'pendiente'
   const completada = solicitud.estado === 'completada'
+  const esParticular = solicitud.es_garantia === false
 
   const [modo, setModo] = useState<'ver' | 'facturar'>('ver')
   const [numero, setNumero] = useState(solicitud.factura_numero ?? '')
   const [nota, setNota] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [resultado, setResultado] = useState<{ ok: boolean; texto: string } | null>(null)
+
+  const [creandoCot, setCreandoCot] = useState(false)
+
+  const crearCotizacionSiigo = async (forzar = false) => {
+    setCreandoCot(true)
+    setResultado(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultado({ ok: false, texto: 'Sesión expirada. Inicia sesión de nuevo.' })
+        return
+      }
+      const res = await fetch('/api/admin/siigo-cotizacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ solicitud_id: solicitud.id, forzar }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResultado({ ok: false, texto: data?.error ?? `Error ${res.status}` })
+        return
+      }
+      setResultado({
+        ok: true,
+        texto: `Cotización ${data.cotizacion} creada en Siigo${data.cliente_creado ? ' (cliente nuevo creado)' : ''}.`
+          + (data.ciudad_por_defecto ? ' ⚠️ La ciudad no está en el mapa DANE: quedó Bogotá, corrígela en Siigo.' : ''),
+      })
+    } catch (e) {
+      setResultado({ ok: false, texto: e instanceof Error ? e.message : 'Error de red' })
+    } finally {
+      setCreandoCot(false)
+    }
+  }
 
   const enviar = async (facturacion_estado: FacturacionEstado) => {
     setGuardando(true)
@@ -204,6 +239,17 @@ export default function FacturacionSolicitud({ solicitud, onActualizada }: Props
               title="Corrige el número de factura o la nota"
             >
               ✏️ Corregir N° de factura
+            </button>
+          )}
+          {esParticular && estado === 'pendiente' && (
+            <button
+              type="button"
+              onClick={() => crearCotizacionSiigo()}
+              disabled={guardando || creandoCot}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              title="Crea en Siigo la cotización con los datos del cliente (lo crea si no existe)"
+            >
+              {creandoCot ? 'Creando…' : '📄 Cotización en Siigo'}
             </button>
           )}
           {estado !== 'no_aplica' && (
