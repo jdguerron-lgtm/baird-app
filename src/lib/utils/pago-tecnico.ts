@@ -65,6 +65,11 @@ export function estimarPagoTecnicoGarantia(params: {
   asumirOptimista?: boolean
   /** Si true, el cálculo se considera consolidado (no proyección). */
   consolidado?: boolean
+  /**
+   * Recargo finde/festivo ya resuelto (bono-garantia.ts: diagnóstico o cierre
+   * en sáb/dom/festivo). Si viene, manda sobre `horarioConfirmado`.
+   */
+  finDeSemana?: boolean
 }): PagoTecnicoBreakdown {
   const {
     complejidad = null,
@@ -74,9 +79,10 @@ export function estimarPagoTecnicoGarantia(params: {
     cumpleEncuesta,
     asumirOptimista = true,
     consolidado = false,
+    finDeSemana,
   } = params
 
-  const weekend = esFinDeSemana(horarioConfirmado ?? null)
+  const weekend = typeof finDeSemana === 'boolean' ? finDeSemana : esFinDeSemana(horarioConfirmado ?? null)
   const taResuelto = typeof cumpleTA === 'boolean' ? cumpleTA : asumirOptimista
   const encuestaResuelta = typeof cumpleEncuesta === 'boolean' ? cumpleEncuesta : asumirOptimista
 

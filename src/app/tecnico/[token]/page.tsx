@@ -16,6 +16,7 @@ import {
 import { formatCOP } from '@/lib/utils/format'
 import { phoneToDigits } from '@/lib/utils/phone'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
+import { diasSolucionBono, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
 import QrPagosBaird from '@/components/ui/QrPagosBaird'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 import { estadoPagoCliente, esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
@@ -70,6 +71,12 @@ interface Servicio {
   // "No alcanzo" desde la card. Ver docs/PROTOCOLO-VISITA.md § Fase 0.
   fecha_visita_at: string | null
   visita_confirmada_at: string | null
+  // Bonos garantía (2026-10-24): días con pausa por repuesto + recargo por
+  // trabajo real en finde/festivo. Ver src/lib/utils/bono-garantia.ts.
+  diagnosticado_at?: string | null
+  siguiente_paso?: string | null
+  siguiente_paso_at?: string | null
+  repuesto_recibido_at?: string | null
 }
 
 export default function PortalTecnicoPage() {
@@ -132,7 +139,7 @@ export default function PortalTecnicoPage() {
           // Sin cotizacion ni monto_pagado_online a propósito: el técnico no
           // debe ver el precio al cliente (margen Baird). La etapa de pago se
           // deriva solo de las fechas (sin montos).
-          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, tecnico_asignado_id, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, fecha_visita_at, visita_confirmada_at')
+          .select('id, cliente_nombre, cliente_telefono, tipo_equipo, tipo_solicitud, marca_equipo, novedades_equipo, direccion, zona_servicio, ciudad_pueblo, pago_tecnico, estado, horario_visita_1, horario_visita_2, created_at, es_garantia, horario_confirmado, triaje_resultado, tecnico_asignado_id, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, fecha_visita_at, visita_confirmada_at, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at')
           .eq('tecnico_asignado_id', tec.id)
           .order('created_at', { ascending: false })
       )
@@ -935,13 +942,14 @@ function PagoLabel({ servicio }: { servicio: Servicio }) {
   }
 
   const complejidad = servicio.triaje_resultado?.complejidad ?? null
-  const diasSolucion = Math.floor(
-    (ahoraMs - new Date(servicio.created_at).getTime()) / (1000 * 60 * 60 * 24)
-  )
+  // Días netos (descuenta la espera de repuesto) y recargo por trabajo real
+  // en finde/festivo — misma regla que la liquidación (bono-garantia.ts).
+  const diasSolucion = diasSolucionBono(servicio, new Date(ahoraMs).toISOString()).netos
   const breakdown = estimarPagoTecnicoGarantia({
     complejidad,
     diasSolucion,
     horarioConfirmado: servicio.horario_confirmado,
+    finDeSemana: finDeSemanaTrabajo(servicio, null).aplica,
     asumirOptimista: true,
   })
 

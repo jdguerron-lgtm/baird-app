@@ -22,6 +22,7 @@
  */
 
 import { calcularTarifaMABE, MARGEN_BAIRD_GARANTIA, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
+import { diasSolucionBono, encuestaDeEvidencia, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
@@ -42,6 +43,8 @@ export interface SolicitudFinanzas {
   siguiente_paso: string | null
   siguiente_paso_at: string | null
   repuesto_recibido_at: string | null
+  /** Derivado de solicitud_eventos (mapaFinPausaRepuesto) — ver bono-garantia.ts. */
+  fin_pausa_repuesto_at?: string | null
   // Código de descuento (2026-10-19): Baird lo asume → baja la venta, no el
   // pago al técnico. Opcionales para no romper constructores/tests existentes.
   descuento_codigo?: string | null
@@ -105,8 +108,6 @@ export interface ResumenFinanciero {
   meses: Array<{ mes: string } & CifrasPeriodo>
 }
 
-const CALIFICACION_RE = /Calificacion:\s*(\d{1,2})\/10/
-const MS_DIA = 24 * 60 * 60 * 1000
 
 function cifrasVacias(): CifrasFlujo {
   return { servicios: 0, ventas: 0, ventasConIva: 0, pagoTecnicos: 0, utilidad: 0, margen: 0, estimados: 0, recaudadoOnline: 0 }
@@ -120,23 +121,14 @@ export function fechaCierreServicio(sol: SolicitudFinanzas, ev: EvidenciaFinanza
   return sol.created_at
 }
 
+// Días (con pausa por repuesto), encuesta y recargo finde/festivo: una sola
+// regla en src/lib/utils/bono-garantia.ts (2026-10-24).
 function diasSolucion(sol: SolicitudFinanzas, cierreIso: string): number {
-  const inicio = new Date(sol.created_at).getTime()
-  const fin = new Date(cierreIso).getTime()
-  if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin < inicio) {
-    return Number(sol.triaje_resultado?.dias_transcurridos ?? 0) || 0
-  }
-  let pausaMs = 0
-  if (sol.siguiente_paso === 'esperar_repuesto' && sol.siguiente_paso_at && sol.repuesto_recibido_at) {
-    const p0 = new Date(sol.siguiente_paso_at).getTime()
-    const p1 = new Date(sol.repuesto_recibido_at).getTime()
-    if (Number.isFinite(p0) && Number.isFinite(p1) && p1 > p0) pausaMs = p1 - p0
-  }
-  return Math.max(0, Math.round(((fin - inicio - pausaMs) / MS_DIA) * 10) / 10)
+  return diasSolucionBono(sol, cierreIso).netos
 }
 
 function encuestaContestada(ev: EvidenciaFinanzas | undefined): boolean {
-  return ev?.confirmado === true && CALIFICACION_RE.test(ev.cliente_comentario ?? '')
+  return encuestaDeEvidencia(ev).contestada
 }
 
 export interface CifrasServicio {
@@ -162,7 +154,7 @@ export function cifrasServicio(
         diasSolucion: diasSolucion(sol, cierreIso),
         cumpleTA: sol.cumple_ta ?? true,
         cumpleEncuesta: encuestaContestada(ev),
-        esFinDeSemana: (sol.recargo_weekend_aplicado ?? 0) > 0,
+        esFinDeSemana: finDeSemanaTrabajo(sol, ev).aplica,
       })
       return {
         ventas: r.totalMABE,

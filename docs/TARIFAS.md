@@ -85,11 +85,17 @@ Si el técnico no cumple TA, **no hay bono** (cualquier fila).
 | 2.1–3 días | $1,500 | $2,500 | $5,000 |
 | > 3 días | $0 | $0 | $0 |
 
-**Días de solución** se cuentan desde `created_at` hasta el momento en que la solicitud entra a `completada`, **pausando el contador mientras el estado es `esperando_repuesto`** (porque depende de Baird/MABE, no del técnico).
+**Días de solución** se cuentan desde `created_at` hasta el cierre (`evidencias_servicio.completado_at` → `confirmado_at` → `diagnosticado_at`), **descontando la pausa por repuesto** (depende de Baird/MABE, no del técnico). Regla precisa (2026-10-24, `src/lib/utils/bono-garantia.ts` — única fuente para liquidación, finanzas, ficha admin y portal del técnico):
+
+- La pausa **arranca** en el diagnóstico con `esperar_repuesto` (`siguiente_paso_at`).
+- **Termina cuando el repuesto se recibe en el sistema** (`repuesto_recibido_at`: lo marca el admin en `/admin/repuestos`, el supervisor en su portal o el técnico con "📦 Llegó el repuesto"). Si nadie lo marcó pero el servicio salió del ciclo (el cliente agendó la visita final con el repuesto en camino, o el técnico completó directo), termina en ese evento (`mapaFinPausaRepuesto` lee `solicitud_eventos`). Mientras el servicio siga en `esperando_repuesto` / `repuesto_en_camino` / `repuesto_recibido`, la pausa está **abierta** y el reloj no corre.
+- Días netos = días brutos − pausa (1 decimal). La ficha admin muestra brutos, pausa (inicio → fin y por qué cerró) y netos.
 
 ### Recargo fin de semana y festivos
 
-Se aplica si el `horario_confirmado` por el cliente cae **sábado, domingo o festivo colombiano** (cambio 2026-07-22: antes solo sáb/dom; los festivos se computan con la Ley Emiliani en `src/lib/utils/festivos.ts`). Es predecible para el técnico desde que el cliente confirma horario.
+**Regla vigente (2026-10-24, pedido de Juan):** se aplica si el técnico **trabajó** en sábado, domingo o festivo colombiano — es decir, si el **diagnóstico** (`diagnosticado_at`) o el **cierre** (`evidencias_servicio.completado_at`) cayó en uno de esos días (día calendario en TZ Bogotá; festivos por Ley Emiliani en `src/lib/utils/festivos.ts`). Lo calcula `finDeSemanaTrabajo()` en `bono-garantia.ts`. Antes del diagnóstico el portal del técnico lo **proyecta** por el horario confirmado; las filas viejas con `recargo_weekend_aplicado > 0` se respetan.
+
+> ⚠️ Hasta el 2026-10-24 la liquidación y finanzas leían `recargo_weekend_aplicado`, que en garantía **nunca se escribe** (`recargo.service` solo aplica a particular): el recargo de garantía no se liquidaba aunque el portal se lo mostrara al técnico. Las liquidaciones anteriores a esa fecha pueden tener ese recargo omitido.
 
 | Complejidad | Recargo |
 |---|---|

@@ -1,3 +1,4 @@
+import { mapaFinPausaRepuesto } from '@/lib/services/bono-garantia.service'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
@@ -55,6 +56,9 @@ export async function GET(req: NextRequest) {
     }
     const solicitudes = (solicitudesRaw ?? []) as unknown as SolicitudFinanzas[]
     const ids = solicitudes.map((s) => s.id)
+    // Fin de la pausa por repuesto sin "recibido" (ver bono-garantia.ts).
+    const finPausaMap = await mapaFinPausaRepuesto(ids)
+    for (const s of solicitudes) s.fin_pausa_repuesto_at = finPausaMap.get(s.id) ?? null
 
     let evidencias: EvidenciaFinanzas[] = []
     let pagos: PagoFinanzas[] = []
