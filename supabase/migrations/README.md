@@ -427,3 +427,10 @@ No requieren migración — solo refactor. Documentado para no olvidar:
 - `src/app/api/cron/horario-recordatorio/route.ts:56,65` — UPDATEs sin guard. Fix similar.
 
 **Patrón modelo**: `procesarAceptacion` en `src/lib/services/whatsapp.service.ts` usa `.is('tecnico_asignado_id', null)` como guard atómico — copiarlo cuando aplique.
+
+
+## Aplicadas el 2026-10-24
+
+| Migración | Qué hace | Estado |
+|---|---|---|
+| `20261024_hardening_funciones_pagos_search_path.sql` | Quita EXECUTE a PUBLIC/anon/authenticated en `auditar_pagos`, `recalcular_resumen_pago`, `trg_pagos_resumen` (advisors 0028/0029) y fija `search_path = public` en las 6 funciones con search_path mutable (advisor 0011). Rollback y verificación en el archivo. | ✅ **Aplicada en prod 2026-10-24 23:04** (ensayada antes con bloque `DO` + `RAISE EXCEPTION` porque staging no existe; resultados en `docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md` § 7) |
