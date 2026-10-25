@@ -82,6 +82,25 @@ export const PARAMS_PERMITIDOS_URL: readonly string[] = [
   'dclid',
 ]
 
+/**
+ * Hosts donde se mide (2026-10-24). Los deploys de prueba de Vercel
+ * (`baird-*-servicebairdapps-projects.vercel.app`), el alias
+ * `baird-app.vercel.app` y localhost mandaban visitas a GA4 y ensuciaban los
+ * informes (GA los listaba como "dominios adicionales detectados"). Para
+ * probar en local: `NEXT_PUBLIC_ANALYTICS_HOSTS=localhost` en .env.local.
+ */
+export const HOSTS_MEDIDOS: readonly string[] = (
+  process.env.NEXT_PUBLIC_ANALYTICS_HOSTS ?? 'lineablanca.bairdservice.com'
+)
+  .split(',')
+  .map(h => h.trim().toLowerCase())
+  .filter(Boolean)
+
+/** true si en este host se carga la analítica. */
+export function hostMedido(hostname: string, hosts: readonly string[] = HOSTS_MEDIDOS): boolean {
+  return hosts.includes(hostname.toLowerCase())
+}
+
 function coincidePrefijo(pathname: string, prefijos: readonly string[]): boolean {
   return prefijos.some(p => pathname === p || pathname.startsWith(`${p}/`))
 }
