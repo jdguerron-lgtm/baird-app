@@ -266,6 +266,7 @@ Se suman a `docs/FLUJO-DESARROLLO.md` § 3:
 | 2026-10-24 | Intento de crear `baird-staging` (MCP `create_project`, costo confirmado 0 USD) | Supabase | **Rechazado**: límite de 2 proyectos Free por usuario (prod + Ventas). Opciones en § 4.1 | — |
 | 2026-10-24 | `npm audit` + comparación de versiones (Next, zod, xlsx, supabase-js, vitest) | repo | Hallazgo H10 / ficha C11; sin cambios de código todavía | — |
 | 2026-10-24 | Parches C11 preparados en rama `seguridad/parches-dependencias` (worktree `.wt/parches-deps`, commits `d942cfb` zod + transitivas y el de Next 16.4.3), **sin push ni deploy** | repo | `npm audit --omit=dev` baja de 10 a 1 (solo `xlsx`). tsc 0, lint 0 errores, 729/729 tests, build idéntico (121 págs.), prueba de `next start` con middleware OK. `eslint-config-next` se queda en 16.1.6 y `eslint-plugin-react-hooks` pineado en 7.0.1 (16.4 trae 27 errores de lint nuevos) | `git revert` o Instant Rollback |
+| 2026-10-24 22:17 | Ventana de merge del PR #19 (agendada 22:04) | prod | **No ejecutada**: la tarea arrancó a las 22:17 por suspensión del PC (`ERR_NETWORK_IO_SUSPENDED`), fuera del margen 22:00–22:10 y dentro de :13–:17. Pre-checks al momento: PR abierto en `81331e8`, `main` sin cambios desde `12164a8`, preview `dpl_FnV5ReYCJiAoKYkh8wxivt2prxze` READY, `/api/health` healthy. Producción intacta | — |
 
 ---
 
