@@ -1,9 +1,10 @@
 /**
  * Google Analytics 4 (gtag) — medición de tráfico y eventos del sitio.
  *
- * El tag global de gtag se carga UNA sola vez en `src/app/layout.tsx` (mismo
- * loader que Google Ads) y ahí se hace `gtag('config', GA_MEASUREMENT_ID)`,
- * así que TODAS las páginas quedan medidas. El flujo de datos es "Baird1"
+ * El tag global de gtag se carga UNA sola vez desde `src/lib/analytics/gtag.ts`
+ * (mismo loader que Google Ads, lo inicia AnaliticaCliente en el root layout).
+ * Mide todas las páginas públicas y las del cliente con token (URL saneada);
+ * NO carga en los portales internos (ver rutas.ts). El flujo de datos es "Baird1"
  * (propiedad "Baird Serice S.A.S", cuenta 322082684) con URL raíz
  * https://bairdservice.com — los subdominios (lineablanca.) reportan al mismo
  * flujo, que es el comportamiento estándar de GA4.
@@ -42,7 +43,17 @@ type GtagFn = (...args: unknown[]) => void
  * Seguro para llamar siempre: no-op si gtag no está cargado o corre en server.
  * `send_to` va explícito para no duplicar el evento hacia el tag de Ads.
  */
-export function trackGaLead(params?: { es_garantia?: boolean; tipo_solicitud?: string }): void {
+export function trackGaLead(params?: {
+  es_garantia?: boolean
+  tipo_solicitud?: string
+  tipo_equipo?: string
+  /** Valor esperado del lead en COP (mismo que la conversión de Ads). */
+  valor?: number
+  /** Canal del origen guardado (atribucion.ts), para cruzar con la fuente de GA4. */
+  canal?: string
+  /** 'agendada' (visita fijada al enviar) | 'sin_horario' (falta elegir horario). */
+  reserva?: 'agendada' | 'sin_horario'
+}): void {
   if (typeof window === 'undefined') return
 
   const w = window as unknown as { gtag?: GtagFn }
@@ -57,6 +68,12 @@ export function trackGaLead(params?: { es_garantia?: boolean; tipo_solicitud?: s
     ...(params?.tipo_solicitud ? { tipo_solicitud: params.tipo_solicitud } : {}),
     ...(typeof params?.es_garantia === 'boolean'
       ? { es_garantia: params.es_garantia ? 'garantia' : 'particular' }
+      : {}),
+    ...(params?.tipo_equipo ? { tipo_equipo: params.tipo_equipo } : {}),
+    ...(params?.canal ? { canal: params.canal } : {}),
+    ...(params?.reserva ? { reserva: params.reserva } : {}),
+    ...(typeof params?.valor === 'number' && params.valor > 0
+      ? { value: params.valor, currency: 'COP' }
       : {}),
     ...(heroVariante ? { hero_variante: heroVariante } : {}),
   })

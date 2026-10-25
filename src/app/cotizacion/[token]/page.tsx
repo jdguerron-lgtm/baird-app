@@ -9,6 +9,7 @@ import { formatCOP } from '@/lib/utils/format'
 import { esUrlVideo } from '@/lib/utils/media'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
+import { trackEvento } from '@/lib/analytics/eventos'
 
 interface ProductoNecesario {
   sku: string
@@ -153,6 +154,11 @@ export default function CotizacionPage() {
       })
       if (res.ok) {
         setEstado('aprobada')
+        // GA4: venta de la reparación (valor = total cotizado al cliente).
+        trackEvento('aprobar_cotizacion', {
+          currency: 'COP',
+          value: datos?.cotizacion?.total || undefined,
+        })
       } else {
         const data = await res.json()
         setError(data.error || 'Error al aprobar')

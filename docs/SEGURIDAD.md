@@ -322,6 +322,11 @@ Limitación: no simula el caso "admin logueado en mismo navegador → rol `authe
 
 ## 6. Histórico de incidentes y fixes
 
+### 2026-10-24 — Tokens en la URL enviados a Google Analytics / Ads
+- **Hallazgo** (estudio SEO/analítica, `docs/mejoras-futuras/seo-conversion-analitica/`): gtag y Vercel Analytics cargaban en TODAS las rutas. `page_location` llevaba a GA4 (×2), Google Ads y Vercel los tokens de `/tecnico/{token}`, `/servicio/{token}`, `/pago/*?id=`, `/supervisor/{token}`, `/receptor/{token}`, y el **`token_hash` de recuperación de clave** de `/admin/establecer-clave?token_hash=…&type=recovery` (un solo uso, vence en ~1 h, pero quedó en informes de terceros).
+- **Fix**: `src/lib/analytics/rutas.ts` + `gtag.ts` + `AnaliticaCliente.tsx`. Portales internos (`/admin`, `/tecnico`, `/aceptar`, `/supervisor`) no cargan analítica; páginas del cliente con token mandan a GA4 la ruta saneada (`/servicio/[token]`, sin query) y no configuran Ads (su hit `ccm/collect` ignora `page_location`); Vercel con `beforeSend`. Verificado en local con el navegador: 0 hits con token.
+- **Además**: `/receptor/` no tenía noindex ni estaba en robots (muestra datos del cliente) → agregado; `public/guia*.html` ahora con `X-Robots-Tag: noindex` (guia-pagos publicaba tarifas de técnicos).
+
 ### 2026-06-24 — Auditoría de seguridad (Supabase advisors en vivo + lectura de código)
 
 **Capa de auth: sólida.** 12 endpoints admin con `verificarAdmin` (ya usa el singleton); webhooks Meta + Dapta con HMAC + `timingSafeEqual`; security headers single-source en `middleware.ts`; `escapeLikePattern` aplicado en el único `.ilike()`; `/api/gps-ping` **ya valida `portal_token`** (backlog #8 quedó cerrado); `/api/solicitar` recalcula `pago_tecnico` server-side. Varios ítems del viejo improvement-plan estaban ya resueltos.

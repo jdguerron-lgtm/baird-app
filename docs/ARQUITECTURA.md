@@ -70,7 +70,11 @@ src/
 │   ├── analytics/
 │   │   ├── googleAds.ts        # trackLeadConversion() — conversión de Ads del form de /solicitar
 │   │   ├── googleAnalytics.ts  # trackGaLead() — evento GA4 `generate_lead`
-│   │   └── experimentoHero.ts  # A/B del hero móvil; la variante viaja en `generate_lead`
+│   │   ├── gtag.ts             # iniciarGtag()/actualizarRutaGtag() — arranque y saneo por ruta
+│   │   ├── rutas.ts            # qué rutas se miden y cómo se sanea la URL (tokens, query)
+│   │   ├── eventos.ts          # trackEvento() — eventos del embudo hacia GA4 (tabla de eventos)
+│   │   ├── atribucion.ts       # origen del lead (gclid/utm/referrer) + clasificarCanal()
+│   │   └── experimentoHero.ts  # A/B del hero móvil; exposición = `experiment_impression`
 │   ├── constants/
 │   │   ├── especialidades.ts   # TIPO_A_ESPECIALIDAD mapping
 │   │   ├── estados.ts          # ESTADO_ESTILOS, ESTADO_LABELS (styling + labels per state)
@@ -367,10 +371,46 @@ querySupabase / page-load handler
 
 ## Analítica y experimentos
 
-El tag de gtag se carga UNA vez en `src/app/layout.tsx` y sirve a los dos destinos:
-Google Ads (`AW-18163777075`, conversiones) y GA4 (`G-DXSC4J9RGF`, tráfico y eventos).
-La pantalla de éxito de `/solicitar` dispara ambos: `trackLeadConversion()` (Ads) y
-`trackGaLead()` (evento GA4 `generate_lead`, marcado como evento clave).
+Toda la analítica la monta `src/components/analytics/AnaliticaCliente.tsx` (una vez, en
+`src/app/layout.tsx`, desde 2026-10-24). Un solo loader de gtag sirve a tres destinos:
+Google Ads (`AW-18163777075`, conversiones) y dos propiedades GA4 que reciben lo mismo
+(`G-DXSC4J9RGF` "Baird1", histórico de bairdservice.com; `G-ZPGP3D68XP` "Línea Blanca",
+env `NEXT_PUBLIC_GA_LINEABLANCA_ID`). Además Vercel Web Analytics + Speed Insights.
+
+**Qué rutas se miden** (`src/lib/analytics/rutas.ts`):
+- *Portales internos* (`/admin`, `/tecnico`, `/aceptar`, `/supervisor`, `/api`): **no se
+  carga ninguna analítica** (antes inflaban el tráfico y `/admin/establecer-clave?token_hash=…`
+  le mandaba a Google el token de recuperación de clave).
+- *Páginas del cliente con token* (`/servicio`, `/pago`, `/cotizacion`, `/horario`,
+  `/confirmar`, `/verificar-paso`, `/reprogramar-repuesto`, `/receptor`): GA4 recibe un
+  page_view manual con la ruta saneada (`/servicio/[token]`, sin query) y **Ads no se
+  configura** — su hit de aterrizaje (`ccm/collect`) manda la ruta real aunque se le pase
+  `page_location`. Se configura si el usuario pasa a una página pública.
+- *Públicas*: medición estándar; la URL solo conserva `utm_*`, `gclid`, `gbraid`, `wbraid`,
+  `_gl` y similares (`PARAMS_PERMITIDOS_URL`). La navegación interna la mide la "Medición
+  mejorada" de GA4 (cambios de historial).
+- Al crear una ruta nueva con token: agregarla a `RUTAS_CON_TOKEN` (o `RUTAS_SIN_MEDICION`)
+  y a `NOINDEX_PREFIXES` de `src/middleware.ts`.
+
+**Eventos** (tabla completa en `src/lib/analytics/eventos.ts`): `generate_lead` +
+conversión de Ads al enviar `/solicitar` (con `transaction_id` = id de la solicitud y
+`value`/`currency` = precio de catálogo; garantía sin valor), `form_start`, `form_error`
+(solo nombres de campo), `begin_checkout` (Pagar anticipo), `whatsapp_click`,
+`phone_click`, `cta_click` (listener delegado: la home y las landings son Server
+Components), `sign_up` (registro de técnico — NO es conversión de cliente),
+`aprobar_cotizacion` y `experiment_impression` (A/B del hero). Pendiente: `purchase` al
+aprobarse un pago Wompi — vive en `/pago/*`, módulo congelado `[pagos]`.
+
+**Conversiones mejoradas de Ads** (teléfono hasheado): código listo pero APAGADO;
+`NEXT_PUBLIC_ADS_ENHANCED_CONVERSIONS=true` solo tras actualizar la política de privacidad.
+
+**Origen del lead** (`src/lib/analytics/atribucion.ts`): en las páginas públicas se
+guarda en localStorage el primer toque y el último toque no directo (gclid, utm, dominio
+del referrer, landing; vence a los 90 días). `/solicitar` lo manda como `origen` y
+`/api/solicitar` lo valida (`src/lib/validations/origen.schema.ts`), le agrega `canal`
+(`google_ads`, `organico_buscador`, `whatsapp`, `directo`, …) y lo guarda en
+`solicitudes_servicio.origen` (JSONB, migración `20261024_solicitudes_origen.sql`). Si la
+columna no existe aún, el insert se reintenta sin ella (el lead no se pierde).
 
 ### A/B del hero móvil (`src/lib/analytics/experimentoHero.ts`)
 
@@ -378,8 +418,10 @@ La pantalla de éxito de `/solicitar` dispara ambos: `trackLeadConversion()` (Ad
 de 1024px el hero es solo texto. La variante `b` llena ese hueco con la foto de un
 técnico trabajando; la `a` es el hero actual. Reparto 50/50.
 
-**Cómo se mide.** La variante viaja como parámetro `hero_variante` (`a` | `b`) dentro
-del evento `generate_lead`. En GA4 se compara la conversión de una contra otra
+**Cómo se mide.** La home manda `experiment_impression` (`experiment_id: hero_movil`,
+`variant_id`) una vez por sesión — es el denominador (desde 2026-10-24; antes no había
+y no se podía calcular la tasa). La variante viaja también como `hero_variante` (`a` | `b`)
+dentro de `generate_lead`. En GA4 se compara la conversión de una contra otra
 **segmentando por móvil** — en desktop las dos variantes son idénticas, así que incluir
 desktop solo diluye la señal.
 

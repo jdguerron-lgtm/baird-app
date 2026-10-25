@@ -8,7 +8,13 @@ import { resolverTecnicoPreferido } from '@/lib/services/tecnicos-elegibles.serv
 import { validarCodigoDescuento } from '@/lib/services/descuentos.service'
 import { calcularPagoTecnico } from '@/types/solicitud'
 import { pagoNetoTecnicoTarifaFija, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
+import { parsearOrigen } from '@/lib/validations/origen.schema'
 import crypto from 'crypto'
+
+/** Error de PostgREST por una columna que no está en el schema cache. */
+function esColumnaFaltante(err: { code?: string; message?: string }, columna: string): boolean {
+  return err.code === 'PGRST204' || (err.message ?? '').includes(`'${columna}' column`)
+}
 
 // El auto-agendamiento corre notificarTecnicos inline (varios segundos por
 // técnico) — mismo margen que /api/confirmar-horario.
@@ -149,11 +155,25 @@ export async function POST(req: NextRequest) {
       cliente_token: clienteToken,
     }
 
-    const { data: solicitud, error: insertErr } = await supabase
-      .from('solicitudes_servicio')
-      .insert([dataToInsert])
-      .select()
-      .single()
+    // Origen del lead (2026-10-24): gclid/utm/referrer/landing que el
+    // navegador guardó al llegar al sitio, con el canal ya clasificado. Viaja
+    // como `origen` fuera del formulario (el schema del form lo descarta).
+    // Inválido o ausente → no se guarda; nunca rechaza la solicitud.
+    const origen = parsearOrigen((body as { origen?: unknown } | null)?.origen)
+
+    const insertar = (fila: Record<string, unknown>) =>
+      supabase.from('solicitudes_servicio').insert([fila]).select().single()
+
+    let { data: solicitud, error: insertErr } = await insertar(
+      origen ? { ...dataToInsert, origen } : dataToInsert,
+    )
+    // Si la columna `origen` aún no existe (deploy antes de la migración
+    // 20261024_solicitudes_origen.sql), PostgREST responde PGRST204: se
+    // reintenta sin ella para no perder el lead.
+    if (origen && insertErr && esColumnaFaltante(insertErr, 'origen')) {
+      console.warn('[solicitar] columna origen no existe todavía; se guarda sin origen')
+      ;({ data: solicitud, error: insertErr } = await insertar(dataToInsert))
+    }
 
     if (insertErr || !solicitud) {
       console.error('Error insertando solicitud:', insertErr)

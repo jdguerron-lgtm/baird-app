@@ -90,6 +90,8 @@ const NOINDEX_PREFIXES = [
   '/reprogramar-repuesto/',
   // Página de pago del anticipo (lleva cliente_token en la URL).
   '/pago/',
+  // Webview de quien recibe al técnico (receptor_token + datos del cliente).
+  '/receptor/',
   // Sin slash final: cubre también la página pública de acceso OTP
   // (/supervisor) además de los portales con token (/supervisor/{token}).
   '/supervisor',
@@ -142,7 +144,10 @@ export function middleware(req: NextRequest) {
   }
 
   // Impedir que Google indexe rutas privadas (admin, API, páginas con token)
-  if (NOINDEX_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
+  // Las guías HTML de public/ (técnicos, supervisores, pagos) son internas:
+  // guia-pagos.html publica las tarifas de los técnicos (2026-10-24).
+  const esGuiaInterna = pathname.startsWith('/guia') && pathname.endsWith('.html')
+  if (esGuiaInterna || NOINDEX_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
 
