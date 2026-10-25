@@ -12,6 +12,7 @@ import { ESPECIALIDADES, ESPECIALIDADES_INFO } from '@/lib/constants/especialida
 import { aplicarDeclaracionTecnico } from '@/lib/constants/certificaciones'
 import { PRIVACIDAD_VERSION } from '@/lib/constants/legal'
 import { TYC_VERSION } from '@/types/solicitud'
+import { trackEvento } from '@/lib/analytics/eventos'
 
 type SiNo = '' | 'si' | 'no'
 
@@ -225,6 +226,10 @@ export default function RegistroTecnico() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tecnicoId }),
       }).catch((err) => console.warn('WhatsApp notification failed:', err))
+
+      // GA4: técnico registrado. Es reclutamiento, NO un lead de cliente: no
+      // marcarlo como conversión principal en Google Ads.
+      trackEvento('sign_up', { method: 'formulario_tecnico' })
 
       setMensaje({
         texto: '¡Registro exitoso! Te enviamos un mensaje de bienvenida a tu WhatsApp. Tu cuenta está pendiente de verificación.',

@@ -1,7 +1,7 @@
 /**
  * Google Ads (gtag) — capa de conversiones del sitio.
  *
- * El tag global de gtag se carga en `src/app/layout.tsx` con este mismo
+ * El tag global de gtag se carga desde `src/lib/analytics/gtag.ts` con este mismo
  * GOOGLE_ADS_ID. La cuenta (AW-18163777075) es COMPARTIDA con la tienda Shopify
  * (tienda.bairdservice.com), que dispara sus propias conversiones (Compra,
  * Carrito, Tramitación) desde su propio deployment.
@@ -36,7 +36,27 @@ export const GOOGLE_ADS_ID = 'AW-18163777075'
 const LEAD_CONVERSION_LABEL =
   process.env.NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL ?? '8Gx0CJye7s4cELP8lNVD'
 
+/**
+ * Conversiones mejoradas (Enhanced Conversions): manda a Google el teléfono
+ * del cliente (gtag lo hashea con SHA-256 antes de enviarlo) para recuperar
+ * conversiones que las cookies pierden. APAGADO por defecto (2026-10-24):
+ * encender con `NEXT_PUBLIC_ADS_ENHANCED_CONVERSIONS=true` SOLO después de
+ * (1) actualizar la política de privacidad nombrando a Google Ads como
+ * encargado y (2) activar "Conversiones mejoradas" en la acción de conversión
+ * de Google Ads. Ver docs/mejoras-futuras/seo-conversion-analitica/.
+ */
+const ENHANCED_CONVERSIONS = process.env.NEXT_PUBLIC_ADS_ENHANCED_CONVERSIONS === 'true'
+
 type GtagFn = (...args: unknown[]) => void
+
+export interface DatosConversionLead {
+  /** id de la solicitud: Ads deduplica conversiones con el mismo transaction_id. */
+  transactionId?: string
+  /** Valor esperado del lead en COP (precio de catálogo al cliente). Sin valor → el default de la acción. */
+  valor?: number
+  /** Celular del cliente en dígitos con 57 (solo se usa con conversiones mejoradas encendidas). */
+  telefonoDigitos?: string
+}
 
 /**
  * Dispara la conversión de Google Ads del envío del formulario de solicitud.
@@ -45,7 +65,7 @@ type GtagFn = (...args: unknown[]) => void
  * Seguro para llamar siempre: si gtag no está cargado o el label no está
  * configurado, no hace nada. Solo corre en el navegador (client component).
  */
-export function trackLeadConversion(): void {
+export function trackLeadConversion(datos: DatosConversionLead = {}): void {
   if (!LEAD_CONVERSION_LABEL) return
   if (typeof window === 'undefined') return
 
@@ -56,5 +76,13 @@ export function trackLeadConversion(): void {
     ? LEAD_CONVERSION_LABEL
     : `${GOOGLE_ADS_ID}/${LEAD_CONVERSION_LABEL}`
 
-  w.gtag('event', 'conversion', { send_to: sendTo })
+  if (ENHANCED_CONVERSIONS && datos.telefonoDigitos && /^57\d{10}$/.test(datos.telefonoDigitos)) {
+    w.gtag('set', 'user_data', { phone_number: `+${datos.telefonoDigitos}` })
+  }
+
+  w.gtag('event', 'conversion', {
+    send_to: sendTo,
+    ...(datos.transactionId ? { transaction_id: datos.transactionId } : {}),
+    ...(typeof datos.valor === 'number' && datos.valor > 0 ? { value: datos.valor, currency: 'COP' } : {}),
+  })
 }
