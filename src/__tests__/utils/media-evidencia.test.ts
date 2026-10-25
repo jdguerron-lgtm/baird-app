@@ -9,6 +9,7 @@ import {
   MAX_ARCHIVOS_EVIDENCIA_ADMIN,
   EVIDENCIA_MAX_DIMENSION,
   EVIDENCIA_JPEG_QUALITY,
+  segundosVideoAprox,
 } from '@/lib/utils/media'
 import {
   esEventoEvidenciaAdmin,
@@ -21,16 +22,23 @@ import {
 const BASE = 'https://ceblicvdmephhktedsyv.supabase.co/storage/v1/object/public/evidencias-servicio/'
 const SOL = '0bafe18a-1111-2222-3333-444444444444'
 
-describe('media — límites de evidencia (2026-10-20)', () => {
-  it('video sigue en 50 MB (techo del plan Supabase) y las fotos suben a 20 MB post-compresión', () => {
+describe('media — límites de evidencia (2026-10-24)', () => {
+  it('video por defecto 50 MB (techo del plan Free de Supabase, se sube por env) y fotos 20 MB post-compresión', () => {
     expect(MAX_VIDEO_SIZE_MB).toBe(50)
     expect(MAX_IMAGE_SIZE_MB).toBe(20)
   })
 
-  it('más archivos por formulario: 10 diagnóstico, 12 completar, 20 admin', () => {
-    expect(MAX_EVIDENCIAS_DIAGNOSTICO).toBe(10)
-    expect(MAX_ARCHIVOS_COMPLETAR).toBe(12)
-    expect(MAX_ARCHIVOS_EVIDENCIA_ADMIN).toBe(20)
+  it('más archivos por formulario: 20 diagnóstico, 20 completar, 30 admin', () => {
+    expect(MAX_EVIDENCIAS_DIAGNOSTICO).toBe(20)
+    expect(MAX_ARCHIVOS_COMPLETAR).toBe(20)
+    expect(MAX_ARCHIVOS_EVIDENCIA_ADMIN).toBe(30)
+  })
+
+  it('la guía de duración escala con el tope de video (≈1,25 MB/s, múltiplos de 10 s)', () => {
+    expect(segundosVideoAprox(50)).toBe(40)
+    expect(segundosVideoAprox(200)).toBe(160)
+    expect(segundosVideoAprox(500)).toBe(400)
+    expect(segundosVideoAprox(5)).toBe(10)
   })
 
   it('fotos a mayor resolución: 4000 px / JPEG 0.92', () => {
