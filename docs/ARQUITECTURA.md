@@ -377,6 +377,11 @@ Google Ads (`AW-18163777075`, conversiones) y dos propiedades GA4 que reciben lo
 (`G-DXSC4J9RGF` "Baird1", histórico de bairdservice.com; `G-ZPGP3D68XP` "Línea Blanca",
 env `NEXT_PUBLIC_GA_LINEABLANCA_ID`). Además Vercel Web Analytics + Speed Insights.
 
+**Dónde se mide:** solo en `lineablanca.bairdservice.com` (`HOSTS_MEDIDOS`, env
+`NEXT_PUBLIC_ANALYTICS_HOSTS`). Los previews de Vercel, el alias `baird-app.vercel.app` y
+localhost no cargan gtag — antes ensuciaban GA4 (2026-10-24). Para probar en local:
+`NEXT_PUBLIC_ANALYTICS_HOSTS=localhost` en `.env.local`.
+
 **Qué rutas se miden** (`src/lib/analytics/rutas.ts`):
 - *Portales internos* (`/admin`, `/tecnico`, `/aceptar`, `/supervisor`, `/api`): **no se
   carga ninguna analítica** (antes inflaban el tráfico y `/admin/establecer-clave?token_hash=…`

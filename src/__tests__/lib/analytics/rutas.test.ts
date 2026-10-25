@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  hostMedido,
   rutaSinMedicion,
   rutaConToken,
   sanitizarRuta,
@@ -30,6 +31,23 @@ describe('rutaSinMedicion', () => {
     expect(rutaSinMedicion('/registro')).toBe(false)
     expect(rutaSinMedicion('/servicios/reparacion-lavadoras-bogota')).toBe(false)
     expect(rutaSinMedicion(`/servicio/${UUID}`)).toBe(false)
+  })
+})
+
+describe('hostMedido', () => {
+  it('por defecto solo mide el dominio oficial', () => {
+    expect(hostMedido('lineablanca.bairdservice.com')).toBe(true)
+    expect(hostMedido('LineaBlanca.BairdService.com')).toBe(true)
+  })
+
+  it('no mide previews de Vercel, el alias ni localhost', () => {
+    expect(hostMedido('baird-9sbmpm2sr-servicebairdapps-projects.vercel.app')).toBe(false)
+    expect(hostMedido('baird-app.vercel.app')).toBe(false)
+    expect(hostMedido('localhost')).toBe(false)
+  })
+
+  it('acepta una lista propia (NEXT_PUBLIC_ANALYTICS_HOSTS)', () => {
+    expect(hostMedido('localhost', ['localhost'])).toBe(true)
   })
 })
 

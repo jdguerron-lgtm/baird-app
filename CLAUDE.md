@@ -146,6 +146,8 @@ NEXT_PUBLIC_GA_LINEABLANCA_ID     # OPCIONAL — 2ª propiedad GA4 "Línea Blanc
 NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL # OPCIONAL — label de conversión Ads (default hardcodeado en googleAds.ts).
 NEXT_PUBLIC_ADS_ENHANCED_CONVERSIONS # OPCIONAL — 'true' manda el teléfono hasheado con la conversión de Ads.
                                   # Default apagado: encender SOLO tras actualizar la política de privacidad.
+NEXT_PUBLIC_ANALYTICS_HOSTS       # OPCIONAL — CSV de hosts donde carga GA4/Ads (default lineablanca.bairdservice.com;
+                                  # previews de Vercel y localhost no miden). 'localhost' en .env.local para probar.
                                   # Analítica completa (rutas medidas, eventos, origen del lead): docs/ARQUITECTURA.md § Analítica.
 
 # Wompi — pasarela de pagos (anticipo de reserva + recaudo online). Ver docs/WOMPI.md.
