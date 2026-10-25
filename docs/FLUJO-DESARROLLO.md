@@ -1,84 +1,229 @@
-# Flujo de desarrollo, pruebas locales y despliegue
+# Flujo de cambios, pruebas y despliegue
 
-> Cómo se lleva un cambio desde la idea hasta producción sin romper nada, y
-> qué hay replicado en el PC para probar y para restaurar. Creado 2026-10-21.
+> Cómo se lleva un cambio desde la idea hasta producción sin romper nada.
+> Creado 2026-10-21; **v2 2026-10-24**: carriles por tipo de cambio, pirámide de
+> pruebas, protocolo de despliegue con go/no-go, ensayo de migraciones con
+> ROLLBACK, smoke test (`scripts/smoke.mjs`), incidentes y hoja de ruta de
+> madurez. Decisiones de seguridad, ventana horaria con datos y fichas de
+> impacto por cambio: `docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md`.
 
-## 1. Entornos
+## 0. Principios
 
-| Entorno | Dónde | Cómo se actualiza |
-|---|---|---|
-| **Producción** | Vercel, `https://lineablanca.bairdservice.com` (alias `baird-app.vercel.app`) | Automático con cada push/merge a `main` en GitHub (`jdguerron-lgtm/baird-app`). |
-| **Preview** | Vercel genera una URL por cada rama pusheada | Automático con cada push a una rama distinta de `main`. Sirve para que otra persona pruebe sin instalar nada. |
-| **Local** | `npm run dev` → `http://localhost:3000` | Manual. **Usa la misma base de Supabase que producción** (no hay BD de staging): todo lo que escribas en local queda en prod. |
+1. **Ningún cambio llega a producción sin pasar por una barrera automática** (CI) y una prueba en un ambiente que no sea producción (preview, local o staging).
+2. **Producción se toca en ventana** (§ 6.1), con verificación y rollback escritos antes de empezar.
+3. **Rollback primero, diagnóstico después.** Si algo se ve mal en los 15 minutos de monitoreo, se revierte y se investiga fuera de producción.
+4. **Un cambio, un PR, un riesgo.** No se mezclan en el mismo PR una migración, un upgrade de dependencias y una feature.
+5. **Todo queda registrado**: PR con checklist, bitácora del área y memoria del proyecto.
 
-Para no alertar técnicos ni clientes reales desde local, `.env.local` lleva
-`BAIRD_TEST_PHONE_WHITELIST` con tu celular: los envíos WhatsApp a cualquier
-otro número se omiten (ver `CLAUDE.md` § Environment Variables).
+---
+
+## 1. Ambientes
+
+| Ambiente | Dónde | Base de datos | WhatsApp | Pagos | Uso | Estado |
+|---|---|---|---|---|---|---|
+| **Local** | `npm run dev` → `localhost:3000` | ⚠️ Supabase de **producción** (hoy) | Real, limitado por `BAIRD_TEST_PHONE_WHITELIST` | Wompi prod | Desarrollar | ✅ |
+| **CI** | GitHub Actions (`.github/workflows/ci.yml`) | Ninguna (tests con mocks) | Mock | Mock | Barrera automática en cada PR y push a `main` | ✅ desde 2026-10-24 |
+| **Preview** | Vercel, una URL por rama, protegida por Vercel Authentication | ⚠️ Supabase de **producción** (hoy) | Real | Wompi prod | Revisar UI y navegación **de lectura** | ✅ (sin datos propios) |
+| **Staging** | Proyecto Supabase `baird-staging` + scope Preview de Vercel | Propia, seed anonimizado | Real con whitelist obligatoria | Wompi sandbox (`pub_test_`) | Probar flujos completos, migraciones y RLS | ⏳ **Bloqueado**: límite de 2 proyectos Free (decisión en el plan § 4.1) |
+| **Producción** | Vercel, `https://lineablanca.bairdservice.com` (alias `baird-app.vercel.app`) | Supabase `ceblicvdmephhktedsyv` | Real | Wompi prod | Clientes, técnicos, MABE | ✅ |
+
+**Mientras no exista staging**, en local y en las previews **no se envían formularios ni se ejecutan acciones** que escriban (crear solicitud, aceptar oferta, diagnosticar, cobrar). Solo navegación. Lo que escribe se prueba con el ensayo con ROLLBACK (§ 5.3) o con tests.
+
+Kit para montar staging: `scripts/staging/README.md` (incluye la variante local con Docker, § 9 del README).
 
 ## 2. Carpetas en el PC
 
 | Carpeta | Qué es | Para qué |
 |---|---|---|
-| `Documents/baird-app` | Repo de trabajo. Rama de feature activa. **Lo comparten varias sesiones de Claude en paralelo.** | Desarrollar. |
-| `Documents/baird-app-main` | Clon limpio que sigue `origin/main` (= lo que está en producción). Tiene su propio `node_modules` y copia de `.env.local`. | Probar en local exactamente lo que hay en prod, o una rama antes de mergearla, sin tocar el repo de trabajo. |
-| `Documents/baird-app-backups/*.bundle` | Respaldo completo del repo (todas las ramas, tags y commits) en un solo archivo. | Restaurar si se pierde el repo o GitHub. |
-
-### Probar lo que está en producción (o una rama) en la réplica
-
-```bash
-cd "C:/Users/Juan Guerron/Documents/baird-app-main"
-git pull                      # trae el main actual
-npm ci                        # solo si cambió package-lock.json
-npm test
-npm run dev                   # http://localhost:3000
-```
-
-Para una rama: `git fetch origin && git checkout feat/lo-que-sea` y lo mismo.
-Al terminar, `git checkout main` para dejarla en prod.
-
-### Hacer un respaldo nuevo
+| `Documents/baird-app` | Repo de trabajo. **Lo comparten varias sesiones de Claude en paralelo.** | Desarrollar. Revisar `git status` antes de tocar el árbol. |
+| `Documents/baird-app/.wt/<nombre>` | Worktrees aislados, uno por cambio (ignorados por git). | Trabajar una rama sin tocar el árbol compartido. Cada uno con su propio `npm ci`. |
+| `Documents/baird-app-main` | Clon limpio que sigue `origin/main` (= producción), con su `node_modules` y `.env.local`. | Reproducir producción en local. |
+| `Documents/baird-app-backups/*.bundle` | Respaldo completo del repo en un archivo. | Restaurar si se pierde el repo o GitHub. |
 
 ```bash
+# Reproducir producción en local
+cd "C:/Users/Juan Guerron/Documents/baird-app-main" && git pull && npm ci && npm test && npm run dev
+
+# Respaldo nuevo del repo
 cd "C:/Users/Juan Guerron/Documents/baird-app"
 git bundle create "../baird-app-backups/baird-app-$(date +%Y-%m-%d_%H%M).bundle" --all
-git bundle verify "../baird-app-backups/baird-app-<fecha>.bundle"
 ```
 
-Restaurar: `git clone baird-app-<fecha>.bundle baird-app-restaurado` (luego
-`git remote set-url origin https://github.com/jdguerron-lgtm/baird-app.git`).
-El bundle no incluye `.env.local` ni `node_modules`: guarda `.env.local`
-aparte (o reconstrúyelo desde Vercel → Settings → Environment Variables).
+Restaurar: `git clone baird-app-<fecha>.bundle baird-app-restaurado` y luego
+`git remote set-url origin https://github.com/jdguerron-lgtm/baird-app.git`.
+El bundle no incluye `.env.local` ni `node_modules`.
 
-## 3. Ciclo de un cambio
+---
 
-1. **Rama nueva desde `main` al día:** `git fetch origin && git switch -c feat/nombre origin/main`.
-2. **Código + docs juntos.** Sigue el pipeline de `docs/INDEX.md` § "Pipeline de actualización" (qué docs tocar según lo que cambias).
-3. **Verificación local obligatoria antes de cualquier push:**
+## 3. Carriles por tipo de cambio
+
+Cada PR declara su tipo en el título o la descripción. El tipo decide qué pruebas y qué protocolo aplican.
+
+| Tipo | Ejemplos | Pruebas mínimas | Despliegue |
+|---|---|---|---|
+| **A · Docs / proceso** | `docs/**`, `.github/**`, plantillas de PR, scripts que no corren en prod | CI | Merge a cualquier hora. El deploy de Vercel no cambia el runtime. |
+| **B · Código de la app** | `src/**` sin migración | CI + prueba en preview (navegación) + tests nuevos si toca lógica | **Ventana** (§ 6.1) + protocolo completo (§ 6) |
+| **C · Base de datos** | `supabase/migrations/**`, policies, grants, funciones | Ensayo con ROLLBACK en prod (§ 5.3) **o** staging + inventario de schema | Migración en ventana, **antes** del código que la usa; luego el PR del código como tipo B |
+| **D · Configuración** | Env vars de Vercel, toggles del dashboard de Supabase/Vercel | Verificación específica escrita antes | Ventana, fuera de :13–:17 y :58–:02 (redeploy) |
+| **E · Plantillas WhatsApp** | `scripts/upload-templates*.mjs`, textos | `--check` en `APPROVED` | El código que la invoca no se mergea hasta que Meta la aprueba |
+| **F · Dependencias** | `package.json`, `package-lock.json` | Worktree limpio con `npm ci`; línea base vs. después de tsc, lint, test y build; `next start` + smoke local; lockfile con binarios de Linux | Ventana + protocolo completo. **Nunca `npm audit fix --force`**. Pines exactos donde ya los hay. |
+| **G · Hotfix** | Algo roto en producción | Las mismas barreras, sin atajos | Fuera de ventana solo si el daño de esperar es mayor; rollback listo antes de empezar |
+
+**Cambios de cobros (`[pagos]`)** son siempre tipo B con revisión extra: `npm run check:pagos`, tests de contrato y `docs/WOMPI.md`.
+
+## 4. Ciclo de un cambio
+
+1. **Rama desde `main` al día, en su propio worktree:**
+   ```bash
+   cd "C:/Users/Juan Guerron/Documents/baird-app"
+   git fetch origin
+   git worktree add -b feat/nombre .wt/nombre origin/main
+   cd .wt/nombre && npm ci
+   ```
+2. **Código + docs juntos.** Pipeline de `docs/INDEX.md` § "Pipeline de actualización".
+3. **Barrera local** antes de cualquier push:
    ```bash
    npx tsc --noEmit && npm run lint && npm test
    ```
-   Un test en rojo SÍ es regresión. Si tocaste UI, pruébala con `npm run dev`.
-4. **Dependencias externas antes del merge:**
-   - Migraciones de `supabase/migrations/` aplicadas en prod (`supabase/migrations/README.md`).
-   - Plantillas WhatsApp nuevas en `APPROVED` (`node --env-file=.env.local scripts/upload-templates.mjs --check`).
-   - Env vars nuevas creadas en Vercel.
-5. **Commit y push de la rama** (`git add <archivos>` explícitos, nunca `git add -A`: puede haber trabajo de otra sesión en el árbol). Vercel publica un preview.
-6. **PR a `main` en GitHub** y merge. Eso despliega a producción.
-7. **Verificar en prod** (la página o el flujo tocado) y cerrar: `CLAUDE.md` § Current Status, `TODO.md` y, si aplica, la memoria de Claude.
+   Para tipos B y F, además `npm run build` (con env ficticias, ver § 5.1).
+4. **Commit con archivos explícitos** (`git add <ruta>`, nunca `git add -A`) y mensaje con qué y por qué.
+5. **Push de la rama → PR con la plantilla** (`.github/pull_request_template.md`). El CI corre solo; Vercel publica la preview.
+6. **Antes de mergear**, si `main` avanzó desde que creaste la rama: traer `main` (`git merge origin/main`), repetir la barrera y volver a pushear. **El código combinado es el que se despliega, y es el que hay que probar.**
+7. **Merge en ventana** siguiendo § 6. Merge = deploy a producción.
+8. **Cierre:** bitácora, `CLAUDE.md` § Current Status y memoria del proyecto.
 
-Rollback: Vercel → Deployments → "Promote to Production" sobre el deploy
-anterior (inmediato), y luego `git revert` del commit en `main`.
+## 5. Pruebas
 
-## 4. Reglas por trabajar con varias sesiones en el mismo repo
+### 5.1 Pirámide
 
-- Antes de cambiar de rama o de hacer `reset`/`stash`, mira `git status`: si hay
-  cambios sin commitear que no son tuyos, **no toques el árbol**; crea un clon
-  o usa `baird-app-main`.
-- Un commit solo con tus archivos (`git add <ruta>`), con mensaje que diga qué y por qué.
-- `git push` de la rama cuando quieras; **push o merge a `main` solo con OK explícito** (es un deploy a producción).
-- Actualiza `main` local sin checkout: `git fetch origin main:main`.
+| Nivel | Herramienta | Qué cubre | Cuándo |
+|---|---|---|---|
+| Tipos | `npx tsc --noEmit` | Contratos entre módulos, columnas usadas en el código | Siempre (CI) |
+| Lint | `npm run lint` (incluye `check-pagos-frontera`) | Reglas de React/Next, frontera del módulo de pagos | Siempre (CI) |
+| Unitarias | `npm test` (Vitest, 745 casos en 55 archivos) | Cálculos de tarifas, bonos, pagos, validaciones Zod, utilidades, parsers | Siempre (CI). **Toda lógica nueva lleva su test** en `src/__tests__/<área>/` |
+| Build | `npm run build` | Que Next compile todas las rutas (121 páginas) | CI + tipos B y F |
+| Smoke | `node scripts/smoke.mjs [url]` | Salud con lectura real a la BD, páginas clave, headers de seguridad, noindex, 404 de tokens, 401 de webhook y admin. **Solo lectura.** | Después de cada deploy y en cada ronda de monitoreo |
+| RLS / Storage | `node --env-file=.env.local scripts/verify-flows.mjs` | Lo que el navegador puede leer con la anon key + ciclo de subida a Storage | Antes y después de tocar RLS, policies o buckets |
+| Ensayo SQL | Bloque `DO` con `RAISE EXCEPTION` final (§ 5.3) | Que una migración se aplica y que los triggers siguen funcionando, sin dejar nada aplicado | Todo cambio tipo C mientras no haya staging |
+| Flujos end-to-end | Checklist manual de `docs/FLOWS.md` § "Para validar end-to-end" | Solicitar → ofertar → aceptar → diagnosticar → cotizar/aprobar → completar → cobrar | En **staging** (cuando exista). Futuro: Playwright |
 
-## 5. Herramientas recomendadas (no instaladas hoy)
+Build local con env ficticias (no se conecta a nada):
 
-- **GitHub CLI** (`winget install GitHub.cli`): `gh pr create`, `gh pr merge`, `gh pr list` desde la terminal.
-- **Vercel CLI** (`npm i -g vercel`): `vercel env pull .env.local` para reconstruir el `.env.local` desde Vercel, `vercel logs`.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://ci.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=ci NEXT_PUBLIC_APP_URL=https://ci.baird.app npm run build
+```
+
+### 5.2 Smoke test
+
+```bash
+node scripts/smoke.mjs                                  # producción
+node scripts/smoke.mjs https://<preview>.vercel.app --bypass=<token>   # preview protegida
+node scripts/smoke.mjs --json > smoke-$(date +%H%M).json               # evidencia para la bitácora
+```
+
+El token de bypass sale de Vercel → Settings → Deployment Protection → *Protection Bypass for Automation*. Salida con código 1 si algún check falla.
+
+### 5.3 Ensayo de una migración con ROLLBACK (sin staging)
+
+Patrón usado el 2026-10-24 para el hardening de funciones: todo dentro de un bloque `DO` que aplica el cambio, prueba lo que importa **con el rol real de la app** (`service_role`) y termina con `RAISE EXCEPTION`, que deshace todo (Postgres hace transaccional también el DDL y los grants).
+
+```sql
+DO $$
+DECLARE r text := '';
+BEGIN
+  -- 1. El cambio, idéntico al archivo de la migración
+  ALTER FUNCTION public.mi_funcion() SET search_path = public;
+
+  -- 2. Comprobaciones de privilegios / resultados
+  r := r || ' anon=' || has_function_privilege('anon', 'public.mi_funcion()', 'execute')::text;
+
+  -- 3. DML que dispara los triggers afectados, como lo hace la app
+  EXECUTE 'SET LOCAL ROLE service_role';
+  INSERT INTO supervisores (nombre, whatsapp, activo) VALUES ('Prueba', '+57 300 000 0000', false);
+  RESET ROLE;
+
+  -- 4. Abortar: nada queda aplicado
+  RAISE EXCEPTION 'ENSAYO_OK %', r;
+END $$;
+```
+
+Reglas: (1) antes, revisar que ningún trigger tocado llame a servicios externos (`pg_net`, `http`); (2) después del ensayo, confirmar que no quedó rastro (filas de prueba = 0, privilegios como antes); (3) el `ENSAYO_OK` con los resultados se copia a la bitácora.
+
+---
+
+## 6. Protocolo de despliegue
+
+### 6.1 Ventana
+
+- **Lunes a jueves, 22:00–23:00 Bogotá** (actividad mínima medida en 60 días; ver plan § 2). Si el dueño confirma baja actividad, se puede extender dentro de la noche.
+- **Prohibido 14:00–16:30** (pico) y en los minutos de cron 17:00, 17:15, 20:00, 22:15.
+- Con redeploy: **fuera de :13–:17 y :58–:02**.
+- **No agendar despliegues desatendidos con el cron de sesión de Claude**: si el PC se suspende, la tarea arranca tarde (pasó el 2026-10-24). El despliegue se lanza con alguien frente al PC.
+
+### 6.2 Go / no-go (todo debe estar en verde)
+
+| # | Check | Cómo |
+|---|---|---|
+| 1 | Hora dentro de la ventana | `date` |
+| 2 | PR abierto, `mergeable_state=clean`, head = el commit probado | GitHub (API o web) |
+| 3 | CI en verde en ese head | Check `verificar` del PR |
+| 4 | `main` no avanzó desde la última prueba del código combinado | `git log <base>..origin/main` vacío |
+| 5 | Preview del head en READY | Vercel |
+| 6 | Producción sana antes de tocar | `node scripts/smoke.mjs` 15/15 + `net._http_response` en 200 |
+| 7 | Destino de rollback anotado | id del deploy de producción actual |
+| 8 | Migraciones y plantillas que el código necesita, ya aplicadas / `APPROVED` | README de migraciones, `--check` |
+
+### 6.3 Ejecución
+
+1. Merge del PR (método *merge*, con el `sha` esperado para que GitHub rechace si cambió).
+2. Esperar el deploy de producción del commit de merge hasta READY. Si el build falla, producción sigue en el deploy anterior: no hace falta rollback.
+3. **Monitoreo 15 minutos**, una ronda cada 3–5 minutos:
+   - `node scripts/smoke.mjs` → 15/15.
+   - Errores de runtime de Vercel del deploy nuevo: ninguno nuevo frente a la línea base.
+   - `select status_code, created from net._http_response order by id desc limit 5;` → 200 (crons de Supabase hacia la app).
+4. **Criterio de rollback**: smoke con algún fallo que no estaba antes, 5xx en páginas o crons, o errores nuevos repetidos atribuibles al deploy.
+5. Cierre en la bitácora: sha del merge, id del deploy, hora, rondas del smoke.
+
+## 7. Rollback
+
+| Qué falló | Cómo se revierte | Tiempo |
+|---|---|---|
+| Código (deploy) | Vercel → Deployments → *Instant Rollback* al deploy anterior (o MCP `request_rollback`). Luego `git revert -m 1 <merge>` en un PR. | < 2 min |
+| Migración | SQL de rollback escrito en el mismo archivo de la migración | < 1 min |
+| Env var | Instant Rollback (restaura el snapshot de env del deploy anterior) o quitar la variable y redesplegar | < 3 min |
+| Plantilla WhatsApp | Volver a la versión anterior en el código (las plantillas viejas siguen aprobadas en Meta) | Un PR tipo B |
+
+## 8. Incidentes
+
+1. **Detectar**: smoke en rojo, errores en Vercel, aviso de un técnico o del equipo.
+2. **Contener**: rollback según § 7, sin esperar el diagnóstico.
+3. **Comunicar**: al equipo por WhatsApp interno; a clientes o técnicos solo si quedaron afectados (con texto aprobado).
+4. **Diagnosticar** fuera de producción (local, preview, staging o ensayo con ROLLBACK).
+5. **Postmortem** breve en `docs/SEGURIDAD.md` § "Histórico de incidentes" (si es de seguridad) o en el doc del área: qué pasó, impacto, causa raíz, qué barrera faltó y qué se agregó.
+
+## 9. Varias sesiones en el mismo repo
+
+- Antes de cambiar de rama o hacer `reset`/`stash`, revisar `git status`: si hay cambios que no son tuyos, **no toques el árbol**; usa un worktree en `.wt/`.
+- Nunca `git stash` sin etiqueta (la pila es compartida entre worktrees).
+- `push` de una rama cuando quieras; **merge a `main` solo con OK explícito** del dueño (es un deploy).
+- Actualizar `main` local sin checkout: `git fetch origin main:main`.
+
+## 10. Herramientas
+
+| Herramienta | Estado | Para qué |
+|---|---|---|
+| GitHub Actions | ✅ | CI |
+| GitHub CLI (`winget install GitHub.cli`) | ⏳ no instalada | `gh pr create/merge/checks`; hoy se usa la API con la credencial de git |
+| Vercel CLI (`npm i -g vercel`) | ⏳ no instalada | `vercel env`, `vercel logs`, `vercel rollback` |
+| PostgreSQL client 17 (`pg_dump`, `psql`) | ⏳ no instalado | Volcar el schema para staging |
+| Docker Desktop + Supabase CLI | ⏳ no instalado | Staging local (`npx supabase start`) |
+
+## 11. Hoja de ruta de madurez
+
+| Nivel | Qué incluye | Estado |
+|---|---|---|
+| 1 · Manual | Reglas escritas, verificación local, merge = deploy | ✅ hasta 2026-10-23 |
+| 2 · Barreras | CI en cada PR, plantilla de PR, ventana con datos, smoke test, ensayo de migraciones, rollback escrito | ✅ **2026-10-24** |
+| 3 · Protegido | Protección de rama en `main` (CI obligatorio + PR), `CRON_SECRET`, backups diarios de la BD | ⏳ protección de rama tras el primer CI verde; backups requieren Supabase Pro |
+| 4 · Ambiente de pruebas | `baird-staging` con seed anonimizado; previews contra staging; migraciones con Supabase CLI | ⏳ decisión de plan Supabase (plan § 4.1) |
+| 5 · Automatizado | Playwright con los flujos críticos contra staging en cada PR; Sentry o log drain con alertas; Rolling Releases | ⏳ |

@@ -147,3 +147,30 @@ para reproducir producción cuando haga falta (ver `docs/FLUJO-DESARROLLO.md` §
 - Re-seed cuando los datos de prueba queden viejos: el script es idempotente.
 - Si staging se desalinea más de la cuenta, se repite § 2–3 (el proyecto se puede
   resetear desde el dashboard sin costo).
+
+## 9. Variante sin costo: staging local con Docker
+
+Mientras no se decida el plan de Supabase (`docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md` § 4.1),
+se puede tener la misma base en el PC. Sirve para local y para probar migraciones y RLS;
+**no** sirve para las previews de Vercel (no pueden llegar a `localhost`).
+
+1. Instalar Docker Desktop (con WSL 2) y dejarlo abierto:
+   ```bash
+   winget install -e --id Docker.DockerDesktop
+   ```
+2. Inicializar y levantar Supabase local (crea `supabase/config.toml`; la primera vez descarga ~2 GB de imágenes):
+   ```bash
+   npx supabase init
+   npx supabase start
+   ```
+   La salida muestra `API URL` (`http://127.0.0.1:54321`), `anon key`, `service_role key` y `DB URL` (`postgresql://postgres:postgres@127.0.0.1:54322/postgres`).
+3. Schema de producción (§ 2) y Storage (§ 3) sobre la base local:
+   ```bash
+   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f schema-prod-<fecha>.sql
+   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f scripts/staging/01-storage-buckets-y-policies.sql
+   ```
+4. Seed anonimizado (§ 5) con `STAGING_SUPABASE_URL=http://127.0.0.1:54321` y la `service_role key` local.
+5. `.env.local` → API URL y keys locales; `BAIRD_TEST_PHONE_WHITELIST` con tu celular; Wompi `pub_test_`.
+6. Para apagar: `npx supabase stop` (los datos quedan en volúmenes de Docker; `--no-backup` los borra).
+
+Cuando exista `baird-staging` en la nube, este mismo flujo aplica cambiando las URLs y keys.
