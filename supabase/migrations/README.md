@@ -429,8 +429,8 @@ No requieren migración — solo refactor. Documentado para no olvidar:
 **Patrón modelo**: `procesarAceptacion` en `src/lib/services/whatsapp.service.ts` usa `.is('tecnico_asignado_id', null)` como guard atómico — copiarlo cuando aplique.
 
 
-## Pendiente de aplicar (2026-10-24)
+## Aplicadas el 2026-10-24
 
 | Migración | Qué hace | Estado |
 |---|---|---|
-| `20261024_hardening_funciones_pagos_search_path.sql` | Quita EXECUTE a PUBLIC/anon/authenticated en `auditar_pagos`, `recalcular_resumen_pago`, `trg_pagos_resumen` (advisors 0028/0029) y fija `search_path = public` en las 6 funciones con search_path mutable (advisor 0011). Rollback y verificación en el archivo. | ⏳ **Primero en staging** (pruebas DML del § d del archivo), luego en prod en ventana 22:00–23:00 Bogotá — ver `docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md` § 3 (C2, C3) |
+| `20261024_hardening_funciones_pagos_search_path.sql` | Quita EXECUTE a PUBLIC/anon/authenticated en `auditar_pagos`, `recalcular_resumen_pago`, `trg_pagos_resumen` (advisors 0028/0029) y fija `search_path = public` en las 6 funciones con search_path mutable (advisor 0011). Rollback y verificación en el archivo. | ✅ **Aplicada en prod 2026-10-24 23:04** (ensayada antes con bloque `DO` + `RAISE EXCEPTION` porque staging no existe; resultados en `docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md` § 7) |
