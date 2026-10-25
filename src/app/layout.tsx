@@ -1,13 +1,10 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import Script from 'next/script'
-import { Analytics } from '@vercel/analytics/next'
-import { SpeedInsights } from '@vercel/speed-insights/next'
 import './globals.css'
 import BotonWhatsAppFlotante from '@/components/BotonWhatsAppFlotante'
 import RedireccionRecuperacion from '@/components/RedireccionRecuperacion'
-import { GOOGLE_ADS_ID } from '@/lib/analytics/googleAds'
-import { GA_MEASUREMENT_ID, GA_LINEABLANCA_ID } from '@/lib/analytics/googleAnalytics'
+import AnaliticaCliente from '@/components/analytics/AnaliticaCliente'
 import { HERO_ASSIGN_SCRIPT } from '@/lib/analytics/experimentoHero'
 
 const inter = Inter({
@@ -60,31 +57,11 @@ export default function RootLayout({
         {children}
         <RedireccionRecuperacion />
         <BotonWhatsAppFlotante />
-        {/* Vercel Web Analytics + Speed Insights (plan Pro, 2026-10-22): tráfico
-            por ruta y Core Web Vitals reales (LCP, INP = latencia al teclear/
-            interactuar) por página. No hacen nada hasta activarlos en el
-            dashboard del proyecto (Analytics / Speed Insights → Enable). */}
-        <Analytics />
-        <SpeedInsights />
-
-        {/* Google tag (gtag.js) — un solo loader para Google Ads (conversiones)
-            y Google Analytics 4 (tráfico + eventos). Ambos config comparten
-            window.gtag; el loader se carga con el ID de Ads pero sirve igual
-            para los dos destinos. */}
-        <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_ID}`}
-          strategy="afterInteractive"
-        />
-        <Script id="google-gtag" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', '${GOOGLE_ADS_ID}');
-            gtag('config', '${GA_MEASUREMENT_ID}');
-            gtag('config', '${GA_LINEABLANCA_ID}');
-          `}
-        </Script>
+        {/* Toda la analítica: Google tag (Ads + GA4 ×2), Vercel Web Analytics
+            + Speed Insights, origen del lead y clics. No carga en los portales
+            internos y sanea las URLs con token (2026-10-24). Ver
+            src/components/analytics/AnaliticaCliente.tsx y src/lib/analytics/. */}
+        <AnaliticaCliente />
       </body>
     </html>
   )

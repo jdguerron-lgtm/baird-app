@@ -38,6 +38,8 @@ export default function BotonWhatsAppFlotante() {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      // Ubicación del evento GA4 `whatsapp_click` (lo mide AnaliticaCliente).
+      data-rastreo="flotante"
       aria-label="Escríbenos por WhatsApp"
       title="¿Dudas? Escríbenos por WhatsApp"
       className="group fixed bottom-5 right-5 z-[60] flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-white shadow-lg shadow-black/20 transition-all duration-200 hover:bg-[#20bd5a] hover:shadow-xl hover:-translate-y-0.5 active:scale-95"

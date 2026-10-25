@@ -322,6 +322,11 @@ Limitación: no simula el caso "admin logueado en mismo navegador → rol `authe
 
 ## 6. Histórico de incidentes y fixes
 
+### 2026-10-24 — Tokens en la URL enviados a Google Analytics / Ads
+- **Hallazgo** (estudio SEO/analítica, `docs/mejoras-futuras/seo-conversion-analitica/`): gtag y Vercel Analytics cargaban en TODAS las rutas. `page_location` llevaba a GA4 (×2), Google Ads y Vercel los tokens de `/tecnico/{token}`, `/servicio/{token}`, `/pago/*?id=`, `/supervisor/{token}`, `/receptor/{token}`, y el **`token_hash` de recuperación de clave** de `/admin/establecer-clave?token_hash=…&type=recovery` (un solo uso, vence en ~1 h, pero quedó en informes de terceros).
+- **Fix**: `src/lib/analytics/rutas.ts` + `gtag.ts` + `AnaliticaCliente.tsx`. Portales internos (`/admin`, `/tecnico`, `/aceptar`, `/supervisor`) no cargan analítica; páginas del cliente con token mandan a GA4 la ruta saneada (`/servicio/[token]`, sin query) y no configuran Ads (su hit `ccm/collect` ignora `page_location`); Vercel con `beforeSend`. Verificado en local con el navegador: 0 hits con token.
+- **Además**: `/receptor/` no tenía noindex ni estaba en robots (muestra datos del cliente) → agregado; `public/guia*.html` ahora con `X-Robots-Tag: noindex` (guia-pagos publicaba tarifas de técnicos).
+
 ### 2026-06-24 — Auditoría de seguridad (Supabase advisors en vivo + lectura de código)
 
 **Capa de auth: sólida.** 12 endpoints admin con `verificarAdmin` (ya usa el singleton); webhooks Meta + Dapta con HMAC + `timingSafeEqual`; security headers single-source en `middleware.ts`; `escapeLikePattern` aplicado en el único `.ilike()`; `/api/gps-ping` **ya valida `portal_token`** (backlog #8 quedó cerrado); `/api/solicitar` recalcula `pago_tecnico` server-side. Varios ítems del viejo improvement-plan estaban ya resueltos.
@@ -356,7 +361,7 @@ Una vez la app esté estable y validada en producción, atender en este orden:
 9. **Webhook Meta — log de eventos** — el webhook recibe estados de delivery (read, delivered, failed) pero no se persiste. Útil para debug.
 10. **Token rotación** — para `portal_token` específicamente. Si un técnico se va o filtra, hoy hay que generar UUID manual en SQL. Endpoint admin "regenerar portal_token".
 11. **Apretar policies de write anon** (advisor `0024_permissive_rls_policy`) — ✅ `supervisores` y `llamadas` cerradas en Fase 4.1 (2026-07-11), junto con `gps_pings`, `solicitud_eventos`, `connection_errors` y los writes de `notificaciones_whatsapp`/`repuestos_pendientes`. **Falta** `tecnicos` y `evidencias_servicio`: el INSERT anon de `tecnicos` lo necesita `/registro` (client-side) → crear un API route server-side para el registro (Fase 2) y mover el insert de evidencias (Fase 3).
-12. **`search_path` mutable en 5 funciones** (`normalizar_telefono_co` + 4 triggers de normalización) — advisor `0011_function_search_path_mutable`. Fix: `ALTER FUNCTION … SET search_path = public` (behavior-neutral; solo usan `public` + built-ins). ⚠️ **Sin red automática**: `verify-flows.mjs` no testea inserts que disparan el trigger → aplicar con una prueba de registro/solicitud manual inmediatamente después.
+12. ✅ **HECHO 2026-10-24** (migración `20261024_hardening_funciones_pagos_search_path.sql`, que además quitó EXECUTE a anon/authenticated en `auditar_pagos`, `recalcular_resumen_pago` y `trg_pagos_resumen`). Texto original: **`search_path` mutable en 5 funciones** (`normalizar_telefono_co` + 4 triggers de normalización) — advisor `0011_function_search_path_mutable`. Fix: `ALTER FUNCTION … SET search_path = public` (behavior-neutral; solo usan `public` + built-ins). ⚠️ **Sin red automática**: `verify-flows.mjs` no testea inserts que disparan el trigger → aplicar con una prueba de registro/solicitud manual inmediatamente después.
 13. **Auth dashboard Supabase** (no togglable vía MCP): activar **leaked-password protection** (HaveIBeenPwned, advisor `auth_leaked_password_protection`), **MFA TOTP**, y **password policy ≥12** (Settings → Auth). Una contraseña filtrada de un email de la allowlist = acceso admin total (el role check existe desde 2026-07-06 vía `adminEmails.ts`; self-signup apagado 2026-07-11).
 
 ---

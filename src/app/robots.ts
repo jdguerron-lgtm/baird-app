@@ -28,6 +28,8 @@ export default function robots(): MetadataRoute.Robots {
         '/verificar-paso/',
         '/reprogramar-repuesto/',
         '/supervisor/',
+        '/pago/',
+        '/receptor/',
       ],
     },
     sitemap: `${BASE_URL}/sitemap.xml`,

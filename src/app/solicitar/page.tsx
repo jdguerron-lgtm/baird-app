@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSolicitudForm } from '@/hooks/useSolicitudForm'
@@ -33,6 +33,7 @@ import {
   TARIFA_DIAGNOSTICO,
   ANTICIPO_PORCENTAJE,
   IVA_TARIFA,
+  calcularPagoTecnico,
   calcularBaseSinIva,
   calcularIvaIncluido,
 } from '@/types/solicitud'
@@ -41,6 +42,10 @@ import { esFinDeSemana } from '@/lib/constants/tarifas/mabe'
 import { RECARGO_FIN_DE_SEMANA_PARTICULAR_CLIENTE } from '@/lib/constants/tarifas/particular'
 import { trackLeadConversion } from '@/lib/analytics/googleAds'
 import { trackGaLead } from '@/lib/analytics/googleAnalytics'
+import { trackEvento } from '@/lib/analytics/eventos'
+import { clasificarCanal, leerAtribucion } from '@/lib/analytics/atribucion'
+import { solicitudFormSchema } from '@/lib/validations/solicitud.schema'
+import { phoneToDigits } from '@/lib/utils/phone'
 
 // ──────────────────────────────────────────────────────────
 // TRIAJE IA: deshabilitado temporalmente para priorizar
@@ -82,6 +87,37 @@ export default function SolicitarServicio() {
   const [aceptaTyc, setAceptaTyc] = useState(false)
 
   const { formData, errors, handleChange, setField, validate, resetForm } = useSolicitudForm()
+
+  // GA4 `form_start`: una vez por carga de la página, al tocar el primer campo.
+  // Con `generate_lead` da la tasa de abandono del formulario.
+  const formIniciado = useRef(false)
+  const alEnfocarFormulario = () => {
+    if (formIniciado.current) return
+    formIniciado.current = true
+    trackEvento('form_start', { form_id: 'solicitar' })
+  }
+
+  // GA4 `begin_checkout`: clic en "Pagar anticipo" tras crear la solicitud.
+  // Valor = anticipo base (50 % del diagnóstico); el recargo finde no se suma
+  // porque el formulario ya se reseteó. El pago aprobado (purchase) aún no se
+  // mide: vive en /pago/*, que es módulo congelado.
+  const registrarInicioPago = () => {
+    const anticipo = Math.round(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)
+    trackEvento('begin_checkout', {
+      currency: 'COP',
+      value: anticipo,
+      items: [{ item_id: 'anticipo_diagnostico', item_name: 'Anticipo visita de diagnóstico', price: anticipo, quantity: 1 }],
+    })
+  }
+
+  // GA4 `form_error`: qué campos fallan (solo los nombres, nunca los valores).
+  const registrarErrorFormulario = (motivo: string) => {
+    const r = solicitudFormSchema.safeParse(formData)
+    const campos = r.success
+      ? ''
+      : [...new Set(r.error.issues.map(i => String(i.path[0] ?? '')).filter(Boolean))].join(',')
+    trackEvento('form_error', { form_id: 'solicitar', motivo, campos: campos.slice(0, 100) })
+  }
 
   // Recargo finde/festivo particular (2026-07-21): la opción 1 es la que se
   // auto-agenda al enviar (fallback opción 2). Si cae sábado, domingo o
@@ -135,12 +171,14 @@ export default function SolicitarServicio() {
     e.preventDefault()
 
     if (!validate()) {
+      registrarErrorFormulario('validacion')
       setMensaje({ texto: 'Por favor corrige los errores en el formulario', tipo: 'error' })
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
     if (!aceptaTyc) {
+      trackEvento('form_error', { form_id: 'solicitar', motivo: 'tyc' })
       setMensaje({ texto: 'Debes aceptar los Términos y Condiciones para agendar tu visita', tipo: 'error' })
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
@@ -149,17 +187,22 @@ export default function SolicitarServicio() {
     setCargando(true)
     setMensaje(null)
 
+    // Origen del lead (gclid, utm, referrer) guardado al llegar al sitio.
+    // Viaja aparte del formulario; el servidor lo valida y lo clasifica.
+    const origen = leerAtribucion()
+
     // Enviar solicitud al API (inserta en BD + notifica al cliente + notifica técnicos)
     try {
       const res = await fetch('/api/solicitar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(origen ? { ...formData, origen } : formData),
       })
 
       const data = await res.json()
 
       if (!res.ok) {
+        trackEvento('form_error', { form_id: 'solicitar', motivo: `api_${res.status}` })
         setMensaje({ texto: data.error || 'Hubo un error al enviar la solicitud. Espera unos segundos e intenta de nuevo — si persiste, escríbenos por WhatsApp.', tipo: 'error' })
         window.scrollTo({ top: 0, behavior: 'smooth' })
         setCargando(false)
@@ -170,14 +213,32 @@ export default function SolicitarServicio() {
       setSolicitudId(id)
       setClienteTokenNuevo(typeof data.cliente_token === 'string' ? data.cliente_token : null)
 
+      // Valor del lead = precio de catálogo al cliente (diagnóstico $84.000 o
+      // tarifa fija de mantenimiento / filtro). Garantía no lleva valor: la
+      // paga la marca y Ads usa el valor por defecto de la acción.
+      const valorLead = formData.es_garantia
+        ? undefined
+        : calcularPagoTecnico(formData.tipo_equipo, formData.tipo_solicitud, false)
+
       // Conversión Google Ads: el formulario se envió con éxito = lead.
       // Dispara SOLO el label del formulario del sitio (no toca la tienda).
+      // transaction_id = id de la solicitud, para que Ads no la cuente dos veces.
       // No-op si gtag o el label no están configurados. Ver lib/analytics/googleAds.
-      trackLeadConversion()
+      trackLeadConversion({
+        transactionId: typeof id === 'string' ? id : undefined,
+        valor: valorLead,
+        telefonoDigitos: phoneToDigits(formData.cliente_telefono),
+      })
       // Mismo lead hacia GA4 como evento clave `generate_lead`.
       trackGaLead({
         es_garantia: formData.es_garantia,
         tipo_solicitud: formData.tipo_solicitud,
+        tipo_equipo: formData.tipo_equipo,
+        valor: valorLead,
+        canal: origen ? clasificarCanal(origen.ultima) : 'directo',
+        // Reserva: 'agendada' si la visita quedó fijada al enviar (auto-
+        // agendamiento), 'sin_horario' si el cliente aún debe elegir horario.
+        reserva: data.agendado ? 'agendada' : 'sin_horario',
       })
 
       setMostrarPagoAnticipo(
@@ -202,6 +263,7 @@ export default function SolicitarServicio() {
         tipo: 'success',
       })
     } catch {
+      trackEvento('form_error', { form_id: 'solicitar', motivo: 'red' })
       setMensaje({
         texto: 'No pudimos conectar con el servidor. Revisa tu señal (WiFi o datos) e intenta de nuevo — tu información sigue en el formulario.',
         tipo: 'error',
@@ -275,6 +337,7 @@ export default function SolicitarServicio() {
                       {clienteTokenNuevo ? (
                         <a
                           href={`/pago/anticipo/${clienteTokenNuevo}`}
+                          onClick={registrarInicioPago}
                           className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
                         >
                           Pagar anticipo →
@@ -282,6 +345,7 @@ export default function SolicitarServicio() {
                       ) : (
                         <a
                           href={URL_PAGO_ANTICIPO_DIAGNOSTICO}
+                          onClick={registrarInicioPago}
                           target="_blank"
                           rel="noopener"
                           className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
@@ -294,7 +358,7 @@ export default function SolicitarServicio() {
                 </div>
               )}
 
-              <form className="space-y-6" onSubmit={handleSubmit}>
+              <form className="space-y-6" onSubmit={handleSubmit} onFocusCapture={alEnfocarFormulario}>
 
                 {/* Switch Garantía */}
                 <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-purple-200 rounded-xl p-4">
