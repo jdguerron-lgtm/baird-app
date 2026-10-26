@@ -177,6 +177,12 @@ Cuando exista `baird-staging` en la nube, este mismo flujo aplica cambiando las 
 
 ## 10. Arranque con Supabase Pro — runbook exacto (preparado y ensayado el 2026-10-24)
 
+> **Estado (2026-10-26): EJECUTADO.** `baird-staging` = `etsbzxnthpmyvuodrmrh` (us-east-1, 10 USD/mes).
+> Pasos 1–6 y 8 hechos: estructura en 5 migraciones `ddl_staging_desde_prod_0*`, Storage, Vault `cron_secret`
+> propio, **11/11 huellas iguales a prod** (`04-huella-schema.sql`), seed anonimizado (672 filas, 0 PII en la
+> auditoría SQL) y secuencias ajustadas. Pendientes del dueño: paso 7 (apagar signups en Auth de staging) y
+> paso 9 (variables de Preview en Vercel). E2E: `docs/FLUJO-DESARROLLO.md` § 5.4 → 32/32.
+
 Todo lo que se pudo probar sin el proyecto ya está probado contra producción con ensayos que se deshacen solos:
 
 | Pieza | Ensayo | Resultado |

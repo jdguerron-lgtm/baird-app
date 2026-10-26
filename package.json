@@ -10,7 +10,8 @@
     "check:pagos": "node scripts/check-pagos-frontera.mjs --commit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "e2e": "node --env-file=.env.local scripts/e2e/flujos.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

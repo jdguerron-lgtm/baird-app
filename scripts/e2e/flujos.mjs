@@ -326,7 +326,8 @@ async function flujoD() {
   })
   await paso('confirmar dos veces el mismo servicio → rechazado', async () => {
     const id = creadas.solicitudes[0]
-    esperar(id, 'no hay servicio completado de los flujos anteriores')
+    // Necesita un servicio ya confirmado por A, B o C en esta misma corrida.
+    if (!id) return 'omitido (corre junto con A, B o C)'
     const ev = await fila('evidencias_servicio', { solicitud_id: id }, 'confirmacion_token')
     const { status } = await api('/api/confirmar-servicio', { confirmacionToken: ev.confirmacion_token, confirmado: true })
     esperar(status === 400, `status ${status}`)

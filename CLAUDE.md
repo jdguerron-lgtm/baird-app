@@ -195,7 +195,7 @@ DAPTA_SILENCIO_REPUESTO_HORAS     # Silencio WhatsApp antes de escalar — repue
 
 ## Testing
 
-Vitest con **55 archivos de test (745 casos) en `src/__tests__/`** (utils, validations, services, lib/wompi, pdf). `npm test` corre todo en ~3 s. **CI en GitHub Actions** (`.github/workflows/ci.yml`, desde 2026-10-24) corre `tsc`, lint, tests y build en cada PR y push a `main`. Smoke test de solo lectura contra un despliegue: `npm run smoke [url]`. Un fallo SÍ es regresión (verificado 2026-10-19). Tests nuevos van en `src/__tests__/<area>/`. Ciclo completo (rama → `tsc`/lint/test → dev → PR → merge = deploy), réplica `baird-app-main` y respaldo: `docs/FLUJO-DESARROLLO.md`.
+Vitest con **55 archivos de test (745 casos) en `src/__tests__/`** (utils, validations, services, lib/wompi, pdf). `npm test` corre todo en ~3 s. **CI en GitHub Actions** (`.github/workflows/ci.yml`, desde 2026-10-24) corre `tsc`, lint, tests y build en cada PR y push a `main`. Smoke test de solo lectura contra un despliegue: `npm run smoke [url]`. **E2E contra staging** (`baird-staging`, `etsbzxnthpmyvuodrmrh`, desde 2026-10-25): `npm run e2e` recorre 4 flujos (particular, repuesto + precios admin, garantía, seguridad) con datos propios que borra al final; obligatorio antes del merge en cambios de código, BD y dependencias — ver `docs/FLUJO-DESARROLLO.md` § 5.4. Un fallo SÍ es regresión (verificado 2026-10-19). Tests nuevos van en `src/__tests__/<area>/`. Ciclo completo (rama → `tsc`/lint/test → dev → PR → merge = deploy), réplica `baird-app-main` y respaldo: `docs/FLUJO-DESARROLLO.md`.
 
 ## Legal Framework
 

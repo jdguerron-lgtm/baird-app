@@ -24,10 +24,10 @@
 | **Local** | `npm run dev` → `localhost:3000` | ⚠️ Supabase de **producción** (hoy) | Real, limitado por `BAIRD_TEST_PHONE_WHITELIST` | Wompi prod | Desarrollar | ✅ |
 | **CI** | GitHub Actions (`.github/workflows/ci.yml`) | Ninguna (tests con mocks) | Mock | Mock | Barrera automática en cada PR y push a `main` | ✅ desde 2026-10-24 |
 | **Preview** | Vercel, una URL por rama, protegida por Vercel Authentication | ⚠️ Supabase de **producción** (hoy) | Real | Wompi prod | Revisar UI y navegación **de lectura** | ✅ (sin datos propios) |
-| **Staging** | Proyecto Supabase `baird-staging` + scope Preview de Vercel | Propia, seed anonimizado | Real con whitelist obligatoria | Wompi sandbox (`pub_test_`) | Probar flujos completos, migraciones y RLS | ⏳ **Bloqueado**: límite de 2 proyectos Free (decisión en el plan § 4.1) |
+| **Staging** | Proyecto Supabase `baird-staging` (`etsbzxnthpmyvuodrmrh`, us-east-1) + app local en `.wt/<worktree>` puerto 3100 (y scope Preview de Vercel cuando se carguen sus variables) | Propia: estructura idéntica a prod (11/11 huellas) + seed anonimizado (40 solicitudes) | Bloqueado por whitelist (`570000000000`) | Apagado (sin llaves) | Pruebas e2e, migraciones y RLS | ✅ **desde 2026-10-25** |
 | **Producción** | Vercel, `https://lineablanca.bairdservice.com` (alias `baird-app.vercel.app`) | Supabase `ceblicvdmephhktedsyv` | Real | Wompi prod | Clientes, técnicos, MABE | ✅ |
 
-**Mientras no exista staging**, en local y en las previews **no se envían formularios ni se ejecutan acciones** que escriban (crear solicitud, aceptar oferta, diagnosticar, cobrar). Solo navegación. Lo que escribe se prueba con el ensayo con ROLLBACK (§ 5.3) o con tests.
+**En local con el `.env.local` de producción y en las previews (hasta que tengan las variables de staging) no se envían formularios ni se ejecutan acciones** que escriban. Solo navegación. Lo que escribe se prueba **en staging** (§ 5.4) o con el ensayo con ROLLBACK (§ 5.3).
 
 Kit para montar staging: `scripts/staging/README.md` (incluye la variante local con Docker, § 9 del README).
 
@@ -105,7 +105,7 @@ Cada PR declara su tipo en el título o la descripción. El tipo decide qué pru
 | Smoke | `node scripts/smoke.mjs [url]` | Salud con lectura real a la BD, páginas clave, headers de seguridad, noindex, 404 de tokens, 401 de webhook y admin. **Solo lectura.** | Después de cada deploy y en cada ronda de monitoreo |
 | RLS / Storage | `node --env-file=.env.local scripts/verify-flows.mjs` | Lo que el navegador puede leer con la anon key + ciclo de subida a Storage | Antes y después de tocar RLS, policies o buckets |
 | Ensayo SQL | Bloque `DO` con `RAISE EXCEPTION` final (§ 5.3) | Que una migración se aplica y que los triggers siguen funcionando, sin dejar nada aplicado | Todo cambio tipo C mientras no haya staging |
-| Flujos end-to-end | Checklist manual de `docs/FLOWS.md` § "Para validar end-to-end" | Solicitar → ofertar → aceptar → diagnosticar → cotizar/aprobar → completar → cobrar | En **staging** (cuando exista). Futuro: Playwright |
+| Flujos end-to-end | `npm run e2e` (`scripts/e2e/flujos.mjs`, 32 pasos) contra la app corriendo sobre staging | Particular reparar, particular con repuesto + precios admin, garantía con verificación de paso, y seguridad (tokens falsos, admin sin sesión, cron sin secreto, doble confirmación). Verifica el estado en la base en cada paso y borra sus datos | Tipos B, C y F antes del merge (§ 5.4). Futuro: Playwright para la UI |
 
 Build local con env ficticias (no se conecta a nada):
 
@@ -149,6 +149,27 @@ END $$;
 
 Reglas: (1) antes, revisar que ningún trigger tocado llame a servicios externos (`pg_net`, `http`); (2) después del ensayo, confirmar que no quedó rastro (filas de prueba = 0, privilegios como antes); (3) el `ENSAYO_OK` con los resultados se copia a la bitácora.
 
+### 5.4 Pruebas end-to-end contra staging
+
+```bash
+# 1. Worktree del cambio con dependencias
+cd "C:/Users/Juan Guerron/Documents/baird-app/.wt/<nombre>" && npm ci
+
+# 2. .env.local del worktree apuntando a staging (WhatsApp, pagos, Siigo, correo y voz apagados)
+node scripts/e2e/preparar-env-staging.mjs   --base="C:/Users/Juan Guerron/Documents/baird-app/.env.local"   --staging="C:/Users/Juan Guerron/Documents/baird-app/.env.staging-seed"
+
+# 3. Levantar la app en :3100 (preview_start "staging-local", o npm run dev -- -p 3100) y correr
+npm run e2e                     # los 4 flujos
+npm run e2e -- --solo=A,C       # solo algunos
+npm run e2e -- --json > e2e.json   # evidencia para el PR
+```
+
+Qué garantiza cada corrida: crea un técnico y un cliente propios en una ciudad ficticia (nadie más recibe la oferta), recorre cada flujo por la API real, comprueba en la base el estado esperado después de cada paso y borra todo al final. Se niega a correr si la base no es `baird-staging` o si la URL es la de producción. Una oferta queda en `error` cuando la whitelist bloquea el WhatsApp; la prueba la reabre antes de aceptar, como pasaría si el mensaje llegara.
+
+Primera corrida (2026-10-26): **32/32 en 39 s**, sin ningún WhatsApp enviado (todos filtrados) y sin restos en staging.
+
+Cuándo correrla: **todo PR tipo B, C o F antes del merge**; además, después de aplicar una migración en staging y antes de llevarla a producción.
+
 ---
 
 ## 6. Protocolo de despliegue
@@ -172,6 +193,7 @@ Reglas: (1) antes, revisar que ningún trigger tocado llame a servicios externos
 | 6 | Producción sana antes de tocar | `node scripts/smoke.mjs` 15/15 + `net._http_response` en 200 |
 | 7 | Destino de rollback anotado | id del deploy de producción actual |
 | 8 | Migraciones y plantillas que el código necesita, ya aplicadas / `APPROVED` | README de migraciones, `--check` |
+| 9 | **E2E en verde contra staging** con el código del PR (tipos B, C y F) | `npm run e2e` (§ 5.4); pegar el resumen en el PR |
 
 ### 6.3 Ejecución
 
@@ -225,5 +247,5 @@ Reglas: (1) antes, revisar que ningún trigger tocado llame a servicios externos
 | 1 · Manual | Reglas escritas, verificación local, merge = deploy | ✅ hasta 2026-10-23 |
 | 2 · Barreras | CI en cada PR, plantilla de PR, ventana con datos, smoke test, ensayo de migraciones, rollback escrito | ✅ **2026-10-24** |
 | 3 · Protegido | Protección de rama en `main` (CI obligatorio + PR), `CRON_SECRET`, backups diarios de la BD | ⏳ protección de rama tras el primer CI verde; backups requieren Supabase Pro |
-| 4 · Ambiente de pruebas | `baird-staging` con seed anonimizado; previews contra staging; migraciones con Supabase CLI | ⏳ decisión de plan Supabase (plan § 4.1) |
-| 5 · Automatizado | Playwright con los flujos críticos contra staging en cada PR; Sentry o log drain con alertas; Rolling Releases | ⏳ |
+| 4 · Ambiente de pruebas | `baird-staging` con seed anonimizado, e2e de 4 flujos; previews contra staging; migraciones con Supabase CLI | ✅ staging + e2e **2026-10-26**; ⏳ variables de Preview en Vercel y Supabase CLI |
+| 5 · Automatizado | E2E automático en CI contra la preview (con bypass de Vercel) en cada PR; Playwright para la UI; Sentry o log drain con alertas; Rolling Releases | ⏳ |
