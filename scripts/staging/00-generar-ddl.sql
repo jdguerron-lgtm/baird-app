@@ -9,7 +9,12 @@
 -- NO cubre (a propósito): datos, Storage (→ 01-storage-buckets-y-policies.sql), Vault, jobs de
 -- pg_cron (apuntan a la URL de prod) ni Auth.
 --
--- Verificación después de aplicar: 02-inventario-schema.sql en prod y en staging → diff vacío.
+-- Verificación después de aplicar: 04-huella-schema.sql en prod y en staging → las 11 huellas iguales
+-- (detalle línea a línea, si alguna difiere: 02-inventario-schema.sql).
+--
+-- Caso conocido (2026-10-25): tecnicos.check_estado_verificacion sale de pg_get_constraintdef con los
+-- casts dentro del ARRAY y Postgres lo re-renderiza distinto al recrearlo. Misma regla; para una huella
+-- idéntica se recrea como: CHECK (estado_verificacion IN ('pendiente', 'verificado', 'rechazado')).
 
 with
 tablas as (
