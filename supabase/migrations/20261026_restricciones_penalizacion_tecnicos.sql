@@ -51,6 +51,8 @@ ALTER TABLE public.config_reparto
 ALTER TABLE public.solicitudes_servicio
   ADD COLUMN IF NOT EXISTS oferta_pendientes jsonb;
 
+NOTIFY pgrst, 'reload schema';
+
 -- Verificación:
 --   SELECT bloqueado_garantia, bloqueado_particular, count(*) FROM public.tecnicos GROUP BY 1, 2;
 --   SELECT penalizacion_activa, penalizacion_minutos, penalizacion_dias, penalizacion_max_minutos FROM public.config_reparto;

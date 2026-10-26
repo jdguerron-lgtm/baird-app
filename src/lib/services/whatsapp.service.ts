@@ -899,7 +899,15 @@ export async function notificarTecnicos(
         console.warn('[notificarTecnicos] no se pudo registrar evento oferta_dirigida:', err)
       }
     }
-  } else if (ofertaAbiertaAt && !opts.soloTecnicoId && pendientesNuevos === null) {
+  } else if (pendientesNuevos !== null) {
+    // Nadie recibió el WhatsApp en esta ronda y no queda nadie retenido:
+    // limpiar la lista para que no quede una retención vieja.
+    await supabase
+      .from('solicitudes_servicio')
+      .update({ oferta_pendientes: null, oferta_abierta_at: ofertaAbiertaAt })
+      .eq('id', solicitudId)
+      .is('tecnico_asignado_id', null)
+  } else if (ofertaAbiertaAt && !opts.soloTecnicoId) {
     // A ninguno de los prioritarios le salió el WhatsApp: no hacer esperar
     // la solicitud — abrir de una vez al resto.
     const abierta = await notificarTecnicos(solicitudId, { soloNoNotificados: true })
