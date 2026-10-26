@@ -22,6 +22,8 @@ export interface ServicioSeo {
   emoji: string
   /** Nombre plural para títulos: "neveras" */
   plural: string
+  /** Nombre singular: "nevera" (CTA final y mensaje de WhatsApp) */
+  singular: string
   /** <title> — máx ~60 chars */
   metaTitle: string
   /** meta description — máx ~155 chars */
@@ -72,6 +74,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Nevera',
     emoji: '🧊',
     plural: 'neveras',
+    singular: 'nevera',
     metaTitle: 'Reparación de Neveras a Domicilio en Bogotá | Baird Service',
     metaDescription:
       'Técnicos verificados reparan tu nevera o nevecón a domicilio en Bogotá y la Sabana. Diagnóstico con precio fijo, coordinación por WhatsApp y pago seguro.',
@@ -107,6 +110,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Lavadora',
     emoji: '🫧',
     plural: 'lavadoras',
+    singular: 'lavadora',
     metaTitle: 'Reparación de Lavadoras a Domicilio en Bogotá | Baird Service',
     metaDescription:
       'Reparación de lavadoras a domicilio en Bogotá y la Sabana con técnicos verificados. Diagnóstico con precio fijo, cotización antes de reparar y pago seguro.',
@@ -141,6 +145,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Secadora',
     emoji: '💨',
     plural: 'secadoras',
+    singular: 'secadora',
     metaTitle: 'Reparación de Secadoras a Domicilio en Bogotá | Baird Service',
     metaDescription:
       'Técnicos verificados reparan tu secadora a domicilio en Bogotá y la Sabana. Diagnóstico con precio fijo, cotización transparente y coordinación por WhatsApp.',
@@ -171,6 +176,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Estufa',
     emoji: '🍳',
     plural: 'estufas',
+    singular: 'estufa',
     metaTitle: 'Reparación de Estufas a Domicilio en Bogotá | Baird Service',
     metaDescription:
       'Reparación de estufas a gas y eléctricas a domicilio en Bogotá y la Sabana. Técnicos verificados, diagnóstico con precio fijo y pago electrónico seguro.',
@@ -201,6 +207,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Horno',
     emoji: '🔥',
     plural: 'hornos',
+    singular: 'horno',
     metaTitle: 'Reparación de Hornos a Domicilio en Bogotá | Baird Service',
     metaDescription:
       'Técnicos verificados reparan tu horno a gas o eléctrico a domicilio en Bogotá y la Sabana. Diagnóstico con precio fijo y cotización antes de reparar.',
@@ -231,6 +238,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Lavavajillas',
     emoji: '🫗',
     plural: 'lavavajillas',
+    singular: 'lavavajillas',
     metaTitle: 'Reparación de Lavavajillas a Domicilio en Bogotá | Baird Service',
     metaDescription:
       'Reparación de lavavajillas a domicilio en Bogotá y la Sabana. Técnicos verificados, diagnóstico con precio fijo, cotización clara y pago electrónico.',
@@ -261,6 +269,7 @@ export const SERVICIOS_SEO: readonly ServicioSeo[] = [
     equipo: 'Aire Acondicionado',
     emoji: '❄️',
     plural: 'aires acondicionados',
+    singular: 'aire acondicionado',
     metaTitle: 'Reparación de Aires Acondicionados en Bogotá | Baird Service',
     metaDescription:
       'Reparación y mantenimiento de aires acondicionados a domicilio en Bogotá y la Sabana. Técnicos verificados, diagnóstico con precio fijo y pago seguro.',

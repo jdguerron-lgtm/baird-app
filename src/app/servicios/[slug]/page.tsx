@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
@@ -7,19 +6,32 @@ import {
   MARCAS_SEO,
   SERVICIOS_SEO,
   getServicioSeo,
+  type ServicioSeo,
 } from '@/lib/constants/servicios-seo'
+import { MARCAS_LANDING, getMarcaSeo, type MarcaSeo } from '@/lib/constants/marcas-seo'
+import { TIENDA_URL } from '@/lib/constants/tienda'
 import { TARIFA_DIAGNOSTICO, TARIFAS_MANTENIMIENTO } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
+import {
+  BotonesCta,
+  CtaFinal,
+  FAQ_COMUNES,
+  LandingFooter,
+  LandingNavbar,
+  SeccionFaq,
+  SeccionPasos,
+} from '@/components/seo/LandingComun'
 
-// Landing pages SEO estáticas (una por electrodoméstico). Contenido en
-// src/lib/constants/servicios-seo.ts; precios leídos del catálogo canónico.
+// Landing pages SEO estáticas: una por electrodoméstico (servicios-seo.ts) y
+// una por marca (marcas-seo.ts, 2026-10-25). Precios leídos del catálogo
+// canónico. Piezas comunes en src/components/seo/LandingComun.tsx.
 
 // Dominio canónico fijo (ver nota en robots.ts): el canonical NUNCA debe
 // apuntar al alias baird-app.vercel.app, y NEXT_PUBLIC_APP_URL puede serlo.
 const BASE_URL = 'https://lineablanca.bairdservice.com'
 
 export function generateStaticParams() {
-  return SERVICIOS_SEO.map(({ slug }) => ({ slug }))
+  return [...SERVICIOS_SEO, ...MARCAS_LANDING].map(({ slug }) => ({ slug }))
 }
 
 export const dynamicParams = false
@@ -30,16 +42,17 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>
 }): Promise<Metadata> {
   const { slug } = await params
-  const servicio = getServicioSeo(slug)
-  if (!servicio) return {}
+  const pagina = getServicioSeo(slug) ?? getMarcaSeo(slug)
+  if (!pagina) return {}
+  const url = `${BASE_URL}/servicios/${pagina.slug}`
   return {
-    title: servicio.metaTitle,
-    description: servicio.metaDescription,
-    alternates: { canonical: `${BASE_URL}/servicios/${servicio.slug}` },
+    title: pagina.metaTitle,
+    description: pagina.metaDescription,
+    alternates: { canonical: url },
     openGraph: {
-      title: servicio.metaTitle,
-      description: servicio.metaDescription,
-      url: `${BASE_URL}/servicios/${servicio.slug}`,
+      title: pagina.metaTitle,
+      description: pagina.metaDescription,
+      url,
       siteName: 'Baird Service',
       locale: 'es_CO',
       type: 'website',
@@ -47,63 +60,48 @@ export async function generateMetadata({
   }
 }
 
-const PASOS = [
-  {
-    num: '01',
-    emoji: '📝',
-    titulo: 'Cuéntanos qué pasa',
-    texto: 'Describe la falla, tu dirección y dos horarios en los que puedas recibir al técnico.',
-  },
-  {
-    num: '02',
-    emoji: '📲',
-    titulo: 'Un técnico verificado acepta',
-    texto: 'Los técnicos de tu zona con la especialidad correcta reciben la solicitud por WhatsApp. El primero en aceptar queda asignado.',
-  },
-  {
-    num: '03',
-    emoji: '🏠',
-    titulo: 'Diagnóstico y cotización en tu casa',
-    texto: 'Recibes foto y documento del técnico antes de la visita. Diagnostica, te cotiza la reparación y tú decides si la apruebas.',
-  },
-]
+const PROVEEDOR_JSON_LD = {
+  '@type': 'LocalBusiness',
+  name: 'Baird Service',
+  url: BASE_URL,
+  areaServed: 'Bogotá y Sabana, Colombia',
+}
 
-const FAQ_COMUNES = [
-  {
-    q: '¿Cómo sé que el técnico es de confianza?',
-    a: 'Todos los técnicos de Baird Service pasan verificación de identidad: foto, documento y especialidades confirmadas. Antes de la visita recibes por WhatsApp la foto y el nombre de quien va a tu casa.',
-  },
-  {
-    q: '¿Cómo se paga el servicio?',
-    a: 'El pago se hace a Baird Service por medios electrónicos (nunca en efectivo al técnico). El precio queda acordado antes de la visita o al aprobar la cotización, sin sorpresas.',
-  },
-  {
-    q: '¿Qué pasa si no apruebo la cotización de la reparación?',
-    a: 'Solo pagas la visita de diagnóstico. La cotización no tiene compromiso: puedes rechazarla y el proceso termina ahí.',
-  },
-]
+function JsonLd({ datos }: { datos: object }) {
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(datos) }} />
+}
 
-export default async function ServicioSeoPage({
+function faqJsonLd(items: { q: string; a: string }[]) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map(({ q, a }) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a },
+    })),
+  }
+}
+
+export default async function LandingSeoPage({
   params,
 }: {
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
   const servicio = getServicioSeo(slug)
-  if (!servicio) notFound()
+  if (servicio) return <LandingServicio servicio={servicio} />
+  const marca = getMarcaSeo(slug)
+  if (marca) return <LandingMarca marca={marca} />
+  notFound()
+}
 
+// ─── Landing por equipo ─────────────────────────────────────────────────────
+
+function LandingServicio({ servicio }: { servicio: ServicioSeo }) {
   const tarifaMantenimiento = TARIFAS_MANTENIMIENTO[servicio.equipo]
   const faqCompleta = [...servicio.faq, ...FAQ_COMUNES]
-
-  const faqJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: faqCompleta.map(({ q, a }) => ({
-      '@type': 'Question',
-      name: q,
-      acceptedAnswer: { '@type': 'Answer', text: a },
-    })),
-  }
+  const mensajeWhatsApp = `Hola Baird Service, necesito un técnico para mi ${servicio.singular} en Bogotá.`
 
   const serviceJsonLd = {
     '@context': 'https://schema.org',
@@ -112,12 +110,7 @@ export default async function ServicioSeoPage({
     description: servicio.metaDescription,
     serviceType: `Reparación de ${servicio.plural}`,
     areaServed: COBERTURA_SEO.map((ciudad) => ({ '@type': 'City', name: ciudad })),
-    provider: {
-      '@type': 'LocalBusiness',
-      name: 'Baird Service',
-      url: 'https://lineablanca.bairdservice.com',
-      areaServed: 'Bogotá y Sabana, Colombia',
-    },
+    provider: PROVEEDOR_JSON_LD,
     offers: {
       '@type': 'Offer',
       name: 'Visita de diagnóstico a domicilio',
@@ -128,28 +121,9 @@ export default async function ServicioSeoPage({
 
   return (
     <main className="min-h-screen bg-white">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }}
-      />
-
-      {/* ── NAVBAR ─────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="relative w-52 h-14 block">
-            <Image src="/Baird_Service_Logo.png" alt="Baird Service" fill sizes="208px" className="object-contain object-left" priority />
-          </Link>
-          <Link href="/solicitar">
-            <button className="bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all shadow-md shadow-green-600/20 hover:shadow-green-600/40">
-              Solicitar servicio
-            </button>
-          </Link>
-        </div>
-      </header>
+      <JsonLd datos={faqJsonLd(faqCompleta)} />
+      <JsonLd datos={serviceJsonLd} />
+      <LandingNavbar />
 
       {/* ── HERO ───────────────────────────────────────────────────── */}
       <section className="bg-slate-950 pt-32 pb-16 px-4 relative overflow-hidden">
@@ -162,14 +136,8 @@ export default async function ServicioSeoPage({
             {servicio.h1}
           </h1>
           <p className="text-white/60 text-lg leading-relaxed mb-8">{servicio.intro}</p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Link href="/solicitar">
-              <button className="w-full sm:w-auto bg-green-500 hover:bg-green-400 text-white font-bold py-4 px-8 rounded-2xl text-base shadow-xl shadow-green-500/30 hover:-translate-y-0.5 transition-all duration-200">
-                Solicitar técnico ahora →
-              </button>
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 mt-6 text-white/40 text-xs">
+          <BotonesCta mensajeWhatsApp={mensajeWhatsApp} ubicacion="landing_hero" />
+          <div className="flex flex-wrap items-center gap-4 mt-6 text-white/50 text-xs">
             <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Técnicos verificados con foto e ID</span>
             <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Cotización antes de reparar</span>
             <span className="flex items-center gap-1.5"><span className="text-green-400">✓</span> Pago electrónico seguro</span>
@@ -178,185 +146,266 @@ export default async function ServicioSeoPage({
       </section>
 
       {/* ── FALLAS COMUNES ─────────────────────────────────────────── */}
-      <section className="py-20 px-4">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3 text-center">
-            Fallas comunes de {servicio.plural} que reparamos
-          </h2>
-          <p className="text-slate-500 text-center mb-12 max-w-xl mx-auto">
-            ¿Reconoces alguna? Descríbela en el formulario y el técnico llega con contexto.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {servicio.fallas.map((falla, i) => (
-              <div key={i} className="bg-slate-50 border border-slate-100 rounded-2xl p-5">
-                <h3 className="font-bold text-slate-900 text-[15px] mb-1.5">{falla.titulo}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{falla.texto}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <SeccionFallas titulo={`Fallas comunes de ${servicio.plural} que reparamos`} fallas={servicio.fallas} />
 
       {/* ── PRECIOS ────────────────────────────────────────────────── */}
-      <section className="py-20 px-4 bg-slate-50">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3 text-center">
-            Precios claros, sin sorpresas
-          </h2>
-          <p className="text-slate-500 text-center mb-10 max-w-xl mx-auto">
-            Precios al consumidor con IVA incluido. La reparación se cotiza tras el diagnóstico y tú la apruebas antes de que el técnico intervenga el equipo.
-          </p>
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-slate-100">
-            <div className="flex items-center justify-between gap-4 p-5">
-              <div>
-                <p className="font-bold text-slate-900">Visita de diagnóstico</p>
-                <p className="text-slate-500 text-sm">El técnico revisa el equipo en tu casa e identifica la falla.</p>
-              </div>
-              <p className="font-black text-green-700 text-lg whitespace-nowrap">${formatCOP(TARIFA_DIAGNOSTICO)}</p>
-            </div>
-            <div className="flex items-center justify-between gap-4 p-5">
-              <div>
-                <p className="font-bold text-slate-900">Mantenimiento preventivo</p>
-                <p className="text-slate-500 text-sm">Tarifa fija de catálogo para {servicio.plural}.</p>
-              </div>
-              <p className="font-black text-green-700 text-lg whitespace-nowrap">${formatCOP(tarifaMantenimiento)}</p>
-            </div>
-            <div className="flex items-center justify-between gap-4 p-5">
-              <div>
-                <p className="font-bold text-slate-900">Reparación</p>
-                <p className="text-slate-500 text-sm">Cotización del técnico tras el diagnóstico. La apruebas o rechazas sin compromiso.</p>
-              </div>
-              <p className="font-bold text-slate-600 text-sm whitespace-nowrap">Según cotización</p>
-            </div>
-          </div>
-          {servicio.notaPrecios && (
-            <p className="text-slate-500 text-sm text-center mt-4">{servicio.notaPrecios}</p>
-          )}
-        </div>
-      </section>
+      <SeccionPrecios
+        mantenimiento={{ texto: `Tarifa fija de catálogo para ${servicio.plural}.`, valor: tarifaMantenimiento }}
+        nota={servicio.notaPrecios}
+        fondo
+      />
 
-      {/* ── CÓMO FUNCIONA ──────────────────────────────────────────── */}
-      <section className="py-20 px-4">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-12 text-center">
-            Así funciona el servicio
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {PASOS.map((paso) => (
-              <div key={paso.num} className="text-center">
-                <div className="w-14 h-14 mx-auto mb-4 bg-green-50 border border-green-100 rounded-2xl flex flex-col items-center justify-center">
-                  <span className="text-xl leading-none">{paso.emoji}</span>
-                  <span className="text-green-700/60 text-[9px] font-black tracking-widest">{paso.num}</span>
-                </div>
-                <h3 className="font-bold text-slate-900 mb-2">{paso.titulo}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{paso.texto}</p>
-              </div>
-            ))}
-          </div>
-          <div className="text-center mt-12">
-            <Link href="/solicitar">
-              <button className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-10 rounded-2xl text-base shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200">
-                Solicitar un servicio ahora →
-              </button>
-            </Link>
-          </div>
-        </div>
-      </section>
+      <SeccionPasos />
 
       {/* ── COBERTURA Y MARCAS ─────────────────────────────────────── */}
       <section className="py-20 px-4 bg-slate-50">
         <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10">
-          <div>
-            <h2 className="text-xl font-black text-slate-900 mb-4">📍 Zonas de cobertura</h2>
-            <p className="text-slate-500 text-sm mb-4">
-              Atendemos Bogotá y municipios de la Sabana:
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {COBERTURA_SEO.map((ciudad) => (
-                <span key={ciudad} className="bg-white border border-slate-200 rounded-full px-3.5 py-1.5 text-sm text-slate-700 font-medium">
-                  {ciudad}
-                </span>
-              ))}
-            </div>
-            <p className="text-slate-400 text-xs mt-4">
-              ¿Tu municipio no aparece? Envía la solicitud igual: si hay técnico verificado en tu zona, la recibe.
-            </p>
-          </div>
+          <Cobertura />
           <div>
             <h2 className="text-xl font-black text-slate-900 mb-4">🏷️ Marcas que atendemos</h2>
             <p className="text-slate-500 text-sm mb-4">
               Servicio multimarca para {servicio.plural}:
             </p>
             <div className="flex flex-wrap gap-2">
-              {MARCAS_SEO.map((marca) => (
-                <span key={marca} className="bg-white border border-slate-200 rounded-full px-3.5 py-1.5 text-sm text-slate-700 font-medium">
-                  {marca}
-                </span>
-              ))}
+              {MARCAS_SEO.map((nombre) => {
+                const landing = MARCAS_LANDING.find((m) => m.marca.toLowerCase() === nombre.toLowerCase())
+                const clase = 'bg-white border border-slate-200 rounded-full px-3.5 py-1.5 text-sm text-slate-700 font-medium'
+                return landing ? (
+                  <Link key={nombre} href={`/servicios/${landing.slug}`} className={`${clase} hover:border-green-400 hover:text-green-700 transition-colors`}>
+                    {nombre} →
+                  </Link>
+                ) : (
+                  <span key={nombre} className={clase}>{nombre}</span>
+                )
+              })}
             </div>
-            <p className="text-slate-400 text-xs mt-4">Y más marcas de línea blanca disponibles en Colombia.</p>
+            <p className="text-slate-500 text-xs mt-4">Y más marcas de línea blanca disponibles en Colombia.</p>
           </div>
         </div>
       </section>
 
-      {/* ── FAQ ────────────────────────────────────────────────────── */}
-      <section className="py-20 px-4">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-10 text-center">
-            Preguntas frecuentes
-          </h2>
-          <div className="space-y-4">
-            {faqCompleta.map(({ q, a }, i) => (
-              <details key={i} className="group bg-slate-50 border border-slate-100 rounded-2xl p-5 open:bg-white open:shadow-sm">
-                <summary className="font-bold text-slate-900 cursor-pointer list-none flex items-center justify-between gap-3">
-                  {q}
-                  <span className="text-green-600 group-open:rotate-45 transition-transform text-xl leading-none flex-shrink-0">+</span>
-                </summary>
-                <p className="text-slate-500 text-sm leading-relaxed mt-3">{a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
+      <SeccionFaq items={faqCompleta} />
+      <CtaFinal titulo={`Tu ${servicio.singular} en buenas manos`} mensajeWhatsApp={mensajeWhatsApp} />
+      <LandingFooter slugActual={servicio.slug} />
+    </main>
+  )
+}
 
-      {/* ── CTA FINAL ──────────────────────────────────────────────── */}
-      <section className="bg-slate-950 py-16 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-2xl sm:text-3xl font-black text-white mb-4">
-            Tu {servicio.plural.replace(/s$/, '')} en buenas manos
-          </h2>
-          <p className="text-white/50 mb-8">
-            Solicita el servicio en 2 minutos. Un técnico verificado de tu zona lo toma por WhatsApp.
+// ─── Landing por marca ──────────────────────────────────────────────────────
+
+function LandingMarca({ marca }: { marca: MarcaSeo }) {
+  const faqCompleta = [...marca.faq, ...FAQ_COMUNES]
+  const mensajeWhatsApp = `Hola Baird Service, necesito un técnico para mi equipo ${marca.marca} en Bogotá.`
+  const mantenimientoDesde = Math.min(...marca.equipos.map(({ equipo }) => TARIFAS_MANTENIMIENTO[equipo]))
+
+  const serviceJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: marca.h1,
+    description: marca.metaDescription,
+    serviceType: `Reparación de electrodomésticos ${marca.marca}`,
+    brand: { '@type': 'Brand', name: marca.marca },
+    areaServed: COBERTURA_SEO.map((ciudad) => ({ '@type': 'City', name: ciudad })),
+    provider: PROVEEDOR_JSON_LD,
+    offers: {
+      '@type': 'Offer',
+      name: 'Visita de diagnóstico a domicilio',
+      price: TARIFA_DIAGNOSTICO,
+      priceCurrency: 'COP',
+    },
+  }
+
+  return (
+    <main className="min-h-screen bg-white">
+      <JsonLd datos={faqJsonLd(faqCompleta)} />
+      <JsonLd datos={serviceJsonLd} />
+      <LandingNavbar />
+
+      {/* ── HERO ───────────────────────────────────────────────────── */}
+      <section className="bg-slate-950 pt-32 pb-16 px-4 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-green-500 rounded-full opacity-[0.07] blur-[120px] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+        <div className="relative z-10 max-w-3xl mx-auto">
+          <p className="text-green-400 font-semibold text-xs tracking-[0.15em] uppercase mb-4">
+            🏷️ {marca.marca} · Servicio a domicilio · Bogotá y Sabana
           </p>
-          <Link href="/solicitar">
-            <button className="bg-green-500 hover:bg-green-400 text-white font-bold py-4 px-10 rounded-2xl text-base shadow-xl shadow-green-500/20 hover:-translate-y-0.5 transition-all duration-200">
-              Solicitar servicio →
-            </button>
-          </Link>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white leading-tight mb-6">
+            {marca.h1}
+          </h1>
+          <p className="text-white/60 text-lg leading-relaxed mb-8">{marca.intro}</p>
+          <BotonesCta mensajeWhatsApp={mensajeWhatsApp} ubicacion="landing_hero" />
+          <p className="text-white/50 text-xs mt-6 max-w-2xl">{marca.aviso}</p>
         </div>
       </section>
 
-      {/* ── FOOTER ─────────────────────────────────────────────────── */}
-      <footer className="bg-slate-950 border-t border-white/5 py-10 px-4">
+      {/* ── GARANTÍA (solo marcas cuya garantía atiende Baird) ─────── */}
+      {marca.garantia && (
+        <section className="px-4 -mt-6 relative z-10">
+          <div className="max-w-3xl mx-auto bg-emerald-600 text-white rounded-2xl p-6 shadow-lg">
+            <h2 className="font-bold text-lg mb-1">🛡️ {marca.garantia.titulo}</h2>
+            <p className="text-emerald-50 text-sm leading-relaxed">{marca.garantia.texto}</p>
+          </div>
+        </section>
+      )}
+
+      {/* ── EQUIPOS ────────────────────────────────────────────────── */}
+      <section className="py-20 px-4">
         <div className="max-w-4xl mx-auto">
-          <p className="text-white/40 text-sm font-semibold mb-3">Otros servicios en Bogotá y la Sabana:</p>
-          <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/40 mb-8">
-            {SERVICIOS_SEO.filter((s) => s.slug !== servicio.slug).map((s) => (
-              <Link key={s.slug} href={`/servicios/${s.slug}`} className="hover:text-white/70 transition-colors">
-                Reparación de {s.plural}
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3 text-center">
+            Equipos {marca.marca} que reparamos
+          </h2>
+          <p className="text-slate-500 text-center mb-10 max-w-xl mx-auto">
+            A domicilio en Bogotá y la Sabana. Entra a cada equipo para ver sus fallas típicas.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {marca.equipos.map((e) => (
+              <Link
+                key={e.equipo}
+                href={`/servicios/${e.slugServicio}`}
+                className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-100 rounded-2xl p-5 hover:border-green-300 hover:bg-white transition-colors"
+              >
+                <span className="font-bold text-slate-900">{e.nombre}</span>
+                <span className="text-green-600 font-bold">→</span>
               </Link>
             ))}
           </div>
-          <div className="pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-white/20 text-xs">© 2026 Baird Service S.A.S. — Colombia</p>
-            <div className="flex gap-6 text-xs text-white/30">
-              <Link href="/" className="hover:text-white/60 transition-colors">Inicio</Link>
-              <Link href="/solicitar" className="hover:text-white/60 transition-colors">Solicitar servicio</Link>
-              <Link href="/registro" className="hover:text-white/60 transition-colors">Quiero hacer parte del equipo</Link>
+        </div>
+      </section>
+
+      <SeccionFallas titulo={`Fallas frecuentes en equipos ${marca.marca}`} fallas={marca.fallas} fondo />
+
+      <SeccionPrecios
+        mantenimiento={{ texto: `Tarifa fija de catálogo según el equipo ${marca.marca}.`, valor: mantenimientoDesde, desde: true }}
+      />
+
+      {/* ── REPUESTOS ORIGINALES ───────────────────────────────────── */}
+      <section className="px-4 pb-4">
+        <div className="max-w-3xl mx-auto text-center bg-slate-50 border border-slate-100 rounded-2xl p-6">
+          <h2 className="font-black text-slate-900 text-lg mb-2">Repuestos originales {marca.marca}</h2>
+          <p className="text-slate-500 text-sm mb-4">
+            Somos distribuidores mayoristas oficiales de repuestos {marca.marca}: el técnico trabaja con piezas originales.
+          </p>
+          <a
+            href={TIENDA_URL}
+            target="_blank"
+            rel="noopener"
+            className="inline-block text-green-700 font-bold text-sm hover:underline"
+          >
+            Ver repuestos en la tienda →
+          </a>
+        </div>
+      </section>
+
+      <SeccionPasos />
+
+      <section className="py-16 px-4 bg-slate-50">
+        <div className="max-w-4xl mx-auto">
+          <Cobertura />
+        </div>
+      </section>
+
+      <SeccionFaq items={faqCompleta} />
+      <CtaFinal titulo={`Tu equipo ${marca.marca} en buenas manos`} mensajeWhatsApp={mensajeWhatsApp} />
+      <LandingFooter slugActual={marca.slug} />
+    </main>
+  )
+}
+
+// ─── Secciones comunes a los dos tipos ──────────────────────────────────────
+
+function SeccionFallas({
+  titulo,
+  fallas,
+  fondo = false,
+}: {
+  titulo: string
+  fallas: { titulo: string; texto: string }[]
+  fondo?: boolean
+}) {
+  return (
+    <section className={`py-20 px-4 ${fondo ? 'bg-slate-50' : ''}`}>
+      <div className="max-w-4xl mx-auto">
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3 text-center">{titulo}</h2>
+        <p className="text-slate-500 text-center mb-12 max-w-xl mx-auto">
+          ¿Reconoces alguna? Descríbela en el formulario y el técnico llega con contexto.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {fallas.map((falla, i) => (
+            <div key={i} className={`${fondo ? 'bg-white' : 'bg-slate-50'} border border-slate-100 rounded-2xl p-5`}>
+              <h3 className="font-bold text-slate-900 text-[15px] mb-1.5">{falla.titulo}</h3>
+              <p className="text-slate-500 text-sm leading-relaxed">{falla.texto}</p>
             </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SeccionPrecios({
+  mantenimiento,
+  nota,
+  fondo = false,
+}: {
+  mantenimiento: { texto: string; valor: number; desde?: boolean }
+  nota?: string
+  fondo?: boolean
+}) {
+  return (
+    <section className={`py-20 px-4 ${fondo ? 'bg-slate-50' : ''}`}>
+      <div className="max-w-3xl mx-auto">
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3 text-center">
+          Precios claros, sin sorpresas
+        </h2>
+        <p className="text-slate-500 text-center mb-10 max-w-xl mx-auto">
+          Precios al consumidor con IVA incluido. La reparación se cotiza tras el diagnóstico y tú la apruebas antes de que el técnico intervenga el equipo.
+        </p>
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-slate-100">
+          <div className="flex items-center justify-between gap-4 p-5">
+            <div>
+              <p className="font-bold text-slate-900">Visita de diagnóstico</p>
+              <p className="text-slate-500 text-sm">El técnico revisa el equipo en tu casa e identifica la falla.</p>
+            </div>
+            <p className="font-black text-green-700 text-lg whitespace-nowrap">${formatCOP(TARIFA_DIAGNOSTICO)}</p>
+          </div>
+          <div className="flex items-center justify-between gap-4 p-5">
+            <div>
+              <p className="font-bold text-slate-900">Mantenimiento preventivo</p>
+              <p className="text-slate-500 text-sm">{mantenimiento.texto}</p>
+            </div>
+            <p className="font-black text-green-700 text-lg whitespace-nowrap">
+              {mantenimiento.desde ? <span className="text-sm font-semibold text-slate-500">desde </span> : null}
+              ${formatCOP(mantenimiento.valor)}
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-4 p-5">
+            <div>
+              <p className="font-bold text-slate-900">Reparación</p>
+              <p className="text-slate-500 text-sm">Cotización del técnico tras el diagnóstico. La apruebas o rechazas sin compromiso.</p>
+            </div>
+            <p className="font-bold text-slate-600 text-sm whitespace-nowrap">Según cotización</p>
           </div>
         </div>
-      </footer>
-    </main>
+        {nota && <p className="text-slate-500 text-sm text-center mt-4">{nota}</p>}
+      </div>
+    </section>
+  )
+}
+
+function Cobertura() {
+  return (
+    <div>
+      <h2 className="text-xl font-black text-slate-900 mb-4">📍 Zonas de cobertura</h2>
+      <p className="text-slate-500 text-sm mb-4">Atendemos Bogotá y municipios de la Sabana:</p>
+      <div className="flex flex-wrap gap-2">
+        {COBERTURA_SEO.map((ciudad) => (
+          <span key={ciudad} className="bg-white border border-slate-200 rounded-full px-3.5 py-1.5 text-sm text-slate-700 font-medium">
+            {ciudad}
+          </span>
+        ))}
+      </div>
+      <p className="text-slate-500 text-xs mt-4">
+        ¿Tu municipio no aparece? Envía la solicitud igual: si hay técnico verificado en tu zona, la recibe.
+      </p>
+    </div>
   )
 }
