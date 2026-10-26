@@ -21,7 +21,7 @@
 
 import { GOOGLE_ADS_ID } from './googleAds'
 import { GA_LINEABLANCA_ID, GA_MEASUREMENT_ID } from './googleAnalytics'
-import { rutaSinMedicion, sanitizarUrl, urlNecesitaSaneo } from './rutas'
+import { hostMedido, rutaSinMedicion, sanitizarUrl, urlNecesitaSaneo } from './rutas'
 
 type GtagWindow = Window & {
   dataLayer?: unknown[]
@@ -42,6 +42,7 @@ export function iniciarGtag(): void {
   if (typeof window === 'undefined') return
   const w = window as unknown as GtagWindow
   if (w.__bairdGtagIniciado) return
+  if (!hostMedido(window.location.hostname)) return
   if (rutaSinMedicion(window.location.pathname)) return
   w.__bairdGtagIniciado = true
 

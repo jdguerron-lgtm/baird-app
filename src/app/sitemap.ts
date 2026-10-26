@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
+import { MARCAS_LANDING } from '@/lib/constants/marcas-seo'
 
 // Dominio canónico fijo a propósito (ver nota en robots.ts): el sitemap debe
 // listar el dominio oficial, no el alias baird-app.vercel.app.
@@ -17,6 +18,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: '/servicios', priority: 0.8, changeFrequency: 'monthly' as const },
     // Landing pages SEO por electrodoméstico (src/lib/constants/servicios-seo.ts)
     ...SERVICIOS_SEO.map(({ slug }) => ({
+      path: `/servicios/${slug}`,
+      priority: 0.7,
+      changeFrequency: 'monthly' as const,
+    })),
+    // Landing pages por marca (src/lib/constants/marcas-seo.ts)
+    ...MARCAS_LANDING.map(({ slug }) => ({
       path: `/servicios/${slug}`,
       priority: 0.7,
       changeFrequency: 'monthly' as const,

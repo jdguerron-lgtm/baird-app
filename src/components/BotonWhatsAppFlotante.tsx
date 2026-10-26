@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { urlWhatsAppAtencion } from '@/lib/constants/contacto'
 
 /**
  * Botón flotante de soporte por WhatsApp.
@@ -14,11 +15,8 @@ import { usePathname } from 'next/navigation'
  * WhatsApp Business que usan los flujos automáticos. Los mensajes llegan directo
  * a ese teléfono; no pasan por el webhook ni interfieren con la automatización.
  *
- * Para cambiar el número o el saludo: editar las constantes de abajo.
+ * El número vive en src/lib/constants/contacto.ts (lo comparten las landings).
  */
-
-// Dígitos con código de país, formato wa.me (sin +, espacios ni guiones).
-const WHATSAPP_SOPORTE = '573153019192'
 
 export default function BotonWhatsAppFlotante() {
   const pathname = usePathname() ?? ''
@@ -31,7 +29,7 @@ export default function BotonWhatsAppFlotante() {
     ? 'Hola Baird Service, soy técnico y tengo una duda.'
     : 'Hola Baird Service, tengo una duda.'
 
-  const href = `https://wa.me/${WHATSAPP_SOPORTE}?text=${encodeURIComponent(mensaje)}`
+  const href = urlWhatsAppAtencion(mensaje)
 
   return (
     <a

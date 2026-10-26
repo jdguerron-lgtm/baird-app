@@ -79,6 +79,8 @@ src/
 │   │   ├── especialidades.ts   # TIPO_A_ESPECIALIDAD mapping
 │   │   ├── estados.ts          # ESTADO_ESTILOS, ESTADO_LABELS (styling + labels per state)
 │   │   ├── servicios-seo.ts    # Contenido de las 7 landings /servicios/[slug]
+│   │   ├── marcas-seo.ts       # Landings por marca (Mabe, Whirlpool) en la misma ruta /servicios/[slug]
+│   │   ├── contacto.ts         # Línea WhatsApp de atención (botón flotante + CTA de landings)
 │   │   └── equipos-home.ts     # Los 8 equipos de la home → icono + slug de su landing (valida slugs vs SERVICIOS_SEO)
 │   ├── services/
 │   │   ├── whatsapp.service.ts # All WhatsApp logic (notify, accept, quote, confirm)
@@ -248,6 +250,7 @@ El helper se invoca en cada **transition owner** (la función/route que muta `es
 | **Home / landing** | `/` | Landing comercial. Nav hamburguesa <640px vía `MenuMovil` — el nav del header y el link a la tienda están en `hidden sm:*`. Footer con identificación del proveedor (Ley 1480 art. 50), links legales y tienda. Las 8 tarjetas de `#equipos` enlazan a su landing SEO (`EQUIPOS_HOME`). Corre el A/B del hero móvil (ver abajo). |
 | **Índice de servicios** | `/servicios` | Grid de las 7 landings SEO. Iconos compartidos con la home vía `ICONO_POR_SLUG`. |
 | **Landing SEO por equipo** | `/servicios/[slug]` | Página estática indexable por equipo (fallas, precios, cobertura, FAQ). Contenido en `servicios-seo.ts`; el sitemap se genera de ahí. |
+| **Landing SEO por marca** | `/servicios/[slug]` | Mabe y Whirlpool (2026-10-25): equipos de la marca, fallas, garantía (solo MABE), repuestos originales y aviso de relación con la marca. Contenido en `marcas-seo.ts`; piezas comunes (CTA formulario + WhatsApp, pasos, FAQ, footer) en `src/components/seo/LandingComun.tsx`. Solo afirmaciones verdaderas: nunca "servicio técnico oficial" (lo verifica un test). |
 | Service request form | `/solicitar` | Customer creates a new request |
 | **Schedule confirmation** | `/horario/{horario_token}` | Customer picks fecha + franja + accepts T&C |
 | **Self-service portal** | `/servicio/{cliente_token}` | Cancela / reagenda. Token durable, vive en `solicitudes_servicio.cliente_token`. Sección "Quién te visita" (2026-10-13): carnet del técnico + una tarjeta `CarnetAuxiliar` por auxiliar verificado del servicio (`equipoDeServicioPorId`, import dinámico de `equipo.service`, fail-soft) |
@@ -376,6 +379,11 @@ Toda la analítica la monta `src/components/analytics/AnaliticaCliente.tsx` (una
 Google Ads (`AW-18163777075`, conversiones) y dos propiedades GA4 que reciben lo mismo
 (`G-DXSC4J9RGF` "Baird1", histórico de bairdservice.com; `G-ZPGP3D68XP` "Línea Blanca",
 env `NEXT_PUBLIC_GA_LINEABLANCA_ID`). Además Vercel Web Analytics + Speed Insights.
+
+**Dónde se mide:** solo en `lineablanca.bairdservice.com` (`HOSTS_MEDIDOS`, env
+`NEXT_PUBLIC_ANALYTICS_HOSTS`). Los previews de Vercel, el alias `baird-app.vercel.app` y
+localhost no cargan gtag — antes ensuciaban GA4 (2026-10-24). Para probar en local:
+`NEXT_PUBLIC_ANALYTICS_HOSTS=localhost` en `.env.local`.
 
 **Qué rutas se miden** (`src/lib/analytics/rutas.ts`):
 - *Portales internos* (`/admin`, `/tecnico`, `/aceptar`, `/supervisor`, `/api`): **no se

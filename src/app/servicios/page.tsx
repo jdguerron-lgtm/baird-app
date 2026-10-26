@@ -3,6 +3,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ICONO_POR_SLUG } from '@/lib/constants/equipos-home'
 import { SERVICIOS_SEO } from '@/lib/constants/servicios-seo'
+import { MARCAS_LANDING } from '@/lib/constants/marcas-seo'
 
 // Índice público de las landing pages SEO /servicios/[slug].
 
@@ -78,6 +79,24 @@ export default function ServiciosIndexPage() {
             </Link>
             )
           })}
+        </div>
+
+        {/* Landings por marca (marcas-seo.ts, 2026-10-25) */}
+        <div className="max-w-5xl mx-auto mt-14">
+          <h2 className="text-xl font-black text-slate-900 mb-4 text-center">Por marca</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {MARCAS_LANDING.map((m) => (
+              <Link
+                key={m.slug}
+                href={`/servicios/${m.slug}`}
+                className="group bg-slate-50 hover:bg-white border border-slate-100 hover:border-green-200 hover:shadow-md rounded-2xl p-6 transition-all duration-200"
+              >
+                <h3 className="font-bold text-slate-900 mb-1.5">{m.h1}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed line-clamp-2">{m.metaDescription}</p>
+                <span className="inline-block mt-3 text-green-700 text-sm font-semibold">Ver servicio {m.marca} →</span>
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 
