@@ -16,6 +16,13 @@ import { MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import { aceptacionCuentaComoConfirmacion } from '@/lib/utils/confirmacion-visita'
 import { obtenerConfigReparto, contarServiciosRecientes, dividirPorPrioridad } from '@/lib/services/reparto.service'
+import { obtenerBloqueos, obtenerConfigPenalizacion, minutosPenalizacionTecnicos } from '@/lib/services/penalizacion.service'
+import {
+  bloqueadoParaServicio,
+  parsearPendientes,
+  planificarOferta,
+  type OfertaPendiente,
+} from '@/lib/utils/penalizacion-oferta'
 import {
   ESTADOS_CANCELABLES_POR_CLIENTE,
   ESTADOS_REAGENDABLES_POR_CLIENTE,
@@ -422,6 +429,8 @@ export interface NotifyResult {
   notificados: number
   matched: number
   errors: string[]
+  /** Técnicos retenidos por penalización de incumplimiento (reciben la oferta más tarde). */
+  retenidos?: number
 }
 
 /**
@@ -584,6 +593,19 @@ export async function notificarTecnicos(
     }
   }
 
+  // 3a0. Bloqueo manual por tipo de servicio (2026-10-26, /admin/tecnicos/[id]):
+  //      el técnico marcado "no recibe garantías / particulares" sale de los
+  //      candidatos de ese flujo, también para la invitación dirigida.
+  //      Fail-soft: sin migración `obtenerBloqueos` devuelve vacío.
+  const bloqueos = await obtenerBloqueos(tecnicosEnCiudad.map(t => t.id))
+  const tecnicosHabilitados = tecnicosEnCiudad.filter(t => !bloqueadoParaServicio(bloqueos.get(t.id), sol.es_garantia === true))
+  if (tecnicosHabilitados.length === 0) {
+    return {
+      notificados: 0, matched: 0,
+      errors: [`Los ${tecnicosEnCiudad.length} técnico(s) candidatos están bloqueados para servicios ${sol.es_garantia ? 'de garantía' : 'particulares'} — revisar en /admin/tecnicos o asignar a mano.`],
+    }
+  }
+
   // 3b. Técnico de preferencia del cliente (2026-10-15). Solo en la PRIMERA
   //     oferta (sin ofertas previas): si el cliente eligió a un técnico y
   //     este pasó los filtros de arriba, la oferta va únicamente a él. Los
@@ -592,7 +614,7 @@ export async function notificarTecnicos(
   //     así la preferencia no deja la solicitud colgada si él no responde.
   //     Si el preferido no pasó los filtros (dejó de estar verificado, cambió
   //     cobertura), se ignora y se avisa en `errors` sin bloquear nada.
-  let tecnicos = tecnicosEnCiudad
+  let tecnicos = tecnicosHabilitados
   const preferidoId: string | null = sol.tecnico_preferido_id ?? null
   let preferidoAplicado = false
 
@@ -610,7 +632,7 @@ export async function notificarTecnicos(
   if (opts.soloTecnicoId) {
     // 3a. Invitación dirigida del admin (2026-10-22): solo ese técnico, y solo
     //     si es candidato real. Un id fuera de la lista NO manda nada.
-    const dirigido = tecnicosEnCiudad.find(t => t.id === opts.soloTecnicoId)
+    const dirigido = tecnicosHabilitados.find(t => t.id === opts.soloTecnicoId)
     if (!dirigido) {
       return {
         notificados: 0, matched: 0,
@@ -620,12 +642,12 @@ export async function notificarTecnicos(
     tecnicos = [dirigido]
   } else if (opts.soloNoNotificados) {
     // 3a'. Segunda ola del reparto escalonado: solo a quienes aún no la tienen.
-    tecnicos = tecnicosEnCiudad.filter(t => !yaNotificados.has(t.id))
+    tecnicos = tecnicosHabilitados.filter(t => !yaNotificados.has(t.id))
     if (tecnicos.length === 0) {
       return { notificados: 0, matched: 0, errors: [] }
     }
   } else if (preferidoId && esPrimeraOferta) {
-    const preferido = tecnicosEnCiudad.find(t => t.id === preferidoId)
+    const preferido = tecnicosHabilitados.find(t => t.id === preferidoId)
     if (preferido) {
       tecnicos = [preferido]
       preferidoAplicado = true
@@ -658,7 +680,9 @@ export async function notificarTecnicos(
   //     aceptan en `minutos_ventaja` (así ninguna deja la solicitud quieta
   //     esperando un reenvío manual).
   let ofertaAbiertaAt: string | null = null
-  if ((preferidoAplicado || opts.soloTecnicoId) && tecnicosEnCiudad.length > 1) {
+  let restoEscalonado: typeof tecnicos = []
+  let minutosVentaja = 0
+  if ((preferidoAplicado || opts.soloTecnicoId) && tecnicosHabilitados.length > 1) {
     const config = await obtenerConfigReparto()
     if (config.activo) {
       ofertaAbiertaAt = new Date(Date.now() + config.minutos_ventaja * 60_000).toISOString()
@@ -670,8 +694,36 @@ export async function notificarTecnicos(
       const { prioritarios, resto } = dividirPorPrioridad(tecnicos, conteos, config.max_servicios_semana)
       if (resto.length > 0) {
         tecnicos = prioritarios
+        restoEscalonado = resto
+        minutosVentaja = config.minutos_ventaja
         ofertaAbiertaAt = new Date(Date.now() + config.minutos_ventaja * 60_000).toISOString()
       }
+    }
+  }
+
+  // 3e. Penalización por incumplimiento (2026-10-26, penalizacion.service.ts):
+  //     cada incumplimiento reciente = 5 min más de espera para recibir la
+  //     oferta. Los retenidos quedan en `oferta_pendientes` y el cron
+  //     oferta-escalonada se los manda a su hora (`oferta_abierta_at` es el
+  //     despertador). No aplica a la invitación dirigida ni al técnico de
+  //     preferencia del cliente. Requiere la columna `oferta_pendientes`
+  //     (select('*') la trae solo si la migración está aplicada).
+  let pendientesNuevos: OfertaPendiente[] | null = null
+  if (!opts.soloTecnicoId && !preferidoAplicado && 'oferta_pendientes' in sol) {
+    const cfgPen = await obtenerConfigPenalizacion()
+    const pendientesPrevios = parsearPendientes(sol.oferta_pendientes)
+    if (cfgPen.activa || pendientesPrevios.length > 0) {
+      // La segunda ola del reparto escalonado entra como retenida con
+      // `minutos_ventaja` + su penalización: así el despertador del cron
+      // (que puede sonar antes por un penalizado) no la adelanta.
+      const todos = [...tecnicos, ...restoEscalonado]
+      const minutos = await minutosPenalizacionTecnicos(todos.map(t => t.id), cfgPen)
+      for (const t of restoEscalonado) minutos.set(t.id, (minutos.get(t.id) ?? 0) + minutosVentaja)
+      const plan = planificarOferta({ candidatos: todos.map(t => t.id), pendientes: pendientesPrevios, penalizacion: minutos })
+      const enviar = new Set(plan.enviarAhora)
+      tecnicos = todos.filter(t => enviar.has(t.id))
+      pendientesNuevos = plan.pendientes
+      ofertaAbiertaAt = plan.proximoAt
     }
   }
 
@@ -812,13 +864,19 @@ export async function notificarTecnicos(
   //    'asignada' con 'notificada' (mismo patrón que la aceptación atómica).
   //    `oferta_abierta_at` solo se escribe cuando hubo escalonamiento (así
   //    este update no depende de la migración 20261019 en el resto de casos).
-  if (notificados > 0) {
+  //    Con penalización (pendientesNuevos !== null) se escriben siempre la
+  //    lista de retenidos y el despertador, aunque no haya salido ninguna
+  //    oferta todavía (todos los candidatos están penalizados).
+  const hayRetenidos = pendientesNuevos !== null && pendientesNuevos.length > 0
+  if (notificados > 0 || hayRetenidos) {
     await supabase
       .from('solicitudes_servicio')
       .update({
         estado: 'notificada',
         notificados_at: new Date().toISOString(),
-        ...(ofertaAbiertaAt ? { oferta_abierta_at: ofertaAbiertaAt } : {}),
+        ...(pendientesNuevos !== null
+          ? { oferta_abierta_at: ofertaAbiertaAt, oferta_pendientes: pendientesNuevos.length > 0 ? pendientesNuevos : null }
+          : ofertaAbiertaAt ? { oferta_abierta_at: ofertaAbiertaAt } : {}),
       })
       .eq('id', solicitudId)
       .is('tecnico_asignado_id', null)
@@ -841,7 +899,7 @@ export async function notificarTecnicos(
         console.warn('[notificarTecnicos] no se pudo registrar evento oferta_dirigida:', err)
       }
     }
-  } else if (ofertaAbiertaAt && !opts.soloTecnicoId) {
+  } else if (ofertaAbiertaAt && !opts.soloTecnicoId && pendientesNuevos === null) {
     // A ninguno de los prioritarios le salió el WhatsApp: no hacer esperar
     // la solicitud — abrir de una vez al resto.
     const abierta = await notificarTecnicos(solicitudId, { soloNoNotificados: true })
@@ -852,7 +910,12 @@ export async function notificarTecnicos(
     }
   }
 
-  return { notificados, matched: tecnicos.length, errors: sendErrors }
+  return {
+    notificados,
+    matched: tecnicos.length,
+    errors: sendErrors,
+    ...(pendientesNuevos !== null ? { retenidos: pendientesNuevos.length } : {}),
+  }
 }
 
 /**
@@ -1043,28 +1106,6 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     }
   }
 
-  // 3. ¡Ganó! Obtener datos completos del técnico (incluyendo portal_token)
-  const { data: tecnico } = await supabase
-    .from('tecnicos')
-    .select('id, nombre_completo, whatsapp, portal_token')
-    .eq('id', notif.tecnico_id)
-    .single()
-
-  // Generar portal_token si no existe (con verificación de persistencia)
-  if (tecnico && !tecnico.portal_token) {
-    const newToken = crypto.randomUUID()
-    const { error: tokenErr } = await supabase
-      .from('tecnicos')
-      .update({ portal_token: newToken })
-      .eq('id', tecnico.id)
-
-    if (!tokenErr) {
-      tecnico.portal_token = newToken
-    } else {
-      console.error('Error generando portal_token:', tokenErr)
-    }
-  }
-
   const sol = updated // aliás semántico
 
   // Auditoría append-only del cambio de horario elegido por el técnico.
@@ -1091,6 +1132,69 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
 
   // Avisar a supervisores que un técnico tomó el servicio (asignada).
   await notificarCambioEstado(sol.id, 'notificada', estadoAsignacion)
+
+  // 3-6. Avisos de asignación (técnico + cliente + anticipo + carnet). Misma
+  // función que usa el cambio manual de técnico del admin (2026-10-26).
+  await avisarAsignacionTecnico(sol, notif.tecnico_id, { incluirAnticipo: true, contexto: 'procesarAceptacion' })
+
+  // 7. Marcar este token como aceptado e invalidar los demás
+  await supabase
+    .from('notificaciones_whatsapp')
+    .update({ estado: 'aceptado', respondido_at: new Date().toISOString() })
+    .eq('token', token)
+
+  await supabase
+    .from('notificaciones_whatsapp')
+    .update({ estado: 'invalidado' })
+    .eq('solicitud_id', notif.solicitud_id)
+    .neq('token', token)
+    .eq('estado', 'enviado')
+
+  return { ganado: true, mensaje: '¡Servicio asignado exitosamente!' }
+}
+
+
+/**
+ * Avisos que salen cuando un técnico queda asignado a un servicio (extraído de
+ * `procesarAceptacion` el 2026-10-26 para reutilizarlo en el cambio manual de
+ * técnico del admin, `reasignarTecnicoManual`):
+ * - genera `portal_token` del técnico si no tiene,
+ * - `servicio_asignado_tecnico_v4` al técnico (datos del cliente + portal),
+ * - `tecnico_asignado_*` al cliente (carnet + equipo que visita),
+ * - particular: link del anticipo o confirmación si ya estaba pagado — SOLO
+ *   con `incluirAnticipo` (en un cambio de técnico el cliente ya lo recibió),
+ * - carnet free-form best-effort.
+ *
+ * `sol` es la fila completa (`select('*')`) ya con el técnico nuevo asignado.
+ */
+export async function avisarAsignacionTecnico(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sol: any,
+  tecnicoId: string,
+  opts: { incluirAnticipo: boolean; contexto: string },
+): Promise<void> {
+  const ctx = opts.contexto
+  // 3. Datos completos del técnico (incluyendo portal_token)
+  const { data: tecnico } = await supabase
+    .from('tecnicos')
+    .select('id, nombre_completo, whatsapp, portal_token')
+    .eq('id', tecnicoId)
+    .single()
+
+  // Generar portal_token si no existe (con verificación de persistencia)
+  if (tecnico && !tecnico.portal_token) {
+    const newToken = crypto.randomUUID()
+    const { error: tokenErr } = await supabase
+      .from('tecnicos')
+      .update({ portal_token: newToken })
+      .eq('id', tecnico.id)
+
+    if (!tokenErr) {
+      tecnico.portal_token = newToken
+    } else {
+      console.error('Error generando portal_token:', tokenErr)
+    }
+  }
 
   // 4. Notificar al técnico ganador con los datos del cliente
   const clienteDigits = phoneToDigits(sol.cliente_telefono)
@@ -1133,7 +1237,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
           parameters: [{ type: 'text', text: tecnico.portal_token }],
         },
       ]),
-      'procesarAceptacion → servicio_asignado_tecnico_v4',
+      `${ctx} → servicio_asignado_tecnico_v4`,
     )
   }
 
@@ -1183,14 +1287,14 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
         // Filtrado por whitelist también cuenta como "resuelto": no insistir con v6.
         enviadoV7 = r.sent || r.filtered === true
       } catch (err) {
-        console.error('[procesarAceptacion] tecnico_asignado_cliente_v7 falló, fallback v6:', err instanceof Error ? err.message : err)
+        console.error(`[${ctx}] tecnico_asignado_cliente_v7 falló, fallback v6:`, err instanceof Error ? err.message : err)
       }
     }
     if (!enviadoV7) {
       const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_cliente_v6', 'es', [
         { type: 'body', parameters: bodyGarantia },
       ])
-      await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_cliente_v6')
+      await logEnvio(envioCliente, `${ctx} → tecnico_asignado_cliente_v6`)
       await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_cliente_v6',
         `Se confirmó al cliente su servicio: técnico asignado y visita ${horarioServicio}`)
     }
@@ -1229,14 +1333,14 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
         }
         enviadoV2 = r.sent || r.filtered === true
       } catch (err) {
-        console.error('[procesarAceptacion] tecnico_asignado_particular_v2 falló, fallback v1:', err instanceof Error ? err.message : err)
+        console.error(`[${ctx}] tecnico_asignado_particular_v2 falló, fallback v1:`, err instanceof Error ? err.message : err)
       }
     }
     if (!enviadoV2) {
       const envioCliente = enviarPlantilla(sol.cliente_telefono, 'tecnico_asignado_particular_v1', 'es', [
         { type: 'body', parameters: bodyParticular },
       ])
-      await logEnvio(envioCliente, 'procesarAceptacion → tecnico_asignado_particular_v1')
+      await logEnvio(envioCliente, `${ctx} → tecnico_asignado_particular_v1`)
       await registrarSiEnviado(envioCliente, sol.id, 'tecnico_asignado_particular_v1',
         `Se confirmó al cliente su servicio: técnico asignado, visita ${horarioServicio} y tarifa informada`)
     }
@@ -1263,23 +1367,29 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
     // tienda — caso real Tatiana Moreno / Ana Prieto). En ese caso NO se le
     // vuelve a cobrar: se le confirma la reserva y se le avisa al técnico que
     // la visita está pagada.
+    //
+    // Cambio manual de técnico (incluirAnticipo=false): el cliente ya recibió
+    // el cobro o la confirmación con el técnico anterior — no se le repite.
+    // Si ya pagó, solo se le avisa al técnico NUEVO que la visita está pagada.
     if (sol.anticipo_pagado_at) {
       const montoPagado = Number(sol.monto_pagado_online ?? 0) > 0
         ? Number(sol.monto_pagado_online)
         : Math.round(precioCliente * 0.5)
-      try {
-        const cli = await enviarAnticipoConfirmadoCliente(sol.id, montoPagado)
-        if (!cli.ok) console.error('[procesarAceptacion] anticipo ya pagado — confirmación al cliente falló:', cli.error)
-      } catch (err) {
-        console.error('[procesarAceptacion] anticipo ya pagado — confirmación al cliente error:', err)
+      if (opts.incluirAnticipo) {
+        try {
+          const cli = await enviarAnticipoConfirmadoCliente(sol.id, montoPagado)
+          if (!cli.ok) console.error(`[${ctx}] anticipo ya pagado — confirmación al cliente falló:`, cli.error)
+        } catch (err) {
+          console.error(`[${ctx}] anticipo ya pagado — confirmación al cliente error:`, err)
+        }
       }
       try {
         const tec = await enviarAnticipoConfirmadoTecnico(sol.id)
-        if (!tec.ok) console.error('[procesarAceptacion] anticipo ya pagado — aviso al técnico falló:', tec.error)
+        if (!tec.ok) console.error(`[${ctx}] anticipo ya pagado — aviso al técnico falló:`, tec.error)
       } catch (err) {
-        console.error('[procesarAceptacion] anticipo ya pagado — aviso al técnico error:', err)
+        console.error(`[${ctx}] anticipo ya pagado — aviso al técnico error:`, err)
       }
-    } else if (sol.cliente_token) {
+    } else if (opts.incluirAnticipo && sol.cliente_token) {
       const paramsV2 = [
         {
           type: 'body',
@@ -1305,7 +1415,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
             `Se confirmó la disponibilidad del técnico para ${horarioServicio} y se envió el link de pago del anticipo ($${anticipo}) para asegurar la reserva`)
         }
       } catch (v2Err) {
-        console.error('[procesarAceptacion] pago_anticipo_cliente_v2 falló, intentando v1:', v2Err)
+        console.error(`[${ctx}] pago_anticipo_cliente_v2 falló, intentando v1:`, v2Err)
         if (sol.tipo_solicitud === 'Diagnóstico' || sol.tipo_solicitud === 'Reparación') {
           const envioAnticipo = enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v1', 'es', [
             {
@@ -1316,7 +1426,7 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
               ],
             },
           ])
-          await logEnvio(envioAnticipo, 'procesarAceptacion → pago_anticipo_cliente_v1 (fallback)')
+          await logEnvio(envioAnticipo, `${ctx} → pago_anticipo_cliente_v1 (fallback)`)
           await registrarSiEnviado(envioAnticipo, sol.id, 'pago_anticipo_cliente_v1',
             `Se envió al cliente el link de pago del anticipo ($${anticipo}) para confirmar su servicio`)
         }
@@ -1345,23 +1455,8 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       sol.cliente_telefono,
       carnetUrl,
       `🪪 Carnet digital de ${tecnico.nombre_completo} — tu técnico Baird Service.${acompanantes ? ` ${acompanantes}, también verificado por Baird.` : ''} Al llegar, pídeles su cédula física y confirma que el número coincida.`
-    ).catch(err => console.error('[procesarAceptacion] carnet digital falló (24h?):', err instanceof Error ? err.message : err))
+    ).catch(err => console.error(`[${ctx}] carnet digital falló (24h?):`, err instanceof Error ? err.message : err))
   }
-
-  // 7. Marcar este token como aceptado e invalidar los demás
-  await supabase
-    .from('notificaciones_whatsapp')
-    .update({ estado: 'aceptado', respondido_at: new Date().toISOString() })
-    .eq('token', token)
-
-  await supabase
-    .from('notificaciones_whatsapp')
-    .update({ estado: 'invalidado' })
-    .eq('solicitud_id', notif.solicitud_id)
-    .neq('token', token)
-    .eq('estado', 'enviado')
-
-  return { ganado: true, mensaje: '¡Servicio asignado exitosamente!' }
 }
 
 // ─────────────────────────────────────────

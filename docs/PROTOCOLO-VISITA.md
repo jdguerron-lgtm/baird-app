@@ -100,6 +100,22 @@ Es también el "quitar técnico" limpio que faltaba: el guard de 2026-09-08 en
 `notificarTecnicos` prohíbe reofertar con técnico puesto porque no había forma
 segura de soltarlo.
 
+### Cambio manual de técnico, penalización y bloqueo (2026-10-26, SIN desplegar)
+
+**🔁 Cambiar técnico** (ficha admin, tarjeta "Técnico asignado"; `CambiarTecnicoAdmin` → `POST /api/admin/cambiar-tecnico` → `reasignarTecnicoManual()` en `reasignar-tecnico.service.ts`). El admin elige al técnico que va (candidatos de `GET /api/admin/candidatos-oferta?todos=1` + resto de verificados, sin los bloqueados para ese flujo):
+
+1. Cualquier estado vivo salvo `pendiente_horario` (`puedeCambiarTecnico`), con horario. `notificada` sin técnico → `asignada`; el resto conserva el estado.
+2. UPDATE atómico condicionado al técnico y estado leídos; el trigger `limpiar_confirmacion_visita` borra la confirmación anterior. Ofertas `enviado` → `invalidado`.
+3. Cupo por franja del técnico nuevo: `codigo: 'cupo_lleno'` → la UI pregunta y reintenta con `forzarCupo`.
+4. Evento `nota_admin` con `payload.origen='cambio_tecnico'` (anterior, nuevo, motivo, `cuenta_incumplimiento`) — sin tocar el CHECK de `solicitud_eventos.tipo`.
+5. Avisos (casilla, default sí): técnico nuevo + cliente con los MISMOS mensajes de una aceptación (`avisarAsignacionTecnico`, extraído de `procesarAceptacion`; sin repetir el anticipo si reemplaza a alguien) y texto libre best-effort al anterior. Sin avisos igual se fijan los auxiliares del técnico nuevo.
+
+**Penalización** (`penalizacion.service.ts` + `utils/penalizacion-oferta.ts`, config en `/admin/reparto` → `GET/PATCH /api/admin/reparto/penalizacion`): incumplimientos en `penalizacion_dias` (30) = reservas propias `vencida`/`tarde` (regla de `/admin/incumplidos`) + liberaciones del admin (`tecnico_liberado` motivo `admin`) + cambios con `cuenta_incumplimiento`; uno por técnico + servicio. "No alcanzo" no cuenta. Cada uno = `penalizacion_minutos` (5) de espera, tope `penalizacion_max_minutos` (60). En `notificarTecnicos` (paso 3e) los penalizados se retienen en `solicitudes_servicio.oferta_pendientes` y `oferta_abierta_at` queda como despertador del cron `oferta-escalonada`, que les manda la oferta a su hora (la segunda ola del reparto escalonado también entra como retenida para no adelantarse). No aplica a la invitación dirigida ni al técnico preferido del cliente.
+
+**Bloqueo por flujo** (`/admin/tecnicos/[id]` → `RestriccionesTecnicoAdmin` → `GET/POST /api/admin/tecnicos/restricciones`): `tecnicos.bloqueado_garantia` / `bloqueado_particular` sacan al técnico de las ofertas de ese flujo (también la dirigida), del selector público y del cambio manual.
+
+Migración `20261026_restricciones_penalizacion_tecnicos.sql` (aditiva). **Todo es fail-soft**: sin ella no hay bloqueos ni penalización y las ofertas salen como antes; se puede desplegar el código primero.
+
 ### Datos (`supabase/migrations/20261022_confirmacion_visita.sql`)
 
 - `solicitudes_servicio.visita_confirmada_at`, `visita_confirmada_por` (`tecnico | aceptacion | admin`), `tecnico_liberado_count`; índice parcial para las visitas con técnico sin confirmar.
