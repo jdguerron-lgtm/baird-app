@@ -194,7 +194,7 @@ Cuándo correrla: **todo PR tipo B, C o F antes del merge**; además, después d
 | 6 | Producción sana antes de tocar | `node scripts/smoke.mjs` 15/15 + `net._http_response` en 200 |
 | 7 | Destino de rollback anotado | id del deploy de producción actual |
 | 8 | Migraciones y plantillas que el código necesita, ya aplicadas / `APPROVED` | README de migraciones, `--check` |
-| 9 | **E2E en verde contra staging** con el código del PR (tipos B, C y F) | `npm run e2e` (§ 5.4); pegar el resumen en el PR |
+| 9 | **E2E en verde contra staging** con el código del PR (tipos B, C y F) | Check `e2e-preview` del PR (§ 6.4) o `npm run e2e` en local (§ 5.4) |
 
 ### 6.3 Ejecución
 
@@ -206,6 +206,27 @@ Cuándo correrla: **todo PR tipo B, C o F antes del merge**; además, después d
    - `select status_code, created from net._http_response order by id desc limit 5;` → 200 (crons de Supabase hacia la app).
 4. **Criterio de rollback**: smoke con algún fallo que no estaba antes, 5xx en páginas o crons, o errores nuevos repetidos atribuibles al deploy.
 5. Cierre en la bitácora: sha del merge, id del deploy, hora, rondas del smoke.
+
+### 6.4 Pipeline automático
+
+Lo que corre solo, sin que nadie lo dispare:
+
+| Evento | Workflow | Qué hace | Si falla |
+|---|---|---|---|
+| PR abierto o push a un PR, y push a `main` | `ci.yml` → check **`verificar`** | `tsc`, lint (+ frontera de pagos), tests, `next build` | El PR no se puede mergear (con la protección de rama activa) |
+| Vercel termina una **preview** (`deployment_status` success, ambiente Preview) | `e2e-preview.yml` → check **`e2e-preview`** | Smoke de solo lectura + `flujos.mjs` (4 flujos, 33 pasos con el canario) contra esa preview, que debe estar conectada a `baird-staging`. Guarda `smoke.json` y `e2e.json` como artefacto | El check queda rojo en el commit del PR. Si faltan los secretos, rojo con la lista de lo que falta y sin correr nada. Si la preview no lee staging, el canario aborta sin escribir |
+| Vercel termina un deploy de **producción** | `post-deploy-produccion.yml` → `smoke-produccion` | Smoke contra `lineablanca.bairdservice.com`, hasta 3 intentos separados 30 s | Abre un issue "🚨 Smoke de producción falló…" con el resultado y el paso de rollback; el job queda rojo |
+| Todos los días 7:00 am Bogotá | Vercel Cron `/api/cron/salud-servicios` | Desde el servidor, con las credenciales reales: Supabase, WhatsApp (incluida la calidad del número), Wompi, Siigo, Resend y Google Maps. Solo lectura | WhatsApp de alerta a `WHATSAPP_ALERT_PHONE` con el servicio caído. `?dry=1` para revisar a mano |
+
+**Protección de `main`** (GitHub → Settings → Branches → Add rule → `main`): *Require a pull request before merging* + *Require status checks to pass* con **`verificar`** y **`e2e-preview`** + *Require branches to be up to date*. Sin aprobaciones obligatorias mientras el equipo sea de una persona.
+
+**Secretos de GitHub** (Settings → Secrets and variables → Actions → New repository secret): `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_SERVICE_ROLE_KEY`, `VERCEL_AUTOMATION_BYPASS_SECRET` (este último sale de Vercel → Settings → Deployment Protection → *Protection Bypass for Automation*).
+
+**Cómo leer un fallo de `e2e-preview`:** el resumen del job lista cada paso en rojo con su flujo; el detalle completo está en el artefacto `e2e.json`. Reproducirlo en local con `npm run e2e -- --solo=<flujo>` (§ 5.4).
+
+**Rollback:** el pipeline **no revierte solo**. Ante el issue de smoke en rojo: Vercel → Deployments → deploy anterior → *Instant Rollback*, confirmar con `npm run smoke`, y después `git revert -m 1 <merge>` en un PR (§ 7).
+
+**Lo que sigue siendo humano:** aplicar migraciones en prod (tipo C), mergear (dentro de la ventana, § 6.1) y decidir un rollback.
 
 ## 7. Rollback
 
@@ -249,4 +270,4 @@ Cuándo correrla: **todo PR tipo B, C o F antes del merge**; además, después d
 | 2 · Barreras | CI en cada PR, plantilla de PR, ventana con datos, smoke test, ensayo de migraciones, rollback escrito | ✅ **2026-10-24** |
 | 3 · Protegido | Protección de rama en `main` (CI obligatorio + PR), `CRON_SECRET`, backups diarios de la BD | ⏳ protección de rama tras el primer CI verde; backups requieren Supabase Pro |
 | 4 · Ambiente de pruebas | `baird-staging` con seed anonimizado, e2e de 4 flujos; previews contra staging; migraciones con Supabase CLI | ✅ staging + e2e **2026-10-26**; ⏳ variables de Preview en Vercel y Supabase CLI |
-| 5 · Automatizado | E2E automático en CI contra la preview (con bypass de Vercel) en cada PR; Playwright para la UI; Sentry o log drain con alertas; Rolling Releases | ⏳ |
+| 5 · Automatizado | E2E automático contra la preview en cada PR (`e2e-preview`), smoke post-deploy con issue de alerta, chequeo diario de servicios con alerta por WhatsApp; Playwright para la UI; Sentry o log drain; Rolling Releases | 🟡 **parcial 2026-10-26**: los 3 automatismos escritos (PR del pipeline); falta cargar los secretos y las variables de Preview, y Playwright / Sentry / Rolling Releases |

@@ -43,7 +43,7 @@ function esperar(cond, msg) { if (!cond) throw new Error(msg) }
 await check('GET /api/health → healthy', async () => {
   const r = await pedir('/api/health')
   const body = await r.text()
-  esperar(r.status === 200, `status ${r.status}`)
+  esperar(r.status === 200, `status ${r.status}${r.status === 302 || r.status === 401 ? ' (¿preview protegida? usa --bypass o VERCEL_AUTOMATION_BYPASS_SECRET)' : ''}`)
   esperar(body.includes('"healthy"'), `body ${body.slice(0, 80)}`)
   return 'healthy'
 })

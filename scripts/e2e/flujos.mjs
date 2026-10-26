@@ -100,13 +100,27 @@ async function crearTecnico() {
     especialidad_principal: 'Neveras y Nevecones',
     estado_verificacion: 'verificado',
     acepta_garantias: true,
-    visible_para_cliente: false,
+    // true: así lo lista /api/tecnicos-disponibles y la guarda canario puede comprobar que la
+    // app bajo prueba lee ESTA base. La ciudad es ficticia: en staging no lo ve nadie más.
+    visible_para_cliente: true,
   }).select('id, portal_token').single()
   if (error) throw new Error(`crear técnico: ${error.message}`)
   const { error: e2 } = await db.from('especialidades_tecnico').insert({ tecnico_id: data.id, especialidad: 'Neveras y Nevecones' })
   if (e2) throw new Error(`crear especialidad: ${e2.message}`)
   creadas.tecnicoId = data.id
   return data
+}
+
+// Guarda canario: el técnico recién creado en baird-staging debe aparecer en la app bajo prueba.
+// Si no aparece, la app está leyendo OTRA base (p.ej. una preview que sigue conectada a producción)
+// y no se debe correr nada contra ella.
+async function canarioStaging() {
+  const url = `${BASE}/api/tecnicos-disponibles?ciudad=${encodeURIComponent(CIUDAD)}&tipo_equipo=Nevera`
+  const r = await fetch(url, { headers: BYPASS ? { 'x-vercel-protection-bypass': BYPASS } : {} })
+  const j = await r.json().catch(() => null)
+  const visto = Array.isArray(j?.tecnicos) && j.tecnicos.some(t => t.id === creadas.tecnicoId)
+  if (!visto) throw new Error(`la app no lista el técnico canario (status ${r.status}, ${j?.tecnicos?.length ?? '?'} técnicos)`)
+  return 'la app lee baird-staging'
 }
 
 async function tokenAdmin() {
@@ -346,7 +360,7 @@ async function limpiar() {
     const { error } = await db.from('tecnicos').delete().eq('id', creadas.tecnicoId)
     if (error) throw new Error(`borrar técnico: ${error.message}`)
   }
-  return `${creadas.solicitudes.length} solicitudes y 1 técnico borrados (cascada)`
+  return `${creadas.solicitudes.length} solicitudes y ${creadas.tecnicoId ? 1 : 0} técnico(s) borrados (cascada)`
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -354,13 +368,25 @@ const t0 = Date.now()
 flujoActual = 'Preparación'
 let admin = null
 const okPrep = await paso('app responde (/api/health)', async () => {
-  const r = await fetch(`${BASE}/api/health`, { headers: BYPASS ? { 'x-vercel-protection-bypass': BYPASS } : {} })
-  esperar(r.ok, `status ${r.status}`)
-  return (await r.text()).slice(0, 60)
+  const r = await fetch(`${BASE}/api/health`, { redirect: 'manual', headers: BYPASS ? { 'x-vercel-protection-bypass': BYPASS } : {} })
+  const cuerpo = await r.text()
+  // Exigir el JSON de la app: una preview protegida responde 302 / HTML de login con status 200.
+  esperar(r.status === 200 && cuerpo.includes('"healthy"'),
+    `status ${r.status}${r.status === 302 || r.status === 401 ? ' (preview protegida: falta VERCEL_AUTOMATION_BYPASS_SECRET)' : ''} · ${cuerpo.slice(0, 60)}`)
+  return cuerpo.slice(0, 60)
 }) && await paso('técnico de prueba en ciudad ficticia', async () => { const t = await crearTecnico(); return `${t.id} · ${CIUDAD}` })
-  && (!SOLO.includes('B') || await paso('cuenta admin de pruebas', async () => { admin = await tokenAdmin(); return E2E_ADMIN }))
 
-if (okPrep) {
+// Si la guarda canario falla, se limpia el técnico y se aborta sin tocar la app bajo prueba.
+if (okPrep && !await paso('canario: la app bajo prueba usa baird-staging', canarioStaging)) {
+  flujoActual = 'Limpieza'
+  await paso('borrar datos de la corrida', limpiar)
+  console.error('❌  La app bajo prueba no está conectada a baird-staging: no corro nada')
+  for (const r of resultados) console.error(`  ${r.ok ? '✅' : '❌'}  ${r.paso}  ${r.detalle}`)
+  process.exit(2)
+}
+const okAdmin = okPrep && (!SOLO.includes('B') || await paso('cuenta admin de pruebas', async () => { admin = await tokenAdmin(); return E2E_ADMIN }))
+
+if (okAdmin) {
   if (SOLO.includes('A')) await flujoA()
   if (SOLO.includes('B')) await flujoB(admin)
   if (SOLO.includes('C')) await flujoC()
