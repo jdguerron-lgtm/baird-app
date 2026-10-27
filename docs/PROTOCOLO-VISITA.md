@@ -100,7 +100,7 @@ Es también el "quitar técnico" limpio que faltaba: el guard de 2026-09-08 en
 `notificarTecnicos` prohíbe reofertar con técnico puesto porque no había forma
 segura de soltarlo.
 
-### Cambio manual de técnico, penalización y bloqueo (2026-10-26, SIN desplegar)
+### Cambio manual de técnico, penalización y bloqueo (2026-10-26; EN PROD 2026-10-27 vía PR jdguerron-lgtm/baird-app#26, main `89c958d`)
 
 **🔁 Cambiar técnico** (ficha admin, tarjeta "Técnico asignado"; `CambiarTecnicoAdmin` → `POST /api/admin/cambiar-tecnico` → `reasignarTecnicoManual()` en `reasignar-tecnico.service.ts`). El admin elige al técnico que va (candidatos de `GET /api/admin/candidatos-oferta?todos=1` + resto de verificados, sin los bloqueados para ese flujo):
 
