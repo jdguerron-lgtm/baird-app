@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
     if (!ciudad || !tipoEquipo) {
       return NextResponse.json({ tecnicos: [] })
     }
-    const tecnicos = await listarTecnicosElegibles({ ciudad, tipoEquipo })
+    // Selector solo en particular (2026-10-22): se excluyen los bloqueados para particular.
+    const tecnicos = await listarTecnicosElegibles({ ciudad, tipoEquipo, esGarantia: false })
     return NextResponse.json(
       { tecnicos },
       { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=60' } },

@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { CONTRATO_TECNICO_VERSION } from '@/lib/constants/legal'
 import SelectorFoto from '@/components/ui/SelectorFoto'
 import EquipoAuxiliaresAdmin from '@/components/admin/EquipoAuxiliaresAdmin'
+import RestriccionesTecnicoAdmin from '@/components/admin/RestriccionesTecnicoAdmin'
 import { supabase } from '@/lib/supabase'
 import { uploadContratoFirmado, urlContratoFirmado } from '@/lib/uploadHelpers'
 import { normalizeForMatch } from '@/lib/utils/format'
@@ -1062,6 +1063,9 @@ export default function TecnicoDetalle() {
               <p className="text-[11px] text-gray-400 mt-2">Solo aparece en el selector cuando esté verificado.</p>
             )}
           </div>
+
+          {/* Bloqueo garantía / particular + penalización por incumplimiento (2026-10-26) */}
+          <RestriccionesTecnicoAdmin tecnicoId={tecnico.id} />
         </div>
       </div>
 

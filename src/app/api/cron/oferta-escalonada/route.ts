@@ -17,6 +17,10 @@ export const maxDuration = 60
  * atómica (si dos invocaciones se cruzan, solo una envía) y, si la solicitud
  * sigue en 'notificada' sin técnico, manda la oferta a los candidatos que aún
  * no la tenían.
+ *
+ * Desde 2026-10-26 también libera la oferta a los técnicos retenidos por la
+ * penalización de incumplimiento (`oferta_pendientes`): `notificarTecnicos`
+ * decide quién ya cumplió su espera y vuelve a programar el despertador.
  */
 export async function GET(req: Request) {
   if (!cronAutorizado(req)) {
