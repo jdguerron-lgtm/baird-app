@@ -9,7 +9,10 @@
     "lint": "eslint && node scripts/check-pagos-frontera.mjs",
     "check:pagos": "node scripts/check-pagos-frontera.mjs --commit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.mjs",
+    "e2e": "node --env-file=.env.local scripts/e2e/flujos.mjs",
+    "conectividad": "node --env-file=.env.local scripts/conectividad.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
