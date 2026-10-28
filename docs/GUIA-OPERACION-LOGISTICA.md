@@ -123,7 +123,12 @@ Bloque **Registros recientes**: los últimos técnicos registrados.
   portal del técnico). Los íconos junto al nombre indican si atiende gas y
   si ya entregó el contrato firmado. La ficha de cada técnico muestra sus
   datos, documentos, certificaciones, auxiliares, contrato y verificación
-  **[solo admin para cambiar algo]**.
+  **[solo admin para cambiar algo]**. El bloque **🚫 Restricciones y
+  penalización** permite marcar que el técnico **no reciba servicios de
+  garantía** y/o **no reciba servicios particulares (posgarantía)** **[solo
+  admin]** — bloqueado no recibe esas ofertas, no sale en el selector del
+  cliente y no se le puede asignar a mano — y muestra cuántos incumplimientos
+  lleva en los últimos 30 días y cuántos minutos se le retrasan las ofertas.
 - **Garantías** (`/admin/garantias`): resumen de servicios de garantía por
   marca y por tipo de equipo (cuántos notificados, completados, etc.) y lista
   de los servicios.
@@ -303,7 +308,19 @@ Bloques, de arriba hacia abajo:
 10. **Diagnóstico de matching** + botón **Notificar técnicos** **[solo
     admin]**: muestra qué técnicos cumplen ciudad y especialidad y permite
     reenviar la oferta. Si la solicitud ya tiene técnico, el botón se
-    desactiva (para reasignar hay que cambiar el estado o quitar el técnico).
+    desactiva (para reasignar usar **🔁 Cambiar técnico**, abajo).
+    **🔁 Cambiar técnico** (en la tarjeta *Técnico asignado*; sin técnico dice
+    **Asignar técnico manualmente**) **[solo admin]**: cuando la programación
+    quedó mal, eliges directamente quién va. La lista muestra primero a los
+    que cubren la ciudad y el equipo, luego al resto de verificados. Al
+    asignar, el técnico nuevo recibe los datos del cliente y su portal, el
+    cliente recibe el aviso con el carnet del técnico nuevo y el anterior un
+    mensaje de que ya no tiene que ir (casilla para no avisar a nadie). No
+    vuelve a cobrar el anticipo. Si el técnico nuevo ya tiene la franja llena
+    pregunta antes de asignarlo. La casilla **Contar como incumplimiento**
+    (marcada por defecto) le suma un incumplimiento al técnico anterior para
+    la penalización (§ 7). Diferencia con **🔓 Liberar técnico y reofertar**:
+    liberar lo ofrece a todos y espera a que alguien acepte.
 11. **Reenviar último mensaje del flujo** **[solo admin]**: reenvía al
     cliente el último WhatsApp que le correspondía según el estado (por
     ejemplo la selección de horario o la cotización), y **📲 Reenviar portal
@@ -777,7 +794,15 @@ Checklist para la mañana del 1 y del 16 de cada mes:
 
 - Aparece en **Incumplidos** como *Vencida sin atender*. Llamar al técnico: si
   fue y no registró, que envíe el diagnóstico o complete desde su portal; si
-  no fue, reagendar con el cliente y, si hace falta, reasignar.
+  no fue, reagendar con el cliente y, si hace falta, reasignar con **🔁
+  Cambiar técnico** en la ficha **[solo admin]**.
+- Cada incumplimiento (visita no atendida, atendida días después, o técnico
+  liberado / cambiado por el equipo) le retrasa **5 minutos** las próximas
+  ofertas durante 30 días, con tope de 60 min. Se configura (o se apaga) en
+  **Reparto** → *⏱️ Penalización por incumplimiento* **[solo admin]**. Si el
+  técnico avisa a tiempo con "No alcanzo" en su portal, no cuenta.
+- Si el técnico no debe recibir más garantías o particulares, bloquearlo en su
+  ficha (**🚫 Restricciones y penalización**) **[solo admin]**.
 - Si se trata de una tendencia (bajo cumplimiento en la tabla Por técnico),
   informar al admin.
 

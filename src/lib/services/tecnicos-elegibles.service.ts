@@ -2,6 +2,8 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { TIPO_A_ESPECIALIDAD } from '@/lib/constants/especialidades'
 import { normalizeForMatch, cityTokenForMatch } from '@/lib/utils/format'
 import { nombreCorto } from '@/lib/utils/equipo'
+import { obtenerBloqueos, type BloqueoTecnico } from '@/lib/services/penalizacion.service'
+import { bloqueadoParaServicio } from '@/lib/utils/penalizacion-oferta'
 
 /**
  * Técnicos elegibles como "técnico de preferencia" del cliente (2026-10-15).
@@ -72,6 +74,12 @@ export async function listarTecnicosElegibles(params: {
    * (invitación dirigida, 2026-10-22): el selector público nunca lo pasa.
    */
   incluirOcultos?: boolean
+  /**
+   * Flujo del servicio (2026-10-26): si viene, se excluyen los técnicos que el
+   * admin bloqueó para ese flujo (`bloqueado_garantia` / `bloqueado_particular`).
+   * Fail-soft: sin migración no hay bloqueos.
+   */
+  esGarantia?: boolean
 }): Promise<TecnicoElegible[]> {
   const ciudad = (params.ciudad ?? '').trim()
   const tipoEquipo = (params.tipoEquipo ?? '').trim()
@@ -104,7 +112,13 @@ export async function listarTecnicosElegibles(params: {
     .eq('estado_verificacion', 'verificado')
   if (tecErr || !tecnicos) return []
 
+  const esGarantia = params.esGarantia
+  const bloqueos = esGarantia === undefined
+    ? new Map<string, BloqueoTecnico>()
+    : await obtenerBloqueos((tecnicos as TecnicoRow[]).map(t => t.id))
+
   return (tecnicos as TecnicoRow[])
+    .filter(t => esGarantia === undefined || !bloqueadoParaServicio(bloqueos.get(t.id), esGarantia))
     // `visible_para_cliente` NULL (migración sin aplicar / fila vieja) cuenta
     // como visible — el default de la columna es true.
     .filter(t => params.incluirOcultos || t.visible_para_cliente !== false)
@@ -131,7 +145,7 @@ export async function resolverTecnicoPreferido(params: {
   const id = (params.tecnicoId ?? '').trim()
   if (!id) return null
   try {
-    const elegibles = await listarTecnicosElegibles({ ciudad: params.ciudad, tipoEquipo: params.tipoEquipo })
+    const elegibles = await listarTecnicosElegibles({ ciudad: params.ciudad, tipoEquipo: params.tipoEquipo, esGarantia: false })
     return elegibles.some(t => t.id === id) ? id : null
   } catch (err) {
     console.warn('[tecnico-preferido] no se pudo validar, se ignora la preferencia:', err)

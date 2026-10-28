@@ -28,6 +28,8 @@ import PagoExternoForm from '@/components/admin/PagoExternoForm'
 import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin } from '@/lib/utils/evidencia-admin'
 import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
 import BonoGarantiaResumen from '@/components/admin/BonoGarantiaResumen'
+import CambiarTecnicoAdmin from '@/components/admin/CambiarTecnicoAdmin'
+import { puedeCambiarTecnico } from '@/lib/utils/cambiar-tecnico'
 import { ESTADOS_PAUSA_REPUESTO, resumenBonoGarantia, type SolicitudBono } from '@/lib/utils/bono-garantia'
 import type { FacturacionEstado } from '@/types/solicitud'
 
@@ -2232,6 +2234,15 @@ export default function SolicitudDetalle() {
             </dl>
           ) : (
             <p className="text-sm text-gray-400">Ningun tecnico ha aceptado esta solicitud aun.</p>
+          )}
+          {/* Cambio manual de técnico (2026-10-26): cuando la programación quedó
+              mal, el admin elige directo quién va. Solo estados vivos con horario. */}
+          {!soloLectura && puedeCambiarTecnico(solicitud.estado) && (solicitud.horario_confirmado || solicitud.fecha_visita_at) && (
+            <CambiarTecnicoAdmin
+              solicitudId={id}
+              tecnicoActualId={solicitud.tecnico_asignado_id}
+              tecnicoActualNombre={tecnicoAsignado?.nombre_completo ?? null}
+            />
           )}
         </div>
 

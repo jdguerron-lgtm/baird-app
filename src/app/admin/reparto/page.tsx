@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import PenalizacionRepartoAdmin from '@/components/admin/PenalizacionRepartoAdmin'
 
 interface Config {
   activo: boolean
@@ -210,6 +211,9 @@ export default function RepartoAdmin() {
           </button>
         </div>
       </div>
+
+      {/* Penalización por incumplimiento (2026-10-26) */}
+      <PenalizacionRepartoAdmin />
 
       {/* Ofertas esperando abrirse */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
