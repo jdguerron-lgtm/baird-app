@@ -20,7 +20,9 @@
  * repuesto entregado por el supervisor) usan los otros tipos.
  *
  * Este archivo es PURO (sin I/O) para poder testearlo. La carga de datos y el
- * envío viven en src/app/api/cron/resumen-movimientos/route.ts.
+ * envío por plantilla viven en resumen-movimientos-envio.service.ts (los usan
+ * el cron src/app/api/cron/resumen-movimientos/route.ts y el webhook de
+ * WhatsApp, que reenvía por plantilla cuando Meta no entrega el texto).
  */
 
 import { ESTADO_LABELS } from '@/lib/constants/estados'
@@ -588,4 +590,52 @@ export function partirTexto(texto: string, max: number = MAX_CHARS_MENSAJE): str
   }
   if (actual) partes.push(actual)
   return partes.map((p, i) => (partes.length > 1 ? `${p}\n\n(${i + 1}/${partes.length})` : p))
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Reintento por plantilla cuando Meta no entrega el texto (2026-10-27)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Error de Meta "Re-engagement message": pasaron más de 24 h desde que el
+ * destinatario le escribió a la línea, así que el texto libre no se entrega.
+ * Meta ACEPTA el envío (200 + wamid) y avisa el fallo DESPUÉS por el webhook
+ * (status=failed), por eso el fallback síncrono del cron no lo ve.
+ */
+export const ERROR_META_VENTANA_24H = 131047
+
+/**
+ * Cuánto después del envío del resumen se acepta un status=failed como fallo
+ * de ESE resumen. Meta lo reporta en segundos; el margen evita confundirlo con
+ * otro texto libre que le llegue al mismo número horas después.
+ */
+export const MINUTOS_MAX_REINTENTO_RESUMEN = 60
+
+/** true si alguno de los errores del status=failed es el de ventana 24h. */
+export function esFalloVentana24h(errores: Array<{ code?: number | string }> | null | undefined): boolean {
+  return (errores ?? []).some(e => Number(e?.code) === ERROR_META_VENTANA_24H)
+}
+
+/**
+ * Rango [desde, hasta] de `enviado_at` en el que buscar el resumen enviado
+ * por texto que corresponde a un status=failed recibido en `statusAt`.
+ * Tolera 5 min de desfase de reloj hacia adelante.
+ */
+export function rangoBusquedaResumenFallido(statusAt: Date): { desde: Date; hasta: Date } {
+  return {
+    desde: new Date(statusAt.getTime() - MINUTOS_MAX_REINTENTO_RESUMEN * 60_000),
+    hasta: new Date(statusAt.getTime() + 5 * 60_000),
+  }
+}
+
+/** Fecha del status de Meta (`timestamp` en segundos Unix, string) o `ahora`. */
+export function fechaStatusMeta(timestamp: string | number | null | undefined, ahora: Date = new Date()): Date {
+  const seg = Number(timestamp)
+  return Number.isFinite(seg) && seg > 0 ? new Date(seg * 1000) : ahora
+}
+
+/** Reconstruye la ventana del resumen a partir de una fila de `supervisor_resumenes`. */
+export function ventanaDesdeBitacora(fila: { desde_at: string; corte_at: string }): VentanaResumen {
+  const hasta = new Date(fila.corte_at)
+  return { desde: new Date(fila.desde_at), hasta, fechaYMD: fechaColombiaYMD(hasta) }
 }
