@@ -1,0 +1,86 @@
+# E2E contra cada preview de Vercel — docs/FLUJO-DESARROLLO.md § 6.4 "Pipeline automático".
+#
+# Vercel avisa a GitHub con un evento `deployment_status` cuando una preview queda lista. Este job
+# corre el smoke (solo lectura) y los 4 flujos e2e contra esa preview. Para que sea seguro:
+#   - la preview debe estar conectada a baird-staging (variables de scope Preview en Vercel);
+#   - flujos.mjs tiene una guarda canario: si la preview no lee baird-staging, aborta sin correr nada;
+#   - las previews están protegidas por Vercel Authentication → se entra con el token de bypass.
+# Si faltan los secretos, el job queda en ROJO con instrucciones (nunca en verde silencioso).
+name: E2E preview
+
+on: deployment_status
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-preview-${{ github.event.deployment.sha }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-preview:
+    name: e2e-preview
+    # Vercel nombra los ambientes "Preview" / "Production" (a veces con sufijo "– <proyecto>").
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      (contains(github.event.deployment.environment, 'Preview') || contains(github.event.deployment.environment, 'preview'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SERVICE_ROLE_KEY }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - name: Verificar secretos de staging
+        run: |
+          faltan=""
+          [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] && faltan="$faltan STAGING_SUPABASE_URL"
+          [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ] && faltan="$faltan STAGING_SUPABASE_ANON_KEY"
+          [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] && faltan="$faltan STAGING_SERVICE_ROLE_KEY"
+          [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ] && faltan="$faltan VERCEL_AUTOMATION_BYPASS_SECRET"
+          if [ -n "$faltan" ]; then
+            echo "::error title=Faltan secretos de GitHub::Crear en GitHub → Settings → Secrets and variables → Actions:$faltan. Ver docs/FLUJO-DESARROLLO.md § 6.4. No se corrió nada contra la preview."
+            exit 1
+          fi
+          echo "Preview: $URL"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Smoke (solo lectura)
+        run: node scripts/smoke.mjs "$URL" --json > smoke.json
+
+      - name: E2E de 4 flujos contra staging
+        run: |
+          set +e
+          node scripts/e2e/flujos.mjs --base="$URL" --json > e2e.json
+          codigo=$?
+          node -e "
+            const r = JSON.parse(require('fs').readFileSync('e2e.json', 'utf8'));
+            const f = r.resultados.filter(x => !x.ok);
+            console.log((f.length ? '❌ ' : '✅ ') + (r.resultados.length - f.length) + '/' + r.resultados.length + ' pasos OK en ' + (r.ms / 1000).toFixed(1) + ' s');
+            for (const x of f) console.log('::error title=' + x.flujo + '::' + x.paso + ' — ' + x.detalle);
+          " || cat e2e.json
+          exit $codigo
+
+      - name: Guardar resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-preview-${{ github.event.deployment.sha }}
+          path: |
+            smoke.json
+            e2e.json
+          if-no-files-found: ignore
+          retention-days: 14
