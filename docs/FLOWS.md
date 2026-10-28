@@ -725,9 +725,18 @@ Vercel Cron 22:00 UTC → GET /api/cron/resumen-movimientos (Bearer CRON_SECRET)
    ├─ fallback: 📩 supervisor_resumen_diario_v1 (plantilla: resumen en 1 línea +
    │     botón al portal — funciona fuera de la ventana; APPROVED 2026-10-22)
    └─ bitácora supervisor_resumenes (canal texto|plantilla|filtrado|error)
+
+Meta casi siempre ACEPTA el texto (200) aunque la ventana esté cerrada y avisa DESPUÉS:
+POST /api/whatsapp/webhook  status=failed con error 131047 (ventana 24h)
+   ▼
+ reintentarResumenPorPlantilla()  (resumen-movimientos-envio.service.ts, 2026-10-27)
+   ├─ ¿el número es de un supervisor activo? ¿hay fila canal=texto enviada ≤ 60 min antes?
+   ├─ reclamo atómico de la fila: texto → plantilla (un resumen partido se reenvía 1 sola vez)
+   ├─ rearma el mismo resumen (misma ventana desde la bitácora) → 📩 supervisor_resumen_diario_v1
+   └─ si la plantilla falla → canal=error (filtrado si lo bloquea la whitelist)
 ```
 
-`?dry=1` arma y devuelve los textos sin enviar; `?corte=ahora` toma lo que va del día. Respeta `BAIRD_TEST_PHONE_WHITELIST`. Ver `docs/WHATSAPP_TEMPLATES.md` § Supervisión y `src/lib/services/resumen-movimientos.service.ts` (puro, testeado).
+`?dry=1` arma y devuelve los textos sin enviar; `?corte=ahora` toma lo que va del día. Respeta `BAIRD_TEST_PHONE_WHITELIST`. Ver `docs/WHATSAPP_TEMPLATES.md` § Supervisión y `src/lib/services/resumen-movimientos.service.ts` (puro, testeado); carga de datos y envío por plantilla compartidos con el webhook en `src/lib/services/resumen-movimientos-envio.service.ts`.
 
 **Garantías de robustez:**
 - `notificarCambioEstado` **nunca lanza** — si el envío falla, loguea y la transición sigue.
