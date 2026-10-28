@@ -132,7 +132,7 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → Supabase insert (estado: pendiente_horario, horario_token)
                   → /api/solicitar AUTO-CONFIRMA la opción 1 vía
                     confirmarHorarioSolicitud (fallback opción 2): valida cupo
-                    por franja + mínimo mañana, estado → notificada,
+                    por franja + mín. pasado mañana, estado → notificada,
                     horario_confirmado + fecha_visita_at + tyc_aceptados_at,
                     envía confirmación WhatsApp al cliente y notificarTecnicos()
                   → Solo si AMBAS opciones quedaron sin cupo (carrera):

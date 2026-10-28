@@ -91,7 +91,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ POST /api/confirmar-horario { token, horario }                           │
 │                                                                           │
 │ Validación de agenda (agenda.service, 2026-06-12):                       │
-│  - Mínimo MAÑANA (TZ Colombia) — no se agenda para el mismo día.         │
+│  - Mínimo PASADO MAÑANA (TZ Colombia, desde 2026-10-27) — ni hoy ni mañana.│
 │  - Cupo por slot (día + franja): máx MAX_RESERVAS_POR_FRANJA (3)         │
 │    reservas activas. La UI desactiva franjas llenas vía                  │
 │    GET /api/disponibilidad-horario; el rechazo real es server-side.      │
@@ -129,7 +129,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ propuestos por el cliente (horario_visita_1/2 + el ya confirmado; se     │
 │ ocultan opciones con fecha pasada). Solo se admite un valor de ese       │
 │ conjunto — nunca texto arbitrario. Si elige uno ≠ al confirmado:         │
-│   - validarHorarioAgendable (cupo franja + mínimo mañana); si falla →    │
+│   - validarHorarioAgendable (cupo franja + mín. pasado mañana); si falla →    │
 │     { ganado:false, reintentar:true } SIN asignar (la UI vuelve a idle   │
 │     para escoger el otro horario)                                        │
 │   - si pasa → el mismo UPDATE atómico también setea horario_confirmado,  │

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { franjasLlenasParaFecha } from '@/lib/services/agenda.service'
-import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { fechaMinimaReservaCliente } from '@/lib/utils/fecha-visita'
 
 /**
  * GET /api/disponibilidad-horario?fecha=YYYY-MM-DD
@@ -14,7 +14,7 @@ import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
  * PII: solo qué franjas están llenas y si el día es agendable.
  *
  * Respuesta: { fecha, agendable, franjas_llenas: string[] }
- *   - agendable=false cuando la fecha es hoy o pasada (mínimo: mañana).
+ *   - agendable=false antes de fechaMinimaReservaCliente (pasado mañana).
  */
 export async function GET(req: NextRequest) {
   try {
@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Parámetro fecha inválido (YYYY-MM-DD)' }, { status: 400 })
     }
 
-    // Mismo día o pasado → no agendable (mínimo: mañana, TZ Colombia).
-    if (fecha < fechaColombiaMasDias(1)) {
+    // Antes del mínimo del cliente → no agendable (pasado mañana, TZ Colombia).
+    if (fecha < fechaMinimaReservaCliente()) {
       return NextResponse.json({ fecha, agendable: false, franjas_llenas: [] })
     }
 

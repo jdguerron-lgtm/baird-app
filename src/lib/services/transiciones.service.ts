@@ -88,7 +88,7 @@ export async function confirmarHorarioSolicitud(
     }
   }
 
-  // Validación de agenda (agenda.service): mínimo mañana (TZ Colombia) +
+  // Validación de agenda (agenda.service): mínimo pasado mañana (TZ Colombia) +
   // cupo de MAX_RESERVAS_POR_FRANJA por slot (día + franja). Texto libre no
   // parseable pasa con fechaVisitaAt=null (la UI ya impone min; admin coordina).
   const agenda = await validarHorarioAgendable(horarioElegido, sol.id)
@@ -559,7 +559,7 @@ export async function reprogramarRepuestoSolicitud(
   }
   const estadoPrevio = sol.estado as string
 
-  // Validación de agenda: mínimo mañana + cupo por slot (día + franja).
+  // Validación de agenda: mínimo pasado mañana + cupo por slot (día + franja).
   // Devuelve además la fecha estructurada que alimenta el mapa admin.
   const agenda = await validarHorarioAgendable(horarioElegido, sol.id)
   if (!agenda.ok) {

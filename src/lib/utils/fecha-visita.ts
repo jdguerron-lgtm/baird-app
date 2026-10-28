@@ -168,6 +168,20 @@ export function fechaColombiaMasDias(dias: number, ahora: Date = new Date()): st
   return base.toISOString().slice(0, 10)
 }
 
+/**
+ * Días mínimos de anticipación para que un CLIENTE reserve o reagende una
+ * visita (2026-10-27, pedido de Juan): 2 = desde pasado mañana, nunca para
+ * mañana, para que los técnicos alcancen a organizar su agenda.
+ * No aplica a la aceptación del técnico ni al reagendamiento del admin
+ * (siguen en mínimo mañana).
+ */
+export const DIAS_MINIMOS_RESERVA_CLIENTE = 2
+
+/** Primer día (YYYY-MM-DD, CO) que un cliente puede reservar. */
+export function fechaMinimaReservaCliente(ahora: Date = new Date()): string {
+  return fechaColombiaMasDias(DIAS_MINIMOS_RESERVA_CLIENTE, ahora)
+}
+
 const DIAS_LARGOS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 const MESES_LARGOS_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',

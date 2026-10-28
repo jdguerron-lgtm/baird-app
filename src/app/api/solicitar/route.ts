@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
     // (2026-08-02: el formulario ya recogió las fechas; re-pedirlas por
     // WhatsApp era redundante). La transición reutiliza
     // confirmarHorarioSolicitud (misma dueña que /api/confirmar-horario):
-    // valida cupo por franja + mínimo mañana, pasa a 'notificada', envía la
+    // valida cupo por franja + mínimo pasado mañana, pasa a 'notificada', envía la
     // confirmación WhatsApp al cliente y notifica técnicos.
     let agendado = false
     let horarioAgendado: string | null = null
