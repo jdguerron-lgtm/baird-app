@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import * as XLSX from 'xlsx'
 import crypto from 'crypto'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
@@ -6,6 +6,7 @@ import { verificarAdmin } from '@/lib/auth/admin'
 import { parseExcelData, type MappedSolicitud, type ParsedRow } from '@/lib/utils/excel-mapping'
 import { parsePdfTallerData, reconstruirLineas, type PdfTextItem } from '@/lib/utils/pdf-orden-mapping'
 import { enviarSeleccionHorarioCliente } from '@/lib/services/whatsapp.service'
+import { geocodificarLote } from '@/lib/services/geocoding.service'
 
 /**
  * Extrae las líneas de texto de un PDF (formato TALLER MABE) preservando el
@@ -216,6 +217,18 @@ export async function POST(req: NextRequest) {
         results.push({ fila: row.fila, success: true, id: data.id })
         insertedIds.push(data.id)
       }
+    }
+
+    // Geocoding en segundo plano (mismo patrón que /api/solicitar): sin esto las
+    // órdenes de carga masiva (casi todas las de garantía MABE) quedaban sin
+    // coordenadas y no salían en /admin/mapa. No bloquea la respuesta y un fallo
+    // de Google no afecta la carga: cae al centro de la ciudad (aproximada).
+    if (insertedIds.length > 0) {
+      const ids = [...insertedIds]
+      after(async () => {
+        const r = await geocodificarLote(ids)
+        console.log(`[carga-masiva] geocoding: ${r.ok} ok, ${r.fallidas} fallidas de ${ids.length}`)
+      })
     }
 
     // Send schedule selection template to each customer (customer-first).
