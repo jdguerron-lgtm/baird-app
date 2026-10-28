@@ -29,6 +29,7 @@ import { esEventoEvidenciaAdmin, archivosDeEvento, contarArchivosEvidenciaAdmin 
 import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
 import BonoGarantiaResumen from '@/components/admin/BonoGarantiaResumen'
 import CambiarTecnicoAdmin from '@/components/admin/CambiarTecnicoAdmin'
+import AvisoDuplicadosCliente from '@/components/admin/AvisoDuplicadosCliente'
 import { puedeCambiarTecnico } from '@/lib/utils/cambiar-tecnico'
 import { ESTADOS_PAUSA_REPUESTO, resumenBonoGarantia, type SolicitudBono } from '@/lib/utils/bono-garantia'
 import type { FacturacionEstado } from '@/types/solicitud'
@@ -1431,6 +1432,14 @@ export default function SolicitudDetalle() {
           {errorExport}
         </div>
       )}
+
+      {/* Posible duplicado (2026-10-28): otra orden abierta del mismo teléfono
+          y equipo, o con el mismo número de orden. No pinta nada si no hay. */}
+      <AvisoDuplicadosCliente
+        solicitudId={solicitud.id}
+        telefono={solicitud.cliente_telefono}
+        onCambio={() => window.location.reload()}
+      />
 
       {/* Resumen de facturación (2026-10-22) — lo primero que se ve en cada
           servicio: código del servicio (el que lleva el export de Siigo), N° de
