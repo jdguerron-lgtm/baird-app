@@ -56,9 +56,26 @@ describe('validarHorarioAgendable', () => {
   it('rechaza el mismo día (hoy en TZ Colombia)', async () => {
     const r = await validarHorarioAgendable(horarioTexto(fechaColombiaYMDHoy()))
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('mismo día')
+    if (!r.ok) expect(r.error).toContain('anticipación')
     // Corta antes de consultar cupo
     expect(mockFrom).not.toHaveBeenCalled()
+  })
+
+  // 2026-10-27: el cliente reserva desde pasado mañana (DIAS_MINIMOS_RESERVA_CLIENTE).
+  it('rechaza mañana para el cliente (mínimo pasado mañana)', async () => {
+    const r = await validarHorarioAgendable(horarioTexto(fechaColombiaMasDias(1)))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('2 días de anticipación')
+    expect(mockFrom).not.toHaveBeenCalled()
+  })
+
+  it('con diasMinimos 1 (aceptación del técnico) acepta mañana y rechaza hoy', async () => {
+    const manana = fechaColombiaMasDias(1)
+    const r = await validarHorarioAgendable(horarioTexto(manana), undefined, { diasMinimos: 1 })
+    expect(r.ok).toBe(true)
+    const hoy = await validarHorarioAgendable(horarioTexto(fechaColombiaYMDHoy()), undefined, { diasMinimos: 1 })
+    expect(hoy.ok).toBe(false)
+    if (!hoy.ok) expect(hoy.error).toContain('mismo día')
   })
 
   // 2026-10-22: una fecha ya pasada ya no rota al año siguiente en
@@ -71,7 +88,7 @@ describe('validarHorarioAgendable', () => {
     expect(mockFrom).not.toHaveBeenCalled()
   })
 
-  it('acepta mañana cuando la franja tiene cupo', async () => {
+  it('acepta pasado mañana cuando la franja tiene cupo', async () => {
     mockFrom.mockReturnValue(queryBuilder({ count: MAX_RESERVAS_POR_FRANJA - 1, error: null }))
     const ymd = fechaColombiaMasDias(2)
     const r = await validarHorarioAgendable(horarioTexto(ymd))

@@ -1011,7 +1011,9 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       ].filter(Boolean)
 
       if (elegido && opcionesCliente.includes(elegido) && elegido !== confirmadoActual) {
-        const agenda = await validarHorarioAgendable(elegido, solPrevia.id)
+        // diasMinimos 1: el técnico acepta una opción que el cliente eligió
+        // con ≥2 días; para hoy puede haber quedado para mañana y eso es OK.
+        const agenda = await validarHorarioAgendable(elegido, solPrevia.id, { diasMinimos: 1 })
         if (!agenda.ok) {
           return {
             ganado: false,
@@ -4222,8 +4224,8 @@ export async function procesarReagendamientoCliente(
     return { ok: false, estado_previo: sol.estado, error: `Llegaste al máximo de ${MAX_REAGENDAMIENTOS_CLIENTE} reagendamientos. Contáctanos por WhatsApp para asistencia.` }
   }
 
-  // Validación de agenda (agenda.service): mínimo mañana (TZ Colombia) +
-  // cupo de MAX_RESERVAS_POR_FRANJA por slot. La propia solicitud no cuenta
+  // Validación de agenda (agenda.service): mínimo pasado mañana (TZ Colombia,
+  // DIAS_MINIMOS_RESERVA_CLIENTE) + cupo de MAX_RESERVAS_POR_FRANJA por slot. La propia solicitud no cuenta
   // contra su cupo (su fecha_visita_at previo se está reemplazando).
   const agenda = await validarHorarioAgendable(horarioLimpio, sol.id)
   if (!agenda.ok) {
