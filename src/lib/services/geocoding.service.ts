@@ -217,3 +217,30 @@ export async function geocodificarYGuardar(solicitudId: string): Promise<void> {
     console.error(`[geocoding] update falló para solicitud ${solicitudId}:`, updErr)
   }
 }
+
+/**
+ * Geocodifica varias solicitudes en serie (una tras otra, para no disparar
+ * ráfagas contra Google). Un fallo en una no detiene las demás. Pensada para
+ * correr dentro de `after()` en la carga masiva (2026-10-27: las órdenes que
+ * entraban por /admin/carga-masiva nunca se geocodificaban y no salían en
+ * /admin/mapa).
+ *
+ * `geocodificar` se inyecta para poder probarla sin BD ni red.
+ */
+export async function geocodificarLote(
+  solicitudIds: string[],
+  geocodificar: (id: string) => Promise<void> = geocodificarYGuardar,
+): Promise<{ ok: number; fallidas: number }> {
+  let ok = 0
+  let fallidas = 0
+  for (const id of solicitudIds) {
+    try {
+      await geocodificar(id)
+      ok++
+    } catch (err) {
+      fallidas++
+      console.error(`[geocoding] lote: falló la solicitud ${id}:`, err instanceof Error ? err.message : err)
+    }
+  }
+  return { ok, fallidas }
+}
