@@ -815,7 +815,28 @@ motivo. No envía WhatsApp a cliente ni técnico, así que después hay que
 avisarles a mano si corresponde. Un servicio con técnico asignado **nunca**
 se devuelve a *Notificada* (dejaría al técnico sin ver el servicio).
 
-### 11.7 A quién escalar
+### 11.7 El técnico dice que no puede subir fotos o videos
+
+Desde 2026-10-29 la evidencia de Diagnóstico y Completar se sube **sola
+apenas el técnico elige cada archivo** (cámara o galería), mientras termina el
+formulario. Cada foto muestra ✓ al quedar lista, una barra mientras sube y, si
+falla, un botón **Reintentar**. Con eso en mente:
+
+- Pedirle una **captura de la pantalla**: si hay archivos en rojo, que toque
+  Reintentar o los quite; el formulario no se envía con archivos en error.
+- "Se queda en Subiendo": señal débil. Que no cierre la página (pierde lo no
+  enviado) y espere; la subida reintenta sola y, en videos, retoma desde donde
+  iba si la conexión se cae.
+- Video rechazado "supera 50 MB": que lo grabe en 1080p y en clips más cortos.
+  El tope es el del proyecto en Supabase; lo sube el admin cuando haga falta.
+- Fotos de la galería lentas en Android: ya está corregido (se reducen antes
+  de procesarlas). Si persiste, que tome la foto desde la cámara del
+  formulario y que el admin revise el modelo de celular.
+- Si subió todo pero "no aparece en la ficha": la evidencia solo entra a la
+  ficha cuando **envía** el diagnóstico o el cierre. Que vuelva a entrar al
+  formulario y envíe.
+
+### 11.8 A quién escalar
 
 | Tema | Escalar a |
 |---|---|

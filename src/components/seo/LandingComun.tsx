@@ -23,7 +23,7 @@ export const PASOS = [
     num: '02',
     emoji: '📲',
     titulo: 'Un técnico verificado acepta',
-    texto: 'Los técnicos de tu zona con la especialidad correcta reciben la solicitud por WhatsApp. El primero en aceptar queda asignado.',
+    texto: 'Los técnicos de tu zona con la especialidad correcta reciben la solicitud por WhatsApp. El primero en aceptar queda asignado y solo entonces pagas el anticipo del 50 % con un link seguro. Al solicitar no pagas nada.',
   },
   {
     num: '03',
