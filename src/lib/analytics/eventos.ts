@@ -10,7 +10,7 @@
  * | `generate_lead`         | /solicitar, envío exitoso               | Lead (evento clave) — googleAnalytics.ts |
  * | `form_start`            | /solicitar, primer campo tocado         | Denominador del embudo |
  * | `form_error`            | /solicitar, validación o error del API  | Dónde se rinde la gente |
- * | `begin_checkout`        | /solicitar, clic en "Pagar anticipo"    | Intención de pago |
+ * | `begin_checkout`        | (retirado 2026-10-29: /solicitar ya no ofrece pagar; el anticipo se cobra con técnico asignado desde WhatsApp) | — |
  * | `whatsapp_click`        | Cualquier link a wa.me (botón flotante) | Contacto que no pasa por el formulario |
  * | `phone_click`           | Cualquier link tel:                     | Ídem por llamada |
  * | `cta_click`             | Links a /solicitar, /registro, tienda   | Qué CTA mueve más gente |

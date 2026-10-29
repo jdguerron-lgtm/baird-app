@@ -29,11 +29,22 @@
  *   `comprimirConLimite` evita que una foto que no se deja decodificar bloquee
  *   el envío (tras 30 s sigue con el original).
  *
- * Sin dependencias nuevas. Las funciones puras (progreso, mensajes, pool,
- * clasificación de respuestas) están cubiertas en
- * `src/__tests__/utils/subida-evidencia.test.ts` con un XHR falso.
+ * Las funciones puras (progreso, mensajes, pool, clasificación de
+ * respuestas) están cubiertas en `src/__tests__/utils/subida-evidencia.test.ts`
+ * con un XHR falso.
+ *
+ * **Subida reanudable (TUS) para archivos grandes — 2026-10-29, plan Pro.**
+ * A partir de `TUS_UMBRAL_BYTES` (6 MB, el umbral que recomienda Supabase) el
+ * archivo ya no va en UN solo POST: se parte en trozos de 6 MB por el
+ * protocolo TUS (`tus-js-client` → `/storage/v1/upload/resumable` en el host
+ * directo de Storage `{ref}.storage.supabase.co`). Si la red se cae a mitad
+ * de un video de 200 MB, el cliente retoma desde el último trozo aceptado en
+ * vez de empezar de cero, y el servidor valida el tope de tamaño del
+ * proyecto como siempre. Si el endpoint TUS responde un 4xx de verdad
+ * (configuración), se cae al POST clásico para no quedar peor que antes.
  */
 
+import * as tus from 'tus-js-client'
 import { supabase } from '@/lib/supabase'
 import { compressImageIfNeeded } from '@/lib/utils/media'
 
@@ -41,6 +52,10 @@ export const SUBIDA_CONCURRENCIA = 3
 export const SUBIDA_STALL_MS = 45_000
 export const SUBIDA_MAX_INTENTOS = 3
 export const COMPRESION_TIMEOUT_MS = 30_000
+/** Desde este tamaño se usa TUS reanudable (recomendación de Supabase: > 6 MB). */
+export const TUS_UMBRAL_BYTES = 6 * 1024 * 1024
+/** Tamaño de trozo TUS: Supabase exige exactamente 6 MB. */
+export const TUS_CHUNK_BYTES = 6 * 1024 * 1024
 /** Timeout del fallback vía supabase-js (no tiene progreso, así que es un techo duro). */
 const FALLBACK_TIMEOUT_MS = 5 * 60_000
 
@@ -78,6 +93,24 @@ export interface OpcionesSubida {
   esperar?: (ms: number) => Promise<void>
   /** Inyección para tests: fallback vía supabase-js. */
   fallback?: () => Promise<void>
+  /**
+   * Forzar o apagar la subida reanudable. Default: automática cuando el
+   * archivo supera `TUS_UMBRAL_BYTES`.
+   */
+  resumable?: boolean
+  /** Inyección para tests: implementación TUS. */
+  subirTus?: (args: ArgsTus) => Promise<void>
+}
+
+export interface ArgsTus {
+  bucket: string
+  path: string
+  file: Blob & { type: string }
+  token: string
+  anon: string
+  cacheControl: string
+  stallMs: number
+  onProgreso?: (p: ProgresoBytes) => void
 }
 
 export class ErrorSubida extends Error {
@@ -128,6 +161,100 @@ function urlStorage(bucket: string, path: string): string {
   const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '')
   const limpio = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/')
   return `${base}/storage/v1/object/${bucket}/${limpio}`
+}
+
+/**
+ * Host directo de Storage (`{ref}.storage.supabase.co`), que Supabase
+ * recomienda para archivos grandes porque evita el gateway de la API. Si la
+ * URL no tiene la forma estándar (self-hosted, local), se usa tal cual.
+ */
+export function urlTusResumable(baseUrl: string = process.env.NEXT_PUBLIC_SUPABASE_URL || ''): string {
+  const base = baseUrl.replace(/\/$/, '')
+  const m = /^(https?:\/\/)([a-z0-9]+)\.supabase\.co$/i.exec(base)
+  const host = m ? `${m[1]}${m[2]}.storage.supabase.co` : base
+  return `${host}/storage/v1/upload/resumable`
+}
+
+/** Clasifica el error de tus-js-client igual que `clasificarRespuesta`. */
+export function clasificarErrorTus(status: number | null, mensaje: string): ErrorSubida {
+  if (status == null || status === 0) return new ErrorSubida(mensaje || 'Error de red al subir el archivo.', true, false, 0)
+  if (status === 408 || status === 425 || status === 429 || status >= 500) return new ErrorSubida(mensaje, true, false, status)
+  return new ErrorSubida(mensaje, false, true, status)
+}
+
+/** Un intento de subida reanudable por TUS; rechaza con ErrorSubida. */
+function intentoTus(args: ArgsTus): Promise<void> {
+  const { bucket, path, file, token, anon, cacheControl, stallMs, onProgreso } = args
+  return new Promise<void>((resolve, reject) => {
+    let terminado = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const limpiar = () => { if (timer) clearTimeout(timer); timer = null }
+    const finalizar = (fn: () => void) => {
+      if (terminado) return
+      terminado = true
+      limpiar()
+      fn()
+    }
+    const upload = new tus.Upload(file, {
+      endpoint: urlTusResumable(),
+      // Reintentos internos de tus (misma petición): red / 5xx. El corte por
+      // inactividad y el reintento "desde cero" los maneja el bucle de afuera.
+      retryDelays: [0, 1000, 3000, 5000, 10000],
+      headers: {
+        authorization: `Bearer ${token}`,
+        apikey: anon,
+        'x-upsert': 'false',
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      // No reanudar entre recargas: el nombre destino cambia por lote y un
+      // upload viejo apuntaría a otro objeto. La reanudación que importa es
+      // dentro de la misma sesión (red que se cae a mitad).
+      storeFingerprintForResuming: false,
+      chunkSize: TUS_CHUNK_BYTES,
+      metadata: {
+        bucketName: bucket,
+        objectName: path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/'),
+        contentType: file.type || 'application/octet-stream',
+        cacheControl,
+      },
+      onShouldRetry: (err) => {
+        const status = err.originalResponse?.getStatus() ?? 0
+        // 4xx de verdad (403 policy, 400 metadata, 409 ya existe, 413 tope): no insistir.
+        return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500
+      },
+      onProgress: (enviados, total) => {
+        if (terminado) return
+        armarStall()
+        onProgreso?.({ cargado: Math.min(enviados, total || file.size), total: total || file.size })
+      },
+      onError: (err) => finalizar(() => {
+        const det = err as tus.DetailedError
+        const status = det.originalResponse?.getStatus?.() ?? null
+        const cuerpo = det.originalResponse?.getBody?.() ?? ''
+        const mensaje = cuerpo ? mensajeDeRespuestaStorage(cuerpo, status ?? 0) : (err.message || 'Error al subir el archivo.')
+        if (status === 409 || /already exists|duplicate/i.test(mensaje)) { resolve(); return }
+        reject(clasificarErrorTus(status, mensaje))
+      }),
+      onSuccess: () => finalizar(() => {
+        onProgreso?.({ cargado: file.size, total: file.size })
+        resolve()
+      }),
+    })
+    const armarStall = () => {
+      limpiar()
+      if (stallMs > 0) {
+        timer = setTimeout(() => {
+          finalizar(() => {
+            upload.abort().catch(() => { /* ya cerrado */ })
+            reject(new ErrorSubida('La conexión se quedó sin avanzar. Reintentando…', true, false, 0))
+          })
+        }, stallMs)
+      }
+    }
+    armarStall()
+    upload.start()
+  })
 }
 
 async function tokenPorDefecto(): Promise<string> {
@@ -250,10 +377,17 @@ export async function subirArchivoStorage(
     }
   })
 
+  const usarTus = opts.resumable ?? file.size > TUS_UMBRAL_BYTES
+  const subirTus = opts.subirTus ?? intentoTus
+
   let ultimo: ErrorSubida | null = null
   for (let intento = 1; intento <= maxIntentos; intento++) {
     try {
-      await intentoXhr(url, file, headers, stallMs, crearXhr, opts.onProgreso)
+      if (usarTus) {
+        await subirTus({ bucket, path, file, token, anon, cacheControl: opts.cacheControl ?? '3600', stallMs, onProgreso: opts.onProgreso })
+      } else {
+        await intentoXhr(url, file, headers, stallMs, crearXhr, opts.onProgreso)
+      }
       ultimo = null
       break
     } catch (e) {
@@ -265,6 +399,19 @@ export async function subirArchivoStorage(
         continue
       }
       break
+    }
+  }
+
+  if (ultimo && ultimo.probarFallback && usarTus) {
+    // TUS respondió un 4xx de configuración (endpoint, metadata, policy):
+    // probar el POST clásico una vez antes de rendirse. Si el tope del
+    // proyecto es el problema (413), también fallará y el mensaje lo dirá.
+    console.warn('[subirArchivoStorage] TUS respondió', ultimo.status, ultimo.message, '→ POST clásico')
+    try {
+      await intentoXhr(url, file, headers, stallMs, crearXhr, opts.onProgreso)
+      ultimo = null
+    } catch (e) {
+      ultimo = e instanceof ErrorSubida ? e : new ErrorSubida(e instanceof Error ? e.message : String(e), true, false, 0)
     }
   }
 

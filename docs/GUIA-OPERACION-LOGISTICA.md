@@ -159,7 +159,8 @@ Bloque **Registros recientes**: los últimos técnicos registrados.
    la primera oferta va solo a él; los reenvíos van a todos.
 4. **Aceptación**: el primer técnico que pulsa "Aceptar" se la queda
    (*Asignada*). El cliente recibe los datos del técnico y, en particular, el
-   link para pagar el anticipo.
+   link para pagar el anticipo — es el **único momento** en que se le cobra
+   el anticipo: antes de tener técnico no paga nada (desde 2026-10-29).
 5. **Visita y diagnóstico**: el técnico registra el diagnóstico desde su
    portal y elige el siguiente paso: reparar, esperar repuesto, no reparable
    o el cliente no quiere reparar.
@@ -545,7 +546,7 @@ pedirle que lo registre desde su portal.
 
 | Etapa | Cuándo se cobra | Cuánto | Qué pasa al pagar |
 |---|---|---|---|
-| **Anticipo** | Cuando el técnico acepta (link por WhatsApp; también desde la pantalla de éxito del formulario) | 50 % del valor del diagnóstico | Confirma la reserva; cliente y técnico reciben aviso |
+| **Anticipo** | **Solo cuando un técnico acepta** (link por WhatsApp). Al enviar la solicitud el cliente no paga nada; si abre el link de pago sin técnico asignado ve "Aún no tienes técnico asignado" | 50 % del valor del servicio (diagnóstico, mantenimiento o cambio de filtro) | Confirma la reserva; cliente y técnico reciben aviso |
 | **Abono de repuestos** | Cuando el cliente aprueba una cotización **con** repuestos | 50 % del saldo | El técnico recibe aviso de que puede comprar los repuestos |
 | **Saldo** | Cuando aprueba una cotización **sin** repuestos, o al completar el servicio (o cuando el admin fija el cobro final) | Total − lo ya pagado (− descuento si tiene código) | Cliente y técnico reciben aviso; el técnico sabe que no debe cobrar nada en sitio |
 
