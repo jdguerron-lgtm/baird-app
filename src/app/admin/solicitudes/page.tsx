@@ -11,6 +11,7 @@ import { precioClienteServicio } from '@/types/solicitud'
 import AgendaCalendario from '@/components/admin/AgendaCalendario'
 import BadgePagoCliente from '@/components/ui/BadgePagoCliente'
 import { FACTURACION_ESTADO_LABEL, type FacturacionEstado } from '@/types/solicitud'
+import { posiblesDuplicadosDe } from '@/lib/utils/clientes-duplicados'
 
 interface Solicitud {
   id: string
@@ -473,6 +474,29 @@ export default function SolicitudesAdmin() {
       })
     : solicitudes, [busquedaDiferida, solicitudes])
 
+  // Posibles duplicados (2026-10-28): otra orden abierta del mismo teléfono y
+  // equipo, o con el mismo número de orden, ENTRE LAS FILAS CARGADAS (con un
+  // filtro de estado puede no ver la otra; el detalle completo está en
+  // /admin/clientes). Reglas en clientes-duplicados.ts.
+  const duplicadosPorId = useMemo(() => {
+    const porTel = new Map<string, Solicitud[]>()
+    for (const s of solicitudes) {
+      if (!s.cliente_telefono) continue
+      const g = porTel.get(s.cliente_telefono)
+      if (g) g.push(s)
+      else porTel.set(s.cliente_telefono, [s])
+    }
+    const out = new Map<string, number>()
+    for (const grupo of porTel.values()) {
+      if (grupo.length < 2) continue
+      for (const s of grupo) {
+        const n = posiblesDuplicadosDe(s, grupo).length
+        if (n > 0) out.set(s.id, n)
+      }
+    }
+    return out
+  }, [solicitudes])
+
   return (
     <div className="p-6 lg:p-8 max-w-6xl">
       {/* Header */}
@@ -705,6 +729,15 @@ export default function SolicitudesAdmin() {
                     <td className="px-5 py-3">
                       <p className="text-sm font-semibold text-slate-900">{s.cliente_nombre}</p>
                       <p className="text-xs text-gray-400">{s.cliente_telefono}</p>
+                      {duplicadosPorId.has(s.id) && (
+                        <Link
+                          href={`/admin/clientes?telefono=${encodeURIComponent(s.cliente_telefono)}`}
+                          title="Este cliente tiene otra orden abierta del mismo equipo o con el mismo número de orden"
+                          className="inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 hover:bg-amber-200"
+                        >
+                          🔁 Posible duplicado
+                        </Link>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <p className="text-sm text-gray-700">{s.tipo_equipo ?? '—'}</p>

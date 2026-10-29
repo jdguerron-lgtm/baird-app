@@ -72,6 +72,7 @@ administrador (ver § 12).
 | 📊 Dashboard | Indicadores generales y accesos rápidos | § 3.3 |
 | 📋 Solicitudes | Lista de todos los servicios y su ficha | § 4 |
 | ⏰ Incumplidos | Visitas que no se atendieron el día reservado | § 7 |
+| 👤 Clientes | Todas las órdenes de un mismo cliente (por teléfono) y órdenes duplicadas | § 4.6 |
 | 🗺️ Mapa | Servicios ubicados en el mapa por fecha de visita | § 3.4 |
 | 💵 Pricing pendiente | Cotizaciones particulares con repuesto que esperan precio del admin | § 5.3 |
 | 🔧 Técnicos | Técnicos registrados, verificación y portal | § 3.4 |
@@ -361,6 +362,60 @@ Bloques, de arriba hacia abajo:
 3. En particular: etiqueta de etapa de pago (¿pagó el anticipo?).
 4. Historial: último evento y cualquier ⚠️.
 5. Notas y llamadas: qué ya se habló con el cliente.
+
+### 4.6 Clientes y órdenes duplicadas (`/admin/clientes`)
+
+A veces el mismo cliente queda con **dos órdenes para el mismo equipo**: la
+marca reenvía la orden o saca un número nuevo porque se demoró el agendamiento,
+o el cliente vuelve a llenar el formulario. Si nadie lo nota, a los técnicos les
+llega una oferta repetida y el cliente recibe mensajes de dos servicios.
+
+**Cómo se identifica al cliente:** por su **número de celular**. Un **posible
+duplicado** es:
+
+- otra orden **abierta** del mismo celular y el **mismo tipo de equipo**, o
+- otra orden con el **mismo número de orden / serie** (abierta, o cerrada hace
+  30 días o menos).
+
+Las órdenes de **equipos distintos** del mismo cliente (lavadora + nevera) **no**
+se marcan: son servicios legítimos.
+
+**Dónde lo ves:**
+
+- **👤 Clientes** en el menú: una fila por cliente con sus órdenes totales,
+  cuántas siguen abiertas y el aviso 🔁 si hay posibles duplicados. Arriba están
+  los filtros *Posibles duplicados* (el que sale por defecto), *Con varias
+  órdenes* y *Todos*, la ventana de fechas y un buscador por nombre o celular.
+  Haz clic en una fila para ver todas las órdenes del cliente, de la más nueva a
+  la más vieja, con estado, técnico, número de orden, visita y pagos.
+- **Lista de solicitudes:** debajo del celular aparece la etiqueta
+  **🔁 Posible duplicado**, que lleva a la página del cliente. Solo compara las
+  filas que estás viendo; si filtraste por estado, revisa en Clientes.
+- **Ficha de la solicitud:** un recuadro amarillo arriba avisa *Posible
+  duplicado* con el botón **Ver órdenes del cliente**.
+
+**Cómo cancelar el duplicado [solo admin]:**
+
+1. Decide cuál orden **sigue**: casi siempre la que va más avanzada (tiene
+   técnico, horario o diagnóstico). Cancela la que sobra.
+2. En la orden que sobra pulsa **Cancelar como duplicado**, elige en *¿Cuál orden
+   se conserva?* la que sigue y, si quieres, escribe una nota (p. ej. "MABE
+   reenvió la orden con número nuevo").
+3. Confirma. La orden queda **Cancelada** con el motivo *Duplicado de la orden
+   #…*, y en el historial queda quién lo hizo.
+
+Qué pasa al cancelar:
+
+- **El cliente no recibe ningún mensaje** (su otra orden sigue normal).
+- Si la orden duplicada tenía técnico, **le llega un WhatsApp** diciendo que no
+  vaya a esa visita. Si no le llega, porque la ventana de 24 h está cerrada,
+  llámalo.
+- Las ofertas abiertas a técnicos de esa orden **se anulan**.
+- Los supervisores reciben el cambio de estado como cualquier cancelación.
+
+No se puede cancelar como duplicado una orden que **ya tiene un pago** (primero
+se devuelve, § 8.4) ni una que ya está **en proceso o cerrada**. Para esos casos
+usa el cambio manual de estado de la ficha.
 
 ---
 

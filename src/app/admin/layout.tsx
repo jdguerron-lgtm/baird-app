@@ -121,6 +121,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/guia', label: 'Guía', icon: '📘' },
     { href: '/admin/solicitudes', label: 'Solicitudes', icon: '📋' },
     { href: '/admin/incumplidos', label: 'Incumplidos', icon: '⏰' },
+    { href: '/admin/clientes', label: 'Clientes', icon: '👤' },
     { href: '/admin/mapa', label: 'Mapa', icon: '🗺️' },
     { href: '/admin/cotizaciones-pendientes', label: 'Pricing pendiente', icon: '💵' },
     { href: '/admin/tecnicos', label: 'Técnicos', icon: '🔧' },
