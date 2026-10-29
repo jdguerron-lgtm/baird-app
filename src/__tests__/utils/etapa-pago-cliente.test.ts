@@ -144,11 +144,49 @@ describe('etapaPagoCliente', () => {
     expect(etapaPagoCliente({ ...base, estado: 'asignada' })?.etapa).toBe('anticipo_pendiente')
   })
 
-  it('servicio cerrado sin reparar: con pago → cerrado_con_pago, sin pago → null', () => {
-    expect(etapaPagoCliente({ ...base, estado: 'cotizacion_rechazada', anticipo_pagado_at: 'x', monto_pagado_online: 42000 })?.etapa)
-      .toBe('cerrado_con_pago')
+  it('cancelado antes de la visita: sin pago → null', () => {
     expect(etapaPagoCliente({ ...base, estado: 'cancelada' })).toBeNull()
     expect(etapaPagoCliente({ ...base, estado: 'sin_agendar', tecnico_asignado_id: null })).toBeNull()
+  })
+
+  it('no-show / cancelado con pago → cerrado_con_pago (revisar devolución)', () => {
+    expect(etapaPagoCliente({ ...base, estado: 'no_show_cliente', anticipo_pagado_at: 'x', monto_pagado_online: 42000 })?.etapa)
+      .toBe('cerrado_con_pago')
+  })
+
+  // Regla 2026-10-29: la visita de diagnóstico SIEMPRE se cobra.
+  it('cotización rechazada con anticipo → saldo_pendiente de la otra mitad de la visita ($42.000)', () => {
+    const r = etapaPagoCliente({
+      ...base, estado: 'cotizacion_rechazada', cotizacion: { total: 220750, diagnostico_cliente: 84000 },
+      anticipo_pagado_at: 'x', monto_pagado_online: 42000,
+    })
+    expect(r?.etapa).toBe('saldo_pendiente')
+    expect(r?.total).toBe(84000)
+    expect(r?.porCobrar).toBe(42000)
+  })
+
+  it('rechazo / no reparable sin anticipo → saldo_pendiente de la visita completa', () => {
+    for (const estado of ['cotizacion_rechazada', 'reparacion_rechazada', 'finalizado_sin_reparacion']) {
+      const r = etapaPagoCliente({ ...base, estado })
+      expect(r?.etapa).toBe('saldo_pendiente')
+      expect(r?.porCobrar).toBe(84000)
+    }
+  })
+
+  it('visita rechazada en finde: se cobra la visita + recargo con IVA', () => {
+    const r = etapaPagoCliente({ ...base, estado: 'reparacion_rechazada', recargo_weekend_aplicado: 6000 })
+    expect(r?.porCobrar).toBe(91140)
+  })
+
+  it('visita rechazada ya pagada completa → pagado', () => {
+    expect(etapaPagoCliente({
+      ...base, estado: 'cotizacion_rechazada', cotizacion: { total: 220750 },
+      anticipo_pagado_at: 'x', monto_pagado_online: 84000,
+    })?.etapa).toBe('pagado')
+  })
+
+  it('mantenimiento (tarifa fija) cerrado sin reparar NO cobra visita aparte', () => {
+    expect(etapaPagoCliente({ ...base, tipo_solicitud: 'Mantenimiento', estado: 'finalizado_sin_reparacion' })).toBeNull()
   })
 })
 
@@ -158,6 +196,8 @@ describe('totalClienteParaCobro', () => {
     expect(totalClienteParaCobro({ ...base, tipo_solicitud: 'Mantenimiento', recargo_weekend_aplicado: 6000 })).toBe(133140)
     expect(totalClienteParaCobro({ ...base, tipo_solicitud: 'Cambio de filtro', tipo_equipo: 'Nevecón' })).toBe(180000)
     expect(totalClienteParaCobro(base)).toBe(0)
+    // Cotización rechazada: manda la visita, no el total rechazado.
+    expect(totalClienteParaCobro({ ...base, estado: 'cotizacion_rechazada', cotizacion: { total: 220750 } })).toBe(84000)
     expect(totalClienteParaCobro({ ...base, es_garantia: true, cotizacion: { total: 1 } })).toBe(0)
   })
 })

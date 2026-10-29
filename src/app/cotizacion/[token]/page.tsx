@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import { formatCOP } from '@/lib/utils/format'
+import { IVA_TARIFA } from '@/types/solicitud'
 import { esUrlVideo } from '@/lib/utils/media'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
@@ -47,6 +48,9 @@ interface DatosCotizacion {
     servicio_cliente?: number
     // Reparación con precio predeterminado de mantenimiento (2026-10-12)
     mantenimiento_catalogo?: boolean
+    // Recargo finde/festivo BRUTO (el cliente lo paga + IVA) — también aplica
+    // a la visita si rechaza (2026-10-29).
+    recargo_weekend?: number
     tiempo_entrega?: string | null
     productos_necesarios?: ProductoNecesario[]
     productos_recomendados?: ProductoRecomendado[]
@@ -244,7 +248,18 @@ export default function CotizacionPage() {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Cotización rechazada</h2>
           <p className="text-gray-600 text-sm">
-            Hemos notificado al técnico. Si deseas un nuevo servicio, puedes crear una nueva solicitud en nuestra plataforma.
+            Hemos notificado al técnico. Solo pagas la visita de diagnóstico (si ya pagaste el anticipo, se descuenta). Te enviamos el link de pago por WhatsApp.
+          </p>
+          {clienteToken && (
+            <a
+              href={`/pago/saldo/${clienteToken}`}
+              className="mt-5 block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-sm transition-colors"
+            >
+              💳 Pagar visita de diagnóstico
+            </a>
+          )}
+          <p className="text-gray-500 text-xs mt-4">
+            Si deseas un nuevo servicio, puedes crear una nueva solicitud en nuestra plataforma.
           </p>
         </div>
       </div>
@@ -500,6 +515,13 @@ export default function CotizacionPage() {
         ) : (
           <div className="bg-white rounded-2xl shadow-lg p-6 space-y-3">
             <h3 className="text-sm font-bold text-gray-700">¿Por qué rechazas la cotización?</h3>
+            {(cotizacion.diagnostico_cliente ?? 0) > 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Si rechazas, solo pagas la visita de diagnóstico (${formatCOP(
+                  cotizacion.diagnostico_cliente! + Math.round((cotizacion.recargo_weekend ?? 0) * (1 + IVA_TARIFA)),
+                )} COP{(cotizacion.recargo_weekend ?? 0) > 0 ? ', con recargo de fin de semana/festivo' : ''}). Lo que ya pagaste de anticipo se descuenta.
+              </p>
+            )}
             <textarea
               value={comentarioRechazo}
               onChange={(e) => setComentarioRechazo(e.target.value)}

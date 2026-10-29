@@ -109,6 +109,40 @@ export function esServicioPrecioFijo(sol: { es_garantia?: boolean | null; tipo_s
   return Boolean(sol.tipo_solicitud) && (TIPOS_PRECIO_FIJO as readonly string[]).includes(sol.tipo_solicitud as string)
 }
 
+/**
+ * Cierres DESPUÉS de la visita en los que el cliente no repara (2026-10-29):
+ * rechazó la cotización, se negó en sitio o el equipo no tiene arreglo.
+ * Regla de negocio: la visita de diagnóstico SIEMPRE se cobra — el cliente
+ * debe la tarifa de diagnóstico (catálogo + recargo finde/festivo) y el
+ * técnico gana sus PAGO_TECNICO_DIAGNOSTICO ($35.000).
+ */
+export const ESTADOS_CIERRE_CON_DIAGNOSTICO: ReadonlySet<string> = new Set([
+  'cotizacion_rechazada',
+  'reparacion_rechazada',
+  'finalizado_sin_reparacion',
+])
+
+/**
+ * true si el servicio PARTICULAR cobra la visita de diagnóstico aparte del
+ * servicio (Diagnóstico / Reparación). Mantenimiento y Cambio de filtro son
+ * tarifa fija con la visita incluida; garantía la paga la marca.
+ */
+export function cobraVisitaDiagnostico(sol: { es_garantia?: boolean | null; tipo_solicitud?: string | null }): boolean {
+  return !sol.es_garantia && !esServicioPrecioFijo(sol)
+}
+
+/**
+ * true si el servicio cerró tras la visita sin reparar y lo que se le cobra al
+ * cliente es SOLO la visita de diagnóstico (ver ESTADOS_CIERRE_CON_DIAGNOSTICO).
+ */
+export function cierraConSoloDiagnostico(sol: {
+  es_garantia?: boolean | null
+  tipo_solicitud?: string | null
+  estado?: string | null
+}): boolean {
+  return cobraVisitaDiagnostico(sol) && Boolean(sol.estado) && ESTADOS_CIERRE_CON_DIAGNOSTICO.has(sol.estado as string)
+}
+
 /** Estados donde ya no se cobra nada más (el servicio no siguió o terminó sin reparar). */
 const ESTADOS_CERRADOS_SIN_COBRO = new Set([
   'cancelada',
@@ -143,14 +177,19 @@ export interface SolicitudParaEtapaPago {
  * ANTES del código de descuento, para efectos de COBRO: total de la
  * cotización si existe; si no, precio de catálogo SOLO en servicios de precio
  * fijo (Mantenimiento / Cambio de filtro). En Diagnóstico/Reparación sin
- * cotización devuelve 0 = "aún no se sabe" (el diagnóstico solo, si el
- * cliente no repara, no genera saldo).
+ * cotización devuelve 0 = "aún no se sabe". Si el servicio CERRÓ sin reparar
+ * (`cierraConSoloDiagnostico`, 2026-10-29) el total es la visita de
+ * diagnóstico (catálogo + recargo), haya o no cotización rechazada.
  *
  * Sobre este bruto se calculan el abono de repuestos y el % del descuento;
  * el saldo final usa `totalClienteNetoParaCobro`.
  */
 export function totalClienteParaCobro(sol: SolicitudParaEtapaPago): number {
   if (sol.es_garantia) return 0
+  if (cierraConSoloDiagnostico(sol)) {
+    if (!sol.tipo_equipo || !sol.tipo_solicitud) return 0
+    return precioClienteServicio(sol.tipo_equipo, sol.tipo_solicitud, false, null, sol.recargo_weekend_aplicado ?? null)
+  }
   const cot = sol.cotizacion as { total?: unknown } | null | undefined
   if (typeof cot?.total === 'number' && cot.total > 0) return Math.round(cot.total)
   if (!sol.tipo_solicitud || !(TIPOS_PRECIO_FIJO as readonly string[]).includes(sol.tipo_solicitud)) return 0
@@ -211,6 +250,11 @@ export function etapaPagoCliente(sol: SolicitudParaEtapaPago): ResumenPagoClient
     ({ etapa, total, descuento, totalNeto, pagado, porCobrar })
 
   if (sol.saldo_pagado_at || (totalNeto > 0 && pagado >= totalNeto)) return resumen('pagado')
+
+  // Cerró sin reparar: lo que falte de la visita de diagnóstico es el saldo.
+  if (cierraConSoloDiagnostico(sol) && total > 0) {
+    return restanteNeto > 0 ? resumen('saldo_pendiente', restanteNeto) : resumen('pagado')
+  }
 
   if (sol.estado && ESTADOS_CERRADOS_SIN_COBRO.has(sol.estado)) {
     return pagado > 0 || sol.anticipo_pagado_at ? resumen('cerrado_con_pago') : null
