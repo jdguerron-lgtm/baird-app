@@ -30,6 +30,7 @@ import FacturacionSolicitud from '@/components/admin/FacturacionSolicitud'
 import BonoGarantiaResumen from '@/components/admin/BonoGarantiaResumen'
 import CambiarTecnicoAdmin from '@/components/admin/CambiarTecnicoAdmin'
 import AvisoDuplicadosCliente from '@/components/admin/AvisoDuplicadosCliente'
+import CotizacionClienteResumen from '@/components/admin/CotizacionClienteResumen'
 import { puedeCambiarTecnico } from '@/lib/utils/cambiar-tecnico'
 import { ESTADOS_PAUSA_REPUESTO, resumenBonoGarantia, type SolicitudBono } from '@/lib/utils/bono-garantia'
 import type { FacturacionEstado } from '@/types/solicitud'
@@ -1709,6 +1710,14 @@ export default function SolicitudDetalle() {
             </div>
           </dl>
         </div>
+
+        {/* 📄 Cotización enviada al cliente (2026-10-29): lo mismo que vio el
+            cliente en /cotizacion/{token} + si la aprobó. Solo particular. */}
+        <CotizacionClienteResumen
+          cotizacion={(solicitud as unknown as Record<string, unknown>).cotizacion}
+          estado={solicitud.estado}
+          esGarantia={solicitud.es_garantia}
+        />
 
         {/* 💰 Cuentas del servicio (2026-08-07) — discrimina lo que entra a
             Baird (MABE en garantía / cliente en particular) vs lo que se le

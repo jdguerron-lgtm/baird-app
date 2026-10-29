@@ -273,7 +273,16 @@ Bloques, de arriba hacia abajo:
    celular, tipo o marca de equipo (queda en el historial).
 2. **Equipo y servicio**: tipo de equipo, marca, tipo de solicitud, problema
    reportado, si es **Garantía** y el **N° de orden / garantía MABE**.
-3. **💰 Cuentas del servicio**: en garantía, arriba una tira de chips con los
+3. **📄 Cotización enviada al cliente** (solo particular): lo mismo que el
+   cliente vio en su página de cotización — fecha de envío, si la **aprobó**,
+   la **rechazó** (con el motivo) o sigue **esperando respuesta**, el desglose
+   (visita de diagnóstico + servicio, o total todo incluido), los repuestos
+   incluidos, el tiempo de entrega, las recomendaciones y el diagnóstico que
+   leyó. Si el admin cambió el valor después, aparece el valor anterior, el
+   nuevo y el motivo. El link **Ver la página que ve el cliente ↗** abre su
+   cotización tal cual. Si el precio aún no se ha fijado, dice que **no se ha
+   enviado**.
+   Debajo, **💰 Cuentas del servicio**: en garantía, arriba una tira de chips con los
    factores del bono — **⏱️ TA** (horas entre el horario confirmado y el
    diagnóstico; límite 24 h), **📅 días de solución** (brutos, pausa y netos,
    con la fila de la tabla MABE que aplica), **📦 pausa por repuesto** (desde el
