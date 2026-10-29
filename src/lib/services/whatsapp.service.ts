@@ -1372,9 +1372,12 @@ export async function avisarAsignacionTecnico(
     // se reintenta con `pago_anticipo_cliente_v1` (URL fija a la tienda), que
     // solo es correcta en Diagnóstico/Reparación — ahí el anticipo ES $42.000.
     //
-    // ANTICIPO YA PAGADO (2026-10-11): el cliente pudo pagarlo ANTES de que un
-    // técnico aceptara (CTA de la pantalla de éxito de /solicitar, o por la
-    // tienda — caso real Tatiana Moreno / Ana Prieto). En ese caso NO se le
+    // ANTICIPO YA PAGADO (2026-10-11): hasta el 2026-10-29 el cliente podía
+    // pagarlo ANTES de que un técnico aceptara (CTA de la pantalla de éxito de
+    // /solicitar, o por la tienda — caso real Tatiana Moreno / Ana Prieto).
+    // Desde esa fecha el cobro es SOLO con técnico asignado (/pago/anticipo lo
+    // exige), así que acá solo entran solicitudes viejas, pagos registrados a
+    // mano o un segundo técnico tras liberar al primero. En ese caso NO se le
     // vuelve a cobrar: se le confirma la reserva y se le avisa al técnico que
     // la visita está pagada.
     //

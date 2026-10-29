@@ -64,7 +64,7 @@ src/
 │   ├── index.tsx               # Iconos genéricos (UserIcon, PhoneIcon, ...)
 │   └── equipos.tsx             # Siluetas de línea blanca — reemplazan los emoji en home y /servicios
 ├── components/MenuMovil.tsx    # Nav hamburguesa <640px de la home (los links del header están en `hidden sm:*`)
-├── hooks/                      # useDebounce, useSolicitudForm, useTriaje
+├── hooks/                      # useDebounce, useSolicitudForm, useTriaje, useGps, useColaSubida (subida de evidencia en 2º plano, 2026-10-29)
 ├── lib/
 │   ├── supabase.ts             # Supabase client singleton — always import from here
 │   ├── analytics/
@@ -349,6 +349,14 @@ Convierte fotos del teléfono (típicamente HEIC iPhone 5 MB, JPEG Android 3 MB)
 
 Sustituye a `supabase.storage.upload()` en los formularios del técnico (diagnóstico y completar). Hace el mismo `POST /storage/v1/object/{bucket}/{path}` por `XMLHttpRequest` (cuerpo binario crudo) para tener `upload.onprogress`; aborta y reintenta si pasan 45 s sin subir un byte (3 intentos; un duplicado en el reintento cuenta como éxito) y cae una vez a supabase-js si el endpoint responde un 4xx distinto de duplicado. `ejecutarConLimite` corre las subidas de a 3 (antes iban las 10-20 a la vez y el celular se congelaba); `crearAgregadorProgreso` + `mensajeProgresoSubida` alimentan el texto "Subiendo 3 de 8 archivos · 42 %" y la barra. Motivo: técnicos reportaban que al subir de la biblioteca "la aplicación se quedaba pensando" — ver `docs/GOTCHAS.md`.
 
+### `ColaSubida` / `useColaSubida()` — la evidencia se sube en segundo plano al elegirla (`src/lib/utils/cola-subida.ts`, `src/hooks/useColaSubida.ts`, 2026-10-29)
+
+Los formularios de Diagnóstico y Completar ya no suben al tocar "Registrar" / "Completar": cada archivo entra a una cola apenas el técnico lo elige y pasa por `en_cola → preparando` (compresión con tope de tiempo) `→ subiendo` (XHR con progreso vía `subirArchivoStorage`, de a 3) `→ listo | error`, mientras el técnico sigue llenando el formulario. Cada tile muestra su estado (`EstadoSubidaOverlay`: barra, ✓, o "Reintentar"), el pie dice "3 de 5 subidos · subiendo 1 (42 %)" (`textoResumenCola`) y al enviar solo se espera lo que falte (`esperarTodo()` devuelve las URLs en el orden en que se eligieron y los fallidos aparte; con un fallido el formulario no envía hasta reintentar o quitar). La foto de la placa tiene su propia cola de un archivo. Nombres en Storage: `{solicitud}/diagnostico_{lote}_{n}.{ext}`, `{solicitud}/placa_{lote}_{n}.{ext}`, `{solicitud}/{lote}_{n}.{ext}` (completar), con `lote` = timestamp + random por cola. Quitar un archivo ya subido deja el objeto huérfano (el bucket no tiene DELETE para el navegador); mientras hay subidas en curso la página avisa al cerrar (`beforeunload`). Tres carriles: miniaturas de a 1, compresión de a 1 y subidas de a 3 (la CPU del celular no aguanta varias decodificaciones a la vez; la red sí varias subidas). Lógica pura (sin React) cubierta en `src/__tests__/utils/cola-subida.test.ts`.
+
+### Compresión con decodificación reducida y subida reanudable TUS (`media.ts`, `subida-evidencia.ts`, 2026-10-29)
+
+`compressImageIfNeeded` ya no decodifica la foto completa: `leerDimensionesImagen` lee ancho/alto y orientación EXIF de la cabecera (JPEG SOFn + APP1, PNG IHDR, WebP VP8/VP8L/VP8X; primeros 512 KB), `dimensionesDestino` calcula el tamaño final (lado mayor 4000 px, ya orientado) y `createImageBitmap(file, { resizeWidth, resizeHeight, imageOrientation: 'from-image' })` pide al navegador el bitmap reducido — es lo que hace viable subir desde la galería de Android los originales de 50–108 MP. `subirArchivoStorage` elige el camino por tamaño: ≤ 6 MB → POST por XHR (como desde 2026-10-24); > 6 MB (`TUS_UMBRAL_BYTES`) → `tus-js-client` contra `urlTusResumable()` (`{ref}.storage.supabase.co/storage/v1/upload/resumable`, trozos de 6 MB, metadata `bucketName/objectName/contentType/cacheControl`, sin fingerprint persistente), con el mismo corte por inactividad, reintentos y clasificación de errores (`clasificarErrorTus`); un 4xx de configuración cae una vez al POST clásico. Tests: `src/__tests__/utils/media-cabecera.test.ts`.
+
 ## Observabilidad
 
 Pipeline de telemetría de errores de conexión, agregado en `d0d0b8a`:
@@ -403,7 +411,7 @@ localhost no cargan gtag — antes ensuciaban GA4 (2026-10-24). Para probar en l
 **Eventos** (tabla completa en `src/lib/analytics/eventos.ts`): `generate_lead` +
 conversión de Ads al enviar `/solicitar` (con `transaction_id` = id de la solicitud y
 `value`/`currency` = precio de catálogo; garantía sin valor), `form_start`, `form_error`
-(solo nombres de campo), `begin_checkout` (Pagar anticipo), `whatsapp_click`,
+(solo nombres de campo), `whatsapp_click`,
 `phone_click`, `cta_click` (listener delegado: la home y las landings son Server
 Components), `sign_up` (registro de técnico — NO es conversión de cliente),
 `aprobar_cotizacion` y `experiment_impression` (A/B del hero). Pendiente: `purchase` al

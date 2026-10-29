@@ -71,6 +71,10 @@ type SolicitudPago = {
   saldo_pagado_at: string | null
   horario_confirmado: string | null
   cliente_nombre: string
+  // (2026-10-29) El anticipo solo se cobra con técnico asignado: /pago/anticipo
+  // lo exige antes de armar el checkout (antes el link se ofrecía desde la
+  // pantalla de éxito de /solicitar, sin técnico).
+  tecnico_asignado_id?: string | null
   // Snapshot del código de descuento (2026-10-19): entra SOLO en el saldo
   // final (calcularMontoSaldo). Nullable — sin código nada cambia.
   descuento_codigo?: string | null
@@ -81,7 +85,7 @@ type SolicitudPago = {
 // ⚠️ descuento_* requieren la migración 20261019_codigos_descuento aplicada
 // ANTES de desplegar (PostgREST rechaza columnas desconocidas en el select).
 const CAMPOS_SOLICITUD_PAGO =
-  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre, descuento_codigo, descuento_tipo, descuento_valor'
+  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre, tecnico_asignado_id, descuento_codigo, descuento_tipo, descuento_valor'
 
 /**
  * Monto (COP) del anticipo que corresponde a una solicitud particular.

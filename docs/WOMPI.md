@@ -10,7 +10,7 @@
 
 | Cobro | Cuándo | Cómo |
 |---|---|---|
-| **Anticipo (50%)** | Tras `procesarAceptacion` — el técnico aceptó y el horario quedó fijo | Plantilla `pago_anticipo_cliente_v2` con botón → `/pago/anticipo/{cliente_token}` |
+| **Anticipo (50%)** | **Solo con técnico asignado** (2026-10-29): tras `procesarAceptacion` / `avisarAsignacionTecnico` — el técnico aceptó y el horario quedó fijo. Al enviar la solicitud el cliente NO paga nada; `/pago/anticipo` rechaza el cobro si `tecnico_asignado_id` está vacío ("Aún no tienes técnico asignado"). Aplica a diagnóstico, reparación, mantenimiento y cambio de filtro (monto = 50 % del precio al cliente) | Plantilla `pago_anticipo_cliente_v2` con botón → `/pago/anticipo/{cliente_token}` |
 | **Abono repuestos (50% del saldo)** (desde 2026-08-25) | Tras aprobar el cliente una cotización **CON repuestos** (`procesarAprobacionCotizacion`) | Plantilla `abono_repuestos_cliente_v1` (fallback `pago_saldo_cliente_v1` mientras esté PENDING) → `/pago/saldo/{cliente_token}` en **modo abono** (referencia `abono-{id}`, monto = 50% del saldo). Garantiza compromiso del cliente y financia la compra de repuestos por el técnico. Confirmación: evento `pago_registrado` + aviso al técnico "puedes comprar los repuestos" (texto libre). NO marca `saldo_pagado_at` |
 | **Saldo** (desde 2026-08-19) | Cotización **SIN repuestos**: tras aprobarla. Con repuestos: al confirmar el cliente el servicio (`confirmarServicioCliente` → completada, saldo restante) | Plantilla `pago_saldo_cliente_v1` + botón en `/cotizacion` aprobada → `/pago/saldo/{cliente_token}` (total − pagos acreditados: anticipos + abonos). Alternativa ONLINE al QR en sitio; no bloquea transiciones. Confirmación marca `saldo_pagado_at` + avisa a cliente (plantilla) y técnico ("no cobres nada en sitio") |
 
@@ -67,7 +67,7 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 
 | Momento | Link al cliente (cuándo) | Al pagar: cliente | Al pagar: técnico |
 |---|---|---|---|
-| **Anticipo** 50% | `pago_anticipo_cliente_v2` al aceptar el técnico; también el CTA de la pantalla de éxito de `/solicitar` (→ `/pago/anticipo/{token}`) | `anticipo_confirmado_cliente_v1` | `anticipo_confirmado_tecnico_v1` |
+| **Anticipo** 50% | `pago_anticipo_cliente_v2` al aceptar el técnico — único camino desde 2026-10-29 (la pantalla de éxito de `/solicitar` ya no ofrece pagar: muestra "Por ahora no pagas nada… cuando un técnico acepte te llega el link") | `anticipo_confirmado_cliente_v1` | `anticipo_confirmado_tecnico_v1` |
 | **Abono** repuestos (50% del saldo) | `abono_repuestos_cliente_v1` al aprobar cotización CON repuestos | `abono_confirmado_cliente_v1` (nueva) | `pago_recibido_tecnico_v1` (nueva) |
 | **Saldo** | `pago_saldo_cliente_v1` al aprobar cotización SIN repuestos; `saldo_final_cliente_v1` (nueva) al completar y cuando el admin fija el **cobro final** a mano (`/api/admin/cobro-final`, 2026-10-12: escribe `cotizacion.total`, reenvía la encuesta si está pendiente y el link del saldo) | `saldo_confirmado_cliente_v1` | `pago_recibido_tecnico_v1` (nueva) |
 
@@ -78,9 +78,19 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 - Si un aviso de WhatsApp falla → evento ⚠️ con `requiere_intervencion_admin`.
   Si el cliente paga DOS veces el mismo momento → evento ⚠️ "segundo pago,
   revisar devolución" + alerta.
-- Si el anticipo ya estaba pagado cuando el técnico acepta (pagó desde el CTA
-  de `/solicitar`), `procesarAceptacion` NO reenvía el link: confirma la
-  reserva al cliente y avisa al técnico.
+- Si el anticipo ya estaba pagado cuando el técnico acepta (hasta 2026-10-29
+  podía pagar desde el CTA de `/solicitar`; hoy solo pasa con pagos
+  registrados a mano o al cambiar/liberar técnico), `procesarAceptacion` NO
+  reenvía el link: confirma la reserva al cliente y avisa al técnico.
+- **Momento del cobro (2026-10-29)**: el anticipo se pide ÚNICAMENTE cuando
+  hay técnico asignado. Motivo: el cliente pagaba una visita sin saber quién
+  la atendía ni si alguien la tomaría (y luego había que devolver). Cambios:
+  `/solicitar` sin CTA de pago (texto "Hoy pagas $0" en la tarjeta de
+  precio y aviso en la pantalla de éxito para todo particular), la home y
+  `/terminos` (TYC v2026.10.29) lo dicen igual, `/pago/anticipo` exige
+  `tecnico_asignado_id` (`CAMPOS_SOLICITUD_PAGO` lo selecciona) y se retiró
+  `URL_PAGO_ANTICIPO_DIAGNOSTICO` (producto Shopify). La conciliación por
+  cron ya solo consultaba `anticipo` con técnico asignado.
 - **Precio fijo** (Mantenimiento / Cambio de filtro): el saldo es el
   catálogo + recargo − anticipo (`totalClienteParaCobro`), cobrado al completar.
 - **Etiqueta de etapa** (`etapaPagoCliente` en `src/lib/constants/pago-cliente.ts`,
@@ -95,8 +105,9 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
 - **Pagos por la tienda Shopify** (referencia `r…` de Conexa) NO se concilian
   solos: el CTA viejo de `/solicitar` mandaba el anticipo a la tienda. El
   2026-10-11 se registraron a mano 2 (Tatiana Moreno, Ana Prieto) con
-  `_origen: 'tienda_shopify_manual'`. Desde ese día el CTA usa el checkout de
-  la app.
+  `_origen: 'tienda_shopify_manual'`. Desde ese día el CTA usó el checkout de
+  la app y desde 2026-10-29 el CTA no existe (el cobro es solo con técnico
+  asignado, por WhatsApp).
 - **Código de descuento (2026-10-19)**: si la solicitud trae snapshot
   (`descuento_codigo/tipo/valor`, lo escribe el cliente en `/solicitar`),
   `calcularMontoSaldo` resta el descuento **solo en el saldo final**

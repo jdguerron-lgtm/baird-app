@@ -260,7 +260,7 @@ El admin puede reajustar el valor que paga el cliente desde `/admin/solicitudes/
 
 Cuando el técnico va a diagnosticar y el cliente decide no proceder con la reparación, se cobra una tarifa fija:
 - **TARIFA_DIAGNOSTICO** = $84,000 COP (IVA incluido, base $70,588 + IVA $13,412)
-- **ANTICIPO_PORCENTAJE** = 50% — se cobra antes de la visita técnica
+- **ANTICIPO_PORCENTAJE** = 50% — se cobra antes de la visita técnica, **solo cuando ya hay técnico asignado** (link por WhatsApp al aceptar; desde 2026-10-29 `/solicitar` no cobra nada y `/pago/anticipo` lo rechaza sin técnico — ver `docs/WOMPI.md`)
 - **Cambio 2026-08-25 — diagnóstico DISCRIMINADO y SUMADO:** en las cotizaciones
   nuevas el total al cliente = **diagnóstico + servicio cotizado**
   (`cotizacion.total = diagnostico_cliente + servicio_cliente` — campos nuevos
@@ -419,7 +419,7 @@ Estos puntos requieren validación con el contador antes de que el modelo entre 
    - Ambos parametrizables sin migración.
 
 5. **Pagos al técnico** — hoy no hay pasarela de split-payment integrada. Baird recibe el pago del cliente y manualmente transfiere al técnico. Para escala se necesita ePayco Pagos Divididos o Mercado Pago Marketplace (ver Apéndice B).
-   - 🆕 **Recaudo del anticipo vía tienda Shopify (2026-07-06):** el anticipo de diagnóstico ($42.000) ya se puede cobrar online con el producto ["Diagnostico Linea Blanca (Anticipo)"](https://tienda.bairdservice.com/products/diagnostico-linea-blanca-copia) de tienda.bairdservice.com — CTA en `/solicitar` tras crear la solicitud (constante `URL_PAGO_ANTICIPO_DIAGNOSTICO` en `src/lib/constants/tienda.ts`). ⚠️ El precio del producto Shopify se mantiene a mano; si cambia `TARIFA_DIAGNOSTICO`, actualizar ambos. La conciliación es manual (cruzar pedidos Shopify ↔ solicitudes por nombre/teléfono); para montos variables (saldo de cotización) evaluar **draft orders** de Shopify con invoice link — cubre recaudo, no el split al técnico.
+   - ~~Recaudo del anticipo vía tienda Shopify (2026-07-06)~~ → **retirado 2026-10-29**: el CTA de `/solicitar` y la constante `URL_PAGO_ANTICIPO_DIAGNOSTICO` ya no existen; el anticipo se cobra solo con técnico asignado por el checkout Wompi (`/pago/anticipo/{token}`, `docs/WOMPI.md`). El producto Shopify "Diagnostico Linea Blanca (Anticipo)" sigue publicado en la tienda solo como referencia histórica (nada en la app apunta a él; se puede despublicar).
 
 6. **Retenciones** — Baird debe retener Rete-Fuente al técnico al pagarle (típicamente 6–11% según concepto). Esto reduce lo que el técnico recibe en mano y lo declara como impuesto pagado en su renta. Pendiente automatizar la retención y certificado anual.
 

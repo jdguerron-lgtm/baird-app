@@ -110,7 +110,7 @@
 | [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a `lineablanca.bairdservice.com`. Runbook + rollback documentado. | 2026-05-23 |
 | [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Mapa admin de servicios geolocalizados en `/admin/mapa`. Pipeline geocoding + 9 mejoras UI. Fase 2 (GPS en vivo, heatmap, rutas) diferida. | 2026-05-23 |
 | [`docs/mejoras-futuras/supervisores-y-repuesto-recibido/`](mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md) | Supervisores con avisos WhatsApp por cambio de estado + estado `repuesto_recibido` + botón "pedir repuesto a supervisores". Desplegado en iteraciones sucesivas. | 2026-05-29 → 06-16 |
-| [`docs/mejoras-futuras/pagos-shopify/`](mejoras-futuras/pagos-shopify/README.md) | **ARCHIVADO 2026-08-18** — superseded por Wompi como pasarela única (`docs/WOMPI.md`). Shopify queda solo para repuestos. ⚠️ El CTA de anticipo Shopify en `/solicitar` sigue en el código (decisión pendiente, tanda 2). | archivado |
+| [`docs/mejoras-futuras/pagos-shopify/`](mejoras-futuras/pagos-shopify/README.md) | **ARCHIVADO 2026-08-18** — superseded por Wompi como pasarela única (`docs/WOMPI.md`). Shopify queda solo para repuestos. El CTA de anticipo de `/solicitar` (Shopify y luego Wompi) se retiró el 2026-10-29: el anticipo se cobra solo con técnico asignado. | archivado |
 
 ### Documentación deprecated (no actualizar)
 

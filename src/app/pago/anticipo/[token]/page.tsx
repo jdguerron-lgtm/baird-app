@@ -89,6 +89,27 @@ export default async function PagoAnticipoPage({ params, searchParams }: Props) 
     )
   }
 
+  // ── Sin técnico asignado todavía (2026-10-29) ──
+  // El anticipo se cobra SOLO cuando un técnico aceptó la visita: el cliente
+  // paga sabiendo quién lo atiende y cuándo. Antes la pantalla de éxito de
+  // /solicitar llevaba acá apenas creada la solicitud (sin técnico) y el
+  // cliente podía pagar una visita que luego nadie tomaba. El link real llega
+  // por WhatsApp (`pago_anticipo_cliente_v2`) desde `avisarAsignacionTecnico`.
+  if (!sol.tecnico_asignado_id) {
+    return (
+      <Marco titulo="Aún no tienes técnico asignado" emoji="⏳" color="amber">
+        <p className="text-sm text-gray-600">
+          El anticipo se paga <strong>cuando un técnico verificado acepte tu visita</strong>. En ese
+          momento te enviamos por WhatsApp quién va, a qué hora y el link seguro de pago.
+        </p>
+        <p className="text-xs text-gray-500">
+          Por ahora no debes pagar nada. Si tu solicitud lleva más de un día sin técnico, escríbenos por WhatsApp.
+        </p>
+        <LinkPortal token={token} />
+      </Marco>
+    )
+  }
+
   const monto = calcularMontoAnticipo(sol)
 
   if (monto <= 0 || !wompiHabilitado()) {

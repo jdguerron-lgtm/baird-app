@@ -4,7 +4,6 @@ import { useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSolicitudForm } from '@/hooks/useSolicitudForm'
-import { URL_PAGO_ANTICIPO_DIAGNOSTICO } from '@/lib/constants/tienda'
 import { PhoneInput } from '@/components/ui/PhoneInput'
 import { Alert } from '@/components/ui/Alert'
 import { InputField } from '@/components/ui/InputField'
@@ -73,14 +72,13 @@ export default function SolicitarServicio() {
   const [cargando, setCargando] = useState(false)
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'success' | 'error' } | null>(null)
   const [, setSolicitudId] = useState<string | null>(null)
-  // Token del cliente de la solicitud recién creada: el CTA del anticipo lleva
-  // a /pago/anticipo/{token} (checkout Wompi propio, referencia anticipo-{id})
-  // para que el pago quede registrado en la app. Antes iba a la tienda
-  // Shopify y la app no se enteraba (caso Tatiana Moreno / Ana Prieto, 2026-10-10).
-  const [clienteTokenNuevo, setClienteTokenNuevo] = useState<string | null>(null)
-  // Tras crear una solicitud particular de Diagnóstico/Reparación, mostramos el
-  // CTA para pagar el anticipo ($42.000) en la tienda Shopify (recaudo online).
-  const [mostrarPagoAnticipo, setMostrarPagoAnticipo] = useState(false)
+  // Particular recién creada: aviso de que el anticipo se paga SOLO cuando un
+  // técnico acepte (2026-10-29). Hasta ese día acá había un CTA "Pagar
+  // anticipo" inmediato (primero a la tienda Shopify, luego a /pago/anticipo):
+  // el cliente pagaba sin saber quién lo atendía ni si alguien tomaría la
+  // visita. Ahora el link llega por WhatsApp con la aceptación del técnico y
+  // /pago/anticipo rechaza el cobro sin técnico asignado.
+  const [avisoAnticipo, setAvisoAnticipo] = useState(false)
   const [geoLoading, setGeoLoading] = useState(false)
   // El auto-agendamiento de la opción 1 salta la página /horario (donde antes
   // se aceptaban los TyC), así que la aceptación se exige aquí en el formulario.
@@ -95,19 +93,6 @@ export default function SolicitarServicio() {
     if (formIniciado.current) return
     formIniciado.current = true
     trackEvento('form_start', { form_id: 'solicitar' })
-  }
-
-  // GA4 `begin_checkout`: clic en "Pagar anticipo" tras crear la solicitud.
-  // Valor = anticipo base (50 % del diagnóstico); el recargo finde no se suma
-  // porque el formulario ya se reseteó. El pago aprobado (purchase) aún no se
-  // mide: vive en /pago/*, que es módulo congelado.
-  const registrarInicioPago = () => {
-    const anticipo = Math.round(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)
-    trackEvento('begin_checkout', {
-      currency: 'COP',
-      value: anticipo,
-      items: [{ item_id: 'anticipo_diagnostico', item_name: 'Anticipo visita de diagnóstico', price: anticipo, quantity: 1 }],
-    })
   }
 
   // GA4 `form_error`: qué campos fallan (solo los nombres, nunca los valores).
@@ -211,7 +196,6 @@ export default function SolicitarServicio() {
 
       const id = data.id
       setSolicitudId(id)
-      setClienteTokenNuevo(typeof data.cliente_token === 'string' ? data.cliente_token : null)
 
       // Valor del lead = precio de catálogo al cliente (diagnóstico $84.000 o
       // tarifa fija de mantenimiento / filtro). Garantía no lleva valor: la
@@ -241,10 +225,7 @@ export default function SolicitarServicio() {
         reserva: data.agendado ? 'agendada' : 'sin_horario',
       })
 
-      setMostrarPagoAnticipo(
-        !formData.es_garantia &&
-        (formData.tipo_solicitud === 'Diagnóstico' || formData.tipo_solicitud === 'Reparación'),
-      )
+      setAvisoAnticipo(!formData.es_garantia)
 
       const tecnicosMsg = data.notificados > 0
         ? ` ${data.notificados} técnico(s) notificado(s) por WhatsApp.`
@@ -320,39 +301,19 @@ export default function SolicitarServicio() {
               {mensaje && (
                 <div className="mb-6">
                   <Alert type={mensaje.tipo} message={mensaje.texto} onClose={() => setMensaje(null)} />
-                  {/* Recaudo del anticipo. Con cliente_token → checkout Wompi
-                      propio (/pago/anticipo/{token}): monto exacto calculado en
-                      el servidor (incluye recargo finde/festivo) y el pago queda
-                      registrado en la solicitud. Sin token (respuesta vieja) →
-                      producto de la tienda Shopify como respaldo.
-                      Solo particular Diagnóstico/Reparación. */}
-                  {mensaje.tipo === 'success' && mostrarPagoAnticipo && (
+                  {/* Anticipo (particular): NO se cobra acá. El link de pago
+                      (Wompi, /pago/anticipo/{token}) llega por WhatsApp cuando
+                      un técnico acepta la visita — ver avisarAsignacionTecnico. */}
+                  {mensaje.tipo === 'success' && avisoAnticipo && (
                     <div className="mt-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl p-4">
                       <p className="text-sm font-semibold text-emerald-900 mb-1">
-                        💳 Asegura tu visita pagando el anticipo del diagnóstico
+                        💳 Por ahora no pagas nada
                       </p>
-                      <p className="text-xs text-emerald-800 mb-3">
-                        Es el 50% de la tarifa de diagnóstico ($42.000 COP; un poco más si tu visita cae en fin de semana o festivo). Si apruebas la reparación, se abona al total. Pago seguro con Wompi.
+                      <p className="text-xs text-emerald-800">
+                        Cuando un técnico verificado acepte tu visita te enviamos por WhatsApp quién va,
+                        a qué hora y el link seguro (Wompi) para pagar el anticipo del {Math.round(ANTICIPO_PORCENTAJE * 100)}%.
+                        Ese anticipo se abona al total del servicio. Nunca pagues en efectivo al técnico.
                       </p>
-                      {clienteTokenNuevo ? (
-                        <a
-                          href={`/pago/anticipo/${clienteTokenNuevo}`}
-                          onClick={registrarInicioPago}
-                          className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
-                        >
-                          Pagar anticipo →
-                        </a>
-                      ) : (
-                        <a
-                          href={URL_PAGO_ANTICIPO_DIAGNOSTICO}
-                          onClick={registrarInicioPago}
-                          target="_blank"
-                          rel="noopener"
-                          className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition-colors"
-                        >
-                          Pagar anticipo $42.000 →
-                        </a>
-                      )}
                     </div>
                   )}
                 </div>
@@ -700,7 +661,9 @@ export default function SolicitarServicio() {
 
                         <p className="text-xs text-green-700 mt-3">
                           💡 Incluye limpieza, lubricación, ajustes eléctricos y prueba de funcionamiento.
-                          El pago se realiza a Baird Service por medios electrónicos (no efectivo).
+                          Hoy no pagas nada: cuando un técnico acepte tu visita te llega el link para pagar el
+                          anticipo del {Math.round(ANTICIPO_PORCENTAJE * 100)}% y el resto al terminar. Siempre a Baird Service
+                          por medios electrónicos (no efectivo).
                         </p>
                       </div>
                     ) : formData.tipo_solicitud === 'Cambio de filtro' ? (
@@ -746,8 +709,9 @@ export default function SolicitarServicio() {
 
                         <p className="text-xs text-teal-700 mt-3">
                           💡 Precio todo-incluido: el <strong>filtro</strong>, la mano de obra y el IVA ya están
-                          cubiertos. No pagas nada adicional al técnico. El pago se realiza a Baird Service por
-                          medios electrónicos (no efectivo).
+                          cubiertos. No pagas nada adicional al técnico. Hoy no pagas nada: cuando un técnico
+                          acepte tu visita te llega el link para pagar el anticipo del {Math.round(ANTICIPO_PORCENTAJE * 100)}% y el
+                          resto al terminar, siempre a Baird Service por medios electrónicos (no efectivo).
                         </p>
                       </div>
                     ) : (
@@ -765,7 +729,7 @@ export default function SolicitarServicio() {
                             </div>
                           </div>
                           <span className="text-xs text-blue-700 bg-white border border-blue-200 rounded-full px-2.5 py-1 font-medium">
-                            Anticipo ${formatCOP(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)}
+                            Hoy pagas $0
                           </span>
                         </div>
 
@@ -792,9 +756,10 @@ export default function SolicitarServicio() {
                         </div>
 
                         <p className="text-xs text-blue-700 mt-3">
-                          💡 Pagas <strong>${formatCOP(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)} COP</strong> de
-                          anticipo para reservar la visita. Tras revisar el equipo, el técnico te enviará una
-                          cotización por la reparación; tú decides si aprobar o rechazar.
+                          💡 Hoy no pagas nada. Cuando un técnico acepte tu visita te llega por WhatsApp el
+                          link para pagar el anticipo de <strong>${formatCOP(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)} COP</strong>{' '}
+                          ({Math.round(ANTICIPO_PORCENTAJE * 100)}%), que se abona al total. Tras revisar el equipo, el técnico te
+                          enviará una cotización por la reparación; tú decides si aprobar o rechazar.
                         </p>
                       </div>
                     )}
