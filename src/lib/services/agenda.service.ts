@@ -1,6 +1,6 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
-import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
+import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA, fechaCerradaAReservas } from '@/lib/constants/franjas'
 import {
   parsearFechaVisita,
   fechaColombiaYMD,
@@ -96,6 +96,15 @@ export async function validarHorarioAgendable(
       error: diasMinimos >= 2
         ? `Necesitamos al menos ${diasMinimos} días de anticipación para organizar la visita. Elige una fecha a partir del ${formatearFechaLargaCO(fechaColombiaMasDias(diasMinimos))}.`
         : 'Por ahora no agendamos para el mismo día. Elige una fecha a partir de mañana.',
+    }
+  }
+
+  // Día cerrado a reservas nuevas (FECHAS_SIN_RESERVAS_NUEVAS): lo ya agendado
+  // ese día se mantiene, pero no entra nada nuevo.
+  if (fechaCerradaAReservas(fechaColombiaYMD(new Date(fechaVisitaAt)))) {
+    return {
+      ok: false,
+      error: 'Ese día ya no tiene cupo para nuevas visitas. Por favor elige otro día.',
     }
   }
 
@@ -219,6 +228,9 @@ export function materializarFechaVisita(fechaYMD: string, franjaValue: string): 
  * devuelve [] (fail-open — el guard real es validarHorarioAgendable).
  */
 export async function franjasLlenasParaFecha(fechaYMD: string): Promise<string[]> {
+  // Día cerrado a reservas nuevas → todas las franjas se muestran llenas.
+  if (fechaCerradaAReservas(fechaYMD)) return FRANJAS_HORARIO.map(f => f.value)
+
   const slots = FRANJAS_HORARIO.map(f => ({ value: f.value, iso: isoDeSlot(fechaYMD, f.horaInicio) }))
 
   const { data, error } = await supabase

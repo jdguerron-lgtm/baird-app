@@ -8,6 +8,14 @@ vi.mock('@/lib/supabase-admin', () => ({
   supabaseAdmin: { from: mockFrom },
 }))
 
+// Días cerrados a reservas nuevas: se mockea con un día relativo (hoy + 5) para
+// que los tests no dependan de la fecha real de FECHAS_SIN_RESERVAS_NUEVAS.
+const { diaCerrado } = vi.hoisted(() => ({ diaCerrado: { ymd: '' } }))
+vi.mock('@/lib/constants/franjas', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/lib/constants/franjas')>()
+  return { ...orig, fechaCerradaAReservas: (f: string) => f === diaCerrado.ymd }
+})
+
 import {
   validarHorarioAgendable,
   franjasLlenasParaFecha,
@@ -16,6 +24,8 @@ import {
 } from '@/lib/services/agenda.service'
 import { MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
 import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+
+diaCerrado.ymd = fechaColombiaMasDias(5)
 
 const MESES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -103,6 +113,13 @@ describe('validarHorarioAgendable', () => {
     if (!r.ok) expect(r.error).toContain('llena')
   })
 
+  it('rechaza un día cerrado a reservas nuevas aunque tenga cupo', async () => {
+    mockFrom.mockReturnValue(queryBuilder({ count: 0, error: null }))
+    const r = await validarHorarioAgendable(horarioTexto(diaCerrado.ymd))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('otro día')
+  })
+
   it('deja pasar texto libre no parseable (sugerencias del formulario)', async () => {
     const r = await validarHorarioAgendable('Lo antes posible, en la mañana')
     expect(r.ok).toBe(true)
@@ -130,6 +147,12 @@ describe('franjasLlenasParaFecha', () => {
 
     const llenas = await franjasLlenasParaFecha(ymd)
     expect(llenas).toEqual(['8am-12pm'])
+  })
+
+  it('día cerrado a reservas nuevas → todas las franjas llenas', async () => {
+    const llenas = await franjasLlenasParaFecha(diaCerrado.ymd)
+    expect(llenas).toEqual(['8am-12pm', '12pm-3pm', '3pm-6pm', '6pm-8pm'])
+    expect(mockFrom).not.toHaveBeenCalled()
   })
 
   it('fail-open: ante error de BD devuelve []', async () => {
@@ -219,3 +242,11 @@ describe('tecnicoOcupadoEnSlot (cupo por técnico = MAX_SERVICIOS_TECNICO_POR_FR
 function fechaColombiaYMDHoy(): string {
   return fechaColombiaMasDias(0)
 }
+
+describe('FECHAS_SIN_RESERVAS_NUEVAS', () => {
+  it('el martes 2026-11-03 está cerrado a reservas nuevas', async () => {
+    const real = await vi.importActual<typeof import('@/lib/constants/franjas')>('@/lib/constants/franjas')
+    expect(real.fechaCerradaAReservas('2026-11-03')).toBe(true)
+    expect(real.fechaCerradaAReservas('2026-11-04')).toBe(false)
+  })
+})
