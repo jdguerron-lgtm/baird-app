@@ -12,7 +12,8 @@ import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
-import { MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
+import { MAX_SERVICIOS_TECNICO_POR_FRANJA, fechaCerradaAReservas } from '@/lib/constants/franjas'
+import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import { aceptacionCuentaComoConfirmacion } from '@/lib/utils/confirmacion-visita'
 import { obtenerConfigReparto, contarServiciosRecientes, dividirPorPrioridad } from '@/lib/services/reparto.service'
@@ -1038,6 +1039,18 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   // Se corta antes de asignar, con reintentar: el servicio sigue disponible
   // por si puede tomar el otro horario propuesto.
   const slotEfectivo = horarioUpdate ? horarioUpdate.fecha_visita_at : solPrevia?.fecha_visita_at ?? null
+
+  // Día cerrado (FECHAS_SIN_RESERVAS_NUEVAS): solo se respetan los servicios
+  // que YA tenían técnico asignado. Uno que aún no lo tiene no se puede aceptar
+  // para ese día aunque el horario ya estuviera confirmado; el admin lo reagenda.
+  if (slotEfectivo && fechaCerradaAReservas(fechaColombiaYMD(new Date(slotEfectivo)))) {
+    return {
+      ganado: false,
+      reintentar: true,
+      mensaje: 'Ese día ya no tiene cupo para nuevas visitas. Elige el otro horario propuesto por el cliente o deja este servicio: Baird lo reagendará.',
+    }
+  }
+
   if (slotEfectivo) {
     const ocupado = await tecnicoOcupadoEnSlot(notif.tecnico_id, slotEfectivo, notif.solicitud_id)
     if (ocupado) {
