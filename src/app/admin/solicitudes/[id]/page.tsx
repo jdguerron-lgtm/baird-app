@@ -342,6 +342,45 @@ export default function SolicitudDetalle() {
     }
   }
 
+  // "💬 Cobrar faltante por WhatsApp" (2026-11-03): reenvía al cliente el link
+  // Wompi de lo que le falta (abono de repuestos o saldo). No cambia montos.
+  const [cobrandoFaltante, setCobrandoFaltante] = useState(false)
+  const [resultadoFaltante, setResultadoFaltante] = useState<{ ok: boolean; texto: string } | null>(null)
+
+  const cobrarFaltanteWhatsapp = async (montoEstimado: number) => {
+    if (!window.confirm(
+      `¿Enviar al cliente por WhatsApp el link de pago del faltante ($${formatCOP(montoEstimado)} COP)?`,
+    )) return
+    setCobrandoFaltante(true)
+    setResultadoFaltante(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoFaltante({ ok: false, texto: 'Sesión expirada — vuelve a iniciar sesión.' })
+        return
+      }
+      const res = await fetch('/api/admin/cobrar-faltante', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ id }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResultadoFaltante({ ok: false, texto: body?.error ?? `Error ${res.status}` })
+        return
+      }
+      setResultadoFaltante({
+        ok: true,
+        texto: `✅ Link de pago enviado por WhatsApp (${body.tipo === 'abono' ? 'abono de repuestos' : 'saldo'}: $${formatCOP(body.monto)}).`,
+      })
+      await recargarEventos()
+    } catch (err) {
+      setResultadoFaltante({ ok: false, texto: err instanceof Error ? err.message : 'Error de red' })
+    } finally {
+      setCobrandoFaltante(false)
+    }
+  }
+
   // Ledger de pagos online + "↩️ Devolver" (2026-10-21). La tabla `pagos`
   // está cerrada al anon, así que se lee por /api/admin/pagos. La devolución
   // va por /api/admin/pagos/devolver: modo 'wompi' (reembolso por API) o
@@ -1896,6 +1935,34 @@ export default function SolicitudDetalle() {
                       )}
                       <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
                         {pagosLedger.map(p => {
+                {!soloLectura && (() => {
+                  const r = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
+                  if (!r || solicitud.saldo_pagado_at) return null
+                  const cotAprobada = Boolean(((solicitud as unknown as { cotizacion?: { aprobado_at?: unknown } | null }).cotizacion)?.aprobado_at)
+                  const enCierre = solicitud.estado === 'confirmacion_pendiente' || solicitud.estado === 'completada'
+                  const faltante = r.porCobrar > 0 && (r.etapa === 'saldo_pendiente' || r.etapa === 'abono_pendiente')
+                    ? r.porCobrar
+                    : (enCierre || cotAprobada) ? Math.max(0, r.totalNeto - r.pagado) : 0
+                  if (faltante <= 0 || r.etapa === 'pagado') return null
+                  return (
+                    <div className="pt-1 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => cobrarFaltanteWhatsapp(faltante)}
+                        disabled={cobrandoFaltante}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                        title="Le manda al cliente por WhatsApp el link de pago Wompi de lo que le falta pagar"
+                      >
+                        {cobrandoFaltante ? 'Enviando…' : `💬 Cobrar faltante por WhatsApp ($${formatCOP(faltante)})`}
+                      </button>
+                      {resultadoFaltante && (
+                        <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {resultadoFaltante.texto}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
                           const devuelto = p.estado === 'VOIDED'
                           const aprobado = p.estado === 'APPROVED'
                           const fecha = p.pagado_at ?? p.created_at
