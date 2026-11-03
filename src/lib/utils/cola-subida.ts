@@ -65,6 +65,8 @@ export interface ArchivoSubida {
   intentos: number
   /** Archivo ya comprimido, a la espera de un cupo de subida (interno). */
   preparado?: File | null
+  /** true si vino de un borrador (ya estaba en Storage antes de recargar). */
+  restaurado?: boolean
 }
 
 export interface ResumenCola {
@@ -102,6 +104,18 @@ export interface OpcionesCola {
    * Devuelve el mensaje de error o null si pasa.
    */
   validar?: (filePreparado: File, tipo: TipoArchivoEvidencia) => string | null
+  /**
+   * Aviso cuando un archivo queda en error (compresión o subida agotó los
+   * reintentos). Para telemetría: la cola no depende de esto.
+   */
+  onError?: (archivo: ArchivoSubida, mensaje: string) => void
+}
+
+/** Archivo ya subido en una carga anterior de la página (borrador). */
+export interface ArchivoRestaurado {
+  url: string
+  tipo: TipoArchivoEvidencia
+  nombre: string
 }
 
 export const COLA_CONCURRENCIA = 3
@@ -209,6 +223,49 @@ export class ColaSubida {
     }
     this.programar()
     return nuevos
+  }
+
+  /**
+   * Vuelve a poner en la lista archivos que YA están en Storage (borrador
+   * recuperado tras una recarga de la página). Entran como 'listo', sin subir
+   * nada; el `File` es un marcador vacío con el nombre y el tipo, y la vista
+   * previa de las fotos es la misma URL pública.
+   */
+  restaurar(archivos: ArchivoRestaurado[]): ArchivoSubida[] {
+    const nuevos: ArchivoSubida[] = archivos
+      .filter(a => a && typeof a.url === 'string' && a.url && (a.tipo === 'imagen' || a.tipo === 'video'))
+      .filter(a => !this.items.some(i => i.url === a.url))
+      .map(a => ({
+        id: nuevoId(),
+        file: new File([], a.nombre || (a.tipo === 'video' ? 'video' : 'foto'), {
+          type: a.tipo === 'video' ? 'video/mp4' : 'image/jpeg',
+        }),
+        tipo: a.tipo,
+        preview: a.tipo === 'video' ? 'video' : a.url,
+        estado: 'listo' as const,
+        pct: 100,
+        url: a.url,
+        path: null,
+        error: null,
+        intentos: 0,
+        restaurado: true,
+      }))
+    if (nuevos.length === 0) return []
+    this.items = [...this.items, ...nuevos]
+    this.emitir()
+    return nuevos
+  }
+
+  /**
+   * Saca de la lista todo lo que sigue en curso (en cola / comprimiendo /
+   * subiendo) y devuelve cuántos quitó. Lo usa "Registrar ya con lo subido":
+   * el técnico prefiere registrar sin el video lento a seguir esperando. Las
+   * subidas en vuelo terminan solas y se ignoran (igual que `quitar`).
+   */
+  abandonarPendientes(): number {
+    const pendientes = this.items.filter(i => i.estado !== 'listo' && i.estado !== 'error')
+    for (const it of pendientes) this.quitar(it.id)
+    return pendientes.length
   }
 
   quitar(id: string): void {
@@ -344,6 +401,7 @@ export class ColaSubida {
       const motivo = (this.opts.validar ?? validarTamanoEvidencia)(preparado, it.tipo)
       if (motivo) {
         this.actualizar(id, { estado: 'error', error: motivo, pct: 0, preparado: null })
+        this.avisarError(id, motivo)
         return
       }
       this.actualizar(id, { estado: 'en_cola', preparado })
@@ -352,6 +410,7 @@ export class ColaSubida {
       const mensaje = e instanceof Error ? e.message : 'No se pudo preparar el archivo.'
       console.error('[ColaSubida] preparar falló:', mensaje)
       this.actualizar(id, { estado: 'error', error: mensaje, preparado: null })
+      this.avisarError(id, mensaje)
     }
   }
 
@@ -379,6 +438,18 @@ export class ColaSubida {
       console.error('[ColaSubida] archivo falló:', mensaje)
       // Se conserva `preparado` para que reintentar no vuelva a comprimir.
       this.actualizar(id, { estado: 'error', error: mensaje })
+      this.avisarError(id, mensaje)
+    }
+  }
+
+  /** Llama `onError` sin dejar que una falla del callback afecte la cola. */
+  private avisarError(id: string, mensaje: string): void {
+    const it = this.vivo(id)
+    if (!it || !this.opts.onError) return
+    try {
+      this.opts.onError(it, mensaje)
+    } catch {
+      /* telemetría: nunca rompe la subida */
     }
   }
 }

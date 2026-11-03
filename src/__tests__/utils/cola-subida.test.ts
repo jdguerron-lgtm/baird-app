@@ -203,3 +203,78 @@ describe('helpers puros', () => {
     expect(validarTamanoEvidencia({ size: 10 }, 'imagen')).toBeNull()
   })
 })
+
+describe('ColaSubida — borrador recuperado, onError y registrar con lo subido (2026-11-03)', () => {
+  const URL_A = 'https://x.supabase.co/storage/v1/object/public/evidencias-servicio/sol/a.jpg'
+  const URL_V = 'https://x.supabase.co/storage/v1/object/public/evidencias-servicio/sol/v.mp4'
+
+  it('restaurar agrega archivos ya subidos como listos, sin subir nada', async () => {
+    const { c, pendientes } = cola()
+    const creados = c.restaurar([
+      { url: URL_A, tipo: 'imagen', nombre: 'a.jpg' },
+      { url: URL_V, tipo: 'video', nombre: 'v.mp4' },
+    ])
+    expect(creados).toHaveLength(2)
+    await tick()
+    expect(pendientes).toHaveLength(0)
+    expect(c.snapshot()[0]).toMatchObject({ estado: 'listo', url: URL_A, preview: URL_A, restaurado: true, tipo: 'imagen' })
+    expect(c.snapshot()[1]).toMatchObject({ estado: 'listo', url: URL_V, preview: 'video', tipo: 'video' })
+    expect(c.resumen()).toMatchObject({ total: 2, listos: 2, enCurso: 0 })
+    expect(await c.esperarTodo()).toEqual({ urls: [URL_A, URL_V], errores: [] })
+  })
+
+  it('restaurar no duplica una URL que ya está en la lista', () => {
+    const { c } = cola()
+    c.restaurar([{ url: URL_A, tipo: 'imagen', nombre: 'a.jpg' }])
+    expect(c.restaurar([{ url: URL_A, tipo: 'imagen', nombre: 'a.jpg' }])).toHaveLength(0)
+    expect(c.snapshot()).toHaveLength(1)
+  })
+
+  it('los restaurados conviven con archivos nuevos y conservan el orden', async () => {
+    const { c, pendientes } = cola()
+    c.restaurar([{ url: URL_A, tipo: 'imagen', nombre: 'a.jpg' }])
+    c.agregar([foto('nueva.jpg')])
+    await hasta(() => pendientes.length === 1)
+    pendientes[0].ok('https://x/nueva')
+    expect(await c.esperarTodo()).toEqual({ urls: [URL_A, 'https://x/nueva'], errores: [] })
+  })
+
+  it('onError avisa cuando un archivo queda en error, y un callback que lanza no rompe la cola', async () => {
+    const onError = vi.fn((_a: unknown, _m: string) => { throw new Error('telemetría caída') })
+    const { c, pendientes } = cola({ onError })
+    c.agregar([foto('mal.jpg')])
+    await hasta(() => pendientes.length === 1)
+    pendientes[0].falla(new Error('HTTP 500'))
+    await hasta(() => c.snapshot()[0].estado === 'error')
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][1]).toBe('HTTP 500')
+    expect(c.resumen()).toMatchObject({ errores: 1, enCurso: 0 })
+  })
+
+  it('onError también se llama cuando la validación tras preparar falla', async () => {
+    const onError = vi.fn()
+    const { c } = cola({ onError, validar: () => 'El video excede el tope' })
+    c.agregar([video('grande.mp4')])
+    await hasta(() => c.snapshot()[0].estado === 'error')
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ tipo: 'video' }), 'El video excede el tope')
+  })
+
+  it('abandonarPendientes quita lo que sigue en curso, deja listos y errores, y libera esperarTodo', async () => {
+    const { c, pendientes } = cola()
+    c.agregar([foto('1.jpg'), video('lento.mp4')])
+    await hasta(() => pendientes.length === 2)
+    pendientes[0].ok('https://x/1')
+    await hasta(() => c.snapshot()[0].estado === 'listo')
+    let resuelto: { urls: string[] } | null = null
+    void c.esperarTodo().then(r => { resuelto = r })
+    await tick()
+    expect(resuelto).toBeNull()
+    expect(c.abandonarPendientes()).toBe(1)
+    await hasta(() => resuelto !== null)
+    expect(resuelto!.urls).toEqual(['https://x/1'])
+    // La subida en vuelo que termina después se ignora.
+    pendientes[1].ok('https://x/lento')
+    await tick()
+    expect(c.snapshot().map(a => a.file.name)).toEqual(['1.jpg'])
+  })
+})
