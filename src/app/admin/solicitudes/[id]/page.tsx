@@ -16,7 +16,7 @@ import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { rangoFechaVisita, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
-import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
+import { etapaPagoCliente, descuentoClienteParaCobro, faltanteCobroCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
 import { descuentoDeSolicitud, describirDescuento } from '@/lib/constants/descuentos'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { labelRelacionReceptor } from '@/lib/utils/receptor'
@@ -371,7 +371,7 @@ export default function SolicitudDetalle() {
       }
       setResultadoFaltante({
         ok: true,
-        texto: `✅ Link de pago enviado por WhatsApp (${body.tipo === 'abono' ? 'abono de repuestos' : 'saldo'}: $${formatCOP(body.monto)}).`,
+        texto: `✅ Link de pago enviado por WhatsApp (${body.tipo === 'abono' ? 'abono de repuestos' : body.tipo === 'anticipo' ? 'anticipo' : 'saldo'}: $${formatCOP(body.monto)}).`,
       })
       await recargarEventos()
     } catch (err) {
@@ -379,6 +379,31 @@ export default function SolicitudDetalle() {
     } finally {
       setCobrandoFaltante(false)
     }
+  }
+
+  const renderCobroFaltante = () => {
+    if (soloLectura || !solicitud) return null
+    const f = faltanteCobroCliente(solicitud as unknown as SolicitudParaEtapaPago)
+    if (!f) return null
+    const QUE = { anticipo: 'anticipo', abono: 'abono de repuestos', saldo: 'saldo' } as const
+    return (
+      <div className="pt-1 space-y-1">
+        <button
+          type="button"
+          onClick={() => cobrarFaltanteWhatsapp(f.monto)}
+          disabled={cobrandoFaltante}
+          className="w-full sm:w-auto text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+          title={`Le manda al cliente por WhatsApp el link de pago Wompi del ${QUE[f.tipo]}`}
+        >
+          {cobrandoFaltante ? 'Enviando…' : `💬 Cobrar faltante por WhatsApp ($${formatCOP(f.monto)} · ${QUE[f.tipo]})`}
+        </button>
+        {resultadoFaltante && (
+          <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {resultadoFaltante.texto}
+          </p>
+        )}
+      </div>
+    )
   }
 
   // Ledger de pagos online + "↩️ Devolver" (2026-10-21). La tabla `pagos`
@@ -1835,7 +1860,16 @@ export default function SolicitudDetalle() {
                 cot as { total?: number | null } | null,
                 (solicitud as unknown as { recargo_weekend_aplicado?: number | null }).recargo_weekend_aplicado,
               )
-          if (!totalCliente || totalCliente <= 0) return null
+          if (!totalCliente || totalCliente <= 0) {
+            const cobro = renderCobroFaltante()
+            return cobro ? (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-2">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">💰 Cobros al cliente</h2>
+                <ProgresoPagoCliente solicitud={solicitud as unknown as SolicitudParaEtapaPago} />
+                {cobro}
+              </div>
+            ) : null
+          }
           const baseVenta = Number(cot?.base_venta ?? 0) > 0 ? Number(cot?.base_venta) : Math.round(totalCliente / 1.19)
           const ivaVenta = Number(cot?.iva_venta ?? 0) > 0 ? Number(cot?.iva_venta) : totalCliente - baseVenta
           const pagoTec = solicitud.pago_tecnico ?? 0
@@ -1889,6 +1923,7 @@ export default function SolicitudDetalle() {
               <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 text-xs">
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cobros al cliente</p>
                 <ProgresoPagoCliente solicitud={solicitud as unknown as SolicitudParaEtapaPago} />
+                {renderCobroFaltante()}
                 {solicitud.ultimo_pago_at && (
                   <p className="text-[11px] text-gray-500">
                     Último pago recibido: {new Date(solicitud.ultimo_pago_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
@@ -1906,34 +1941,6 @@ export default function SolicitudDetalle() {
                   <button
                     type="button"
                     onClick={verificarPagosWompi}
-                {!soloLectura && (() => {
-                  const r = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
-                  if (!r || solicitud.saldo_pagado_at) return null
-                  const cotAprobada = Boolean(((solicitud as unknown as { cotizacion?: { aprobado_at?: unknown } | null }).cotizacion)?.aprobado_at)
-                  const enCierre = solicitud.estado === 'confirmacion_pendiente' || solicitud.estado === 'completada'
-                  const faltante = r.porCobrar > 0 && (r.etapa === 'saldo_pendiente' || r.etapa === 'abono_pendiente')
-                    ? r.porCobrar
-                    : (enCierre || cotAprobada) ? Math.max(0, r.totalNeto - r.pagado) : 0
-                  if (faltante <= 0 || r.etapa === 'pagado') return null
-                  return (
-                    <div className="pt-1 space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => cobrarFaltanteWhatsapp(faltante)}
-                        disabled={cobrandoFaltante}
-                        className="w-full sm:w-auto text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                        title="Le manda al cliente por WhatsApp el link de pago Wompi de lo que le falta pagar"
-                      >
-                        {cobrandoFaltante ? 'Enviando…' : `💬 Cobrar faltante por WhatsApp ($${formatCOP(faltante)})`}
-                      </button>
-                      {resultadoFaltante && (
-                        <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
-                          {resultadoFaltante.texto}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })()}
                     disabled={verificandoPagos}
                     className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                     title="Consulta Wompi y registra los pagos de este servicio que falten (idempotente)"

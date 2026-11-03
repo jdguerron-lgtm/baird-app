@@ -334,3 +334,30 @@ export function pasosPagoCliente(sol: SolicitudParaEtapaPago): {
   })
   return pasos
 }
+
+export interface FaltanteCobroCliente {
+  /** Qué cobro se le reenvía: define el link (/pago/anticipo o /pago/saldo). */
+  tipo: 'anticipo' | 'abono' | 'saldo'
+  /** Monto estimado (COP). El servidor lo recalcula con los pagos acreditados. */
+  monto: number
+}
+
+/**
+ * Lo que el cliente PARTICULAR debe HOY, en cualquier etapa del servicio
+ * (2026-11-03, botón "Cobrar faltante por WhatsApp" de la ficha admin):
+ *   - anticipo pendiente (reserva sin pagar)   → anticipo
+ *   - abono de repuestos pendiente              → abono (50%)
+ *   - cualquier otro caso con total conocido y
+ *     algo sin pagar (saldo, precio fijo, etc.) → saldo (total neto − pagado)
+ * `null` = no hay nada por cobrar: garantía, todo pagado, servicio cerrado
+ * sin cobro, o total aún desconocido (diagnóstico sin cotización ya pagado).
+ */
+export function faltanteCobroCliente(sol: SolicitudParaEtapaPago): FaltanteCobroCliente | null {
+  if (sol.es_garantia || sol.saldo_pagado_at) return null
+  const r = etapaPagoCliente(sol)
+  if (!r || r.etapa === 'pagado' || r.etapa === 'cerrado_con_pago') return null
+  if (r.etapa === 'anticipo_pendiente') return r.porCobrar > 0 ? { tipo: 'anticipo', monto: r.porCobrar } : null
+  if (r.etapa === 'abono_pendiente') return r.porCobrar > 0 ? { tipo: 'abono', monto: r.porCobrar } : null
+  const restante = Math.max(0, r.totalNeto - r.pagado)
+  return restante > 0 ? { tipo: 'saldo', monto: restante } : null
+}
