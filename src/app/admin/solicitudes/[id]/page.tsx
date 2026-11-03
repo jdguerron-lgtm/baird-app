@@ -1906,6 +1906,34 @@ export default function SolicitudDetalle() {
                   <button
                     type="button"
                     onClick={verificarPagosWompi}
+                {!soloLectura && (() => {
+                  const r = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
+                  if (!r || solicitud.saldo_pagado_at) return null
+                  const cotAprobada = Boolean(((solicitud as unknown as { cotizacion?: { aprobado_at?: unknown } | null }).cotizacion)?.aprobado_at)
+                  const enCierre = solicitud.estado === 'confirmacion_pendiente' || solicitud.estado === 'completada'
+                  const faltante = r.porCobrar > 0 && (r.etapa === 'saldo_pendiente' || r.etapa === 'abono_pendiente')
+                    ? r.porCobrar
+                    : (enCierre || cotAprobada) ? Math.max(0, r.totalNeto - r.pagado) : 0
+                  if (faltante <= 0 || r.etapa === 'pagado') return null
+                  return (
+                    <div className="pt-1 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => cobrarFaltanteWhatsapp(faltante)}
+                        disabled={cobrandoFaltante}
+                        className="w-full sm:w-auto text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                        title="Le manda al cliente por WhatsApp el link de pago Wompi de lo que le falta pagar"
+                      >
+                        {cobrandoFaltante ? 'Enviando…' : `💬 Cobrar faltante por WhatsApp ($${formatCOP(faltante)})`}
+                      </button>
+                      {resultadoFaltante && (
+                        <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {resultadoFaltante.texto}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
                     disabled={verificandoPagos}
                     className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                     title="Consulta Wompi y registra los pagos de este servicio que falten (idempotente)"
@@ -1935,34 +1963,6 @@ export default function SolicitudDetalle() {
                       )}
                       <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
                         {pagosLedger.map(p => {
-                {!soloLectura && (() => {
-                  const r = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)
-                  if (!r || solicitud.saldo_pagado_at) return null
-                  const cotAprobada = Boolean(((solicitud as unknown as { cotizacion?: { aprobado_at?: unknown } | null }).cotizacion)?.aprobado_at)
-                  const enCierre = solicitud.estado === 'confirmacion_pendiente' || solicitud.estado === 'completada'
-                  const faltante = r.porCobrar > 0 && (r.etapa === 'saldo_pendiente' || r.etapa === 'abono_pendiente')
-                    ? r.porCobrar
-                    : (enCierre || cotAprobada) ? Math.max(0, r.totalNeto - r.pagado) : 0
-                  if (faltante <= 0 || r.etapa === 'pagado') return null
-                  return (
-                    <div className="pt-1 space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => cobrarFaltanteWhatsapp(faltante)}
-                        disabled={cobrandoFaltante}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                        title="Le manda al cliente por WhatsApp el link de pago Wompi de lo que le falta pagar"
-                      >
-                        {cobrandoFaltante ? 'Enviando…' : `💬 Cobrar faltante por WhatsApp ($${formatCOP(faltante)})`}
-                      </button>
-                      {resultadoFaltante && (
-                        <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
-                          {resultadoFaltante.texto}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })()}
                           const devuelto = p.estado === 'VOIDED'
                           const aprobado = p.estado === 'APPROVED'
                           const fecha = p.pagado_at ?? p.created_at
