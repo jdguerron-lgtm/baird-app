@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { ColaSubida, resumenDe, type ArchivoSubida, type OpcionesCola, type ResumenCola } from '@/lib/utils/cola-subida'
+import { ColaSubida, resumenDe, type ArchivoRestaurado, type ArchivoSubida, type OpcionesCola, type ResumenCola } from '@/lib/utils/cola-subida'
 
 export interface ColaSubidaApi {
   archivos: ArchivoSubida[]
@@ -11,6 +11,10 @@ export interface ColaSubidaApi {
   quitar: (id: string) => void
   reintentar: (id: string) => void
   vaciar: () => void
+  /** Vuelve a mostrar archivos ya subidos (borrador recuperado tras recargar). */
+  restaurar: (archivos: ArchivoRestaurado[]) => ArchivoSubida[]
+  /** Quita lo que sigue en curso ("Registrar ya con lo subido"). Devuelve cuántos quitó. */
+  abandonarPendientes: () => number
   /** Resuelve cuando no queda nada en curso (ver `ColaSubida.esperarTodo`). */
   esperarTodo: () => Promise<{ urls: string[]; errores: ArchivoSubida[] }>
 }
@@ -38,6 +42,8 @@ export function useColaSubida(opts: OpcionesCola): ColaSubidaApi {
         subir: opts.subir ? (b, p, f, cb) => optsRef.current.subir!(b, p, f, cb) : undefined,
         miniatura: opts.miniatura ? f => optsRef.current.miniatura!(f) : undefined,
         validar: opts.validar ? (f, t) => optsRef.current.validar!(f, t) : undefined,
+        // Siempre conectado: el callback vigente se lee por ref en cada error.
+        onError: (a, m) => optsRef.current.onError?.(a, m),
       }),
     // La cola vive toda la página; cambiar el bucket a mitad no tiene sentido.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,6 +73,8 @@ export function useColaSubida(opts: OpcionesCola): ColaSubidaApi {
   const reintentar = useCallback((id: string) => cola.reintentar(id), [cola])
   const vaciar = useCallback(() => cola.vaciar(), [cola])
   const esperarTodo = useCallback(() => cola.esperarTodo(), [cola])
+  const restaurar = useCallback((archivos: ArchivoRestaurado[]) => cola.restaurar(archivos), [cola])
+  const abandonarPendientes = useCallback(() => cola.abandonarPendientes(), [cola])
 
-  return { archivos, resumen, agregar, quitar, reintentar, vaciar, esperarTodo }
+  return { archivos, resumen, agregar, quitar, reintentar, vaciar, esperarTodo, restaurar, abandonarPendientes }
 }
