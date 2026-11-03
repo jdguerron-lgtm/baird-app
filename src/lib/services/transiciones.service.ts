@@ -17,6 +17,9 @@ import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
 import { validarHorarioAgendable } from '@/lib/services/agenda.service'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import { TYC_VERSION } from '@/types/solicitud'
+import { PAGO_TECNICO_DIAGNOSTICO, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
+import { cobraVisitaDiagnostico } from '@/lib/constants/pago-cliente'
+import { formatCOP } from '@/lib/utils/format'
 
 /**
  * Servicio de transiciones de estado — única dueña de cada mutación.
@@ -373,7 +376,7 @@ export async function procesarAprobacionCotizacion(
   // Migrar a columna generada cotizacion_token cuando se priorice.
   const { data: solicitudes } = await supabase
     .from('solicitudes_servicio')
-    .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, estado, es_garantia, cotizacion, tecnico_asignado_id, siguiente_paso')
+    .select('id, cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, tipo_solicitud, estado, es_garantia, cotizacion, tecnico_asignado_id, siguiente_paso, recargo_weekend_aplicado')
     .eq('estado', 'cotizacion_enviada')
 
   const solMatch = solicitudes?.find(s => {
@@ -483,11 +486,19 @@ export async function procesarAprobacionCotizacion(
       comentario_rechazo: comentarioTexto?.trim() || null,
     }
 
+    // Regla 2026-10-29: la visita de diagnóstico SIEMPRE se cobra. Al
+    // rechazar, el técnico queda con sus $35.000 (+ 90% del recargo
+    // finde/festivo) — antes se quedaba con el costo de una reparación que
+    // nunca hizo — y al cliente se le cobra la visita (ver más abajo).
+    const cobraVisita = cobraVisitaDiagnostico(solMatch)
+    const pagoTecnicoVisita = PAGO_TECNICO_DIAGNOSTICO + recargoTecnicoDesdeBruto(solMatch.recargo_weekend_aplicado)
+
     const { error: updateErr } = await supabase
       .from('solicitudes_servicio')
       .update({
         cotizacion: updatedCotizacion,
         estado: 'cotizacion_rechazada',
+        ...(cobraVisita ? { pago_tecnico: pagoTecnicoVisita } : {}),
       })
       .eq('id', solMatch.id)
       .eq('estado', 'cotizacion_enviada')  // guard contra race (igual que la rama de aprobación)
@@ -509,14 +520,33 @@ export async function procesarAprobacionCotizacion(
       const nombreTecnico = tecnico.nombre_completo.split(' ')[0]
       const equipo = `${solMatch.tipo_equipo} ${solMatch.marca_equipo}`
       const razon = comentarioTexto ? `\n\n💬 Comentario del cliente: "${comentarioTexto.trim()}"` : ''
+      const visita = cobraVisita
+        ? `\n\n💰 Por la visita de diagnóstico recibes $${formatCOP(pagoTecnicoVisita)} en tu próxima liquidación. No cobres nada en sitio: Baird le cobra la visita al cliente.`
+        : ''
 
       try {
         await enviarMensajeTexto(
           tecnico.whatsapp,
-          `😔 Hola ${nombreTecnico}, el cliente ${solMatch.cliente_nombre} ha rechazado la cotización para el servicio de ${equipo}.${razon}\n\n📋 El servicio ha sido marcado como rechazado.\n\n🔧 Baird Service`
+          `😔 Hola ${nombreTecnico}, el cliente ${solMatch.cliente_nombre} ha rechazado la cotización para el servicio de ${equipo}.${razon}\n\n📋 El servicio ha sido marcado como rechazado.${visita}\n\n🔧 Baird Service`
         )
       } catch (waErr) {
         console.error('Error notificando rechazo al técnico:', waErr)
+      }
+    }
+
+    // Cobro de la visita de diagnóstico: lo que falte (visita − anticipo
+    // pagado). Best-effort, igual que los demás cobros online: si falla, el
+    // admin lo ve como "Saldo pendiente".
+    if (cobraVisita) {
+      try {
+        const solPago = await cargarSolicitudPago(solMatch.id)
+        const saldo = solPago ? await calcularMontoSaldo(solPago) : 0
+        if (saldo > 0) {
+          const envio = await enviarPagoSaldoCliente(solMatch.id, saldo, { momento: 'cierre' })
+          if (!envio.ok) console.error('[aprobar-cotizacion] cobro de la visita tras rechazo falló:', envio.error)
+        }
+      } catch (err) {
+        console.error('[aprobar-cotizacion] cobro de la visita tras rechazo falló:', err)
       }
     }
 

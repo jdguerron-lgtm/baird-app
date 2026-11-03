@@ -8,7 +8,8 @@ import {
 } from '@/lib/services/whatsapp.service'
 import type { CotizacionReparacion, ProductoNecesario, TipoEquipo, TipoSolicitud } from '@/types/solicitud'
 import { calcularPagoTecnico } from '@/types/solicitud'
-import { calcularTarifaParticular } from '@/lib/constants/tarifas/particular'
+import { calcularTarifaParticular, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
+import { cobraVisitaDiagnostico } from '@/lib/constants/pago-cliente'
 
 export const maxDuration = 30
 
@@ -111,6 +112,9 @@ export async function POST(req: NextRequest) {
       const diagnosticoCliente = typeof cotPrev.diagnostico_cliente === 'number' && cotPrev.diagnostico_cliente > 0
         ? cotPrev.diagnostico_cliente
         : calcularPagoTecnico(sol.tipo_equipo as TipoEquipo, sol.tipo_solicitud as TipoSolicitud, false)
+      // Regla 2026-10-29: el técnico siempre gana la visita ($35.000) y su
+      // costo cotizado se suma encima.
+      const pagoDiagnosticoTecnico = cobraVisitaDiagnostico(sol) ? PAGO_TECNICO_DIAGNOSTICO : 0
 
       const cotizacionData: CotizacionReparacion = {
         ...(cotPrev as CotizacionReparacion),
@@ -130,6 +134,7 @@ export async function POST(req: NextRequest) {
         total: tarifa.totalCliente + diagnosticoCliente,
         // Datos auditables internos (no se muestran al cliente)
         costo_tecnico: costoTecnico,
+        pago_tecnico_diagnostico: pagoDiagnosticoTecnico,
         mano_obra_admin: manoObra,
         repuestos_total_admin: repuestosTotal,
         base_venta: tarifa.baseVenta,
@@ -148,8 +153,8 @@ export async function POST(req: NextRequest) {
         .update({
           cotizacion: cotizacionData,
           estado: 'cotizacion_enviada',
-          // Neto al técnico: su costo íntegro + 90% del recargo finde/festivo.
-          pago_tecnico: tarifa.pagoTecnicoTotal,
+          // Neto al técnico: visita + su costo íntegro + 90% del recargo finde/festivo.
+          pago_tecnico: pagoDiagnosticoTecnico + tarifa.pagoTecnicoTotal,
         })
         .eq('id', sol.id)
         .eq('estado', 'pendiente_pricing')

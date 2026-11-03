@@ -5,13 +5,20 @@ import {
   enviarCotizacionCliente,
   enviarEsperandoRepuestoCliente,
   enviarEsperandoRepuestoTecnico,
+  enviarPagoSaldoCliente,
   notificarCambioEstado,
 } from '@/lib/services/whatsapp.service'
+import { calcularMontoSaldo, cargarSolicitudPago } from '@/lib/services/pagos.service'
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico, TipoEquipo, TipoSolicitud } from '@/types/solicitud'
 import { calcularPagoTecnico, precioClienteServicio, TARIFAS_MANTENIMIENTO, IVA_TARIFA } from '@/types/solicitud'
-import { calcularTarifaParticular, recargoTecnicoDesdeBruto, pagoNetoTecnicoTarifaFija } from '@/lib/constants/tarifas/particular'
-import { esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
+import {
+  calcularTarifaParticular,
+  recargoTecnicoDesdeBruto,
+  pagoNetoTecnicoTarifaFija,
+  PAGO_TECNICO_DIAGNOSTICO,
+} from '@/lib/constants/tarifas/particular'
+import { esServicioPrecioFijo, cobraVisitaDiagnostico } from '@/lib/constants/pago-cliente'
 
 /**
  * POST /api/diagnostico
@@ -374,8 +381,9 @@ export async function POST(req: NextRequest) {
       // se arma igual que un Mantenimiento solicitado directo: precio de
       // catálogo (TARIFAS_MANTENIMIENTO) + recargo finde/festivo al cliente;
       // neto de tarifa fija al técnico (catálogo ÷ 1.3447 × 0.8 + 90% del
-      // recargo). El diagnóstico va incluido (no se suma aparte); el anticipo
-      // pagado se acredita al saldo como siempre. En BD queda
+      // recargo). Desde 2026-10-29 la visita de diagnóstico se SUMA aparte
+      // (regla "el diagnóstico siempre se cobra": cliente + $84.000, técnico
+      // + $35.000); el anticipo pagado se acredita al saldo como siempre. En BD queda
       // siguiente_paso = 'reparar' (CHECK de 4 valores) y la cotización lleva
       // la marca `mantenimiento_catalogo: true`.
       const esMantenimientoCatalogo =
@@ -423,13 +431,23 @@ export async function POST(req: NextRequest) {
       // (TARIFA_DIAGNOSTICO para Diagnóstico/Reparación; la fija del tipo de
       // servicio en los demás). Sin recargo: el finde/festivo ya entra al
       // servicio vía calcularTarifaParticular.
-      const diagnosticoCliente = esMantenimientoCatalogo
-        ? 0 // la tarifa de mantenimiento de la tabla ya incluye la visita
-        : calcularPagoTecnico(
-            sol.tipo_equipo as TipoEquipo,
-            sol.tipo_solicitud as TipoSolicitud,
-            false,
-          )
+      //
+      // Regla 2026-10-29: la visita SIEMPRE se cobra y el técnico SIEMPRE gana
+      // sus PAGO_TECNICO_DIAGNOSTICO por ella; lo que cotice se suma encima
+      // (también en "solo mantenimiento"). Si el cliente no repara, se cobra
+      // solo la visita — ver cierraConSoloDiagnostico (pago-cliente.ts).
+      const diagnosticoCliente = calcularPagoTecnico(
+        sol.tipo_equipo as TipoEquipo,
+        sol.tipo_solicitud as TipoSolicitud,
+        false,
+      )
+      const pagoDiagnosticoTecnico = cobraVisitaDiagnostico(sol) ? PAGO_TECNICO_DIAGNOSTICO : 0
+      const recargoTecnico = recargoTecnicoDesdeBruto(recargoBruto)
+      // Neto al técnico. Cierre sin cotización: la visita (+ 90% del recargo)
+      // en Diagnóstico/Reparación; en tarifa fija se conserva lo previo.
+      const pagoTecnicoFinal = cierraSinCotizacion
+        ? (pagoDiagnosticoTecnico > 0 ? pagoDiagnosticoTecnico + recargoTecnico : costoTecnicoNum)
+        : pagoDiagnosticoTecnico + costoTecnicoNum + recargoTecnico
 
       // Construir cotizacion JSONB. Mantenemos la forma legacy (mano_obra, repuestos,
       // total) para compat con la página /cotizacion/{token}.
@@ -440,6 +458,7 @@ export async function POST(req: NextRequest) {
         pendiente_precio: necesitaPricingAdmin,
         // Detalle interno (no visible al cliente)
         costo_tecnico: costoTecnicoNum,
+        pago_tecnico_diagnostico: pagoDiagnosticoTecnico,
         base_venta: esMantenimientoCatalogo ? baseMantenimiento : (tarifa?.baseVenta ?? 0),
         iva_venta: esMantenimientoCatalogo ? totalMantenimiento - baseMantenimiento : (tarifa?.ivaCliente ?? 0),
         margen_baird: esMantenimientoCatalogo
@@ -457,7 +476,7 @@ export async function POST(req: NextRequest) {
         diagnostico_cliente: diagnosticoCliente,
         servicio_cliente: esMantenimientoCatalogo ? totalMantenimiento : (tarifa?.totalCliente ?? 0),
         total: esMantenimientoCatalogo
-          ? totalMantenimiento
+          ? totalMantenimiento + diagnosticoCliente
           : tarifa ? tarifa.totalCliente + diagnosticoCliente : 0,
         // Marca "solo mantenimiento" (2026-10-12) — ver comentario arriba.
         ...(esMantenimientoCatalogo ? { mantenimiento_catalogo: true } : {}),
@@ -511,12 +530,9 @@ export async function POST(req: NextRequest) {
           triaje_resultado: diagnosticoData,
           cotizacion: cierraSinCotizacion ? null : cotizacionData,
           estado: nuevoEstado,
-          // El técnico recibe íntegro su costo + 90% del recargo finde/festivo
-          // (si la visita cayó en finde). En cierre sin cotización se conserva
-          // el comportamiento previo (no aplica recargo sobre un cierre).
-          pago_tecnico: cierraSinCotizacion
-            ? costoTecnicoNum
-            : costoTecnicoNum + recargoTecnicoDesdeBruto(recargoBruto),
+          // Visita ($35.000) + costo cotizado + 90% del recargo finde/festivo.
+          // Cierre sin cotización: solo la visita (+ recargo). Ver pagoTecnicoFinal.
+          pago_tecnico: pagoTecnicoFinal,
           siguiente_paso: siguientePaso,
           siguiente_paso_detalle: siguientePasoDetalle,
           siguiente_paso_at: diagnosticadoAt.toISOString(),
@@ -569,6 +585,23 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Cierre sin reparar (no reparable / el cliente se negó en sitio): la
+      // visita igual se cobra. Link de lo que falte (visita − anticipo pagado)
+      // por WhatsApp. Best-effort: si falla, el admin lo ve como "Saldo
+      // pendiente" y puede reenviarlo.
+      if (cierraSinCotizacion && pagoDiagnosticoTecnico > 0) {
+        try {
+          const solPago = await cargarSolicitudPago(sol.id)
+          const saldo = solPago ? await calcularMontoSaldo(solPago) : 0
+          if (saldo > 0) {
+            const envio = await enviarPagoSaldoCliente(sol.id, saldo, { momento: 'cierre' })
+            if (!envio.ok) console.error('[diagnostico] cobro de la visita falló:', envio.error)
+          }
+        } catch (err) {
+          console.error('[diagnostico] cobro de la visita falló:', err)
+        }
+      }
+
       return NextResponse.json({
         success: true,
         flow: 'particular',
@@ -576,13 +609,14 @@ export async function POST(req: NextRequest) {
         cotizacionToken: cierraSinCotizacion ? null : cotizacionToken,
         // Total que verá el CLIENTE: servicio cotizado + diagnóstico (2026-08-25).
         totalCliente: esMantenimientoCatalogo
-          ? totalMantenimiento
+          ? totalMantenimiento + diagnosticoCliente
           : tarifa ? tarifa.totalCliente + diagnosticoCliente : 0,
-        // Neto al técnico (costo + 90% del recargo finde/festivo si aplicó) —
+        // Neto al técnico (visita + costo + 90% del recargo finde/festivo) —
         // la pantalla de éxito lo muestra tal cual, sin recalcular en cliente.
-        pagoTecnico: esMantenimientoCatalogo
-          ? costoTecnicoNum + recargoTecnicoDesdeBruto(recargoBruto)
-          : (tarifa?.pagoTecnicoTotal ?? 0),
+        // En esperar_repuesto el total se fija en el gate admin (0 acá).
+        pagoTecnico: cierraSinCotizacion || esMantenimientoCatalogo || tarifa
+          ? pagoTecnicoFinal
+          : 0,
         mantenimientoCatalogo: esMantenimientoCatalogo,
         recargoWeekend: recargoBruto,
         pendiente_pricing: necesitaPricingAdmin,

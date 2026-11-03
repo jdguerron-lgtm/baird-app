@@ -73,8 +73,12 @@ export const PORCION_CLIENTE_COMISION_PASARELA = 0.5
  * NO sale de la fórmula: el cliente paga TARIFA_DIAGNOSTICO ($84.000,
  * `src/types/solicitud.ts`) y Baird le ofrece al técnico este monto fijo
  * (decisión comercial 2026-07-05; antes era catálogo ÷ multiplicador).
- * Si el cliente aprueba la cotización de reparación, `pago_tecnico` se
- * sobreescribe con el costo cotizado en /api/diagnostico.
+ *
+ * Regla 2026-10-29: el técnico SIEMPRE gana estos $35.000 por la visita,
+ * pase lo que pase después. Si cotiza, `pago_tecnico` = 35.000 + su costo
+ * cotizado (+ 90% del recargo); si el cliente rechaza o no se repara,
+ * `pago_tecnico` = 35.000 (+ 90% del recargo). El cliente, igual, siempre
+ * paga la visita de diagnóstico y el servicio va sumado aparte.
  */
 export const PAGO_TECNICO_DIAGNOSTICO = 35000
 

@@ -515,14 +515,14 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
    │   estado=en_proceso (o   │  │     cotizacion.rechazado_at      │
    │   esperando_repuesto si  │  │     comentario_rechazo           │
    │   el paso fue esperar_   │  │   (terminal)                     │
-   │   repuesto)              │  │                                  │
-   │   cotizacion.aprobado_at │  │ 📩 → TÉCNICO texto libre:        │
+   │   repuesto)              │  │     pago_tecnico = $35.000 (+90% │
+   │   cotizacion.aprobado_at │  │     recargo) = visita (2026-10-29)│
+   │                          │  │ 📩 → TÉCNICO texto libre:        │
    │                          │  │   "Cliente rechazó. {motivo}.    │
-   │                          │  │    Servicio cerrado."            │
-   │ 📩 → TÉCNICO:            │  │                                  │
-   │   cotizacion_aprobada_   │  │ ⚠️ Cliente solo ve in-app        │
-   │   tecnico_v1             │  │   confirmación — no recibe       │
-   │   Body: tec, cliente,    │  │   plantilla final (gap §8)       │
+   │ 📩 → TÉCNICO:            │  │    Recibes $35.000 por la visita"│
+   │   cotizacion_aprobada_   │  │ 💳 → CLIENTE saldo_final_        │
+   │   tecnico_v1             │  │   cliente_v1: visita − anticipo  │
+   │   Body: tec, cliente,    │  │   → /pago/saldo/{token}          │
    │         equipo, total    │  │                                  │
    │   Botón: "Ver portal" →  │  │                                  │
    │   /tecnico/{portal_token}│  │                                  │
@@ -862,7 +862,7 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | `cancelada` | Cliente cancela desde /servicio | ✅ texto libre best-effort + in-app | ✅ |
 | `reparacion_rechazada` | Cliente aprueba "negativa_cliente" en verificar-paso | ✅ texto libre best-effort | ✅ |
 | `finalizado_sin_reparacion` | Cliente aprueba "no_reparable" en verificar-paso | ✅ `finalizado_sin_reparacion_v1` (plantilla) | ✅ |
-| `cotizacion_rechazada` | Cliente rechaza en /cotizacion | ⚠️ Solo in-app — **NO recibe plantilla final** | gap menor |
+| `cotizacion_rechazada` | Cliente rechaza en /cotizacion | ✅ `saldo_final_cliente_v1` con el cobro de la visita de diagnóstico (2026-10-29) + in-app con botón "Pagar visita" | ✅ |
 | `sin_agendar` | Timeout 36h sin confirmar horario | ⚠️ NO se envía nada — **gap mayor** | ❌ |
 
 ---

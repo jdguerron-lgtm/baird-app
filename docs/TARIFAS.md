@@ -273,7 +273,12 @@ Cuando el técnico va a diagnosticar y el cliente decide no proceder con la repa
   en `src/lib/constants/pagos.ts`) antes de que el técnico compre los
   repuestos; el resto se cobra al completar el servicio. Solo aplica con
   repuestos. Ver `docs/WOMPI.md` § "Qué cobra hoy".
-- **Pago al técnico por la visita de diagnóstico: `PAGO_TECNICO_DIAGNOSTICO` = $35,000 fijo** (2026-07-05). No sale de la fórmula ÷1.3447 — es una oferta comercial de Baird; la diferencia cubre IVA, adquisición del cliente y operación. Si el cliente aprueba la cotización de reparación, el pago del técnico pasa a ser su costo cotizado.
+- **Pago al técnico por la visita de diagnóstico: `PAGO_TECNICO_DIAGNOSTICO` = $35,000 fijo** (2026-07-05). No sale de la fórmula ÷1.3447 — es una oferta comercial de Baird; la diferencia cubre IVA, adquisición del cliente y operación.
+- **Regla 2026-10-29 — "el diagnóstico siempre se cobra" `[pagos]`:**
+  - **Técnico:** siempre gana sus $35.000 por la visita, pase lo que pase. Si cotiza, `pago_tecnico` = **$35.000 + su costo cotizado** + 90% del recargo finde/festivo (`/api/diagnostico`, `/api/cotizacion-precios`; también en "solo mantenimiento"). Si el cliente rechaza la cotización, se niega en sitio o el equipo no tiene arreglo, `pago_tecnico` = **$35.000** (+ 90% del recargo). Antes, al cotizar se reemplazaba por el costo y el rechazo lo dejaba con el valor de una reparación que no hizo; en cierres sin cotización quedaba en $0.
+  - **Cliente:** paga siempre la visita ($84.000 + recargo con IVA si aplicó) y lo que se cotice se suma encima (`total = diagnóstico + servicio`, incluida la opción "solo mantenimiento", que antes traía la visita incluida). Si no repara (`cotizacion_rechazada`, `reparacion_rechazada`, `finalizado_sin_reparacion`), el total a cobrar es **solo la visita** (`cierraConSoloDiagnostico` → `totalClienteParaCobro` en `pago-cliente.ts`) y al cerrar se le envía el link de lo que falte (visita − anticipo pagado) con `saldo_final_cliente_v1` → `/pago/saldo/{token}`, que muestra "Paga tu visita de diagnóstico". La conciliación por cron también vigila ese saldo.
+  - **Liquidación:** `/admin/liquidaciones` tipo "Liquidación por técnico" incluye esas visitas cerradas sin reparar (nota "Solo visita de diagnóstico"); los demás reportes siguen solo con completadas.
+  - No aplica a Mantenimiento / Cambio de filtro solicitados directo (tarifa fija con la visita incluida) ni a garantía.
 
 Constantes en `src/types/solicitud.ts` (`TARIFA_DIAGNOSTICO`, `ANTICIPO_PORCENTAJE`) y `src/lib/constants/tarifas/particular.ts` (`PAGO_TECNICO_DIAGNOSTICO`).
 
@@ -287,7 +292,7 @@ Algunos servicios particulares tienen **precio fijo de catálogo definido al cre
 
 | `tipo_solicitud` | Precio al cliente (catálogo) | Pago **neto** al técnico (`pago_tecnico`) | Constante |
 |---|---|---|---|
-| Diagnóstico / Reparación | $84.000 (anticipo 50%) | **$35.000 fijo** (si cotiza y el cliente aprueba, pasa a su costo cotizado) | `TARIFA_DIAGNOSTICO` / `PAGO_TECNICO_DIAGNOSTICO` |
+| Diagnóstico / Reparación | $84.000 (anticipo 50%) — siempre se cobra; la reparación cotizada se suma | **$35.000 fijo** siempre (si cotiza: $35.000 + su costo cotizado) | `TARIFA_DIAGNOSTICO` / `PAGO_TECNICO_DIAGNOSTICO` |
 | Mantenimiento | $105.000–$189.000 según equipo | **$62.467–$112.441** (catálogo ÷ 1.3447 × 0.8) | `TARIFAS_MANTENIMIENTO[tipo_equipo]` |
 | **Cambio de filtro** | **$180.000 todo incluido** | **$107.087** | `TARIFA_CAMBIO_FILTRO` |
 | (cualquiera, garantía) | $0 (la marca paga) | $0 | — |

@@ -10,8 +10,8 @@ import {
   calcularTotalGarantia,
   type ComplejidadServicio,
 } from '@/lib/constants/tarifas/mabe'
-import { calcularTarifaParticular, pagoNetoTecnicoTarifaFija, recargoTecnicoDesdeBruto } from '@/lib/constants/tarifas/particular'
-import { precioClienteServicio, TARIFAS_MANTENIMIENTO, type TipoEquipo } from '@/types/solicitud'
+import { calcularTarifaParticular, pagoNetoTecnicoTarifaFija, recargoTecnicoDesdeBruto, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
+import { precioClienteServicio, calcularPagoTecnico, TARIFAS_MANTENIMIENTO, type TipoEquipo, type TipoSolicitud } from '@/types/solicitud'
 import { esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
@@ -543,10 +543,13 @@ export default function DiagnosticoPage() {
     const catalogo = TARIFAS_MANTENIMIENTO[servicio.tipo_equipo as TipoEquipo]
     if (!catalogo) return null
     const recargoBruto = servicio.recargo_weekend_aplicado ?? 0
+    // La visita de diagnóstico se suma aparte (regla 2026-10-29): cliente +
+    // tarifa de diagnóstico, técnico + PAGO_TECNICO_DIAGNOSTICO.
+    const diagnosticoCliente = calcularPagoTecnico(servicio.tipo_equipo as TipoEquipo, servicio.tipo_solicitud as TipoSolicitud, false)
     return {
       equipo: servicio.tipo_equipo,
-      precioCliente: precioClienteServicio(servicio.tipo_equipo, 'Mantenimiento', false, null, recargoBruto),
-      pagoTecnico: pagoNetoTecnicoTarifaFija(catalogo) + recargoTecnicoDesdeBruto(recargoBruto),
+      precioCliente: precioClienteServicio(servicio.tipo_equipo, 'Mantenimiento', false, null, recargoBruto) + diagnosticoCliente,
+      pagoTecnico: PAGO_TECNICO_DIAGNOSTICO + pagoNetoTecnicoTarifaFija(catalogo) + recargoTecnicoDesdeBruto(recargoBruto),
     }
   }, [servicio])
   const costoParticularListo = !requiereCostoParticular || costoTecnicoNum > 0
@@ -619,16 +622,19 @@ export default function DiagnosticoPage() {
                 </div>
                 <p className="text-[11px] text-gray-500 mb-2">
                   {esMantenimientoCatalogo
-                    ? 'Precio fijo de mantenimiento de la tabla Baird según el electrodoméstico (incluye IVA). No se cotizó.'
-                    : 'Incluye tu pago, utilidad Baird 13% e IVA 19%.'}
+                    ? 'Visita de diagnóstico + precio fijo de mantenimiento de la tabla Baird según el electrodoméstico (incluye IVA). No se cotizó.'
+                    : 'Visita de diagnóstico + tu pago, utilidad Baird 13% e IVA 19%.'}
                 </p>
                 {(pagoTecnicoApi ?? costoTecnicoNum) > 0 && (
                   <div className="flex justify-between text-sm border-t border-purple-200 pt-2">
                     <span className="text-gray-600">Tu pago si el cliente aprueba</span>
-                    {/* pagoTecnicoApi incluye el recargo finde/festivo si aplicó */}
+                    {/* pagoTecnicoApi incluye la visita ($35.000) y el recargo finde/festivo si aplicó */}
                     <span className="font-bold text-emerald-700">${formatCOP(pagoTecnicoApi ?? costoTecnicoNum)} COP</span>
                   </div>
                 )}
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Incluye ${formatCOP(PAGO_TECNICO_DIAGNOSTICO)} de la visita de diagnóstico. Si el cliente rechaza, igual recibes esos ${formatCOP(PAGO_TECNICO_DIAGNOSTICO)}.
+                </p>
               </div>
             )}
             {waSent === true && (
@@ -1079,6 +1085,9 @@ export default function DiagnosticoPage() {
             <h2 className="text-lg font-bold text-slate-900 mb-1">¿Cuánto quieres ganar por esta reparación? <span className="text-red-500">*</span></h2>
             <p className="text-xs text-gray-400 mb-4">
               <strong>Valor en COP requerido para generar la cotización.</strong> Mano de obra + repuestos — este monto es TU PAGO y lo recibes completo. El cliente NO ve este valor: a él le llega el total con utilidad Baird e IVA.
+            </p>
+            <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4">
+              💰 Aparte, siempre recibes ${formatCOP(PAGO_TECNICO_DIAGNOSTICO)} por la visita de diagnóstico, aunque el cliente no apruebe. No los incluyas en este valor.
             </p>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">$</span>
