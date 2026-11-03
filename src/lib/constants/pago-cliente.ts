@@ -358,6 +358,11 @@ export function faltanteCobroCliente(sol: SolicitudParaEtapaPago): FaltanteCobro
   if (!r || r.etapa === 'pagado' || r.etapa === 'cerrado_con_pago') return null
   if (r.etapa === 'anticipo_pendiente') return r.porCobrar > 0 ? { tipo: 'anticipo', monto: r.porCobrar } : null
   if (r.etapa === 'abono_pendiente') return r.porCobrar > 0 ? { tipo: 'abono', monto: r.porCobrar } : null
+  // Cotización enviada pero NO aprobada: ese total aún no es deuda del
+  // cliente (puede rechazarla). Solo se cobra si el servicio ya se completó.
+  const cot = sol.cotizacion as { total?: unknown; aprobado_at?: unknown } | null | undefined
+  const cotSinAprobar = typeof cot?.total === 'number' && cot.total > 0 && !cot.aprobado_at
+  if (cotSinAprobar && sol.estado !== 'confirmacion_pendiente' && sol.estado !== 'completada') return null
   const restante = Math.max(0, r.totalNeto - r.pagado)
   return restante > 0 ? { tipo: 'saldo', monto: restante } : null
 }

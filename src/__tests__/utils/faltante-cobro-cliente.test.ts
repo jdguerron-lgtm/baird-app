@@ -49,6 +49,22 @@ describe('faltanteCobroCliente', () => {
     expect(f).toEqual({ tipo: 'saldo', monto: 220750 - 130000 })
   })
 
+  it('cotización enviada sin aprobar (caso 677eaefa) → null', () => {
+    const cotEnviada = { total: 843388, productos_necesarios: [] }
+    expect(faltanteCobroCliente({ ...base, estado: 'cotizacion_enviada', cotizacion: cotEnviada, anticipo_pagado_at: 'x', monto_pagado_online: 45570 })).toBeNull()
+  })
+
+  it('completada con cotización sin aprobado_at → saldo (el servicio ya se hizo)', () => {
+    const cot = { total: 846000, productos_necesarios: [] }
+    expect(faltanteCobroCliente({ ...base, estado: 'completada', cotizacion: cot })).toEqual({ tipo: 'saldo', monto: 846000 })
+  })
+
+  it('mantenimiento asignado con anticipo pagado → saldo del resto', () => {
+    const f = faltanteCobroCliente({ ...base, tipo_solicitud: 'Mantenimiento', anticipo_pagado_at: 'x', monto_pagado_online: 63000 })
+    expect(f?.tipo).toBe('saldo')
+    expect(f!.monto).toBeGreaterThan(0)
+  })
+
   it('completada con todo pagado → null', () => {
     expect(faltanteCobroCliente({ ...base, estado: 'completada', cotizacion: cotSinRepuestos, monto_pagado_online: 136750 })).toBeNull()
   })
