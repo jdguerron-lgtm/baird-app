@@ -636,6 +636,16 @@ comprobante de Wompi). Consulta Wompi y registra el pago si corresponde a este
 servicio. Es seguro repetirlo. Además, un proceso automático cada 5 minutos
 revisa en Wompi los cobros pendientes de los servicios abiertos.
 
+**💬 Cobrar faltante por WhatsApp ($…)** (solo admin, servicios particulares):
+aparece siempre que al cliente le falte pagar algo, en cualquier etapa: el
+anticipo de la reserva, el abono de repuestos o el saldo (lo que falte del
+total). Le reenvía por WhatsApp el link de pago Wompi por el monto que muestra
+el botón (ya descuenta lo pagado y el código de descuento). No aparece si ya
+pagó todo, si el servicio se canceló o si aún no hay valor (diagnóstico sin
+cotización con el anticipo ya pagado). No cambia el valor del servicio — para
+fijar otro valor usa **Cobro final del servicio**. Queda registrado en el
+historial.
+
 ### 8.3 Cuándo devolver un pago
 
 | Situación | Qué devolver |

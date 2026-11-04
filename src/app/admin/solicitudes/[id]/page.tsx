@@ -16,7 +16,7 @@ import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { rangoFechaVisita, validarFechaVisita } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 import BadgePagoCliente, { ProgresoPagoCliente } from '@/components/ui/BadgePagoCliente'
-import { etapaPagoCliente, descuentoClienteParaCobro, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
+import { etapaPagoCliente, descuentoClienteParaCobro, faltanteCobroCliente, type SolicitudParaEtapaPago } from '@/lib/constants/pago-cliente'
 import { descuentoDeSolicitud, describirDescuento } from '@/lib/constants/descuentos'
 import { codigoServicio } from '@/lib/utils/facturacion'
 import { labelRelacionReceptor } from '@/lib/utils/receptor'
@@ -340,6 +340,82 @@ export default function SolicitudDetalle() {
     } finally {
       setVerificandoPagos(false)
     }
+  }
+
+  // "💬 Cobrar faltante por WhatsApp" (2026-11-03): reenvía al cliente el link
+  // Wompi de lo que le falta (abono de repuestos o saldo). No cambia montos.
+  const [cobrandoFaltante, setCobrandoFaltante] = useState(false)
+  const [resultadoFaltante, setResultadoFaltante] = useState<{ ok: boolean; texto: string } | null>(null)
+
+  const cobrarFaltanteWhatsapp = async (montoEstimado: number) => {
+    if (!window.confirm(
+      `¿Enviar al cliente por WhatsApp el link de pago del faltante ($${formatCOP(montoEstimado)} COP)?`,
+    )) return
+    setCobrandoFaltante(true)
+    setResultadoFaltante(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setResultadoFaltante({ ok: false, texto: 'Sesión expirada — vuelve a iniciar sesión.' })
+        return
+      }
+      const res = await fetch('/api/admin/cobrar-faltante', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ id }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResultadoFaltante({ ok: false, texto: body?.error ?? `Error ${res.status}` })
+        return
+      }
+      setResultadoFaltante({
+        ok: true,
+        texto: `✅ Link de pago enviado por WhatsApp (${body.tipo === 'abono' ? 'abono de repuestos' : body.tipo === 'anticipo' ? 'anticipo' : 'saldo'}: $${formatCOP(body.monto)}).`,
+      })
+      await recargarEventos()
+    } catch (err) {
+      setResultadoFaltante({ ok: false, texto: err instanceof Error ? err.message : 'Error de red' })
+    } finally {
+      setCobrandoFaltante(false)
+    }
+  }
+
+  const renderCobroFaltante = () => {
+    if (soloLectura || !solicitud) return null
+    // Siempre visible (pedido del user 2026-11-03): si hoy no se debe nada,
+    // el botón sigue ahí y al pulsarlo explica por qué no envía.
+    const f = faltanteCobroCliente(solicitud as unknown as SolicitudParaEtapaPago)
+    const QUE = { anticipo: 'anticipo', abono: 'abono de repuestos', saldo: 'saldo' } as const
+    const alPulsar = () => {
+      if (f) { void cobrarFaltanteWhatsapp(f.monto); return }
+      setResultadoFaltante({
+        ok: false,
+        texto: 'Hoy el cliente no tiene nada por pagar: ya pagó todo, el servicio está cancelado, aún no tiene técnico asignado o la cotización no está aprobada.',
+      })
+    }
+    return (
+      <div className="pt-1 space-y-1">
+        <button
+          type="button"
+          onClick={alPulsar}
+          disabled={cobrandoFaltante}
+          className="w-full sm:w-auto text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+          title={f ? `Le manda al cliente por WhatsApp el link de pago Wompi del ${QUE[f.tipo]}` : 'Hoy no hay nada por cobrar'}
+        >
+          {cobrandoFaltante
+            ? 'Enviando…'
+            : f
+              ? `💰 Cobrar faltante por WhatsApp ($${formatCOP(f.monto)} · ${QUE[f.tipo]})`
+              : '💰 Cobrar faltante por WhatsApp'}
+        </button>
+        {resultadoFaltante && (
+          <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {resultadoFaltante.texto}
+          </p>
+        )}
+      </div>
+    )
   }
 
   // Ledger de pagos online + "↩️ Devolver" (2026-10-21). La tabla `pagos`
@@ -1796,7 +1872,16 @@ export default function SolicitudDetalle() {
                 cot as { total?: number | null } | null,
                 (solicitud as unknown as { recargo_weekend_aplicado?: number | null }).recargo_weekend_aplicado,
               )
-          if (!totalCliente || totalCliente <= 0) return null
+          if (!totalCliente || totalCliente <= 0) {
+            const cobro = renderCobroFaltante()
+            return cobro ? (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-2">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">💰 Cobros al cliente</h2>
+                <ProgresoPagoCliente solicitud={solicitud as unknown as SolicitudParaEtapaPago} />
+                {cobro}
+              </div>
+            ) : null
+          }
           const baseVenta = Number(cot?.base_venta ?? 0) > 0 ? Number(cot?.base_venta) : Math.round(totalCliente / 1.19)
           const ivaVenta = Number(cot?.iva_venta ?? 0) > 0 ? Number(cot?.iva_venta) : totalCliente - baseVenta
           const pagoTec = solicitud.pago_tecnico ?? 0
@@ -1850,6 +1935,7 @@ export default function SolicitudDetalle() {
               <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 text-xs">
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cobros al cliente</p>
                 <ProgresoPagoCliente solicitud={solicitud as unknown as SolicitudParaEtapaPago} />
+                {renderCobroFaltante()}
                 {solicitud.ultimo_pago_at && (
                   <p className="text-[11px] text-gray-500">
                     Último pago recibido: {new Date(solicitud.ultimo_pago_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}

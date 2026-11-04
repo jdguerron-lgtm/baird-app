@@ -4760,3 +4760,64 @@ export async function enviarBienvenidaReceptor(solicitudId: string): Promise<{ o
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
+
+/**
+ * Reenvía al CLIENTE el link de pago del ANTICIPO (/pago/anticipo/{token}).
+ * Lo usa el botón "Cobrar faltante por WhatsApp" de la ficha admin
+ * (2026-11-03) cuando la reserva sigue sin pagar. Misma plantilla que al
+ * asignar técnico (`pago_anticipo_cliente_v2`); si falla, texto libre (solo
+ * llega con la ventana de 24 h abierta).
+ */
+export async function enviarCobroAnticipoCliente(
+  solicitudId: string,
+  monto: number,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!Number.isFinite(monto) || monto <= 0) return { ok: false, error: 'Sin anticipo por cobrar' }
+
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, cliente_token, horario_confirmado, horario_visita_1, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+  if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
+
+  const { data: tecnico } = sol.tecnico_asignado_id
+    ? await supabase.from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).maybeSingle()
+    : { data: null }
+  const nombre = String(sol.cliente_nombre ?? '').split(' ')[0] || 'cliente'
+  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
+  const motivo = `Se reenvió al cliente el link de pago del anticipo ($${formatCOP(monto)}) desde el admin`
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v2', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+          { type: 'text', text: horario },
+          { type: 'text', text: formatCOP(monto) },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+    ])
+    if (r.sent) await registrarMensajeCliente(solicitudId, 'pago_anticipo_cliente_v2', motivo)
+    return { ok: true }
+  } catch (err) {
+    console.error('[anticipo] pago_anticipo_cliente_v2 falló, fallback texto libre:', err)
+    try {
+      const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://lineablanca.bairdservice.com'
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `Hola ${nombre} 👋 Para asegurar tu visita (${horario}) falta el anticipo de $${formatCOP(monto)} COP.\n\n` +
+        `💳 Págalo en línea de forma segura:\n${APP_URL}/pago/anticipo/${sol.cliente_token}\n\n` +
+        `Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`,
+      )
+      await registrarMensajeCliente(solicitudId, 'pago_anticipo_cliente_v2 (texto libre)', motivo)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
+  }
+}
