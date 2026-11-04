@@ -383,19 +383,31 @@ export default function SolicitudDetalle() {
 
   const renderCobroFaltante = () => {
     if (soloLectura || !solicitud) return null
+    // Siempre visible (pedido del user 2026-11-03): si hoy no se debe nada,
+    // el botón sigue ahí y al pulsarlo explica por qué no envía.
     const f = faltanteCobroCliente(solicitud as unknown as SolicitudParaEtapaPago)
-    if (!f) return null
     const QUE = { anticipo: 'anticipo', abono: 'abono de repuestos', saldo: 'saldo' } as const
+    const alPulsar = () => {
+      if (f) { void cobrarFaltanteWhatsapp(f.monto); return }
+      setResultadoFaltante({
+        ok: false,
+        texto: 'Hoy el cliente no tiene nada por pagar: ya pagó todo, el servicio está cancelado, aún no tiene técnico asignado o la cotización no está aprobada.',
+      })
+    }
     return (
       <div className="pt-1 space-y-1">
         <button
           type="button"
-          onClick={() => cobrarFaltanteWhatsapp(f.monto)}
+          onClick={alPulsar}
           disabled={cobrandoFaltante}
           className="w-full sm:w-auto text-sm font-semibold px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-          title={`Le manda al cliente por WhatsApp el link de pago Wompi del ${QUE[f.tipo]}`}
+          title={f ? `Le manda al cliente por WhatsApp el link de pago Wompi del ${QUE[f.tipo]}` : 'Hoy no hay nada por cobrar'}
         >
-          {cobrandoFaltante ? 'Enviando…' : `💬 Cobrar faltante por WhatsApp ($${formatCOP(f.monto)} · ${QUE[f.tipo]})`}
+          {cobrandoFaltante
+            ? 'Enviando…'
+            : f
+              ? `💰 Cobrar faltante por WhatsApp ($${formatCOP(f.monto)} · ${QUE[f.tipo]})`
+              : '💰 Cobrar faltante por WhatsApp'}
         </button>
         {resultadoFaltante && (
           <p className={`text-[11px] ${resultadoFaltante.ok ? 'text-emerald-700' : 'text-amber-700'}`}>
