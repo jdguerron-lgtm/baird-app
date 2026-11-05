@@ -1,4 +1,5 @@
 import { mapaFinPausaRepuesto } from '@/lib/services/bono-garantia.service'
+import { ESTADOS_VISITA_LIQUIDABLE } from '@/lib/services/liquidacion-tecnicos.service'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
@@ -44,17 +45,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: '"desde" no puede ser posterior a "hasta"' }, { status: 400 })
     }
 
-    // Completadas (tope defensivo, mismo patrón que liquidaciones/export).
+    // Completadas + visitas particulares sin reparación (2026-11-05: se cobra
+    // el diagnóstico y se paga la visita al técnico). Tope defensivo.
     const { data: solicitudesRaw, error: solErr } = await supabase
       .from('solicitudes_servicio')
       .select('id, created_at, es_garantia, tipo_equipo, tipo_solicitud, estado, pago_tecnico, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at, descuento_codigo, descuento_tipo, descuento_valor')
-      .eq('estado', 'completada')
+      .in('estado', ['completada', ...ESTADOS_VISITA_LIQUIDABLE])
       .order('created_at', { ascending: false })
       .limit(5000)
     if (solErr) {
       return NextResponse.json({ error: `Error cargando solicitudes: ${solErr.message}` }, { status: 500 })
     }
-    const solicitudes = (solicitudesRaw ?? []) as unknown as SolicitudFinanzas[]
+    const solicitudes = ((solicitudesRaw ?? []) as unknown as SolicitudFinanzas[]).filter(
+      (s) => s.estado === 'completada' || (!s.es_garantia && Boolean(s.diagnosticado_at) && (s.pago_tecnico ?? 0) > 0),
+    )
     const ids = solicitudes.map((s) => s.id)
     // Fin de la pausa por repuesto sin "recibido" (ver bono-garantia.ts).
     const finPausaMap = await mapaFinPausaRepuesto(ids)

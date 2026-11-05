@@ -250,6 +250,7 @@ Toda solicitud expone un portal `/servicio/{cliente_token}` donde el cliente pue
 - No se cambian las plantillas Meta existentes (mantener compatibilidad). El portal se descubre vía URL admin / referencia futura en plantillas.
 - `/api/confirmar-horario` no se modifica. El reagendamiento usa su propio endpoint que setea `horario_confirmado` directo.
 - La cancelación tardía no se distingue como estado separado; queda como `cancelada` con flag en audit.
+- Plata en los cierres sin reparación (2026-11-05): `reparacion_rechazada`, `finalizado_sin_reparacion`, `cotizacion_rechazada` y `cancelada` con `diagnosticado_at` cobran la tarifa de diagnóstico completa (capa de pago, no un estado nuevo: etapa `diagnostico_pendiente`); `cancelada` sin visita y con anticipo → etapa `devolucion_pendiente` (devolución manual). Ver `docs/WOMPI.md`.
 
 ## Solicitud State Machine (v8 2026-08-02 — 19 estados: + repuesto_en_camino, repuesto directo en garantía)
 

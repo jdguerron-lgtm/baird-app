@@ -16,8 +16,15 @@ import { faltanteCobroCliente, type SolicitudParaEtapaPago } from '@/lib/constan
 
 export const maxDuration = 30
 
-/** Estados en los que el servicio ya se hizo: el saldo sale con el mensaje de cierre. */
-const ESTADOS_CIERRE = new Set(['confirmacion_pendiente', 'completada'])
+/**
+ * Estados en los que el servicio ya se hizo: el saldo sale con el mensaje de
+ * cierre (`saldo_final_cliente_v1`). Incluye los cierres sin reparación y la
+ * cancelación tras la visita, donde se cobra el diagnóstico (2026-11-05).
+ */
+const ESTADOS_CIERRE = new Set([
+  'confirmacion_pendiente', 'completada',
+  'cotizacion_rechazada', 'reparacion_rechazada', 'finalizado_sin_reparacion', 'cancelada',
+])
 
 /**
  * POST /api/admin/cobrar-faltante  (2026-11-03)
@@ -44,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     const { data: sol, error: readErr } = await supabase
       .from('solicitudes_servicio')
-      .select('id, estado, es_garantia, tipo_solicitud, tipo_equipo, tecnico_asignado_id, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, descuento_codigo, descuento_tipo, descuento_valor')
+      .select('id, estado, es_garantia, tipo_solicitud, tipo_equipo, tecnico_asignado_id, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, abono_pagado_at, saldo_pagado_at, monto_pagado_online, diagnosticado_at, descuento_codigo, descuento_tipo, descuento_valor')
       .eq('id', id)
       .single()
     if (readErr || !sol) return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 404 })

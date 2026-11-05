@@ -3066,13 +3066,15 @@ export async function enviarPagoSaldoCliente(
 
   const { data: sol } = await supabase
     .from('solicitudes_servicio')
-    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, tipo_solicitud, cliente_token, cotizacion, recargo_weekend_aplicado, monto_pagado_online')
+    .select('cliente_nombre, cliente_telefono, tipo_equipo, marca_equipo, tipo_solicitud, cliente_token, cotizacion, recargo_weekend_aplicado, monto_pagado_online, estado, diagnosticado_at')
     .eq('id', solicitudId)
     .single()
 
   if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
   if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
 
+  // Con `estado` + `diagnosticado_at`, un cierre sin reparación cobra la
+  // tarifa de diagnóstico (2026-11-05) y no el total de la cotización rechazada.
   const totalCobro = totalClienteParaCobro({ ...sol, es_garantia: false })
   const total = totalCobro > 0 ? totalCobro : saldo
   const nombre = sol.cliente_nombre.split(' ')[0]
@@ -4088,8 +4090,15 @@ async function logEvento(params: {
 
 export interface CancelacionResult {
   ok: boolean
+  solicitud_id?: string
   estado_previo?: string
   cancelado_tarde?: boolean
+  /** (2026-11-05) true si el técnico ya había diagnosticado: se cobra el diagnóstico completo. */
+  diagnostico_hecho?: boolean
+  /** (2026-11-05) Pagado en línea (Wompi APPROVED) al momento de cancelar. */
+  monto_pagado_online?: number
+  anticipo_pagado?: boolean
+  abono_pagado?: boolean
   error?: string
 }
 
@@ -4112,7 +4121,7 @@ export async function procesarCancelacionCliente(
 ): Promise<CancelacionResult> {
   const { data: sol, error } = await supabase
     .from('solicitudes_servicio')
-    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, horario_confirmado_at, es_garantia, numero_serie_factura')
+    .select('id, estado, tecnico_asignado_id, cliente_telefono, cliente_nombre, tipo_equipo, marca_equipo, horario_confirmado, horario_confirmado_at, es_garantia, numero_serie_factura, diagnosticado_at, anticipo_pagado_at, abono_pagado_at, monto_pagado_online')
     .eq('cliente_token', clienteToken)
     .single()
 
@@ -4123,6 +4132,12 @@ export async function procesarCancelacionCliente(
   }
 
   const fueTarde = !!sol.tecnico_asignado_id
+  // (2026-11-05) Qué pasa con la plata — lo resuelve el caller (/api/solicitud/cancelar):
+  //   - diagnóstico hecho → se cobra la tarifa de diagnóstico completa;
+  //   - sin visita y con anticipo pagado → devolución pendiente (manual).
+  const diagnosticoHecho = !sol.es_garantia && Boolean(sol.diagnosticado_at)
+  const montoPagado = Math.max(0, Number(sol.monto_pagado_online ?? 0))
+  const anticipoPagado = Boolean(sol.anticipo_pagado_at)
 
   // 1. Update solicitud a cancelada
   const { error: updErr } = await supabase
@@ -4153,9 +4168,16 @@ export async function procesarCancelacionCliente(
   // 3. Notificar al cliente (texto libre — está dentro de su 24h por la interacción)
   const equipo = equipoConGarantia(sol)
   const clienteNombre = sol.cliente_nombre.split(' ')[0]
+  const APP_URL_CANCEL = process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'
+  // (2026-11-05) Línea sobre la plata según el caso (T&C § 9 y § 10):
+  const lineaPlata = diagnosticoHecho
+    ? ' Como el técnico ya realizó la visita de diagnóstico, en un momento te llega el link para pagar el saldo de la tarifa de diagnóstico (lo que ya pagaste se descuenta).'
+    : (anticipoPagado || montoPagado > 0)
+      ? ` La devolución de tu anticipo${montoPagado > 0 ? ` de $${formatCOP(montoPagado)} COP` : ''} está en proceso: te confirmamos por este medio cuando esté hecha.`
+      : ''
   await enviarMensajeTexto(
     sol.cliente_telefono,
-    `Hola ${clienteNombre}, hemos cancelado tu solicitud de ${equipo}. Si necesitas reagendarla más adelante, puedes crear una nueva solicitud en ${process.env.NEXT_PUBLIC_APP_URL || 'https://lineablanca.bairdservice.com'}/solicitar 🔧`,
+    `Hola ${clienteNombre}, hemos cancelado tu solicitud de ${equipo}.${lineaPlata} Si necesitas reagendarla más adelante, puedes crear una nueva solicitud en ${APP_URL_CANCEL}/solicitar 🔧`,
   ).catch(err => console.error('[procesarCancelacionCliente] error notificando cliente:', err))
 
   // 4. Notificar al técnico asignado (si lo hay)
@@ -4188,10 +4210,21 @@ export async function procesarCancelacionCliente(
       tenia_tecnico_asignado: !!sol.tecnico_asignado_id,
       horario_confirmado: sol.horario_confirmado,
       es_garantia: sol.es_garantia,
+      diagnostico_hecho: diagnosticoHecho,
+      monto_pagado_online: montoPagado,
     },
   })
 
-  return { ok: true, estado_previo: sol.estado, cancelado_tarde: fueTarde }
+  return {
+    ok: true,
+    solicitud_id: sol.id,
+    estado_previo: sol.estado,
+    cancelado_tarde: fueTarde,
+    diagnostico_hecho: diagnosticoHecho,
+    monto_pagado_online: montoPagado,
+    anticipo_pagado: anticipoPagado,
+    abono_pagado: Boolean(sol.abono_pagado_at),
+  }
 }
 
 export interface ReagendamientoResult {

@@ -599,6 +599,17 @@ Audit:                                Audit:
 
 **Caveat textos libres**: dependen de que el cliente/técnico haya enviado un mensaje al negocio en las últimas 24h. Si Meta los rechaza con #131047, queda registrado en log + audit, pero el cliente sí ve el cambio in-app (el portal refresca después de la acción).
 
+**Plata al cancelar (2026-11-05):** al tocar "Cancelar" el portal ofrece primero
+"¿Prefieres reagendar sin costo?" (si aún es reagendable) y solo si insiste pide
+el motivo. Luego `/api/solicitud/cancelar` decide con lo que devuelve
+`procesarCancelacionCliente`: (a) ya había diagnóstico → se cobra la tarifa de
+diagnóstico completa menos lo pagado (`cobrarDiagnosticoSinReparacion`, link
+`saldo_final_cliente_v1`) y el abono de repuestos, si lo hubo, queda "devolución
+pendiente"; (b) sin visita y con anticipo pagado → "devolución pendiente"
+(evento + alerta al equipo; la devolución es manual desde la ficha) y el texto al
+cliente dice "la devolución de tu anticipo está en proceso". Ver `docs/WOMPI.md`
+§ "Cobros fuera del camino feliz".
+
 ---
 
 ## Side flow: Receptor del servicio (2026-10-13)

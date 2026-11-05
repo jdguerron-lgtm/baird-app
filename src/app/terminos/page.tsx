@@ -187,8 +187,11 @@ export default function TerminosPage() {
           <p>
             Conforme a la misma norma, el retracto <strong>no procede</strong> respecto de servicios cuya prestación
             haya comenzado con el acuerdo del cliente: una vez realizada la visita de diagnóstico, la tarifa de
-            diagnóstico no es reembolsable; y una vez iniciada la reparación aprobada, el valor de esta tampoco lo es.
-            Antes de la visita, el cliente puede cancelar o reagendar sin costo conforme al numeral 10.
+            diagnóstico no es reembolsable y se cobra completa aunque el cliente decida no reparar, el equipo no
+            tenga reparación o la cotización sea rechazada (el anticipo pagado se acredita a ella); y una vez iniciada
+            la reparación aprobada, el valor de esta tampoco lo es. Antes de la visita, el cliente puede cancelar o
+            reagendar sin costo conforme al numeral 10: si ya había pagado el anticipo, Baird Service se lo devuelve
+            por el mismo medio de pago.
           </p>
         </Seccion>
 

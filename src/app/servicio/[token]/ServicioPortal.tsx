@@ -39,6 +39,10 @@ interface Props {
   cancelable: boolean
   reagendable: boolean
   reagendamientosRestantes: number
+  /** (2026-11-05) El técnico ya diagnosticó: cancelar cobra la tarifa de diagnóstico completa. */
+  diagnosticado?: boolean
+  /** (2026-11-05) Hay anticipo pagado en línea: si cancela antes de la visita se le devuelve. */
+  anticipoPagado?: boolean
 }
 
 const FRANJAS = [
@@ -75,9 +79,14 @@ export default function ServicioPortal({
   cancelable,
   reagendable,
   reagendamientosRestantes,
+  diagnosticado = false,
+  anticipoPagado = false,
 }: Props) {
   const [modo, setModo] = useState<Modo>('menu')
   const [motivoCancel, setMotivoCancel] = useState('')
+  // (2026-11-05) Antes de cancelar se ofrece reagendar; solo si insiste
+  // aparece el formulario del motivo.
+  const [confirmarCancel, setConfirmarCancel] = useState(false)
   const [fechaCustom, setFechaCustom] = useState('')
   const [franjaCustom, setFranjaCustom] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -153,6 +162,11 @@ export default function ServicioPortal({
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Servicio cancelado</h1>
           <p className="text-gray-600 mb-6">
             Recibimos tu cancelación. Te enviamos confirmación por WhatsApp.
+            {diagnosticado
+              ? ' Como la visita de diagnóstico ya se realizó, te llega el link para pagar el saldo de la tarifa de diagnóstico.'
+              : anticipoPagado
+                ? ' La devolución de tu anticipo está en proceso.'
+                : ''}
           </p>
           <Link
             href="/solicitar"
@@ -273,9 +287,13 @@ export default function ServicioPortal({
               >
                 <div className="font-semibold text-red-900">❌ Cancelar servicio</div>
                 <div className="text-xs text-red-700">
-                  {solicitud.tecnico_asignado_id
-                    ? 'Tu técnico ya está asignado — puede aplicar visita-en-falso si cancelas tarde'
-                    : 'Aún no asignamos técnico, cancelación libre'}
+                  {diagnosticado
+                    ? 'El técnico ya hizo la visita de diagnóstico: se cobra la tarifa de diagnóstico'
+                    : anticipoPagado
+                      ? 'Si cancelas antes de la visita te devolvemos el anticipo'
+                      : solicitud.tecnico_asignado_id
+                        ? 'Tu técnico ya está asignado — si puedes, mejor reagenda'
+                        : 'Aún no asignamos técnico, cancelación libre'}
                 </div>
               </button>
             )}
@@ -288,9 +306,55 @@ export default function ServicioPortal({
           </div>
         )}
 
-        {modo === 'cancelar' && (
+        {modo === 'cancelar' && reagendable && !confirmarCancel && (
+          <div className="rounded-2xl bg-white p-6 shadow-lg">
+            <h2 className="font-bold text-gray-900 mb-2">¿Prefieres reagendar?</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Puedes mover tu visita a otro día sin costo{anticipoPagado ? ' y conservar tu anticipo' : ''}.
+              {' '}Si cancelas definitivamente{anticipoPagado ? ', te devolvemos el anticipo que pagaste' : ''}.
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => { setModo('reagendar'); setError('') }}
+                className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                📅 Sí, reagendar sin costo
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmarCancel(true)}
+                className="w-full rounded-xl border-2 border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50"
+              >
+                No, cancelar definitivamente
+              </button>
+              <button
+                type="button"
+                onClick={() => { setModo('menu'); setError('') }}
+                className="w-full rounded-xl bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+              >
+                Volver
+              </button>
+            </div>
+          </div>
+        )}
+
+        {modo === 'cancelar' && (!reagendable || confirmarCancel) && (
           <div className="rounded-2xl bg-white p-6 shadow-lg">
             <h2 className="font-bold text-gray-900 mb-3">Cancelar servicio</h2>
+            {diagnosticado && (
+              <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                El técnico ya realizó la visita de diagnóstico. Según los términos del servicio, la tarifa de
+                diagnóstico se cobra completa aunque no continúes con la reparación; lo que ya pagaste se descuenta
+                y te enviaremos el link para pagar el saldo.
+              </div>
+            )}
+            {!diagnosticado && anticipoPagado && (
+              <div className="mb-3 rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800">
+                Ya pagaste el anticipo: al cancelar, te lo devolvemos por el mismo medio de pago. Te confirmamos
+                por WhatsApp cuando la devolución esté hecha.
+              </div>
+            )}
             <p className="text-sm text-gray-600 mb-4">
               Cuéntanos brevemente por qué necesitas cancelar. Tu mensaje nos ayuda a mejorar.
             </p>
@@ -308,7 +372,7 @@ export default function ServicioPortal({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => { setModo('menu'); setError(''); setMotivoCancel('') }}
+                onClick={() => { setModo('menu'); setConfirmarCancel(false); setError(''); setMotivoCancel('') }}
                 className="flex-1 rounded-xl bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-200"
               >
                 Volver

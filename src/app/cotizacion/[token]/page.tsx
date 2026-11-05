@@ -246,6 +246,22 @@ export default function CotizacionPage() {
           <p className="text-gray-600 text-sm">
             Hemos notificado al técnico. Si deseas un nuevo servicio, puedes crear una nueva solicitud en nuestra plataforma.
           </p>
+          {/* (2026-11-05) La visita de diagnóstico se cobra completa aunque no
+              se repare (T&C § 9); /pago/saldo calcula tarifa − anticipo. */}
+          {clienteToken && (
+            <div className="mt-5 rounded-xl bg-amber-50 border border-amber-200 p-4 text-left">
+              <p className="text-xs text-amber-800 mb-3">
+                La visita de diagnóstico ya se realizó: queda pendiente el saldo de la tarifa de diagnóstico
+                (lo que ya pagaste se descuenta). También te enviamos el link por WhatsApp.
+              </p>
+              <a
+                href={`/pago/saldo/${clienteToken}`}
+                className="block w-full rounded-xl bg-emerald-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-emerald-700"
+              >
+                💳 Pagar la visita de diagnóstico
+              </a>
+            </div>
+          )}
         </div>
       </div>
     )

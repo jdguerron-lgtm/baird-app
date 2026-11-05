@@ -117,6 +117,35 @@ API para no hacer esperar al cliente. Ambos caminos convergen en
   ya es el neto (test 11–12 de `pagos-contrato`). Reglas y ejemplo en
   `docs/TARIFAS.md` § "Códigos de descuento".
 
+### Cobros fuera del camino feliz (2026-11-05) `[pagos]`
+
+Decisiones de Juan del 2026-11-05 tras auditar los tres cobros en prod (el
+código decía "el diagnóstico solo, si el cliente no repara, no genera saldo";
+los T&C dicen que la tarifa de diagnóstico no es reembolsable; el técnico
+quedaba con `pago_tecnico = 0` y fuera de la liquidación — caso Lina Paola
+Vasquez `de31afee`). Todo vive en `src/lib/services/cobros.service.ts`
+(fuera de la frontera: no escribe en `pagos`) + `cobroDiagnosticoAplica()`
+en `src/lib/constants/pago-cliente.ts`.
+
+| Situación | Cliente | Técnico | Cómo |
+|---|---|---|---|
+| Cierre sin reparación tras la visita: `reparacion_rechazada`, `finalizado_sin_reparacion`, `cotizacion_rechazada` | Paga la **visita de diagnóstico completa** (`TARIFA_DIAGNOSTICO` + recargo finde con IVA) menos lo acreditado. Link `saldo_final_cliente_v1` (`momento: 'cierre'`) al instante; referencia `saldo-{uuid}`. | `pago_tecnico` = `PAGO_TECNICO_DIAGNOSTICO` + 90 % del recargo (antes 0) y entra a **cuentas por pagar** (`ESTADOS_VISITA_LIQUIDABLE`) y a finanzas. | `/api/diagnostico` y `procesarAprobacionCotizacion` (rama rechazo) → `cobrarDiagnosticoSinReparacion`. `/cotizacion/{token}` tras rechazar muestra "💳 Pagar la visita de diagnóstico". |
+| Cliente cancela DESPUÉS del diagnóstico (`cancelada` + `diagnosticado_at`) | Igual: diagnóstico completo. Si había **abono** de repuestos pagado, queda "devolución pendiente" del abono. | Igual (visita pagada). | `/api/solicitud/cancelar` con `result.diagnostico_hecho`. |
+| Cliente cancela ANTES de la visita con anticipo pagado (tardía o no) | Se le **devuelve el anticipo** — **manual** desde la ficha ("Devolver por Wompi" / manual). El portal ofrece primero **reagendar sin costo**; el WhatsApp de cancelación dice "la devolución está en proceso". Sin cobro de visita en falso. | Nada. | `marcarDevolucionPendiente` → evento `pago_registrado` con `devolucion_pendiente: true` + alerta al equipo; etapa `↩️ Devolución pendiente` en la ficha. |
+| Aprobación de la cotización | Recibe el link (abono o saldo) como antes. | Recibe `cotizacion_aprobada_tecnico_v3` + texto "aún no ha pagado…, puedes seguir" (`avisarTecnicoPagoPendiente`). **No se bloquea** nada; el "pago recibido" lo manda `registrarPagoWompi`. | `procesarAprobacionCotizacion`. |
+| Cobro sin pagar | Cron diario `GET /api/cron/cobros-recordatorio` (14:00 UTC = 9 am CO): reenvía el link a las **24 h** del último envío, **máximo 2** recordatorios por cobro, y en el 2.º (≈ 48 h) alerta al equipo. Kill-switch `COBROS_RECORDATORIO_ENABLED=false`. | — | `enviarRecordatoriosCobro` — cuenta recordatorios por eventos `mensaje_cliente` con `payload.recordatorio_cobro`. |
+
+Reglas que NO cambiaron: la cancelación manual del admin (`/api/admin/cambiar-estado`)
+sigue sin cobro ni devolución automática; no-show "nadie paga"; precio fijo
+(Mantenimiento / Cambio de filtro) no tiene tarifa de diagnóstico. Invariantes
+del módulo intactos: la referencia sigue siendo `saldo-{uuid}`, el monto
+esperado al confirmar sale de `totalClienteParaCobro` (ahora consciente del
+estado + `diagnosticado_at`, que `CAMPOS_SOLICITUD_PAGO` ya selecciona) y la
+conciliación por cron consulta `saldo` también en estos estados. Etapas
+nuevas: `diagnostico_pendiente` (cuenta como cobro en curso) y
+`devolucion_pendiente` (no se cobra; `faltanteCobroCliente` devuelve null).
+T&C v2026.11.05 § 9 lo deja explícito. Tests: `cobros-sin-reparacion.test.ts`.
+
 ### Conciliación por cron (tercer camino, 2026-10-11)
 
 ```
@@ -292,3 +321,7 @@ Reparación; página de pago muestra "el equipo te contactará").
   `BadgePagoCliente`. Solo particulares; refleja únicamente recaudo ONLINE
   (un pago en sitio con QR no aparece).
 - Factura DIAN sigue pendiente de Siigo (Wompi emite comprobante, no factura).
+- Casos previos al 2026-11-05 que se resuelven a mano (decisión de Juan): Lina
+  Paola Vasquez `de31afee` (saldo del diagnóstico no cobrado) y Eliana Muñoz
+  `1b64aa19` (anticipo $63.000 por devolver; el reembolso por API falló el
+  2026-10-26 → panel de Wompi + "Registrar devolución manual").

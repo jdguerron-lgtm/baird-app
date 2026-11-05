@@ -46,7 +46,10 @@ export default async function ServicioPortalPage({ params }: Props) {
         estado,
         es_garantia,
         tecnico_asignado_id,
-        reagendamientos_count
+        reagendamientos_count,
+        diagnosticado_at,
+        anticipo_pagado_at,
+        monto_pagado_online
       `)
       .eq('cliente_token', token)
       .single()
@@ -100,6 +103,8 @@ export default async function ServicioPortalPage({ params }: Props) {
       cancelable={cancelable}
       reagendable={reagendable}
       reagendamientosRestantes={MAX_REAGENDAMIENTOS_CLIENTE - reagendamientosCount}
+      diagnosticado={!sol.es_garantia && Boolean(sol.diagnosticado_at)}
+      anticipoPagado={!sol.es_garantia && (Boolean(sol.anticipo_pagado_at) || Number(sol.monto_pagado_online ?? 0) > 0)}
     />
   )
 }

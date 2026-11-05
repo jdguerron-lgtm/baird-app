@@ -650,7 +650,8 @@ historial.
 
 | Situación | Qué devolver |
 |---|---|
-| El cliente cancela antes de la visita y pagó el anticipo | El anticipo completo |
+| El cliente cancela antes de la visita y pagó el anticipo | El anticipo completo. La ficha lo marca sola como **↩️ Devolución pendiente** y al equipo le llega un WhatsApp; la devolución la haces tú (8.4) |
+| El cliente cancela DESPUÉS de que el técnico diagnosticó, o rechaza reparar / rechaza la cotización / el equipo no tiene arreglo | Nada: se le cobra la **visita de diagnóstico completa** ($84.000 + recargo si fue finde) menos lo que ya pagó. El link sale solo y la etapa queda **⏳ Diagnóstico por pagar**. Si había pagado abono de repuestos, ese abono sí se devuelve |
 | Baird cancela (no hay técnico, no se puede atender) o el técnico no se presentó y el cliente no quiere reprogramar | Todo lo pagado |
 | El cliente pagó dos veces el mismo cobro (en el historial aparece ⚠️ "segundo pago") | Solo el segundo pago |
 | Se cobró de más | La diferencia: la app no hace devoluciones parciales; se hace desde el panel de Wompi o por transferencia y se registra como manual |
@@ -659,7 +660,13 @@ historial.
 Regla práctica: **si el pago fue con tarjeta y es el mismo día, devuélvelo
 hoy**: se anula sin costo y el cargo desaparece. Al día siguiente ya es un
 reembolso y Wompi no devuelve su comisión. Siempre que se pueda, ofrecer
-primero **reprogramar conservando el anticipo**.
+primero **reprogramar conservando el anticipo** (el portal del cliente ya se
+lo ofrece antes de dejarlo cancelar).
+
+**Cobros sin pagar:** si el cliente no paga un link (anticipo, abono, saldo o
+diagnóstico), la plataforma se lo reenvía sola a las 24 h y, si a las 48 h
+sigue sin pagar, avisa al equipo por WhatsApp con el link a la ficha. Desde ahí
+se gestiona a mano: llamar al cliente o "Cobrar faltante por WhatsApp".
 
 ### 8.4 Cómo se hace la devolución [solo admin]
 
