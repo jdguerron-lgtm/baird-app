@@ -274,6 +274,7 @@ Cuando el técnico va a diagnosticar y el cliente decide no proceder con la repa
   repuestos; el resto se cobra al completar el servicio. Solo aplica con
   repuestos. Ver `docs/WOMPI.md` § "Qué cobra hoy".
 - **Pago al técnico por la visita de diagnóstico: `PAGO_TECNICO_DIAGNOSTICO` = $35,000 fijo** (2026-07-05). No sale de la fórmula ÷1.3447 — es una oferta comercial de Baird; la diferencia cubre IVA, adquisición del cliente y operación. Si el cliente aprueba la cotización de reparación, el pago del técnico pasa a ser su costo cotizado.
+- **Cierre sin reparación (2026-11-05):** si tras la visita el cliente no quiere reparar, el equipo no tiene arreglo, rechaza la cotización o cancela, el cliente paga la **tarifa de diagnóstico completa** ($84.000 + recargo finde/festivo con IVA) menos lo ya pagado (`cobroDiagnosticoAplica` → `totalClienteParaCobro`; link `saldo_final_cliente_v1` al instante) y el técnico cobra el fijo de la visita + 90 % del recargo (`/api/diagnostico` ya no deja `pago_tecnico` en 0) y entra a la liquidación. Antes solo quedaba el anticipo y el técnico no cobraba. Cancelación **antes** de la visita: se devuelve el anticipo (manual). Detalle en `docs/WOMPI.md` § "Cobros fuera del camino feliz".
 
 Constantes en `src/types/solicitud.ts` (`TARIFA_DIAGNOSTICO`, `ANTICIPO_PORCENTAJE`) y `src/lib/constants/tarifas/particular.ts` (`PAGO_TECNICO_DIAGNOSTICO`).
 

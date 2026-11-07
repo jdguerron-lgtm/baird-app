@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { procesarCancelacionCliente } from '@/lib/services/whatsapp.service'
+import { cobrarDiagnosticoSinReparacion, marcarDevolucionPendiente } from '@/lib/services/cobros.service'
 
 // El servicio puede tardar varios segundos (3 envíos WhatsApp + DB).
 export const maxDuration = 30
@@ -32,10 +33,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error, estado_previo: result.estado_previo }, { status })
     }
 
+    // (2026-11-05) Qué pasa con la plata — decisión del 2026-11-05:
+    //   - visita ya hecha: se cobra el diagnóstico completo (menos lo pagado) y,
+    //     si había abono de repuestos, ese abono se devuelve a mano;
+    //   - sin visita y con anticipo pagado: devolución MANUAL (evento + alerta).
+    // Todo best-effort: la cancelación ya quedó escrita.
+    let cobroDiagnostico = 0
+    if (result.diagnostico_hecho) {
+      const cobro = await cobrarDiagnosticoSinReparacion(result.solicitud_id ?? '', 'cancelacion')
+      cobroDiagnostico = cobro.saldo
+      if (result.abono_pagado) {
+        await marcarDevolucionPendiente(result.solicitud_id ?? '', {
+          tipo: 'abono',
+          monto: 0,
+          motivo: 'El cliente canceló después del diagnóstico: se cobra solo la visita; el abono de repuestos se devuelve.',
+        })
+      }
+    } else if (result.anticipo_pagado || (result.monto_pagado_online ?? 0) > 0) {
+      await marcarDevolucionPendiente(result.solicitud_id ?? '', {
+        tipo: 'anticipo',
+        monto: result.monto_pagado_online ?? 0,
+        motivo: `El cliente canceló antes de la visita${result.cancelado_tarde ? ' (con técnico asignado)' : ''}: se le devuelve el anticipo.`,
+      })
+    }
+
     return NextResponse.json({
       success: true,
       estado_previo: result.estado_previo,
       cancelado_tarde: result.cancelado_tarde,
+      diagnostico_hecho: result.diagnostico_hecho ?? false,
+      cobro_diagnostico: cobroDiagnostico,
+      devolucion_pendiente: !result.diagnostico_hecho && Boolean(result.anticipo_pagado || (result.monto_pagado_online ?? 0) > 0),
     })
   } catch (err) {
     console.error('Error en /api/solicitud/cancelar:', err)

@@ -14,7 +14,7 @@ import {
   type TransaccionWompi,
 } from '@/lib/wompi'
 import { montoAnticipo, saldoPendiente, montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
-import { totalClienteParaCobro, descuentoClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { totalClienteParaCobro, descuentoClienteParaCobro, cobroDiagnosticoAplica } from '@/lib/constants/pago-cliente'
 import { precioClienteServicio } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
 import {
@@ -75,6 +75,10 @@ type SolicitudPago = {
   // lo exige antes de armar el checkout (antes el link se ofrecía desde la
   // pantalla de éxito de /solicitar, sin técnico).
   tecnico_asignado_id?: string | null
+  // (2026-11-05) Con diagnóstico hecho, un cierre sin reparación o una
+  // cancelación posterior cobran la tarifa de diagnóstico completa
+  // (cobroDiagnosticoAplica → totalClienteParaCobro).
+  diagnosticado_at?: string | null
   // Snapshot del código de descuento (2026-10-19): entra SOLO en el saldo
   // final (calcularMontoSaldo). Nullable — sin código nada cambia.
   descuento_codigo?: string | null
@@ -85,7 +89,7 @@ type SolicitudPago = {
 // ⚠️ descuento_* requieren la migración 20261019_codigos_descuento aplicada
 // ANTES de desplegar (PostgREST rechaza columnas desconocidas en el select).
 const CAMPOS_SOLICITUD_PAGO =
-  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre, tecnico_asignado_id, descuento_codigo, descuento_tipo, descuento_valor'
+  'id, estado, es_garantia, tipo_equipo, tipo_solicitud, cotizacion, recargo_weekend_aplicado, anticipo_pagado_at, saldo_pagado_at, horario_confirmado, cliente_nombre, tecnico_asignado_id, diagnosticado_at, descuento_codigo, descuento_tipo, descuento_valor'
 
 /**
  * Monto (COP) del anticipo que corresponde a una solicitud particular.
@@ -946,9 +950,12 @@ async function tiposPendientes(sol: SolicitudConciliable): Promise<TipoPago[]> {
   if (cot?.aprobado_at && cotizacionTieneRepuestos(cot) && !(await abonoRepuestosPagado(sol.id))) {
     tipos.push('abono')
   }
-  // Saldo: el link sale al aprobar una cotización SIN repuestos o al completar
-  // (incluye precio fijo — totalClienteParaCobro usa el catálogo ahí).
-  const saldoEnCurso = sol.estado === 'completada' || (Boolean(cot?.aprobado_at) && !cotizacionTieneRepuestos(cot))
+  // Saldo: el link sale al aprobar una cotización SIN repuestos, al completar
+  // (incluye precio fijo — totalClienteParaCobro usa el catálogo ahí) o al
+  // cerrar sin reparación tras la visita (2026-11-05: diagnóstico completo).
+  const saldoEnCurso = sol.estado === 'completada'
+    || (Boolean(cot?.aprobado_at) && !cotizacionTieneRepuestos(cot))
+    || cobroDiagnosticoAplica(sol)
   if (saldoEnCurso && !sol.saldo_pagado_at && totalClienteParaCobro(sol) > 0) {
     tipos.push('saldo')
   }
@@ -1046,7 +1053,8 @@ export async function conciliarPagosWompi(opts: { diasAtras?: number } = {}): Pr
   }
 
   for (const sol of (candidatas ?? []) as SolicitudConciliable[]) {
-    if (ESTADOS_SIN_COBRO.has(sol.estado)) continue
+    // Terminal sin cobro… salvo que cobre el diagnóstico (2026-11-05).
+    if (ESTADOS_SIN_COBRO.has(sol.estado) && !cobroDiagnosticoAplica(sol)) continue
     let tipos: TipoPago[]
     try {
       tipos = await tiposPendientes(sol)

@@ -87,17 +87,33 @@ type SolicitudPorPagarRow = SolicitudFinanzas & {
 const SELECT_SOLICITUD =
   'id, created_at, es_garantia, tipo_equipo, marca_equipo, tipo_solicitud, estado, pago_tecnico, tecnico_asignado_id, cliente_nombre, ciudad_pueblo, triaje_resultado, cotizacion, recargo_weekend_aplicado, cumple_ta, diagnosticado_at, siguiente_paso, siguiente_paso_at, repuesto_recibido_at'
 
-/** Servicios completados sin liquidar, agrupados por técnico (orden: mayor deuda primero). */
+/**
+ * Estados PARTICULARES que también se liquidan al técnico (2026-11-05): la
+ * visita de diagnóstico se hizo aunque el servicio no terminara en reparación
+ * (cliente no quiso, no reparable, cotización rechazada, cancelación posterior
+ * al diagnóstico). Exigen `diagnosticado_at` y `pago_tecnico > 0` (el fijo de
+ * la visita, PAGO_TECNICO_DIAGNOSTICO + recargo). Garantía sigue solo `completada`.
+ */
+export const ESTADOS_VISITA_LIQUIDABLE = ['cotizacion_rechazada', 'reparacion_rechazada', 'finalizado_sin_reparacion', 'cancelada'] as const
+
+function visitaLiquidable(sol: { es_garantia: boolean; estado: string; diagnosticado_at: string | null; pago_tecnico: number | null }): boolean {
+  if (sol.estado === 'completada') return true
+  if (sol.es_garantia) return false
+  return (ESTADOS_VISITA_LIQUIDABLE as readonly string[]).includes(sol.estado)
+    && Boolean(sol.diagnosticado_at) && (sol.pago_tecnico ?? 0) > 0
+}
+
+/** Servicios completados (o visitas sin reparación) sin liquidar, agrupados por técnico (orden: mayor deuda primero). */
 export async function obtenerCuentasPorPagar(): Promise<CuentaPorPagarTecnico[]> {
   const { data: solsRaw, error } = await supabase
     .from('solicitudes_servicio')
     .select(SELECT_SOLICITUD)
-    .eq('estado', 'completada')
+    .in('estado', ['completada', ...ESTADOS_VISITA_LIQUIDABLE])
     .not('tecnico_asignado_id', 'is', null)
     .order('created_at', { ascending: true })
     .limit(5000)
   if (error) throw new Error(`Error cargando servicios completados: ${error.message}`)
-  const sols = (solsRaw ?? []) as unknown as SolicitudPorPagarRow[]
+  const sols = ((solsRaw ?? []) as unknown as SolicitudPorPagarRow[]).filter(visitaLiquidable)
   if (sols.length === 0) return []
 
   const ids = sols.map((s) => s.id)

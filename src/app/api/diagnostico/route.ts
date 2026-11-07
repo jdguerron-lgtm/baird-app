@@ -10,7 +10,8 @@ import {
 import crypto from 'crypto'
 import type { ProductoNecesario, ProductoRecomendado, SiguientePasoDiagnostico, TipoEquipo, TipoSolicitud } from '@/types/solicitud'
 import { calcularPagoTecnico, precioClienteServicio, TARIFAS_MANTENIMIENTO, IVA_TARIFA } from '@/types/solicitud'
-import { calcularTarifaParticular, recargoTecnicoDesdeBruto, pagoNetoTecnicoTarifaFija } from '@/lib/constants/tarifas/particular'
+import { calcularTarifaParticular, recargoTecnicoDesdeBruto, pagoNetoTecnicoTarifaFija, PAGO_TECNICO_DIAGNOSTICO } from '@/lib/constants/tarifas/particular'
+import { cobrarDiagnosticoSinReparacion } from '@/lib/services/cobros.service'
 import { esServicioPrecioFijo } from '@/lib/constants/pago-cliente'
 
 /**
@@ -512,10 +513,12 @@ export async function POST(req: NextRequest) {
           cotizacion: cierraSinCotizacion ? null : cotizacionData,
           estado: nuevoEstado,
           // El técnico recibe íntegro su costo + 90% del recargo finde/festivo
-          // (si la visita cayó en finde). En cierre sin cotización se conserva
-          // el comportamiento previo (no aplica recargo sobre un cierre).
+          // (si la visita cayó en finde). Cierre sin cotización (cliente no
+          // quiso / no reparable): la VISITA se paga igual — fijo
+          // PAGO_TECNICO_DIAGNOSTICO + 90% del recargo (2026-11-05; antes
+          // quedaba en 0 y el técnico perdía la visita).
           pago_tecnico: cierraSinCotizacion
-            ? costoTecnicoNum
+            ? PAGO_TECNICO_DIAGNOSTICO + recargoTecnicoDesdeBruto(recargoBruto)
             : costoTecnicoNum + recargoTecnicoDesdeBruto(recargoBruto),
           siguiente_paso: siguientePaso,
           siguiente_paso_detalle: siguientePasoDetalle,
@@ -536,6 +539,14 @@ export async function POST(req: NextRequest) {
       }
 
       await notificarCambioEstado(sol.id, sol.estado, nuevoEstado)
+
+      // Cierre sin reparación (2026-11-05): se cobra la visita de diagnóstico
+      // completa menos el anticipo (T&C § 9). Best-effort: no bloquea el cierre.
+      let cobroDiagnostico: { aplica: boolean; saldo: number; ok: boolean; error?: string } | null = null
+      if (cierraSinCotizacion) {
+        cobroDiagnostico = await cobrarDiagnosticoSinReparacion(sol.id, 'diagnostico')
+        if (!cobroDiagnostico.ok) console.error('[diagnostico] cobro de diagnóstico falló:', cobroDiagnostico.error)
+      }
 
       // Insertar repuestos pendientes solo si esperar_repuesto (en particular el
       // costo ya está incluido en costoTecnico — los registros aquí son para
@@ -580,9 +591,13 @@ export async function POST(req: NextRequest) {
           : tarifa ? tarifa.totalCliente + diagnosticoCliente : 0,
         // Neto al técnico (costo + 90% del recargo finde/festivo si aplicó) —
         // la pantalla de éxito lo muestra tal cual, sin recalcular en cliente.
-        pagoTecnico: esMantenimientoCatalogo
-          ? costoTecnicoNum + recargoTecnicoDesdeBruto(recargoBruto)
-          : (tarifa?.pagoTecnicoTotal ?? 0),
+        pagoTecnico: cierraSinCotizacion
+          ? PAGO_TECNICO_DIAGNOSTICO + recargoTecnicoDesdeBruto(recargoBruto)
+          : esMantenimientoCatalogo
+            ? costoTecnicoNum + recargoTecnicoDesdeBruto(recargoBruto)
+            : (tarifa?.pagoTecnicoTotal ?? 0),
+        // Cobro de la visita al cliente cuando cierra sin reparación (2026-11-05).
+        cobroDiagnostico,
         mantenimientoCatalogo: esMantenimientoCatalogo,
         recargoWeekend: recargoBruto,
         pendiente_pricing: necesitaPricingAdmin,

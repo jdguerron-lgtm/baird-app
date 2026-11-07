@@ -22,6 +22,7 @@
  */
 
 import { calcularTarifaMABE, MARGEN_BAIRD_GARANTIA, type ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
+import { cobroDiagnosticoAplica } from '@/lib/constants/pago-cliente'
 import { diasSolucionBono, encuestaDeEvidencia, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
@@ -185,13 +186,17 @@ export function cifrasServicio(
     }
   }
 
-  const totalBruto = precioClienteServicio(
-    sol.tipo_equipo,
-    sol.tipo_solicitud,
-    sol.es_garantia,
-    sol.cotizacion as { total?: number | null } | null,
-    sol.recargo_weekend_aplicado,
-  )
+  // (2026-11-05) Cierre sin reparación tras la visita: la venta es la tarifa
+  // de diagnóstico (cobroDiagnosticoAplica), no la cotización rechazada.
+  const totalBruto = cobroDiagnosticoAplica(sol)
+    ? precioClienteServicio(sol.tipo_equipo, sol.tipo_solicitud, false, null, sol.recargo_weekend_aplicado)
+    : precioClienteServicio(
+        sol.tipo_equipo,
+        sol.tipo_solicitud,
+        sol.es_garantia,
+        sol.cotizacion as { total?: number | null } | null,
+        sol.recargo_weekend_aplicado,
+      )
   // Código de descuento (2026-10-19): Baird lo asume. La venta neta es
   // total − descuento; con descuento la base se deriva del neto (la
   // base_venta persistida en la cotización es la bruta).
@@ -279,7 +284,8 @@ export function calcularResumenFinanciero(params: {
   const porMes = new Map<string, { g: CifrasFlujo; p: CifrasFlujo }>()
 
   for (const sol of solicitudes) {
-    if (sol.estado !== 'completada') continue
+    // completada, o visita particular sin reparación ya filtrada por el caller (2026-11-05)
+    if (sol.estado !== 'completada' && !cobroDiagnosticoAplica(sol)) continue
     const ev = evidenciaMap.get(sol.id)
     const cierreIso = fechaCierreServicio(sol, ev)
     const ymd = fechaColombiaYMD(new Date(cierreIso))

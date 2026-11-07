@@ -11,6 +11,7 @@ import {
   enviarAbonoRepuestosCliente,
 } from '@/lib/services/whatsapp.service'
 import { cargarSolicitudPago, calcularMontoSaldo } from '@/lib/services/pagos.service'
+import { cobrarDiagnosticoSinReparacion, avisarTecnicoPagoPendiente } from '@/lib/services/cobros.service'
 import { enviarCorreoFacturacionServicio } from '@/lib/services/email.service'
 import { montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
 import { esFechaVisitaPasada } from '@/lib/utils/fecha-visita'
@@ -457,9 +458,13 @@ export async function procesarAprobacionCotizacion(
           const abono = montoAbonoRepuestos(saldo)
           const envioAbono = await enviarAbonoRepuestosCliente(solMatch.id, abono)
           if (!envioAbono.ok) console.error('[aprobar-cotizacion] enviarAbonoRepuestosCliente falló:', envioAbono.error)
+          // (2026-11-05) El técnico sabe que el cobro sigue pendiente; no se
+          // le bloquea nada. El "pago recibido" lo manda pagos.service.
+          await avisarTecnicoPagoPendiente(solMatch.id, { tipo: 'abono', monto: abono })
         } else {
           const envioSaldo = await enviarPagoSaldoCliente(solMatch.id, saldo)
           if (!envioSaldo.ok) console.error('[aprobar-cotizacion] enviarPagoSaldoCliente falló:', envioSaldo.error)
+          await avisarTecnicoPagoPendiente(solMatch.id, { tipo: 'saldo', monto: saldo })
         }
       }
     } catch (err) {
@@ -520,7 +525,12 @@ export async function procesarAprobacionCotizacion(
       }
     }
 
-    return { ok: true, httpStatus: 200, body: { success: true, estado: 'cotizacion_rechazada' } }
+    // (2026-11-05) Rechazó la reparación: se cobra la visita de diagnóstico
+    // completa menos el anticipo (T&C § 9). Best-effort.
+    const cobro = await cobrarDiagnosticoSinReparacion(solMatch.id, 'cotizacion_rechazada')
+    if (!cobro.ok) console.error('[aprobar-cotizacion] cobro de diagnóstico falló:', cobro.error)
+
+    return { ok: true, httpStatus: 200, body: { success: true, estado: 'cotizacion_rechazada', cobro_diagnostico: cobro.saldo } }
   }
 }
 

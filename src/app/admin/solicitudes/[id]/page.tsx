@@ -1419,7 +1419,7 @@ export default function SolicitudDetalle() {
     // apenas entre (redirect de Wompi o cron de conciliación).
     const etapa = etapaPagoCliente(solicitud as unknown as SolicitudParaEtapaPago)?.etapa
     const cobroPendiente = Boolean(etapa) &&
-      etapa !== 'pagado' && etapa !== 'cerrado_con_pago' && etapa !== 'sin_cobro' && etapa !== 'sin_pago_online'
+      etapa !== 'pagado' && etapa !== 'cerrado_con_pago' && etapa !== 'devolucion_pendiente' && etapa !== 'sin_cobro' && etapa !== 'sin_pago_online'
     if (estadosTerminales.has(solicitud.estado) && !cobroPendiente) return
 
     const intervalo = setInterval(async () => {

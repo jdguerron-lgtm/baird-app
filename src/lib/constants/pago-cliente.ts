@@ -90,6 +90,8 @@ export type EtapaPagoCliente =
   | 'abono_pagado'        // abono pagado; el saldo se cobra al completar
   | 'saldo_pendiente'     // link del saldo enviado, sin pagar
   | 'pagado'              // pagó el total en línea
+  | 'diagnostico_pendiente' // (2026-11-05) cerró sin reparación tras la visita: se cobra el diagnóstico completo
+  | 'devolucion_pendiente'  // (2026-11-05) canceló ANTES de la visita con anticipo pagado: devolver a mano
   | 'cerrado_con_pago'    // servicio terminado sin reparación/cancelado, con algo pagado
   | 'sin_pago_online'     // ya hubo visita y no hay pagos online (pudo pagar en sitio con QR, o es previo a Wompi)
 
@@ -131,6 +133,9 @@ export interface SolicitudParaEtapaPago {
   abono_pagado_at?: string | null
   saldo_pagado_at?: string | null
   monto_pagado_online?: number | null
+  // (2026-11-05) Fecha del diagnóstico: con ella, un servicio que terminó sin
+  // reparación o se canceló DESPUÉS de la visita cobra el diagnóstico completo.
+  diagnosticado_at?: string | null
   // Snapshot del código de descuento (2026-10-19, migración
   // 20261019_codigos_descuento). Solo particular; se aplica en el saldo final.
   descuento_codigo?: string | null
@@ -138,19 +143,50 @@ export interface SolicitudParaEtapaPago {
   descuento_valor?: number | string | null
 }
 
+/** Estados en los que el servicio terminó SIN reparación después de la visita. */
+export const ESTADOS_SIN_REPARACION = new Set([
+  'cotizacion_rechazada',
+  'reparacion_rechazada',
+  'finalizado_sin_reparacion',
+])
+
+/**
+ * (2026-11-05) true si al cliente se le cobra la VISITA DE DIAGNÓSTICO completa
+ * porque el servicio terminó sin reparación o lo canceló después de que el
+ * técnico ya diagnosticó. Regla de los T&C § 3 y § 9: la tarifa de diagnóstico
+ * ($84.000 + recargo finde/festivo) no es reembolsable una vez hecha la visita;
+ * el anticipo pagado se acredita contra ella. Solo particular en
+ * Diagnóstico / Reparación (los precios fijos no tienen visita de diagnóstico)
+ * y SOLO con `diagnosticado_at` (sin visita registrada no se cobra nada).
+ */
+export function cobroDiagnosticoAplica(sol: SolicitudParaEtapaPago): boolean {
+  if (sol.es_garantia) return false
+  if (!sol.diagnosticado_at || !sol.estado) return false
+  if (esServicioPrecioFijo(sol)) return false
+  if (!sol.tipo_solicitud || !sol.tipo_equipo) return false
+  return ESTADOS_SIN_REPARACION.has(sol.estado) || sol.estado === 'cancelada'
+}
+
 /**
  * Total BRUTO (COP, IVA incl.) que el cliente le debe a Baird por el servicio,
- * ANTES del código de descuento, para efectos de COBRO: total de la
- * cotización si existe; si no, precio de catálogo SOLO en servicios de precio
- * fijo (Mantenimiento / Cambio de filtro). En Diagnóstico/Reparación sin
- * cotización devuelve 0 = "aún no se sabe" (el diagnóstico solo, si el
- * cliente no repara, no genera saldo).
+ * ANTES del código de descuento, para efectos de COBRO:
+ *   - servicio terminado sin reparación / cancelado tras la visita
+ *     (`cobroDiagnosticoAplica`): la tarifa de la visita de diagnóstico
+ *     (catálogo + recargo finde), aunque exista una cotización rechazada;
+ *   - total de la cotización si existe;
+ *   - si no, precio de catálogo SOLO en servicios de precio fijo
+ *     (Mantenimiento / Cambio de filtro);
+ *   - en Diagnóstico/Reparación sin cotización y aún en curso devuelve 0 =
+ *     "aún no se sabe".
  *
  * Sobre este bruto se calculan el abono de repuestos y el % del descuento;
  * el saldo final usa `totalClienteNetoParaCobro`.
  */
 export function totalClienteParaCobro(sol: SolicitudParaEtapaPago): number {
   if (sol.es_garantia) return 0
+  if (cobroDiagnosticoAplica(sol)) {
+    return precioClienteServicio(sol.tipo_equipo as string, sol.tipo_solicitud as string, false, null, sol.recargo_weekend_aplicado ?? null)
+  }
   const cot = sol.cotizacion as { total?: unknown } | null | undefined
   if (typeof cot?.total === 'number' && cot.total > 0) return Math.round(cot.total)
   if (!sol.tipo_solicitud || !(TIPOS_PRECIO_FIJO as readonly string[]).includes(sol.tipo_solicitud)) return 0
@@ -212,7 +248,18 @@ export function etapaPagoCliente(sol: SolicitudParaEtapaPago): ResumenPagoClient
 
   if (sol.saldo_pagado_at || (totalNeto > 0 && pagado >= totalNeto)) return resumen('pagado')
 
+  // (2026-11-05) Cerró sin reparación tras la visita: se cobra el diagnóstico
+  // completo menos lo pagado (link con saldo_final_cliente_v1).
+  if (cobroDiagnosticoAplica(sol)) {
+    return restanteNeto > 0 ? resumen('diagnostico_pendiente', restanteNeto) : resumen('pagado')
+  }
+
   if (sol.estado && ESTADOS_CERRADOS_SIN_COBRO.has(sol.estado)) {
+    // (2026-11-05) Canceló ANTES de la visita con anticipo pagado: el equipo
+    // devuelve a mano (ficha → "Devolver por Wompi" / devolución manual).
+    if (sol.estado === 'cancelada' && !sol.diagnosticado_at && (pagado > 0 || sol.anticipo_pagado_at)) {
+      return resumen('devolucion_pendiente', pagado)
+    }
     return pagado > 0 || sol.anticipo_pagado_at ? resumen('cerrado_con_pago') : null
   }
 
@@ -268,6 +315,8 @@ export const ETAPA_PAGO_LABELS: Record<EtapaPagoCliente, string> = {
   abono_pagado: '🔩 Abono pagado',
   saldo_pendiente: '⏳ Saldo pendiente',
   pagado: '✅ Pagado total',
+  diagnostico_pendiente: '⏳ Diagnóstico por pagar',
+  devolucion_pendiente: '↩️ Devolución pendiente',
   cerrado_con_pago: '💰 Pago parcial · cerrado',
   sin_pago_online: 'Sin pago online',
 }
@@ -280,6 +329,8 @@ export const ETAPA_PAGO_ESTILOS: Record<EtapaPagoCliente, string> = {
   abono_pagado: 'bg-indigo-100 text-indigo-800',
   saldo_pendiente: 'bg-orange-50 text-orange-700 border border-orange-200',
   pagado: 'bg-emerald-100 text-emerald-800',
+  diagnostico_pendiente: 'bg-orange-50 text-orange-700 border border-orange-200',
+  devolucion_pendiente: 'bg-rose-50 text-rose-700 border border-rose-200',
   cerrado_con_pago: 'bg-slate-100 text-slate-700',
   sin_pago_online: 'bg-gray-100 text-gray-500',
 }
@@ -292,6 +343,8 @@ export const ETAPA_PAGO_HINT: Record<EtapaPagoCliente, string> = {
   abono_pagado: 'Abono de repuestos pagado. El saldo restante se cobra al completar el servicio.',
   saldo_pendiente: 'Se envió el link del saldo por WhatsApp. También puede pagarse con el QR de Baird.',
   pagado: 'El cliente pagó el total en línea (Wompi). No cobrar nada en sitio.',
+  diagnostico_pendiente: 'El servicio terminó sin reparación después de la visita: se cobra la tarifa de diagnóstico completa (no reembolsable, T&C § 9) menos lo ya pagado. Se envió el link por WhatsApp; si no paga, el cron de recordatorios lo reenvía a las 24 h y avisa al equipo a las 48 h.',
+  devolucion_pendiente: 'El cliente canceló antes de la visita y ya había pagado el anticipo: hay que devolvérselo desde el ledger de pagos de esta ficha ("Devolver por Wompi" o devolución manual).',
   cerrado_con_pago: 'El servicio se cerró sin completar la reparación; el cliente pagó una parte en línea (revisar devolución o cobro).',
   sin_pago_online: 'No hay pagos online registrados. Pudo pagar en sitio con el QR de Baird (no aparece aquí) o el servicio es anterior a Wompi.',
 }
@@ -329,7 +382,7 @@ export function pasosPagoCliente(sol: SolicitudParaEtapaPago): {
   }
   pasos.push({
     paso: 'saldo',
-    estado: todoPagado ? 'pagado' : etapa === 'saldo_pendiente' ? 'pendiente' : 'futuro',
+    estado: todoPagado ? 'pagado' : etapa === 'saldo_pendiente' || etapa === 'diagnostico_pendiente' ? 'pendiente' : 'futuro',
     fecha: sol.saldo_pagado_at ?? null,
   })
   return pasos
@@ -355,7 +408,9 @@ export interface FaltanteCobroCliente {
 export function faltanteCobroCliente(sol: SolicitudParaEtapaPago): FaltanteCobroCliente | null {
   if (sol.es_garantia || sol.saldo_pagado_at) return null
   const r = etapaPagoCliente(sol)
-  if (!r || r.etapa === 'pagado' || r.etapa === 'cerrado_con_pago') return null
+  if (!r || r.etapa === 'pagado' || r.etapa === 'cerrado_con_pago' || r.etapa === 'devolucion_pendiente') return null
+  // Diagnóstico sin reparación (2026-11-05): va por el link del saldo.
+  if (r.etapa === 'diagnostico_pendiente') return r.porCobrar > 0 ? { tipo: 'saldo', monto: r.porCobrar } : null
   if (r.etapa === 'anticipo_pendiente') return r.porCobrar > 0 ? { tipo: 'anticipo', monto: r.porCobrar } : null
   if (r.etapa === 'abono_pendiente') return r.porCobrar > 0 ? { tipo: 'abono', monto: r.porCobrar } : null
   // Cotización enviada pero NO aprobada: ese total aún no es deuda del
