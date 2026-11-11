@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enviarMensajeTexto, verificarFirmaWebhook } from '@/lib/services/whatsapp.service'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { reintentarResumenPorPlantilla } from '@/lib/services/resumen-movimientos-envio.service'
+import { esFalloVentana24h, fechaStatusMeta } from '@/lib/services/resumen-movimientos.service'
 
 // Número que recibe la alerta de cada mensaje entrante a la línea (2026-08-23).
 // Mensaje libre (no plantilla): solo llega si este número tiene ventana de 24h
@@ -189,6 +191,19 @@ export async function POST(req: NextRequest) {
               `Revisar cliente_telefono/whatsapp del destinatario en la BD (¿número incompleto o sin WhatsApp?).`,
             )
             if (st.recipient_id) await registrarEntregaFallida(String(st.recipient_id), String(st.id ?? ''), errores)
+            // Resumen diario a supervisores (2026-10-27): si el texto libre no
+            // llegó por la ventana 24h (131047), se reenvía por plantilla. No-op
+            // si el número no es de un supervisor o no hubo resumen en la última hora.
+            if (st.recipient_id && esFalloVentana24h(st.errors)) {
+              const r = await reintentarResumenPorPlantilla({
+                destinatario: String(st.recipient_id),
+                statusAt: fechaStatusMeta(st.timestamp),
+                detalle: errores,
+              })
+              if (r === 'plantilla' || r === 'error' || r === 'filtrado') {
+                console.log(`[Webhook] Reintento del resumen diario a supervisor: ${r}`)
+              }
+            }
           }
         }
       }

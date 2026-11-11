@@ -13,6 +13,12 @@ import {
   partirTexto,
   ventanaResumen,
   MAX_CHARS_MENSAJE,
+  ERROR_META_VENTANA_24H,
+  MINUTOS_MAX_REINTENTO_RESUMEN,
+  esFalloVentana24h,
+  fechaStatusMeta,
+  rangoBusquedaResumenFallido,
+  ventanaDesdeBitacora,
   type EventoMovimiento,
   type RepuestoResumen,
   type SolicitudResumen,
@@ -428,5 +434,51 @@ describe('cerrar para abrir después (garantía agendada a más de 4 días)', ()
     expect(diasEntreYMD('2026-10-20', '2026-10-27')).toBe(7)
     expect(diasEntreYMD('2026-10-31', '2026-11-02')).toBe(2)
     expect(DIAS_AGENDA_CERRAR_PARA_ABRIR).toBe(4)
+  })
+})
+
+describe('reintento por plantilla cuando Meta no entrega el texto', () => {
+  it('detecta el 131047 (ventana 24h) como número o string', () => {
+    expect(ERROR_META_VENTANA_24H).toBe(131047)
+    expect(esFalloVentana24h([{ code: 131047 }])).toBe(true)
+    expect(esFalloVentana24h([{ code: '131047' }])).toBe(true)
+    expect(esFalloVentana24h([{ code: 131026 }, { code: 131047 }])).toBe(true)
+  })
+
+  it('ignora otros errores (número sin WhatsApp, etc.) y listas vacías', () => {
+    expect(esFalloVentana24h([{ code: 131026 }])).toBe(false)
+    expect(esFalloVentana24h([{}])).toBe(false)
+    expect(esFalloVentana24h([])).toBe(false)
+    expect(esFalloVentana24h(undefined)).toBe(false)
+    expect(esFalloVentana24h(null)).toBe(false)
+  })
+
+  it('busca el resumen enviado hasta 60 min antes del fallo (+5 min de margen)', () => {
+    const statusAt = new Date('2026-10-27T22:00:20Z')
+    const r = rangoBusquedaResumenFallido(statusAt)
+    expect(MINUTOS_MAX_REINTENTO_RESUMEN).toBe(60)
+    expect(r.desde.toISOString()).toBe('2026-10-27T21:00:20.000Z')
+    expect(r.hasta.toISOString()).toBe('2026-10-27T22:05:20.000Z')
+  })
+
+  it('lee el timestamp Unix (segundos, string) del status de Meta', () => {
+    expect(fechaStatusMeta('1793138414').toISOString()).toBe(new Date(1793138414 * 1000).toISOString())
+    expect(fechaStatusMeta(1793138414).getTime()).toBe(1793138414 * 1000)
+  })
+
+  it('usa "ahora" si el timestamp falta o no es válido', () => {
+    const ahora = new Date('2026-10-27T22:00:00Z')
+    expect(fechaStatusMeta(undefined, ahora)).toBe(ahora)
+    expect(fechaStatusMeta('abc', ahora)).toBe(ahora)
+    expect(fechaStatusMeta('0', ahora)).toBe(ahora)
+  })
+
+  it('reconstruye la ventana del corte desde la bitácora (mismo día CO)', () => {
+    const v = ventanaDesdeBitacora({ desde_at: '2026-10-26T22:00:00+00:00', corte_at: '2026-10-27T22:00:00+00:00' })
+    expect(v.desde.toISOString()).toBe('2026-10-26T22:00:00.000Z')
+    expect(v.hasta.toISOString()).toBe('2026-10-27T22:00:00.000Z')
+    expect(v.fechaYMD).toBe('2026-10-27')
+    // Coincide con la ventana que arma el cron a esa hora.
+    expect(v).toEqual(ventanaResumen(new Date('2026-10-27T22:00:14Z')))
   })
 })

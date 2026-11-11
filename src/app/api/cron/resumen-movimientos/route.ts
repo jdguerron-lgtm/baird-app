@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server'
 import { cronAutorizado } from '@/lib/auth/cron'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { enviarMensajeTexto, enviarPlantilla, isPhoneAllowed } from '@/lib/services/whatsapp.service'
+import { enviarMensajeTexto, isPhoneAllowed } from '@/lib/services/whatsapp.service'
+import { cargarDatosResumen, enviarPlantillaResumen, SELECT_SUPERVISOR_RESUMEN } from '@/lib/services/resumen-movimientos-envio.service'
 import {
   armarResumenSupervisor,
-  fechaCortaResumen,
   partirTexto,
   ventanaResumen,
-  TIPOS_EVENTO_MOVIMIENTO,
-  ESTADOS_REPUESTO,
-  ORIGEN_REAGENDAMIENTO_ADMIN,
-  type EventoMovimiento,
-  type RepuestoResumen,
   type ResumenSupervisor,
-  type SolicitudResumen,
   type SupervisorResumen,
 } from '@/lib/services/resumen-movimientos.service'
 
@@ -52,8 +46,12 @@ export const maxDuration = 60
  *      si no). Los supervisores rara vez chatean con el negocio…
  *   2. …por eso, si el texto falla, cae a la plantilla
  *      `supervisor_resumen_diario_v1` (UTILITY, funciona fuera de la ventana;
- *      resumen en una línea + botón al portal). Mientras Meta no la apruebe
- *      ese envío también falla y queda `canal='error'` en la bitácora.
+ *      resumen en una línea + botón al portal; APPROVED 2026-10-21).
+ *   3. Ojo: casi siempre Meta ACEPTA el texto (200) aunque la ventana esté
+ *      cerrada y avisa el 131047 DESPUÉS por el webhook. Ese caso lo cubre
+ *      /api/whatsapp/webhook → reintentarResumenPorPlantilla
+ *      (resumen-movimientos-envio.service.ts), que reenvía por plantilla y
+ *      deja la fila de la bitácora en canal='plantilla' (2026-10-27).
  *
  * Respeta BAIRD_TEST_PHONE_WHITELIST (`canal='filtrado'`). Bitácora e
  * idempotencia por (supervisor, corte) en `supervisor_resumenes` (migración
@@ -112,100 +110,16 @@ async function generarYEnviar(
   // 1. Supervisores activos (incluye portal_token para el link del pie).
   const { data: sups, error: supErr } = await supabase
     .from('supervisores')
-    .select('id, nombre, whatsapp, ambito, marca, estados, activo, portal_token')
+    .select(SELECT_SUPERVISOR_RESUMEN)
     .eq('activo', true)
   if (supErr) throw new Error(`supervisores: ${supErr.message}`)
   const supervisores = (sups ?? []) as SupervisorResumen[]
   if (supervisores.length === 0) return { supervisores: [], eventos: 0 }
 
-  // 2. Movimientos de la ventana (append-only → se lee tal cual). `payload`
-  //    solo se usa para la fecha de visita de los eventos de agendamiento.
-  const { data: evs, error: evErr } = await supabase
-    .from('solicitud_eventos')
-    .select('solicitud_id, tipo, estado_previo, estado_nuevo, actor, ocurrido_at, payload')
-    .in('tipo', [...TIPOS_EVENTO_MOVIMIENTO])
-    .gt('ocurrido_at', ventana.desde.toISOString())
-    .lte('ocurrido_at', ventana.hasta.toISOString())
-    .order('ocurrido_at', { ascending: true })
-  if (evErr) throw new Error(`solicitud_eventos: ${evErr.message}`)
-  const movimientos = ((evs ?? []) as EventoMovimiento[]).filter(e => e.estado_nuevo && e.estado_previo !== e.estado_nuevo)
+  // 2. Eventos, solicitudes, repuestos y técnicos de la ventana.
+  const { eventos, solicitudes, repuestos, tecnicos } = await cargarDatosResumen(ventana)
 
-  // 2b. Reagendamientos del admin (2026-10-22): no cambian el estado (evento
-  //     `nota_admin` con payload.origen = 'reagendamiento_admin'), pero sí fijan
-  //     una fecha de visita → cuentan para "cerrar para abrir después" (MABE).
-  const { data: reagAdmin, error: reagErr } = await supabase
-    .from('solicitud_eventos')
-    .select('solicitud_id, tipo, estado_previo, estado_nuevo, actor, ocurrido_at, payload')
-    .eq('tipo', 'nota_admin')
-    .eq('payload->>origen', ORIGEN_REAGENDAMIENTO_ADMIN)
-    .gt('ocurrido_at', ventana.desde.toISOString())
-    .lte('ocurrido_at', ventana.hasta.toISOString())
-    .order('ocurrido_at', { ascending: true })
-  if (reagErr) console.warn('[cron/resumen-movimientos] reagendamientos admin no disponibles:', reagErr.message)
-  const eventos: EventoMovimiento[] = [...movimientos, ...((reagAdmin ?? []) as EventoMovimiento[])]
-
-  // 3. Solicitudes involucradas + repuestos + técnicos (una query cada una).
-  const solicitudIds = [...new Set(eventos.map(e => e.solicitud_id))]
-  let solicitudes: SolicitudResumen[] = []
-  let repuestos: RepuestoResumen[] = []
-  const tecnicos = new Map<string, string>()
-  if (solicitudIds.length > 0) {
-    const { data: sols, error: solErr } = await supabase
-      .from('solicitudes_servicio')
-      .select('id, cliente_nombre, tipo_equipo, marca_equipo, ciudad_pueblo, es_garantia, numero_serie_factura, estado, tecnico_asignado_id, fecha_visita_at, cotizacion')
-      .in('id', solicitudIds)
-    if (solErr) throw new Error(`solicitudes_servicio: ${solErr.message}`)
-    solicitudes = (sols ?? []).map(s => ({
-      id: s.id,
-      cliente_nombre: s.cliente_nombre,
-      tipo_equipo: s.tipo_equipo,
-      marca_equipo: s.marca_equipo,
-      ciudad_pueblo: s.ciudad_pueblo,
-      es_garantia: s.es_garantia,
-      numero_serie_factura: s.numero_serie_factura,
-      estado: s.estado,
-      tecnico_asignado_id: s.tecnico_asignado_id,
-      fecha_visita_at: s.fecha_visita_at,
-    }))
-
-    // Repuestos solo de los servicios que tocaron el ciclo de repuesto.
-    const idsRepuesto = new Set<string>()
-    for (const s of sols ?? []) if (s.estado && ESTADOS_REPUESTO.has(s.estado)) idsRepuesto.add(s.id)
-    for (const e of eventos) if (e.estado_nuevo && ESTADOS_REPUESTO.has(e.estado_nuevo)) idsRepuesto.add(e.solicitud_id)
-    if (idsRepuesto.size > 0) {
-      const { data: reps } = await supabase
-        .from('repuestos_pendientes')
-        .select('solicitud_id, sku, descripcion, cantidad, estado')
-        .in('solicitud_id', [...idsRepuesto])
-        .neq('estado', 'cancelado')
-        .order('solicitado_at', { ascending: true })
-      repuestos = (reps ?? []) as RepuestoResumen[]
-      // Fallback: productos_necesarios de la cotización (JSONB) si la tabla no tiene filas.
-      const conFila = new Set(repuestos.map(r => r.solicitud_id))
-      for (const s of sols ?? []) {
-        if (!idsRepuesto.has(s.id) || conFila.has(s.id)) continue
-        const productos = (s.cotizacion as { productos_necesarios?: Array<{ sku?: string; descripcion?: string; cantidad?: number }> } | null)
-          ?.productos_necesarios
-        for (const p of Array.isArray(productos) ? productos : []) {
-          repuestos.push({
-            solicitud_id: s.id,
-            sku: p.sku ?? null,
-            descripcion: p.descripcion ?? null,
-            cantidad: typeof p.cantidad === 'number' ? p.cantidad : null,
-            estado: null,
-          })
-        }
-      }
-    }
-
-    const tecnicoIds = [...new Set(solicitudes.map(s => s.tecnico_asignado_id).filter((x): x is string => !!x))]
-    if (tecnicoIds.length > 0) {
-      const { data: tecs } = await supabase.from('tecnicos').select('id, nombre_completo').in('id', tecnicoIds)
-      for (const t of tecs ?? []) tecnicos.set(t.id, t.nombre_completo)
-    }
-  }
-
-  // 4. Envíos ya registrados para este corte (idempotencia, best-effort).
+  // 3. Envíos ya registrados para este corte (idempotencia, best-effort).
   const yaEnviados = new Set<string>()
   if (!opts.dry && !opts.force) {
     const { data: previos, error: prevErr } = await supabase
@@ -223,7 +137,7 @@ async function generarYEnviar(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? null
   const resultados: ResultadoSupervisor[] = []
 
-  // 5. Un resumen por supervisor, secuencial (pocos supervisores; no saturar Meta).
+  // 4. Un resumen por supervisor, secuencial (pocos supervisores; no saturar Meta).
   for (const sup of supervisores) {
     const resumen = armarResumenSupervisor({ supervisor: sup, ventana, eventos, solicitudes, repuestos, tecnicos, appUrl })
     const partes = partirTexto(resumen.texto)
@@ -278,26 +192,7 @@ async function enviarResumen(
   // Fallback: plantilla (funciona fuera de la ventana 24h). Si no está
   // APPROVED en Meta, falla y queda registrado como error.
   try {
-    const components: Record<string, unknown>[] = [
-      {
-        type: 'body',
-        parameters: [
-          { type: 'text', text: sup.nombre.trim().split(/\s+/)[0] || sup.nombre },
-          { type: 'text', text: fechaCortaResumen(fechaYMD) },
-          { type: 'text', text: resumen.conteo },
-          { type: 'text', text: resumen.lineaCompacta },
-        ],
-      },
-    ]
-    if (sup.portal_token) {
-      components.push({
-        type: 'button',
-        sub_type: 'url',
-        index: '0',
-        parameters: [{ type: 'text', text: sup.portal_token }],
-      })
-    }
-    const r = await enviarPlantilla(sup.whatsapp, 'supervisor_resumen_diario_v1', 'es', components)
+    const r = await enviarPlantillaResumen(sup, resumen, fechaYMD)
     if (r.filtered) return { canal: 'filtrado', error: 'Filtrado por BAIRD_TEST_PHONE_WHITELIST' }
     return { canal: 'plantilla', error: `Texto libre falló: ${errorTexto}` }
   } catch (err) {
