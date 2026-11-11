@@ -14,7 +14,7 @@ import {
   type TransaccionWompi,
 } from '@/lib/wompi'
 import { montoAnticipo, saldoPendiente, montoAbonoRepuestos, cotizacionTieneRepuestos } from '@/lib/constants/pagos'
-import { totalClienteParaCobro, descuentoClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { totalClienteParaCobro, descuentoClienteParaCobro, cierraConSoloDiagnostico } from '@/lib/constants/pago-cliente'
 import { precioClienteServicio } from '@/types/solicitud'
 import { formatCOP } from '@/lib/utils/format'
 import {
@@ -102,13 +102,16 @@ export function calcularMontoAnticipo(sol: {
   tipo_solicitud: string
   cotizacion?: unknown
   recargo_weekend_aplicado?: number | null
+  estado?: string | null
 }): number {
   if (sol.es_garantia) return 0
   const precioCliente = precioClienteServicio(
     sol.tipo_equipo,
     sol.tipo_solicitud,
     sol.es_garantia,
-    sol.cotizacion as { total?: number | null } | null,
+    // Cerró sin reparar: el anticipo es sobre la visita, no sobre la
+    // cotización rechazada (un anticipo pagado tarde no queda como "corto").
+    cierraConSoloDiagnostico(sol) ? null : sol.cotizacion as { total?: number | null } | null,
     sol.recargo_weekend_aplicado ?? null,
   )
   return montoAnticipo(precioCliente)
@@ -167,6 +170,9 @@ async function calcularMontoSaldoBruto(sol: SolicitudPago): Promise<number> {
  */
 export async function calcularMontoAbonoRepuestos(sol: SolicitudPago): Promise<number> {
   if (sol.es_garantia) return 0
+  // Cerró sin reparar (cotización rechazada, etc.): solo se cobra la visita,
+  // nunca un abono de repuestos (2026-10-29).
+  if (cierraConSoloDiagnostico(sol)) return 0
   if (!cotizacionTieneRepuestos(sol.cotizacion)) return 0
   if (await abonoRepuestosPagado(sol.id)) return 0
   const saldo = await calcularMontoSaldoBruto(sol)
@@ -939,6 +945,12 @@ type SolicitudConciliable = SolicitudPago & {
  */
 async function tiposPendientes(sol: SolicitudConciliable): Promise<TipoPago[]> {
   const tipos: TipoPago[] = []
+  // Cerró sin reparar (2026-10-29): el único cobro vivo es el saldo de la
+  // visita de diagnóstico (link enviado al cerrar).
+  if (cierraConSoloDiagnostico(sol)) {
+    if (!sol.saldo_pagado_at && totalClienteParaCobro(sol) > 0) tipos.push('saldo')
+    return tipos
+  }
   if (sol.tecnico_asignado_id && !sol.anticipo_pagado_at && calcularMontoAnticipo(sol) > 0) {
     tipos.push('anticipo')
   }
@@ -1046,7 +1058,7 @@ export async function conciliarPagosWompi(opts: { diasAtras?: number } = {}): Pr
   }
 
   for (const sol of (candidatas ?? []) as SolicitudConciliable[]) {
-    if (ESTADOS_SIN_COBRO.has(sol.estado)) continue
+    if (ESTADOS_SIN_COBRO.has(sol.estado) && !cierraConSoloDiagnostico(sol)) continue
     let tipos: TipoPago[]
     try {
       tipos = await tiposPendientes(sol)

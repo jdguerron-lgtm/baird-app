@@ -12,7 +12,7 @@ import {
   registrarPagoWompi,
 } from '@/lib/services/pagos.service'
 import { formatCOP } from '@/lib/utils/format'
-import { totalClienteParaCobro, descuentoClienteParaCobro } from '@/lib/constants/pago-cliente'
+import { totalClienteParaCobro, descuentoClienteParaCobro, cierraConSoloDiagnostico } from '@/lib/constants/pago-cliente'
 import { descuentoDeSolicitud, describirDescuento } from '@/lib/constants/descuentos'
 
 /**
@@ -112,9 +112,11 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
   const montoACobrar = modoAbono ? abono : saldo
   // Desglose discriminado (cotizaciones desde 2026-08-25): diagnóstico +
   // servicio con repuestos. Las viejas no traen los campos → solo total.
+  // Cerró sin reparar (2026-10-29): se cobra solo la visita de diagnóstico.
+  const soloDiagnostico = cierraConSoloDiagnostico(sol)
   const diagnosticoCliente = cot?.diagnostico_cliente ?? 0
   const servicioCliente = cot?.servicio_cliente ?? 0
-  const hayDesglose = diagnosticoCliente > 0 && servicioCliente > 0
+  const hayDesglose = !soloDiagnostico && diagnosticoCliente > 0 && servicioCliente > 0
 
   if (total <= 0) {
     return (
@@ -183,12 +185,14 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
               <span className="text-3xl">{modoAbono ? '🔩' : '🧾'}</span>
             </div>
             <h1 className="text-xl font-bold text-gray-900">
-              {modoAbono ? 'Abono para repuestos' : 'Paga el saldo de tu servicio'}
+              {modoAbono ? 'Abono para repuestos' : soloDiagnostico ? 'Paga tu visita de diagnóstico' : 'Paga el saldo de tu servicio'}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               {modoAbono
                 ? `Hola ${sol.cliente_nombre.split(' ')[0]}, tu reparación de ${sol.tipo_equipo} necesita repuestos. Con este abono del 50% el técnico los compra y coordinamos la instalación.`
-                : `Hola ${sol.cliente_nombre.split(' ')[0]}, tu reparación de ${sol.tipo_equipo} quedó aprobada.`}
+                : soloDiagnostico
+                  ? `Hola ${sol.cliente_nombre.split(' ')[0]}, el técnico ya hizo el diagnóstico de tu ${sol.tipo_equipo}. Como no siguió la reparación, solo pagas la visita de diagnóstico.`
+                  : `Hola ${sol.cliente_nombre.split(' ')[0]}, tu reparación de ${sol.tipo_equipo} quedó aprobada.`}
             </p>
           </div>
 
@@ -210,7 +214,7 @@ export default async function PagoSaldoPage({ params, searchParams }: Props) {
               </>
             ) : (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total del servicio (todo incluido)</span>
+                <span className="text-gray-600">{soloDiagnostico ? 'Visita de diagnóstico' : 'Total del servicio (todo incluido)'}</span>
                 <span className="font-medium">${formatCOP(total)} COP</span>
               </div>
             )}

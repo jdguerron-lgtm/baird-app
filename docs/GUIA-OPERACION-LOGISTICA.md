@@ -184,7 +184,7 @@ Si hace falta repuesto, entre el paso 5 y el 7 hay un ciclo aparte (§ 6).
 | `aprobacion_paso_pendiente` — Cliente debe aprobar siguiente paso | **Garantía**: el técnico envió el diagnóstico y el cliente debe aprobar lo que propone (reparar, esperar repuesto, etc.) | Cliente |
 | `pendiente_pricing` — Pendiente tiempo entrega (admin) | **Particular con repuesto**: el admin debe fijar el precio de los repuestos y el tiempo de entrega antes de que salga la cotización (§ 5.3) | Admin |
 | `cotizacion_enviada` — Cotización enviada | **Particular**: el cliente recibió la cotización y debe aprobarla o rechazarla | Cliente |
-| `cotizacion_rechazada` — Cotización rechazada | El cliente rechazó la cotización. Cierre | Nadie (cerrado) |
+| `cotizacion_rechazada` — Cotización rechazada | El cliente rechazó la cotización. Cierre: igual paga la visita de diagnóstico (le llega el link por WhatsApp) | Cliente (pagar la visita, si no la ha pagado) |
 | `esperando_repuesto` — Esperando repuesto | Falta un repuesto. En garantía lo gestiona la marca (supervisor); en particular el técnico lo compra tras el abono del cliente | Supervisor o técnico |
 | `repuesto_en_camino` — Repuesto en camino | El supervisor subió la guía de envío; el cliente debe agendar la visita de finalización | Cliente |
 | `repuesto_recibido` — Repuesto recibido | Se marcó el repuesto como recibido; el cliente debe elegir nueva fecha | Cliente |
@@ -613,6 +613,7 @@ pedirle que lo registre desde su portal.
 | **Anticipo** | **Solo cuando un técnico acepta** (link por WhatsApp). Al enviar la solicitud el cliente no paga nada; si abre el link de pago sin técnico asignado ve "Aún no tienes técnico asignado" | 50 % del valor del servicio (diagnóstico, mantenimiento o cambio de filtro) | Confirma la reserva; cliente y técnico reciben aviso |
 | **Abono de repuestos** | Cuando el cliente aprueba una cotización **con** repuestos | 50 % del saldo | El técnico recibe aviso de que puede comprar los repuestos |
 | **Saldo** | Cuando aprueba una cotización **sin** repuestos, o al completar el servicio (o cuando el admin fija el cobro final) | Total − lo ya pagado (− descuento si tiene código) | Cliente y técnico reciben aviso; el técnico sabe que no debe cobrar nada en sitio |
+| **Visita de diagnóstico** (cliente no repara) | Cuando el cliente **rechaza la cotización**, o el técnico reporta que el cliente no quiso reparar o que el equipo no tiene arreglo | La visita ($84.000, + recargo si fue fin de semana o festivo) − el anticipo ya pagado | El servicio queda cerrado con etiqueta "Saldo pendiente" hasta que pague. El técnico recibe sus $35.000 de la visita en la liquidación |
 
 La **etiqueta de etapa** (en la lista y en la ficha) resume dónde va el
 cobro: sin cobro → anticipo pendiente → anticipo pagado → abono pendiente →

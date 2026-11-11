@@ -8,6 +8,7 @@ import { diasSolucionBono, encuestaDeEvidencia, finDeSemanaTrabajo } from '@/lib
 import { mapaFinPausaRepuesto } from '@/lib/services/bono-garantia.service'
 import { precioClienteServicio, IVA_TARIFA } from '@/types/solicitud'
 import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
+import { ESTADOS_CIERRE_CON_DIAGNOSTICO, cierraConSoloDiagnostico } from '@/lib/constants/pago-cliente'
 import { descuentoDeSolicitud, montoDescuento } from '@/lib/constants/descuentos'
 import { FACTURACION_ESTADO_LABEL, type FacturacionEstado } from '@/types/solicitud'
 import {
@@ -207,8 +208,16 @@ export async function POST(req: NextRequest) {
 
     // Ficha por servicio: esa solicitud en cualquier estado (la hoja
     // Parámetros deja el estado explícito). Cortes de período: solo completadas.
+    // Liquidación por técnico (2026-10-29): también entran las visitas de
+    // diagnóstico PARTICULARES que cerraron sin reparar — el técnico siempre
+    // gana sus $35.000 por la visita. Los demás reportes siguen solo con
+    // completadas.
     if (solicitud_id) solQuery = solQuery.eq('id', solicitud_id)
-    else solQuery = solQuery.eq('estado', 'completada')
+    else if (tipo === 'tecnicos') {
+      solQuery = solQuery.or(
+        `estado.eq.completada,and(es_garantia.eq.false,estado.in.(${[...ESTADOS_CIERRE_CON_DIAGNOSTICO].join(',')}))`,
+      )
+    } else solQuery = solQuery.eq('estado', 'completada')
     if (tipo === 'mabe') solQuery = solQuery.eq('es_garantia', true)
     if (tipo === 'particular') solQuery = solQuery.eq('es_garantia', false)
     if (tecnico_id) solQuery = solQuery.eq('tecnico_asignado_id', tecnico_id)
@@ -322,7 +331,9 @@ export async function POST(req: NextRequest) {
           'Pago proyectado BD (COP)': pagoProyectado,
           'Pago consolidado (COP)': pagoAPagar,
           'Facturación': facturacionDe(sol),
-          'Nota': sol.es_garantia && !consolidado ? 'Garantía sin complejidad en diagnóstico — revisar' : '',
+          'Nota': sol.es_garantia && !consolidado
+            ? 'Garantía sin complejidad en diagnóstico — revisar'
+            : cierraConSoloDiagnostico(sol) ? 'Solo visita de diagnóstico (el cliente no reparó)' : '',
           'Solicitud ID': sol.id,
         }
       })
