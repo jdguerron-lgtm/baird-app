@@ -298,39 +298,82 @@ export const ETAPA_PAGO_HINT: Record<EtapaPagoCliente, string> = {
 
 /**
  * Paso del cobro en el que va el servicio, para el stepper "1 Anticipo →
- * 2 Abono → 3 Saldo". `aplicaAbono` = la cotización aprobada lleva repuestos
- * (o el abono ya se pagó).
+ * 2 Abono → 3 Saldo". `aplicaAbono` = la cotización lleva repuestos (o el
+ * abono ya se pagó). Desde 2026-11-21 el paso del abono se muestra apenas la
+ * cotización tiene repuestos, aunque el cliente aún no la apruebe: así el
+ * admin ve los 3 cobros previstos desde que se envía la cotización.
+ *
+ * `monto` (solo informativo, para la ficha): lo pagado cuando se puede
+ * deducir, el cobro en curso, o el estimado de un cobro futuro. `null` = no
+ * se puede saber (p. ej. total aún sin cotizar). El monto real de cada link
+ * lo calcula siempre el servidor (pagos.service).
  */
-export function pasosPagoCliente(sol: SolicitudParaEtapaPago): {
+export interface PasoPagoCliente {
   paso: 'anticipo' | 'abono' | 'saldo'
   estado: 'pagado' | 'pendiente' | 'futuro'
   fecha: string | null
-}[] {
+  monto: number | null
+  /** Cuándo se cobra un paso futuro (texto corto para la ficha). */
+  cuando: string | null
+}
+
+export function pasosPagoCliente(sol: SolicitudParaEtapaPago): PasoPagoCliente[] {
   const cot = sol.cotizacion as { aprobado_at?: unknown } | null | undefined
-  const aplicaAbono = Boolean(sol.abono_pagado_at) ||
-    (Boolean(cot?.aprobado_at) && cotizacionTieneRepuestos(sol.cotizacion))
+  const cotAprobada = Boolean(cot?.aprobado_at)
   const resumen = etapaPagoCliente(sol)
   const etapa = resumen?.etapa
   const todoPagado = etapa === 'pagado'
+  // Cotización con repuestos aún SIN aprobar: el abono es un cobro previsto
+  // (salvo que el servicio ya se haya cerrado o pagado completo).
+  const abonoPrevisto = cotizacionTieneRepuestos(sol.cotizacion) &&
+    (cotAprobada || (etapa !== 'pagado' && etapa !== 'cerrado_con_pago'))
+  const aplicaAbono = Boolean(sol.abono_pagado_at) || abonoPrevisto
 
-  const pasos: { paso: 'anticipo' | 'abono' | 'saldo'; estado: 'pagado' | 'pendiente' | 'futuro'; fecha: string | null }[] = [
+  const total = resumen?.total ?? 0
+  const pagado = resumen?.pagado ?? 0
+  const porCobrar = resumen?.porCobrar ?? 0
+  const restante = Math.max(0, total - pagado)
+  const restanteNeto = Math.max(0, (resumen?.totalNeto ?? 0) - pagado)
+  const abonoSinPagar = aplicaAbono && !sol.abono_pagado_at && !todoPagado
+  const montoAbono = abonoSinPagar && total > 0 ? montoAbonoRepuestos(restante) : null
+  const montoSaldo = !todoPagado && total > 0 ? Math.max(0, restanteNeto - (montoAbono ?? 0)) : null
+  // Lo pagado en línea solo se puede atribuir al anticipo si es el único pago.
+  const soloAnticipoPagado = Boolean(sol.anticipo_pagado_at) && !sol.abono_pagado_at && !sol.saldo_pagado_at
+
+  const estadoAnticipo: PasoPagoCliente['estado'] =
+    sol.anticipo_pagado_at || todoPagado ? 'pagado' : etapa === 'anticipo_pendiente' ? 'pendiente' : 'futuro'
+  const pasos: PasoPagoCliente[] = [
     {
       paso: 'anticipo',
-      estado: sol.anticipo_pagado_at || todoPagado ? 'pagado' : etapa === 'anticipo_pendiente' ? 'pendiente' : 'futuro',
+      estado: estadoAnticipo,
       fecha: sol.anticipo_pagado_at ?? null,
+      monto: estadoAnticipo === 'pagado'
+        ? (soloAnticipoPagado && pagado > 0 ? pagado : null)
+        : estadoAnticipo === 'pendiente' && porCobrar > 0 ? porCobrar : null,
+      cuando: estadoAnticipo === 'futuro' ? 'cuando un técnico acepte' : null,
     },
   ]
   if (aplicaAbono) {
+    const estadoAbono: PasoPagoCliente['estado'] =
+      sol.abono_pagado_at || todoPagado ? 'pagado' : etapa === 'abono_pendiente' ? 'pendiente' : 'futuro'
     pasos.push({
       paso: 'abono',
-      estado: sol.abono_pagado_at || todoPagado ? 'pagado' : etapa === 'abono_pendiente' ? 'pendiente' : 'futuro',
+      estado: estadoAbono,
       fecha: sol.abono_pagado_at ?? null,
+      monto: estadoAbono === 'pagado' ? null : montoAbono,
+      cuando: estadoAbono === 'futuro' ? 'cuando el cliente apruebe la cotización' : null,
     })
   }
+  const estadoSaldo: PasoPagoCliente['estado'] =
+    todoPagado ? 'pagado' : etapa === 'saldo_pendiente' ? 'pendiente' : 'futuro'
   pasos.push({
     paso: 'saldo',
-    estado: todoPagado ? 'pagado' : etapa === 'saldo_pendiente' ? 'pendiente' : 'futuro',
+    estado: estadoSaldo,
     fecha: sol.saldo_pagado_at ?? null,
+    monto: estadoSaldo === 'pagado' ? null : estadoSaldo === 'pendiente' ? porCobrar : montoSaldo,
+    cuando: estadoSaldo === 'futuro'
+      ? (total > 0 ? 'al terminar el servicio' : 'cuando haya cotización')
+      : null,
   })
   return pasos
 }

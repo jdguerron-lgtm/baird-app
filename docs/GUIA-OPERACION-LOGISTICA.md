@@ -620,6 +620,12 @@ abono pagado → saldo pendiente → pagado total; también "sin pago online" y
 "pago parcial · cerrado". Solo refleja pagos **online por Wompi**: un pago en
 sitio con QR o transferencia no aparece.
 
+En la ficha, debajo de la etiqueta, salen los **pasos del cobro** (Anticipo →
+Abono repuestos → Saldo), cada uno con su monto: lo ya pagado, el cobro con
+link enviado, o el valor estimado (≈) de los cobros que aún no salen y cuándo
+se cobran. El paso del abono aparece desde que la cotización enviada lleva
+repuestos, aunque el cliente todavía no la apruebe.
+
 Los **códigos de descuento** (§ 8.5) se restan únicamente en el saldo final.
 
 ### 8.2 El ledger de pagos en la ficha

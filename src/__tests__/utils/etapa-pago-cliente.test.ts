@@ -175,6 +175,43 @@ describe('pasosPagoCliente', () => {
     ])
   })
 
+  // Caso real f1558cac (2026-11-21): cotización con repuesto ENVIADA, aún sin
+  // aprobar. El admin debe ver los 3 cobros previstos con su monto.
+  it('cotización con repuestos sin aprobar: muestra los 3 cobros con monto estimado', () => {
+    const pasos = pasosPagoCliente({
+      ...base, estado: 'cotizacion_enviada',
+      cotizacion: { total: 1075863, productos_necesarios: [{ sku: 'WPW10381562', cantidad: 1 }] },
+      anticipo_pagado_at: '2026-11-10T21:43:26.428Z', monto_pagado_online: 45570,
+    })
+    expect(pasos.map(p => [p.paso, p.estado, p.monto])).toEqual([
+      ['anticipo', 'pagado', 45570],
+      ['abono', 'futuro', 515147],
+      ['saldo', 'futuro', 515146],
+    ])
+    expect(pasos[1].cuando).toMatch(/apruebe/)
+  })
+
+  it('cotización rechazada con repuestos y anticipo pagado: no inventa un abono', () => {
+    const pasos = pasosPagoCliente({
+      ...base, estado: 'cotizacion_rechazada',
+      cotizacion: { total: 220750, productos_necesarios: [{ sku: 'X', cantidad: 1 }] },
+      anticipo_pagado_at: 'a', monto_pagado_online: 42000,
+    })
+    expect(pasos.map(p => p.paso)).toEqual(['anticipo', 'saldo'])
+  })
+
+  it('abono pendiente: el monto del paso es el cobro en curso y el saldo el resto', () => {
+    const pasos = pasosPagoCliente({
+      ...base, estado: 'esperando_repuesto', cotizacion: cotConRepuestos,
+      anticipo_pagado_at: 'a', monto_pagado_online: 42000,
+    })
+    expect(pasos.map(p => [p.paso, p.estado, p.monto])).toEqual([
+      ['anticipo', 'pagado', 42000],
+      ['abono', 'pendiente', 89375],
+      ['saldo', 'futuro', 89375],
+    ])
+  })
+
   it('pagado total marca todos los pasos como pagados', () => {
     const pasos = pasosPagoCliente({ ...base, estado: 'completada', cotizacion: cotSinRepuestos, saldo_pagado_at: 's' })
     expect(pasos.every(p => p.estado === 'pagado')).toBe(true)
