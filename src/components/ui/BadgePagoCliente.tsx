@@ -91,12 +91,17 @@ export function ProgresoPagoCliente({ solicitud }: { solicitud: SolicitudParaEta
             <p className="font-semibold">
               {p.estado === 'pagado' ? '✅' : p.estado === 'pendiente' ? '⏳' : `${i + 1}.`} {NOMBRE[p.paso]}
             </p>
+            {p.monto !== null && p.monto > 0 && (
+              <p className="mt-0.5 text-xs font-bold">
+                {p.estado === 'futuro' ? '≈ ' : ''}${formatCOP(p.monto)}
+              </p>
+            )}
             <p className="mt-0.5">
               {p.estado === 'pagado'
                 ? (fecha(p.fecha) ?? 'Pagado')
                 : p.estado === 'pendiente'
-                  ? `Link enviado${resumen.porCobrar > 0 ? ` · $${formatCOP(resumen.porCobrar)}` : ''}`
-                  : 'Aún no'}
+                  ? 'Link enviado'
+                  : `Aún no${p.cuando ? ` · ${p.cuando}` : ''}`}
             </p>
           </li>
         ))}
