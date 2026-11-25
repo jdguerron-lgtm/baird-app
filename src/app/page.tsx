@@ -80,7 +80,7 @@ const CONTENIDO = {
         num: '02',
         emoji: '📲',
         titulo: 'Un técnico verificado acepta',
-        texto: 'Te avisamos por WhatsApp quién va y a qué hora. Para reservar la cita pagas un anticipo del 50% en línea, a Baird Service.',
+        texto: 'Te avisamos por WhatsApp quién va y a qué hora. Solo entonces, ya con técnico asignado, pagas el anticipo del 50% en línea, a Baird Service.',
         img: IMAGES.repairMan,
       },
       {
@@ -118,8 +118,8 @@ const CONTENIDO = {
         paso: '2',
         cuando: 'Cuando un técnico acepta',
         monto: `${Math.round(ANTICIPO_PORCENTAJE * 100)}%`,
-        titulo: 'Anticipo para reservar la cita',
-        texto: `Recibes un link de pago seguro (Wompi) por WhatsApp. En un diagnóstico son ${COP(ANTICIPO_DIAGNOSTICO)}. Puedes cancelar o reagendar sin costo hasta ${CANCELACION_CUTOFF_HORAS} horas antes de la visita.`,
+        titulo: 'Anticipo, solo con técnico asignado',
+        texto: `Ya sabiendo quién va y a qué hora, recibes por WhatsApp un link de pago seguro (Wompi) para confirmar la visita. En un diagnóstico son ${COP(ANTICIPO_DIAGNOSTICO)}; en mantenimiento o cambio de filtro, el 50% del valor. Puedes cancelar o reagendar sin costo hasta ${CANCELACION_CUTOFF_HORAS} horas antes de la visita.`,
       },
       {
         paso: '3',
@@ -274,7 +274,7 @@ function WhatsAppMockup() {
             <div className="max-w-[88%] mt-3">
               <div className="bg-white rounded-xl rounded-tl-sm px-3 py-2.5 shadow-sm">
                 <p className="text-[11px] text-gray-800 leading-relaxed">
-                  💳 <span className="font-semibold">Reserva tu cita</span>
+                  💳 <span className="font-semibold">Tu técnico confirmó la visita</span>
                   <br />
                   <span className="text-[10px] text-gray-500">
                     Anticipo {Math.round(ANTICIPO_PORCENTAJE * 100)}%: <span className="font-semibold text-gray-700">{COP(ANTICIPO_DIAGNOSTICO)}</span> · pago seguro en línea

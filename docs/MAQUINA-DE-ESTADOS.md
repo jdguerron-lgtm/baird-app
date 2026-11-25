@@ -132,7 +132,7 @@ The entire platform splits into two flows based on the `es_garantia` boolean fie
                   → Supabase insert (estado: pendiente_horario, horario_token)
                   → /api/solicitar AUTO-CONFIRMA la opción 1 vía
                     confirmarHorarioSolicitud (fallback opción 2): valida cupo
-                    por franja + mínimo mañana, estado → notificada,
+                    por franja + mín. pasado mañana, estado → notificada,
                     horario_confirmado + fecha_visita_at + tyc_aceptados_at,
                     envía confirmación WhatsApp al cliente y notificarTecnicos()
                   → Solo si AMBAS opciones quedaron sin cupo (carrera):
@@ -176,7 +176,7 @@ All payments go through Baird Service. The customer NEVER pays the technician di
 
 **Warranty:** The brand pays Baird a fixed tariff based on the complexity code. Baird pays the technician `totalServicio` (tariff + bonus).
 
-**Non-warranty:** The customer pays Baird the quoted total. The diagnostic fee ($84,000 COP — `TARIFA_DIAGNOSTICO`) with 50% advance ($42,000 COP — `ANTICIPO_PORCENTAJE`) is collected before the technician visits; the technician receives a fixed $35,000 for the diagnostic visit (`PAGO_TECNICO_DIAGNOSTICO`, 2026-07-05). Constants in `src/types/solicitud.ts` and `src/lib/constants/tarifas/particular.ts`.
+**Non-warranty:** The customer pays Baird the quoted total. The diagnostic fee ($84,000 COP — `TARIFA_DIAGNOSTICO`) with 50% advance ($42,000 COP — `ANTICIPO_PORCENTAJE`) is collected before the technician visits **and only once a technician has accepted** (link sent by WhatsApp from `avisarAsignacionTecnico`; since 2026-10-29 `/solicitar` charges nothing and `/pago/anticipo` refuses the charge while `tecnico_asignado_id` is empty); the technician receives a fixed $35,000 for the diagnostic visit (`PAGO_TECNICO_DIAGNOSTICO`, 2026-07-05). Constants in `src/types/solicitud.ts` and `src/lib/constants/tarifas/particular.ts`.
 
 ## Admin Pricing Gate — ELIMINADO para garantía (2026-08-02)
 

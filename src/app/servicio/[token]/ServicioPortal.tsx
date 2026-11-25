@@ -7,6 +7,7 @@ import CarnetTecnico from '@/components/ui/CarnetTecnico'
 import CarnetAuxiliar from '@/components/ui/CarnetAuxiliar'
 import type { CarnetTecnicoData } from '@/lib/utils/carnet'
 import { fraseAcompanantes, type CarnetAuxiliarData } from '@/lib/utils/equipo'
+import { fechaMinimaReservaCliente } from '@/lib/utils/fecha-visita'
 
 interface Solicitud {
   id: string
@@ -53,10 +54,9 @@ function formatFechaLarga(iso: string): string {
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+// Mínimo: pasado mañana (DIAS_MINIMOS_RESERVA_CLIENTE), día calendario CO.
 function fechaMinima(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().slice(0, 10)
+  return fechaMinimaReservaCliente()
 }
 
 function fechaMaxima(): string {

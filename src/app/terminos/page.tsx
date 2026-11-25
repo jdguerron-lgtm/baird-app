@@ -118,10 +118,13 @@ export default function TerminosPage() {
           <p>
             <strong>Servicios particulares (no garantía):</strong> el cliente paga a Baird Service exclusivamente a
             través de los medios de pago habilitados en la plataforma. La <strong>tarifa de diagnóstico</strong> es de{' '}
-            {cop(TARIFA_DIAGNOSTICO)} (IVA incluido), con un anticipo del {Math.round(ANTICIPO_PORCENTAJE * 100)}% (
-            {cop(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)}) requerido para reservar la visita. Este valor se acredita
-            al total del servicio si el cliente aprueba la cotización. Baird Service expide la factura electrónica
-            correspondiente.
+            {cop(TARIFA_DIAGNOSTICO)} (IVA incluido). El anticipo del {Math.round(ANTICIPO_PORCENTAJE * 100)}% (
+            {cop(TARIFA_DIAGNOSTICO * ANTICIPO_PORCENTAJE)} en diagnóstico; el {Math.round(ANTICIPO_PORCENTAJE * 100)}% del valor del
+            servicio en mantenimiento o cambio de filtro) <strong>se solicita únicamente cuando un técnico verificado
+            ha aceptado la visita</strong>, mediante el enlace de pago que la plataforma envía al cliente; al momento
+            de enviar la solicitud no se cobra ningún valor. La visita queda confirmada con el pago del anticipo. Este
+            valor se acredita al total del servicio si el cliente aprueba la cotización. Baird Service expide la
+            factura electrónica correspondiente.
           </p>
           <p>
             Cualquier intento del técnico de cobrar al cliente directamente, en efectivo, por transferencia personal o

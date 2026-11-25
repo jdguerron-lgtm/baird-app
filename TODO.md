@@ -235,7 +235,7 @@ Desplegado: T&C v2026.10.09, Política de privacidad v2026.10.09, `/contrato-tec
 Auditoría de 47 `.md` contra el código (`8c6f442`). La **tanda 1** (hecha 2026-10-07) cerró: env vars completas en `CLAUDE.md`/`.env.example`/`GUIA_RAPIDA`, guía del cliente Supabase (anon vs service_role), estado RLS post-Fase 4.1 en 6 docs, `PLAN-RLS.md` enlazado, conteos de plantillas, raíz histórica → `docs/historico/`, `no_show_cliente` en `EstadoSolicitud`.
 
 ### Tanda 2 — requieren decisión de negocio
-- [ ] **CTA Shopify "Pagar anticipo $42.000" en `/solicitar`** (`src/app/solicitar/page.tsx` ~l.249): contradice "Wompi pasarela única" y permite doble cobro (Shopify + link Wompi tras aceptación). Quitar / gatear por `wompiHabilitado()` / documentar que sigue vivo. Luego alinear `docs/WOMPI.md`, `docs/TARIFAS.md` § pendiente 5 y `pagos-shopify/README.md`.
+- [x] ~~**CTA Shopify "Pagar anticipo $42.000" en `/solicitar`**~~ → **resuelto 2026-10-29**: se quitó todo CTA de pago de `/solicitar` (el anticipo se cobra solo con técnico asignado, por WhatsApp; `/pago/anticipo` lo exige) y se retiró `URL_PAGO_ANTICIPO_DIAGNOSTICO`. Docs alineados (`WOMPI.md`, `TARIFAS.md`, `FLOWS.md`, guía).
 - [ ] **Unificar scripts de plantillas**: las 10 versiones vigentes viven solo en `scripts/upload-templates-v2.mjs`; el canónico conserva las superseded. Mover las vigentes al principal (o borrar las viejas) y corregir los "En script ✅" de `docs/WHATSAPP_TEMPLATES.md`.
 - [ ] **`/api/notificar-registro`**: público, sin auth ni rate limit, dispara WhatsApp para cualquier `tecnicoId`. Acotar (token del registro, rate limit o verificación server-side).
 

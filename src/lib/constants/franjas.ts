@@ -37,3 +37,19 @@ export const MAX_RESERVAS_POR_FRANJA = 5
  * hasta el 2026-10-12 (pedido del user: "2 servicios más por franja").
  */
 export const MAX_SERVICIOS_TECNICO_POR_FRANJA = 5
+
+/**
+ * Días (YYYY-MM-DD, hora Colombia) cerrados a reservas NUEVAS. Las visitas
+ * que ya estaban agendadas ese día se mantienen; solo se rechaza agendar,
+ * reagendar o confirmar un horario NUEVO para esa fecha (validarHorarioAgendable)
+ * y los calendarios muestran todas sus franjas como llenas
+ * (franjasLlenasParaFecha). El admin puede seguir forzando desde la ficha
+ * (/api/admin/reagendar-solicitud solo avisa). Quitar la fecha para reabrir.
+ *
+ * 2026-11-03 (martes): cerrado a pedido del user el 2026-10-30.
+ */
+export const FECHAS_SIN_RESERVAS_NUEVAS: readonly string[] = ['2026-11-03']
+
+export function fechaCerradaAReservas(fechaYMD: string): boolean {
+  return FECHAS_SIN_RESERVAS_NUEVAS.includes(fechaYMD)
+}

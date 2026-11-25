@@ -298,39 +298,114 @@ export const ETAPA_PAGO_HINT: Record<EtapaPagoCliente, string> = {
 
 /**
  * Paso del cobro en el que va el servicio, para el stepper "1 Anticipo →
- * 2 Abono → 3 Saldo". `aplicaAbono` = la cotización aprobada lleva repuestos
- * (o el abono ya se pagó).
+ * 2 Abono → 3 Saldo". `aplicaAbono` = la cotización lleva repuestos (o el
+ * abono ya se pagó). Desde 2026-11-21 el paso del abono se muestra apenas la
+ * cotización tiene repuestos, aunque el cliente aún no la apruebe: así el
+ * admin ve los 3 cobros previstos desde que se envía la cotización.
+ *
+ * `monto` (solo informativo, para la ficha): lo pagado cuando se puede
+ * deducir, el cobro en curso, o el estimado de un cobro futuro. `null` = no
+ * se puede saber (p. ej. total aún sin cotizar). El monto real de cada link
+ * lo calcula siempre el servidor (pagos.service).
  */
-export function pasosPagoCliente(sol: SolicitudParaEtapaPago): {
+export interface PasoPagoCliente {
   paso: 'anticipo' | 'abono' | 'saldo'
   estado: 'pagado' | 'pendiente' | 'futuro'
   fecha: string | null
-}[] {
+  monto: number | null
+  /** Cuándo se cobra un paso futuro (texto corto para la ficha). */
+  cuando: string | null
+}
+
+export function pasosPagoCliente(sol: SolicitudParaEtapaPago): PasoPagoCliente[] {
   const cot = sol.cotizacion as { aprobado_at?: unknown } | null | undefined
-  const aplicaAbono = Boolean(sol.abono_pagado_at) ||
-    (Boolean(cot?.aprobado_at) && cotizacionTieneRepuestos(sol.cotizacion))
+  const cotAprobada = Boolean(cot?.aprobado_at)
   const resumen = etapaPagoCliente(sol)
   const etapa = resumen?.etapa
   const todoPagado = etapa === 'pagado'
+  // Cotización con repuestos aún SIN aprobar: el abono es un cobro previsto
+  // (salvo que el servicio ya se haya cerrado o pagado completo).
+  const abonoPrevisto = cotizacionTieneRepuestos(sol.cotizacion) &&
+    (cotAprobada || (etapa !== 'pagado' && etapa !== 'cerrado_con_pago'))
+  const aplicaAbono = Boolean(sol.abono_pagado_at) || abonoPrevisto
 
-  const pasos: { paso: 'anticipo' | 'abono' | 'saldo'; estado: 'pagado' | 'pendiente' | 'futuro'; fecha: string | null }[] = [
+  const total = resumen?.total ?? 0
+  const pagado = resumen?.pagado ?? 0
+  const porCobrar = resumen?.porCobrar ?? 0
+  const restante = Math.max(0, total - pagado)
+  const restanteNeto = Math.max(0, (resumen?.totalNeto ?? 0) - pagado)
+  const abonoSinPagar = aplicaAbono && !sol.abono_pagado_at && !todoPagado
+  const montoAbono = abonoSinPagar && total > 0 ? montoAbonoRepuestos(restante) : null
+  const montoSaldo = !todoPagado && total > 0 ? Math.max(0, restanteNeto - (montoAbono ?? 0)) : null
+  // Lo pagado en línea solo se puede atribuir al anticipo si es el único pago.
+  const soloAnticipoPagado = Boolean(sol.anticipo_pagado_at) && !sol.abono_pagado_at && !sol.saldo_pagado_at
+
+  const estadoAnticipo: PasoPagoCliente['estado'] =
+    sol.anticipo_pagado_at || todoPagado ? 'pagado' : etapa === 'anticipo_pendiente' ? 'pendiente' : 'futuro'
+  const pasos: PasoPagoCliente[] = [
     {
       paso: 'anticipo',
-      estado: sol.anticipo_pagado_at || todoPagado ? 'pagado' : etapa === 'anticipo_pendiente' ? 'pendiente' : 'futuro',
+      estado: estadoAnticipo,
       fecha: sol.anticipo_pagado_at ?? null,
+      monto: estadoAnticipo === 'pagado'
+        ? (soloAnticipoPagado && pagado > 0 ? pagado : null)
+        : estadoAnticipo === 'pendiente' && porCobrar > 0 ? porCobrar : null,
+      cuando: estadoAnticipo === 'futuro' ? 'cuando un técnico acepte' : null,
     },
   ]
   if (aplicaAbono) {
+    const estadoAbono: PasoPagoCliente['estado'] =
+      sol.abono_pagado_at || todoPagado ? 'pagado' : etapa === 'abono_pendiente' ? 'pendiente' : 'futuro'
     pasos.push({
       paso: 'abono',
-      estado: sol.abono_pagado_at || todoPagado ? 'pagado' : etapa === 'abono_pendiente' ? 'pendiente' : 'futuro',
+      estado: estadoAbono,
       fecha: sol.abono_pagado_at ?? null,
+      monto: estadoAbono === 'pagado' ? null : montoAbono,
+      cuando: estadoAbono === 'futuro' ? 'cuando el cliente apruebe la cotización' : null,
     })
   }
+  const estadoSaldo: PasoPagoCliente['estado'] =
+    todoPagado ? 'pagado' : etapa === 'saldo_pendiente' ? 'pendiente' : 'futuro'
   pasos.push({
     paso: 'saldo',
-    estado: todoPagado ? 'pagado' : etapa === 'saldo_pendiente' ? 'pendiente' : 'futuro',
+    estado: estadoSaldo,
     fecha: sol.saldo_pagado_at ?? null,
+    monto: estadoSaldo === 'pagado' ? null : estadoSaldo === 'pendiente' ? porCobrar : montoSaldo,
+    cuando: estadoSaldo === 'futuro'
+      ? (total > 0 ? 'al terminar el servicio' : 'cuando haya cotización')
+      : null,
   })
   return pasos
+}
+
+export interface FaltanteCobroCliente {
+  /** Qué cobro se le reenvía: define el link (/pago/anticipo o /pago/saldo). */
+  tipo: 'anticipo' | 'abono' | 'saldo'
+  /** Monto estimado (COP). El servidor lo recalcula con los pagos acreditados. */
+  monto: number
+}
+
+/**
+ * Lo que el cliente PARTICULAR debe HOY, en cualquier etapa del servicio
+ * (2026-11-03, botón "Cobrar faltante por WhatsApp" de la ficha admin):
+ *   - anticipo pendiente (reserva sin pagar)   → anticipo
+ *   - abono de repuestos pendiente              → abono (50%)
+ *   - cualquier otro caso con total conocido y
+ *     algo sin pagar (saldo, precio fijo, etc.) → saldo (total neto − pagado)
+ * `null` = no hay nada por cobrar: garantía, todo pagado, servicio cerrado
+ * sin cobro, o total aún desconocido (diagnóstico sin cotización ya pagado).
+ */
+export function faltanteCobroCliente(sol: SolicitudParaEtapaPago): FaltanteCobroCliente | null {
+  if (sol.es_garantia || sol.saldo_pagado_at) return null
+  const r = etapaPagoCliente(sol)
+  if (!r || r.etapa === 'pagado' || r.etapa === 'cerrado_con_pago') return null
+  if (r.etapa === 'anticipo_pendiente') return r.porCobrar > 0 ? { tipo: 'anticipo', monto: r.porCobrar } : null
+  if (r.etapa === 'abono_pendiente') return r.porCobrar > 0 ? { tipo: 'abono', monto: r.porCobrar } : null
+  // Cotización enviada pero NO aprobada: ese total aún no es deuda del
+  // cliente (puede rechazarla). Solo se cobra si el servicio ya se completó.
+  const cot = sol.cotizacion as { total?: unknown; aprobado_at?: unknown } | null | undefined
+  const cotSinAprobar = typeof cot?.total === 'number' && cot.total > 0 && !cot.aprobado_at
+  if (cotSinAprobar && sol.estado !== 'confirmacion_pendiente' && sol.estado !== 'completada') return null
+  const restante = Math.max(0, r.totalNeto - r.pagado)
+  return restante > 0 ? { tipo: 'saldo', monto: restante } : null
 }

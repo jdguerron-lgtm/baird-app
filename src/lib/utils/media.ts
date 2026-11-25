@@ -10,9 +10,11 @@
  *    exporta como JPEG → universalmente visible.
  *
  * 2. **Peso del archivo**: una foto iPhone son 4-6 MB sin tocar. Subir 4 fotos en 4G
- *    son 30-60 s. Resize a 4000px máx + JPEG 0.92 (2026-10-20; antes 2560px / 0.9)
- *    baja a ~1.5-2.5 MB: se conserva el detalle fino de placas, tarjetas y
- *    soldaduras y el upload sigue siendo 2-3× más rápido que el original.
+ *    son 30-60 s. Resize a 4000px máx + JPEG 0.85 (2026-10-29; 0.92 desde
+ *    2026-10-20, antes 2560px / 0.9) baja a ~0.8-1.5 MB: se conserva el detalle
+ *    fino de placas, tarjetas y soldaduras y el upload es 3-5× más rápido que
+ *    el original. Además la subida arranca al elegir el archivo
+ *    (`cola-subida.ts`), no al enviar el formulario.
  *
  * 3. **Extensión robusta**: `file.name.split('.').pop()` devuelve "HEIC", "MOV", "jpeg",
  *    o nada (cámaras nativas a veces no ponen nombre con extensión). `inferExtension`
@@ -65,17 +67,177 @@ export const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 /**
  * Topes de archivos por formulario (2026-10-20: 4 → 10 en diagnóstico,
  * 6 → 12 en completar, 20 para la evidencia adicional del admin;
- * 2026-10-24: 20 / 20 / 30 porque seguían quedando cortos). El video sigue
+ * 2026-10-24: 20 / 20 / 30 porque seguían quedando cortos; 2026-10-29: 30 /
+ * 30 / 30 y configurable con `NEXT_PUBLIC_EVIDENCIA_MAX_ARCHIVOS`). No hay
+ * techo técnico en la cantidad: el límite real es el **storage** del proyecto
+ * Supabase (1 GB en Free; al 2026-10-29 iban ~545 MB, creciendo 50–180 MB
+ * por semana) — ver docs/GOTCHAS.md § Límites de evidencia. El video sigue
  * limitado a MAX_VIDEO_SIZE_MB por archivo, así que "un video más largo" se
  * sube como varios clips de ≤ ese tamaño.
  */
-export const MAX_EVIDENCIAS_DIAGNOSTICO = 20
-export const MAX_ARCHIVOS_COMPLETAR = 20
-export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = 30
+const ARCHIVOS_DEFAULT = 30
+function leerMaxArchivos(): number {
+  // Referencia literal a la env: Next solo inyecta NEXT_PUBLIC_* en el bundle
+  // cuando aparece escrita completa (no sirve `process.env[nombre]`).
+  const raw = Number(process.env.NEXT_PUBLIC_EVIDENCIA_MAX_ARCHIVOS)
+  return Number.isFinite(raw) && raw >= 5 && raw <= 100 ? Math.floor(raw) : ARCHIVOS_DEFAULT
+}
+export const MAX_EVIDENCIAS_DIAGNOSTICO = leerMaxArchivos()
+export const MAX_ARCHIVOS_COMPLETAR = leerMaxArchivos()
+export const MAX_ARCHIVOS_EVIDENCIA_ADMIN = Math.max(30, leerMaxArchivos())
 
-/** Resolución y calidad por defecto de las fotos de evidencia (lado mayor en px / calidad JPEG). */
+/**
+ * Resolución y calidad por defecto de las fotos de evidencia (lado mayor en
+ * px / calidad JPEG). 2026-10-29: calidad 0.92 → 0.85. En las fotos reales
+ * de octubre (promedio 1,2–1,8 MB a 0.92) baja ~35–40 % de bytes sin pérdida
+ * visible — a 4000 px las placas y tarjetas siguen legibles — y eso es menos
+ * tiempo de subida en 4G y menos storage por servicio. Si hace falta volver,
+ * es solo esta constante.
+ */
 export const EVIDENCIA_MAX_DIMENSION = 4000
-export const EVIDENCIA_JPEG_QUALITY = 0.92
+export const EVIDENCIA_JPEG_QUALITY = 0.85
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dimensiones y orientación leyendo SOLO la cabecera (2026-10-29)
+//
+// Por qué: en Android, elegir fotos de la GALERÍA (no de la cámara) era
+// lentísimo. La cámara del formulario entrega ~12 MP, pero la galería entrega
+// el original de 50–108 MP de los Samsung/Xiaomi (hasta 12000×9000, 20–30 MB).
+// `createImageBitmap(file)` decodificaba la imagen COMPLETA (108 MP = ~430 MB
+// de RAM) antes de escalarla: en un celular de gama media tardaba 10–30 s por
+// foto o directamente fallaba, caía al tope de 30 s de `comprimirConLimite` y
+// terminaba subiendo el original de 25 MB. Con la cámara nunca pasaba.
+//
+// Solución: leer ancho/alto (y la orientación EXIF) de los primeros KB del
+// archivo y pedirle al navegador que decodifique YA REDUCIDO
+// (`createImageBitmap(file, { resizeWidth, resizeHeight })`): Chrome/Safari
+// usan el escalado del propio decodificador JPEG (1/2, 1/4, 1/8), que es
+// varias veces más rápido y usa una fracción de la memoria.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface DimensionesImagen {
+  /** Ancho/alto tal como vienen en el archivo (antes de aplicar la orientación EXIF). */
+  ancho: number
+  alto: number
+  /** Orientación EXIF 1–8 (1 si no hay). 5–8 = la imagen se muestra rotada 90°. */
+  orientacion: number
+}
+
+/** Bytes de cabecera que se leen para buscar dimensiones (los EXIF con miniatura pueden pasar de 64 KB). */
+export const CABECERA_IMAGEN_BYTES = 512 * 1024
+
+/**
+ * Orientación EXIF de un JPEG a partir del segmento APP1 (`Exif\0\0` + TIFF).
+ * Devuelve 1 si no la encuentra. `d` es un DataView sobre el inicio del archivo.
+ */
+export function leerOrientacionExif(d: DataView): number {
+  let off = 2
+  while (off + 4 <= d.byteLength) {
+    if (d.getUint8(off) !== 0xff) return 1
+    const marcador = d.getUint8(off + 1)
+    if (marcador === 0xd8 || marcador === 0x01 || (marcador >= 0xd0 && marcador <= 0xd7)) { off += 2; continue }
+    if (marcador === 0xda || marcador === 0xd9) return 1 // SOS / EOI: ya no hay APP1
+    const largo = d.getUint16(off + 2)
+    if (marcador === 0xe1 && off + 10 <= d.byteLength && d.getUint32(off + 4) === 0x45786966) {
+      // 'Exif' 0x00 0x00, luego cabecera TIFF
+      const tiff = off + 10
+      if (tiff + 8 > d.byteLength) return 1
+      const le = d.getUint16(tiff) === 0x4949
+      const ifd0 = tiff + d.getUint32(tiff + 4, le)
+      if (ifd0 + 2 > d.byteLength) return 1
+      const n = d.getUint16(ifd0, le)
+      for (let i = 0; i < n; i++) {
+        const e = ifd0 + 2 + i * 12
+        if (e + 12 > d.byteLength) return 1
+        if (d.getUint16(e, le) === 0x0112) {
+          const v = d.getUint16(e + 8, le)
+          return v >= 1 && v <= 8 ? v : 1
+        }
+      }
+      return 1
+    }
+    off += 2 + largo
+  }
+  return 1
+}
+
+/**
+ * Dimensiones de un JPEG (marcador SOFn), PNG (IHDR) o WebP (VP8/VP8L/VP8X)
+ * leyendo solo la cabecera. null si no se reconocen.
+ */
+export function leerDimensionesDeCabecera(bytes: Uint8Array): DimensionesImagen | null {
+  if (bytes.length < 12) return null
+  const d = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const b = bytes
+
+  // PNG: 8 bytes de firma + IHDR (ancho/alto big-endian en 16 y 20)
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    if (b.length < 24) return null
+    return { ancho: d.getUint32(16), alto: d.getUint32(20), orientacion: 1 }
+  }
+
+  // WebP: RIFF....WEBP + chunk VP8 / VP8L / VP8X
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+    if (b.length < 30) return null
+    const chunk = String.fromCharCode(b[12], b[13], b[14], b[15])
+    if (chunk === 'VP8X') {
+      const ancho = 1 + (b[24] | (b[25] << 8) | (b[26] << 16))
+      const alto = 1 + (b[27] | (b[28] << 8) | (b[29] << 16))
+      return { ancho, alto, orientacion: 1 }
+    }
+    if (chunk === 'VP8L') {
+      const bits = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24)
+      return { ancho: 1 + (bits & 0x3fff), alto: 1 + ((bits >> 14) & 0x3fff), orientacion: 1 }
+    }
+    if (chunk === 'VP8 ') {
+      return { ancho: d.getUint16(26, true) & 0x3fff, alto: d.getUint16(28, true) & 0x3fff, orientacion: 1 }
+    }
+    return null
+  }
+
+  // JPEG: recorrer marcadores hasta un SOFn (C0–CF salvo C4, C8, CC)
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    let off = 2
+    while (off + 9 <= b.length) {
+      if (b[off] !== 0xff) { off++; continue }
+      const m = b[off + 1]
+      if (m === 0xff) { off++; continue }
+      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { off += 2; continue }
+      if (m === 0xda || m === 0xd9) return null
+      const largo = d.getUint16(off + 2)
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+        return { alto: d.getUint16(off + 5), ancho: d.getUint16(off + 7), orientacion: leerOrientacionExif(d) }
+      }
+      off += 2 + largo
+    }
+  }
+  return null
+}
+
+/** Lee la cabecera de `file` y devuelve sus dimensiones, o null si no se reconocen. */
+export async function leerDimensionesImagen(file: Blob): Promise<DimensionesImagen | null> {
+  try {
+    const buf = await file.slice(0, CABECERA_IMAGEN_BYTES).arrayBuffer()
+    return leerDimensionesDeCabecera(new Uint8Array(buf))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Tamaño destino (ya orientado) para que el lado mayor quede en `maxDimension`.
+ * null si la imagen ya cabe (no hace falta escalar).
+ */
+export function dimensionesDestino(dims: DimensionesImagen, maxDimension: number): { ancho: number; alto: number } | null {
+  const rotada = dims.orientacion >= 5 && dims.orientacion <= 8
+  const w = rotada ? dims.alto : dims.ancho
+  const h = rotada ? dims.ancho : dims.alto
+  if (w <= 0 || h <= 0) return null
+  const lado = Math.max(w, h)
+  if (lado <= maxDimension) return null
+  const escala = maxDimension / lado
+  return { ancho: Math.max(1, Math.round(w * escala)), alto: Math.max(1, Math.round(h * escala)) }
+}
 
 /** Tipos de imagen que ya son universalmente compatibles y no necesitan conversión. */
 const COMPATIBLE_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
@@ -167,12 +329,33 @@ export async function compressImageIfNeeded(file: File, opts: CompressOptions = 
   }
 
   try {
+    // 2026-10-29: si la cabecera dice cuánto mide, se pide el bitmap YA
+    // REDUCIDO (ver "Dimensiones y orientación" arriba). Para una foto de
+    // galería de 50–108 MP esto es la diferencia entre 1 s y 20 s (o un
+    // fallo de memoria) en Android. `imageOrientation: 'from-image'` para
+    // que el resize se aplique sobre la imagen ya rotada según EXIF.
+    let bitmap: ImageBitmap | null = null
+    const dims = await leerDimensionesImagen(file)
+    const destino = dims ? dimensionesDestino(dims, maxDimension) : null
+    if (destino) {
+      try {
+        bitmap = await createImageBitmap(file, {
+          resizeWidth: destino.ancho,
+          resizeHeight: destino.alto,
+          resizeQuality: 'medium',
+          imageOrientation: 'from-image',
+        } as ImageBitmapOptions)
+      } catch {
+        bitmap = null // opciones no soportadas → decode completo, como antes
+      }
+    }
     // createImageBitmap maneja JPEG/PNG/WebP siempre, y HEIC/HEIF en iOS Safari 15+.
     // En navegadores que no decodifican HEIC, lanza — nosotros catcheamos abajo y
     // devolvemos el original (rare path: técnico iOS muy viejo).
-    const bitmap = await createImageBitmap(file)
+    if (!bitmap) bitmap = await createImageBitmap(file)
 
-    // Calcular dimensiones target preservando aspect ratio.
+    // Calcular dimensiones target preservando aspect ratio (si ya vino
+    // reducido, scale = 1 y se dibuja tal cual).
     const { width: srcW, height: srcH } = bitmap
     const longSide = Math.max(srcW, srcH)
     const scale = longSide > maxDimension ? maxDimension / longSide : 1

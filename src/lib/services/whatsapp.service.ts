@@ -12,7 +12,8 @@ import { ESTADO_LABELS, ESTADOS_TERMINALES } from '@/lib/constants/estados'
 import { PAGO_MINIMO_TECNICO_GARANTIA } from '@/lib/constants/tarifas/mabe'
 import { totalClienteParaCobro } from '@/lib/constants/pago-cliente'
 import { validarHorarioAgendable, tecnicoOcupadoEnSlot } from '@/lib/services/agenda.service'
-import { MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
+import { MAX_SERVICIOS_TECNICO_POR_FRANJA, fechaCerradaAReservas } from '@/lib/constants/franjas'
+import { fechaColombiaYMD } from '@/lib/utils/fecha-visita'
 import { sincronizarRecargoFinDeSemana } from '@/lib/services/recargo.service'
 import { aceptacionCuentaComoConfirmacion } from '@/lib/utils/confirmacion-visita'
 import { obtenerConfigReparto, contarServiciosRecientes, dividirPorPrioridad } from '@/lib/services/reparto.service'
@@ -1011,7 +1012,9 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
       ].filter(Boolean)
 
       if (elegido && opcionesCliente.includes(elegido) && elegido !== confirmadoActual) {
-        const agenda = await validarHorarioAgendable(elegido, solPrevia.id)
+        // diasMinimos 1: el técnico acepta una opción que el cliente eligió
+        // con ≥2 días; para hoy puede haber quedado para mañana y eso es OK.
+        const agenda = await validarHorarioAgendable(elegido, solPrevia.id, { diasMinimos: 1 })
         if (!agenda.ok) {
           return {
             ganado: false,
@@ -1036,6 +1039,18 @@ export async function procesarAceptacion(token: string, horarioSeleccionado?: 1 
   // Se corta antes de asignar, con reintentar: el servicio sigue disponible
   // por si puede tomar el otro horario propuesto.
   const slotEfectivo = horarioUpdate ? horarioUpdate.fecha_visita_at : solPrevia?.fecha_visita_at ?? null
+
+  // Día cerrado (FECHAS_SIN_RESERVAS_NUEVAS): solo se respetan los servicios
+  // que YA tenían técnico asignado. Uno que aún no lo tiene no se puede aceptar
+  // para ese día aunque el horario ya estuviera confirmado; el admin lo reagenda.
+  if (slotEfectivo && fechaCerradaAReservas(fechaColombiaYMD(new Date(slotEfectivo)))) {
+    return {
+      ganado: false,
+      reintentar: true,
+      mensaje: 'Ese día ya no tiene cupo para nuevas visitas. Elige el otro horario propuesto por el cliente o deja este servicio: Baird lo reagendará.',
+    }
+  }
+
   if (slotEfectivo) {
     const ocupado = await tecnicoOcupadoEnSlot(notif.tecnico_id, slotEfectivo, notif.solicitud_id)
     if (ocupado) {
@@ -1370,9 +1385,12 @@ export async function avisarAsignacionTecnico(
     // se reintenta con `pago_anticipo_cliente_v1` (URL fija a la tienda), que
     // solo es correcta en Diagnóstico/Reparación — ahí el anticipo ES $42.000.
     //
-    // ANTICIPO YA PAGADO (2026-10-11): el cliente pudo pagarlo ANTES de que un
-    // técnico aceptara (CTA de la pantalla de éxito de /solicitar, o por la
-    // tienda — caso real Tatiana Moreno / Ana Prieto). En ese caso NO se le
+    // ANTICIPO YA PAGADO (2026-10-11): hasta el 2026-10-29 el cliente podía
+    // pagarlo ANTES de que un técnico aceptara (CTA de la pantalla de éxito de
+    // /solicitar, o por la tienda — caso real Tatiana Moreno / Ana Prieto).
+    // Desde esa fecha el cobro es SOLO con técnico asignado (/pago/anticipo lo
+    // exige), así que acá solo entran solicitudes viejas, pagos registrados a
+    // mano o un segundo técnico tras liberar al primero. En ese caso NO se le
     // vuelve a cobrar: se le confirma la reserva y se le avisa al técnico que
     // la visita está pagada.
     //
@@ -4222,8 +4240,8 @@ export async function procesarReagendamientoCliente(
     return { ok: false, estado_previo: sol.estado, error: `Llegaste al máximo de ${MAX_REAGENDAMIENTOS_CLIENTE} reagendamientos. Contáctanos por WhatsApp para asistencia.` }
   }
 
-  // Validación de agenda (agenda.service): mínimo mañana (TZ Colombia) +
-  // cupo de MAX_RESERVAS_POR_FRANJA por slot. La propia solicitud no cuenta
+  // Validación de agenda (agenda.service): mínimo pasado mañana (TZ Colombia,
+  // DIAS_MINIMOS_RESERVA_CLIENTE) + cupo de MAX_RESERVAS_POR_FRANJA por slot. La propia solicitud no cuenta
   // contra su cupo (su fecha_visita_at previo se está reemplazando).
   const agenda = await validarHorarioAgendable(horarioLimpio, sol.id)
   if (!agenda.ok) {
@@ -4740,5 +4758,66 @@ export async function enviarBienvenidaReceptor(solicitudId: string): Promise<{ o
     return { ok: true }
   } catch (err) {
     return { ok: false, error: `Error WhatsApp: ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
+/**
+ * Reenvía al CLIENTE el link de pago del ANTICIPO (/pago/anticipo/{token}).
+ * Lo usa el botón "Cobrar faltante por WhatsApp" de la ficha admin
+ * (2026-11-03) cuando la reserva sigue sin pagar. Misma plantilla que al
+ * asignar técnico (`pago_anticipo_cliente_v2`); si falla, texto libre (solo
+ * llega con la ventana de 24 h abierta).
+ */
+export async function enviarCobroAnticipoCliente(
+  solicitudId: string,
+  monto: number,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!Number.isFinite(monto) || monto <= 0) return { ok: false, error: 'Sin anticipo por cobrar' }
+
+  const { data: sol } = await supabase
+    .from('solicitudes_servicio')
+    .select('cliente_nombre, cliente_telefono, cliente_token, horario_confirmado, horario_visita_1, tecnico_asignado_id')
+    .eq('id', solicitudId)
+    .single()
+  if (!sol?.cliente_telefono) return { ok: false, error: 'Solicitud sin teléfono de cliente' }
+  if (!sol.cliente_token) return { ok: false, error: 'Solicitud sin cliente_token' }
+
+  const { data: tecnico } = sol.tecnico_asignado_id
+    ? await supabase.from('tecnicos').select('nombre_completo').eq('id', sol.tecnico_asignado_id).maybeSingle()
+    : { data: null }
+  const nombre = String(sol.cliente_nombre ?? '').split(' ')[0] || 'cliente'
+  const horario = sol.horario_confirmado || sol.horario_visita_1 || 'Por coordinar'
+  const motivo = `Se reenvió al cliente el link de pago del anticipo ($${formatCOP(monto)}) desde el admin`
+
+  try {
+    const r = await enviarPlantilla(sol.cliente_telefono, 'pago_anticipo_cliente_v2', 'es', [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombre },
+          { type: 'text', text: tecnico?.nombre_completo ?? 'Asignado' },
+          { type: 'text', text: horario },
+          { type: 'text', text: formatCOP(monto) },
+        ],
+      },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: sol.cliente_token }] },
+    ])
+    if (r.sent) await registrarMensajeCliente(solicitudId, 'pago_anticipo_cliente_v2', motivo)
+    return { ok: true }
+  } catch (err) {
+    console.error('[anticipo] pago_anticipo_cliente_v2 falló, fallback texto libre:', err)
+    try {
+      const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://lineablanca.bairdservice.com'
+      await enviarMensajeTexto(
+        sol.cliente_telefono,
+        `Hola ${nombre} 👋 Para asegurar tu visita (${horario}) falta el anticipo de $${formatCOP(monto)} COP.\n\n` +
+        `💳 Págalo en línea de forma segura:\n${APP_URL}/pago/anticipo/${sol.cliente_token}\n\n` +
+        `Nunca pagues en efectivo al técnico.\n\n🔧 Baird Service`,
+      )
+      await registrarMensajeCliente(solicitudId, 'pago_anticipo_cliente_v2 (texto libre)', motivo)
+      return { ok: true }
+    } catch (err2) {
+      return { ok: false, error: `Error WhatsApp: ${err2 instanceof Error ? err2.message : String(err2)}` }
+    }
   }
 }

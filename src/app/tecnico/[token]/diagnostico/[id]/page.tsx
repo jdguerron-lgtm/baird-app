@@ -25,10 +25,18 @@ import ProductosNecesariosForm from '@/components/ui/ProductosNecesariosForm'
 import ProductosRecomendadosForm from '@/components/ui/ProductosRecomendadosForm'
 import TiendaRepuestosLink from '@/components/ui/TiendaRepuestosLink'
 import { useGps } from '@/hooks/useGps'
-import { inferExtension, videoSizeAdvice, tipoArchivoEvidencia, crearMiniatura, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_EVIDENCIAS_DIAGNOSTICO } from '@/lib/utils/media'
-import { subirArchivoStorage, ejecutarConLimite, comprimirConLimite, crearAgregadorProgreso, mensajeProgresoSubida } from '@/lib/utils/subida-evidencia'
+import { inferExtension, videoSizeAdvice, tipoArchivoEvidencia, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_EVIDENCIAS_DIAGNOSTICO } from '@/lib/utils/media'
+import { mensajeProgresoSubida } from '@/lib/utils/subida-evidencia'
+import { textoResumenCola } from '@/lib/utils/cola-subida'
+import { useColaSubida } from '@/hooks/useColaSubida'
+import EstadoSubidaOverlay from '@/components/tecnico/EstadoSubidaOverlay'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
+import {
+  leerBorradorDiagnostico,
+  guardarBorradorDiagnostico,
+  borrarBorradorDiagnostico,
+} from '@/lib/utils/borrador-diagnostico'
 import type { ProductoNecesario, ProductoRecomendado } from '@/types/solicitud'
 
 interface Servicio {
@@ -94,21 +102,43 @@ export default function DiagnosticoPage() {
   // si la visita cayó en sábado/domingo/festivo — cambio 2026-07-21).
   const [pagoTecnicoApi, setPagoTecnicoApi] = useState<number | null>(null)
   const [progreso, setProgreso] = useState('')
-  // % global de la subida de evidencias (barra bajo el spinner, 2026-10-24).
-  const [progresoPct, setProgresoPct] = useState(0)
-  // true mientras se generan las miniaturas de las fotos recién elegidas.
-  const [preparandoPreviews, setPreparandoPreviews] = useState(false)
 
   // Form state
   const [diagnosticoTexto, setDiagnosticoTexto] = useState('')
   const [complejidad, setComplejidad] = useState<ComplejidadServicio | null>(null)
-  const [evidencias, setEvidencias] = useState<File[]>([])
-  const [previews, setPreviews] = useState<string[]>([])
-  // Foto de la placa del producto (etiqueta del fabricante con el modelo) —
-  // OBLIGATORIA desde 2026-08-02: sin ella no se pueden validar repuestos ni
-  // la garantía. Antes era solo un recordatorio dentro de las evidencias.
-  const [fotoPlaca, setFotoPlaca] = useState<File | null>(null)
-  const [fotoPlacaPreview, setFotoPlacaPreview] = useState<string | null>(null)
+  // Evidencia del fallo y foto de la placa: colas de subida EN SEGUNDO PLANO
+  // (2026-10-29, src/lib/utils/cola-subida.ts). Cada archivo se comprime y
+  // sube apenas el técnico lo elige; al registrar solo se espera lo que falte.
+  // Antes todo se subía al tocar "Registrar" y el técnico esperaba 1–3 min
+  // mirando la barra. La placa (obligatoria desde 2026-08-02: sin ella no se
+  // validan repuestos ni garantía) va en su propia cola de un solo archivo.
+  // Telemetría (2026-11-03): cada archivo que agota los reintentos queda en
+  // connection_errors con el prefijo [diagnostico], así el equipo ve desde el
+  // admin / Vercel por qué a un técnico "no le sube". Antes solo lo veía él.
+  const reportarFalloSubida = (que: string) => (archivo: { tipo: string; file: { size: number } }, mensaje: string) =>
+    trackError({
+      error_type: 'fetch_failed',
+      error_message: `[diagnostico] subida ${que} (${archivo.tipo}, ${(archivo.file.size / 1048576).toFixed(1)} MB) falló: ${mensaje}`,
+      actor: 'tecnico',
+    })
+  const colaEvidencia = useColaSubida({
+    bucket: 'evidencias-servicio',
+    ruta: (file, n, lote) => `${id}/diagnostico_${lote}_${n}.${inferExtension(file)}`,
+    onError: reportarFalloSubida('evidencia'),
+  })
+  const colaPlaca = useColaSubida({
+    bucket: 'evidencias-servicio',
+    ruta: (file, n, lote) => `${id}/placa_${lote}_${n}.${inferExtension(file)}`,
+    onError: reportarFalloSubida('placa'),
+  })
+  const evidencias = colaEvidencia.archivos
+  const fotoPlaca = colaPlaca.archivos[0] ?? null
+  // Borrador local (2026-11-03): true mientras se restaura (no se autoguarda
+  // hasta que el formulario tenga lo recuperado) y aviso para el técnico.
+  const [borradorListo, setBorradorListo] = useState(false)
+  const [avisoBorrador, setAvisoBorrador] = useState<string | null>(null)
+  // "Registrar ya con lo subido": mientras el envío espera archivos lentos.
+  const [esperandoArchivos, setEsperandoArchivos] = useState(false)
 
   // Fault code (warranty only)
   const [codigoFalla, setCodigoFalla] = useState<CodigoFalla | null>(null)
@@ -252,72 +282,93 @@ export default function DiagnosticoPage() {
     cargar()
   }, [token, id])
 
-  // Handle file selection (photos/videos).
-  // Las fotos se comprimen luego (en enviarDiagnostico), acá solo validamos tamaño
-  // y tipo. Las imágenes se re-encodean a 4000 px / JPEG 0.92 (una foto HEIC
-  // iPhone 6 MB termina en ~2 MB); los videos tienen su propio tope
-  // (MAX_VIDEO_SIZE_BYTES, 50 MB desde 2026-10-10) y se validan antes porque no
-  // se comprimen client-side. Por eso el mensaje accionable solo se muestra
-  // cuando el archivo grande es un video.
-  const handleFileSelect = async (files: FileList | null) => {
+  // Restaurar el borrador apenas el servicio está cargado y sigue en
+  // 'asignada'. Los archivos ya subidos vuelven como listos (sin re-subir);
+  // los que estaban a medio subir no se pueden recuperar y se avisa.
+  useEffect(() => {
+    if (!servicio || borradorListo) return
+    const b = leerBorradorDiagnostico(servicio.id)
+    if (b) {
+      setDiagnosticoTexto(b.diagnosticoTexto)
+      setComplejidad(b.complejidad)
+      setCodigoFalla(b.codigoFalla)
+      setSiguientePaso(b.siguientePaso)
+      setProductosNecesarios(b.productosNecesarios)
+      setProductosRecomendados(b.productosRecomendados)
+      setCostoTecnico(b.costoTecnico)
+      setOathFirma(b.oathFirma)
+      const fotos = colaEvidencia.restaurar(b.evidencias).length
+      if (b.placa) colaPlaca.restaurar([b.placa])
+      const hace = Math.max(1, Math.round((Date.now() - b.savedAt) / 60000))
+      setAvisoBorrador(
+        `Recuperamos lo que llevabas (guardado hace ${hace < 60 ? `${hace} min` : `${Math.round(hace / 60)} h`}` +
+          `${fotos > 0 ? `, ${fotos} archivo${fotos === 1 ? '' : 's'} ya subido${fotos === 1 ? '' : 's'}` : ''}). ` +
+          'Revisa que todo esté bien: lo que estaba a medio subir hay que volver a elegirlo.',
+      )
+    }
+    setBorradorListo(true)
+    // Solo al cargar el servicio; las colas son estables por página.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servicio])
+
+  // Autoguardado del borrador (debounce 800 ms) con todo lo que el técnico
+  // lleva + las URLs ya subidas. Se borra al registrar con éxito.
+  useEffect(() => {
+    if (!servicio || !borradorListo || exito) return
+    const t = setTimeout(() => {
+      const aArchivo = (a: { url: string | null; tipo: 'imagen' | 'video'; file: { name: string } }) =>
+        ({ url: a.url as string, tipo: a.tipo, nombre: a.file.name })
+      guardarBorradorDiagnostico(servicio.id, {
+        diagnosticoTexto,
+        complejidad,
+        codigoFalla,
+        siguientePaso,
+        productosNecesarios,
+        productosRecomendados,
+        costoTecnico,
+        oathFirma,
+        evidencias: evidencias.filter(a => a.estado === 'listo' && a.url).map(aArchivo),
+        placa: fotoPlaca && fotoPlaca.estado === 'listo' && fotoPlaca.url ? aArchivo(fotoPlaca) : null,
+      })
+    }, 800)
+    return () => clearTimeout(t)
+  }, [servicio, borradorListo, exito, diagnosticoTexto, complejidad, codigoFalla, siguientePaso, productosNecesarios, productosRecomendados, costoTecnico, oathFirma, evidencias, fotoPlaca])
+
+  // Selección de fotos/videos. Acá solo se valida tipo, cupo y tamaño de video
+  // (los videos no se comprimen client-side, así que se rechazan antes con un
+  // mensaje accionable); la compresión de las fotos (4000 px / JPEG 0.85), la
+  // miniatura y la subida las hace la cola en segundo plano apenas se eligen.
+  const handleFileSelect = (files: FileList | null) => {
     if (!files) return
-    const newFiles: File[] = []
+    const aceptados: File[] = []
     let advice: string | null = null
+    const cupo = MAX_EVIDENCIAS - evidencias.length
+    let sinCupo = 0
 
     for (const file of Array.from(files)) {
-      if (evidencias.length + newFiles.length >= MAX_EVIDENCIAS) break
       // tipoArchivoEvidencia también clasifica por extensión cuando el MIME
       // viene vacío (galería de algunos Android): antes esos archivos se
       // descartaban en silencio y el técnico veía que "no pasaba nada".
       const tipo = tipoArchivoEvidencia(file)
       if (!tipo) continue
-
-      // Solo rechazamos por tamaño *antes* si es video — las imágenes las comprime
-      // comprimirConLimite antes del upload.
       if (tipo === 'video' && file.size > MAX_VIDEO_SIZE_BYTES) {
         advice = videoSizeAdvice()
         continue
       }
-      newFiles.push(file)
+      if (aceptados.length >= cupo) { sinCupo++; continue }
+      aceptados.push(file)
     }
 
-    setError(advice) // null si todos los archivos pasaron; mensaje guía si rechazamos un video grande
-    if (newFiles.length === 0) return
-
-    // Miniaturas livianas (320 px) en vez del object URL del original: con
-    // 10-20 fotos de la biblioteca el navegador tenía que decodificar cada
-    // original completo para pintar un cuadrito y el celular se quedaba
-    // "pensando". Se generan en serie y con indicador.
-    setPreparandoPreviews(true)
-    const newPreviews: string[] = []
-    try {
-      for (const file of newFiles) {
-        newPreviews.push(tipoArchivoEvidencia(file) === 'video' ? 'video' : await crearMiniatura(file))
-      }
-    } finally {
-      setPreparandoPreviews(false)
-    }
-
-    setEvidencias(prev => [...prev, ...newFiles])
-    setPreviews(prev => [...prev, ...newPreviews])
+    // null si todos pasaron; guía si rechazamos un video grande o se llenó el cupo.
+    setError(advice ?? (sinCupo > 0 ? `Máximo ${MAX_EVIDENCIAS} archivos: ${sinCupo} quedaron por fuera.` : null))
+    if (aceptados.length > 0) colaEvidencia.agregar(aceptados)
   }
 
-  const handlePlacaSelect = async (files: FileList | null) => {
+  const handlePlacaSelect = (files: FileList | null) => {
     const file = files?.[0]
     if (!file || tipoArchivoEvidencia(file) !== 'imagen') return
-    const preview = await crearMiniatura(file)
-    if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
-    setFotoPlaca(file)
-    setFotoPlacaPreview(preview)
-  }
-
-  const removeEvidencia = (idx: number) => {
-    setEvidencias(prev => prev.filter((_, i) => i !== idx))
-    setPreviews(prev => {
-      const url = prev[idx]
-      if (url && url !== 'video') URL.revokeObjectURL(url)
-      return prev.filter((_, i) => i !== idx)
-    })
+    colaPlaca.vaciar()
+    colaPlaca.agregar([file])
   }
 
   const enviarDiagnostico = async () => {
@@ -329,6 +380,10 @@ export default function DiagnosticoPage() {
     }
     if (!fotoPlaca) {
       setError('Debes tomar la foto de la placa del producto (etiqueta con el modelo)')
+      return
+    }
+    if (colaEvidencia.resumen.errores > 0 || colaPlaca.resumen.errores > 0) {
+      setError('Hay archivos que no se pudieron subir: toca "Reintentar" sobre cada uno o quítalos antes de registrar.')
       return
     }
     if (!oathFirma) {
@@ -377,66 +432,24 @@ export default function DiagnosticoPage() {
     enviarPing(servicio.id, 'diagnostico', token).catch(() => {})
 
     try {
-      // 1. Comprimir imágenes y subir a Supabase Storage en paralelo.
-      //
-      // Cambios respecto al loop secuencial anterior:
-      //
-      // - Compresión client-side antes del upload: una foto iPhone HEIC 5 MB
-      //   termina en ~700 KB JPEG. Reduce 5-10× el tiempo de upload Y arregla
-      //   el problema de que Chrome/Firefox del admin no decodifican HEIC.
-      // - `Promise.all` en vez de `for await`: subir 4 fotos en serie a 4G era
-      //   30-60 s; en paralelo el bottleneck es la conexión, no la latencia.
-      // - Extensión inferida desde `file.type` (vía inferExtension) en vez de
-      //   `file.name.split('.').pop()` — iOS a veces no pone extensión en el
-      //   nombre del archivo de `capture="environment"`.
-      // - Timestamp + idx + random suffix evita colisiones si el técnico hace
-      //   submit dos veces seguidas tras un error de red.
-      // 2026-10-24: subida con progreso real, corte por inactividad y
-      // reintentos (subirArchivoStorage), de a 3 archivos a la vez
-      // (ejecutarConLimite) y compresión con tope de tiempo. Antes todo iba en
-      // paralelo con fetch sin timeout: con 10-20 fotos de la biblioteca o un
-      // video de 40 MB el técnico veía el mismo spinner minutos y, si la red se
-      // caía, para siempre ("se queda pensando").
-      const stamp = Date.now()
-      const rand = Math.random().toString(36).slice(2, 8)
-
-      // La placa va de última en la misma cola (path con prefijo placa_).
-      const archivosASubir: File[] = [...evidencias, fotoPlaca!]
-      const total = archivosASubir.length
-      const agregador = crearAgregadorProgreso(
-        archivosASubir.map(f => f.size),
-        (pct, listos) => {
-          setProgresoPct(pct)
-          setProgreso(mensajeProgresoSubida(listos, total, pct))
-        },
-      )
-      setProgresoPct(0)
-      setProgreso(`Preparando ${total} archivo${total === 1 ? '' : 's'}...`)
-
-      const subidas = await ejecutarConLimite(
-        archivosASubir.map((rawFile, i) => async () => {
-          const esPlaca = i === total - 1
-          const file = await comprimirConLimite(rawFile)
-          const ext = inferExtension(file)
-          const path = esPlaca
-            ? `${servicio.id}/placa_${stamp}_${rand}.${ext}`
-            : `${servicio.id}/diagnostico_${stamp}_${rand}_${i}.${ext}`
-          try {
-            const { publicUrl } = await subirArchivoStorage('evidencias-servicio', path, file, {
-              onProgreso: p => agregador.reportar(i, p),
-            })
-            agregador.terminar(i)
-            return publicUrl
-          } catch (e) {
-            console.error(`[diagnostico] upload archivo ${esPlaca ? 'placa' : i} falló:`, e)
-            agregador.terminar(i)
-            return null
-          }
-        }),
-      )
-      const fotoPlacaUrl = subidas[total - 1]
-      const results = subidas.slice(0, total - 1)
-      const evidenciaUrls = results.filter((u): u is string => !!u)
+      // 1. Evidencia: la cola la viene subiendo desde que el técnico eligió
+      //    cada archivo (compresión 4000 px / JPEG 0.85, XHR con progreso,
+      //    corte por inactividad y reintentos, de a 3 — ver cola-subida.ts y
+      //    subida-evidencia.ts). Acá solo se espera lo que falte; en el caso
+      //    típico ya está todo listo y esto resuelve de inmediato.
+      setProgreso('Terminando de subir la evidencia...')
+      setEsperandoArchivos(true)
+      const [ev, pl] = await Promise.all([colaEvidencia.esperarTodo(), colaPlaca.esperarTodo()])
+      setEsperandoArchivos(false)
+      const fallidos = ev.errores.length + pl.errores.length
+      if (fallidos > 0) {
+        setError(`${fallidos} archivo${fallidos === 1 ? '' : 's'} no se pudo${fallidos === 1 ? '' : 'ieron'} subir. Toca "Reintentar" sobre cada uno (o quítalos) y vuelve a registrar.`)
+        setEnviando(false)
+        setProgreso('')
+        return
+      }
+      const fotoPlacaUrl = pl.urls[0]
+      const evidenciaUrls = [...ev.urls]
 
       if (evidenciaUrls.length === 0) {
         setError('Error al subir las evidencias. Intenta de nuevo.')
@@ -547,11 +560,29 @@ export default function DiagnosticoPage() {
         body: JSON.stringify(bodyPayload),
       })
 
-      const data = await res.json()
+      // Respuesta que no es JSON (502 de Vercel, HTML de un proxy, red cortada
+      // a mitad): antes caía al catch genérico como "Error de conexion".
+      let data: Record<string, unknown> = {}
+      try {
+        data = await res.json()
+      } catch {
+        data = {}
+      }
 
       if (!res.ok) {
-        setError(data.error || 'Error al guardar el diagnóstico')
+        const detalle = typeof data.error === 'string' && data.error ? data.error : `HTTP ${res.status}`
+        trackError({
+          error_type: 'fetch_failed',
+          error_message: `[diagnostico] POST /api/diagnostico ${res.status}: ${detalle}`,
+          actor: 'tecnico',
+        })
+        setError(
+          typeof data.error === 'string' && data.error
+            ? data.error
+            : `No se pudo guardar el diagnóstico (error ${res.status}). Tu formulario queda guardado en este celular: intenta de nuevo en un momento.`,
+        )
         setEnviando(false)
+        setProgreso('')
         return
       }
 
@@ -568,13 +599,32 @@ export default function DiagnosticoPage() {
       if (typeof data.pagoTecnico === 'number' && data.pagoTecnico > 0) {
         setPagoTecnicoApi(data.pagoTecnico)
       }
+      borrarBorradorDiagnostico(servicio.id)
       setExito(true)
-    } catch {
-      setError('Error de conexion')
+    } catch (e) {
+      const mensaje = e instanceof Error ? e.message : String(e)
+      trackError({
+        error_type: 'fetch_failed',
+        error_message: `[diagnostico] excepción al enviar: ${mensaje}`,
+        actor: 'tecnico',
+      })
+      setError('Sin conexión al guardar el diagnóstico. Tu formulario queda guardado en este celular: revisa la señal e intenta de nuevo.')
     }
 
+    setEsperandoArchivos(false)
     setEnviando(false)
     setProgreso('')
+  }
+
+  // "Registrar ya con lo subido" (2026-11-03): mientras el envío espera un
+  // video lento, el técnico puede seguir con lo que ya está en Storage. Se
+  // quitan los archivos en curso y esperarTodo() resuelve solo.
+  const placaLista = !!fotoPlaca && fotoPlaca.estado === 'listo'
+  const evidenciasListas = evidencias.filter(a => a.estado === 'listo').length
+  const puedeRegistrarConLoSubido = esperandoArchivos && placaLista && evidenciasListas > 0
+  const registrarConLoSubido = () => {
+    const quitados = colaEvidencia.abandonarPendientes()
+    if (quitados > 0) setAvisoBorrador(`Se registró sin ${quitados} archivo${quitados === 1 ? '' : 's'} que no terminaba${quitados === 1 ? '' : 'n'} de subir.`)
   }
 
   // Can submit?
@@ -753,6 +803,22 @@ export default function DiagnosticoPage() {
       </header>
 
       <div className="flex-1 max-w-lg mx-auto px-4 py-6 w-full">
+        {/* Borrador recuperado / aviso (2026-11-03) */}
+        {avisoBorrador && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 flex items-start gap-2">
+            <span className="text-base leading-5">💾</span>
+            <p className="text-xs text-emerald-900 flex-1">{avisoBorrador}</p>
+            <button
+              type="button"
+              onClick={() => setAvisoBorrador(null)}
+              className="text-emerald-700 text-lg leading-none px-1"
+              aria-label="Cerrar aviso"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Service summary */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
           <h2 className="text-lg font-bold text-slate-900 mb-3">Datos del servicio</h2>
@@ -944,16 +1010,17 @@ export default function DiagnosticoPage() {
             La etiqueta del fabricante donde se vea claramente el <strong>modelo</strong> del
             equipo. Obligatoria para validar repuestos y la garantía.
           </p>
-          {fotoPlacaPreview ? (
+          {fotoPlaca ? (
             <div className="relative w-36 aspect-square rounded-xl overflow-hidden bg-gray-100 border border-amber-200">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={fotoPlacaPreview} alt="Placa del producto" className="w-full h-full object-cover" />
+              {fotoPlaca.preview && fotoPlaca.preview !== 'video' ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={fotoPlaca.preview} alt="Placa del producto" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-2xl">🏷️</div>
+              )}
+              <EstadoSubidaOverlay archivo={fotoPlaca} onReintentar={colaPlaca.reintentar} />
               <button
-                onClick={() => {
-                  if (fotoPlacaPreview) URL.revokeObjectURL(fotoPlacaPreview)
-                  setFotoPlaca(null)
-                  setFotoPlacaPreview(null)
-                }}
+                onClick={() => colaPlaca.quitar(fotoPlaca.id)}
                 className="absolute top-1.5 right-1.5 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg hover:bg-red-600"
               >
                 ×
@@ -1005,26 +1072,30 @@ export default function DiagnosticoPage() {
           <p className="text-xs text-gray-400 mb-3">
             Toma fotos del problema o graba video de la falla/prueba con el botón 🎬.
             Hasta {MAX_EVIDENCIAS} archivos; si el video es largo, súbelo en varios clips de máx {MAX_VIDEO_SIZE_MB} MB.
+            Cada archivo se sube solo mientras terminas el formulario.
           </p>
 
-          {/* File grid */}
+          {/* File grid — cada tile muestra el estado de su subida en segundo plano. */}
           <div className="grid grid-cols-2 gap-3 mb-3">
-            {previews.map((preview, idx) => (
-              <div key={idx} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                {preview === 'video' ? (
+            {evidencias.map((arch, idx) => (
+              <div key={arch.id} className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
+                {arch.tipo === 'video' ? (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white">
                     <span className="text-3xl mb-1">🎬</span>
-                    <span className="text-xs font-medium">{evidencias[idx]?.name?.substring(0, 20)}</span>
+                    <span className="text-xs font-medium">{arch.file.name?.substring(0, 20)}</span>
                     <span className="text-[10px] text-gray-300 mt-0.5">
-                      {(evidencias[idx]?.size / (1024 * 1024)).toFixed(1)} MB
+                      {(arch.file.size / (1024 * 1024)).toFixed(1)} MB
                     </span>
                   </div>
-                ) : (
+                ) : arch.preview ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={preview} alt={`Evidencia ${idx + 1}`} className="w-full h-full object-cover" />
+                  <img src={arch.preview} alt={`Evidencia ${idx + 1}`} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-2xl text-gray-300">📷</div>
                 )}
+                <EstadoSubidaOverlay archivo={arch} onReintentar={colaEvidencia.reintentar} />
                 <button
-                  onClick={() => removeEvidencia(idx)}
+                  onClick={() => colaEvidencia.quitar(arch.id)}
                   className="absolute top-1.5 right-1.5 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg hover:bg-red-600"
                 >
                   ×
@@ -1105,8 +1176,12 @@ export default function DiagnosticoPage() {
           )}
 
           <p className="text-[10px] text-gray-400">
-            {preparandoPreviews && <span className="text-purple-600 font-medium">Preparando vistas previas… </span>}
             {evidencias.length}/{MAX_EVIDENCIAS} archivos · Fotos del fallo y/o videos (máx {MAX_VIDEO_SIZE_MB} MB cada uno)
+            {evidencias.length > 0 && (
+              <span className={`block mt-0.5 font-medium ${colaEvidencia.resumen.errores > 0 ? 'text-red-600' : colaEvidencia.resumen.enCurso > 0 ? 'text-purple-600' : 'text-emerald-600'}`}>
+                {textoResumenCola(colaEvidencia.resumen)}
+              </span>
+            )}
           </p>
         </div>
 
@@ -1182,20 +1257,41 @@ export default function DiagnosticoPage() {
           </div>
         )}
 
-        {/* Progress */}
-        {progreso && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
-            <p className="text-sm text-blue-700 flex items-center gap-2">
-              <span className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
-              {progreso}
-            </p>
-            {progresoPct > 0 && progresoPct < 100 && (
-              <div className="mt-2 h-1.5 w-full rounded-full bg-blue-100 overflow-hidden">
-                <div className="h-full bg-blue-500 transition-[width] duration-300" style={{ width: `${progresoPct}%` }} />
-              </div>
-            )}
-          </div>
-        )}
+        {/* Progress: mientras se envía y aún quedan archivos subiendo, se muestra
+            el avance real de la cola; después, el paso ("Guardando…"). */}
+        {progreso && (() => {
+          const enCurso = colaEvidencia.resumen.enCurso + colaPlaca.resumen.enCurso
+          const total = colaEvidencia.resumen.total + colaPlaca.resumen.total
+          const pct = colaEvidencia.resumen.pct
+          const texto = enviando && enCurso > 0 ? mensajeProgresoSubida(total - enCurso, total, pct) : progreso
+          return (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
+              <p className="text-sm text-blue-700 flex items-center gap-2">
+                <span className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+                {texto}
+              </p>
+              {enviando && enCurso > 0 && pct > 0 && pct < 100 && (
+                <div className="mt-2 h-1.5 w-full rounded-full bg-blue-100 overflow-hidden">
+                  <div className="h-full bg-blue-500 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+                </div>
+              )}
+              {puedeRegistrarConLoSubido && enCurso > 0 && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={registrarConLoSubido}
+                    className="w-full bg-white border border-blue-300 text-blue-800 font-semibold py-2.5 px-4 rounded-lg text-sm hover:bg-blue-100"
+                  >
+                    Registrar ya con lo subido ({evidenciasListas} archivo{evidenciasListas === 1 ? '' : 's'})
+                  </button>
+                  <p className="text-[11px] text-blue-700 mt-1">
+                    Si la red está lenta, registra con la placa y las fotos que ya subieron. Lo que falte se quita del envío.
+                  </p>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Submit */}
         <button

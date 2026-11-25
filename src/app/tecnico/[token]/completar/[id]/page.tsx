@@ -11,14 +11,16 @@ import { diasSolucionBono, finDeSemanaTrabajo } from '@/lib/utils/bono-garantia'
 import { estimarPagoTecnicoGarantia } from '@/lib/utils/pago-tecnico'
 import PagoTecnicoBreakdown from '@/components/ui/PagoTecnicoBreakdown'
 import ReceptorServicio from '@/components/tecnico/ReceptorServicio'
-import { inferExtension, videoSizeAdvice, tipoArchivoEvidencia, crearMiniatura, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_IMAGE_SIZE_BYTES, MAX_IMAGE_SIZE_MB, MAX_ARCHIVOS_COMPLETAR } from '@/lib/utils/media'
-import { subirArchivoStorage, ejecutarConLimite, comprimirConLimite, crearAgregadorProgreso, mensajeProgresoSubida } from '@/lib/utils/subida-evidencia'
+import { inferExtension, videoSizeAdvice, tipoArchivoEvidencia, MAX_VIDEO_SIZE_BYTES, MAX_VIDEO_SIZE_MB, MAX_ARCHIVOS_COMPLETAR } from '@/lib/utils/media'
+import { mensajeProgresoSubida } from '@/lib/utils/subida-evidencia'
+import { textoResumenCola } from '@/lib/utils/cola-subida'
+import { useColaSubida } from '@/hooks/useColaSubida'
+import EstadoSubidaOverlay from '@/components/tecnico/EstadoSubidaOverlay'
 import { querySupabase } from '@/lib/utils/retry'
 import { trackError } from '@/lib/utils/track-error'
 import type { ComplejidadServicio } from '@/lib/constants/tarifas/mabe'
 
 /** Límite de tamaño para IMÁGENES (post-compresión, 20 MB desde 2026-10-20). Los videos usan MAX_VIDEO_SIZE_BYTES (50 MB). */
-const MAX_FILE_SIZE = MAX_IMAGE_SIZE_BYTES
 /** Máximo de archivos adjuntables (fotos + videos): 12 desde 2026-10-20 (antes 6). */
 const MAX_ARCHIVOS = MAX_ARCHIVOS_COMPLETAR
 
@@ -68,8 +70,6 @@ export default function CompletarServicioPage() {
   // Texto y % de la subida de archivos (2026-10-24): antes el botón solo decía
   // "Enviando evidencia..." sin importar si llevaba 2 s o 3 min.
   const [progreso, setProgreso] = useState('')
-  const [progresoPct, setProgresoPct] = useState(0)
-  const [preparandoPreviews, setPreparandoPreviews] = useState(false)
   const [exito, setExito] = useState(false)
   const [waSent, setWaSent] = useState<boolean | null>(null)
   const [waFiltered, setWaFiltered] = useState<boolean>(false)
@@ -88,8 +88,14 @@ export default function CompletarServicioPage() {
   // El state se sigue llamando `fotos` por compat con la lógica existente (el
   // payload a evidencias_servicio guarda el array en la columna `fotos: string[]`),
   // pero ahora puede contener videos (placeholder 🎬 en el preview).
-  const [fotos, setFotos] = useState<File[]>([])
-  const [fotoPreviews, setFotoPreviews] = useState<string[]>([])
+  // Evidencia del servicio: cola de subida EN SEGUNDO PLANO (2026-10-29,
+  // src/lib/utils/cola-subida.ts): cada archivo se comprime y sube apenas se
+  // elige; al completar solo se espera lo que falte.
+  const colaFotos = useColaSubida({
+    bucket: 'evidencias-servicio',
+    ruta: (file, n, lote) => `${id}/${lote}_${n}.${inferExtension(file)}`,
+  })
+  const fotos = colaFotos.archivos
   const cameraFotoInputRef = useRef<HTMLInputElement>(null)
   const cameraVideoInputRef = useRef<HTMLInputElement>(null)
   const galeriaInputRef = useRef<HTMLInputElement>(null)
@@ -208,18 +214,21 @@ export default function CompletarServicioPage() {
 
   // Photo / video handling.
   // Acepta image/* y video/* desde los 3 inputs (cámara foto, cámara video, galería).
-  // - Las imágenes se comprimen al hacer submit (no acá) — preserva la foto original
-  //   en memoria para que el técnico pueda quitarla sin haber gastado decode.
-  // - Los videos no se pueden comprimir client-side sin ffmpeg.wasm (~25 MB).
-  //   Si el video supera MAX_VIDEO_SIZE_BYTES lo rechazamos acá con un mensaje accionable.
-  const handlePhotos = async (files: FileList | null) => {
+  // Acá solo se valida tipo, cupo y tamaño de video (no se comprimen client-side
+  // sin ffmpeg.wasm, ~25 MB); la compresión de fotos, la miniatura y la subida
+  // las hace la cola en segundo plano apenas se eligen.
+  const handlePhotos = (files: FileList | null) => {
     if (!files) return
     const slots = MAX_ARCHIVOS - fotos.length
-    if (slots <= 0) return
+    if (slots <= 0) {
+      setError(`Máximo ${MAX_ARCHIVOS} archivos.`)
+      return
+    }
 
     const aceptados: File[] = []
     let advice: string | null = null
-    for (const file of Array.from(files).slice(0, slots)) {
+    let sinCupo = 0
+    for (const file of Array.from(files)) {
       // Clasifica por MIME y, si viene vacío (galería de algunos Android), por
       // extensión — antes esos archivos se descartaban en silencio.
       const tipo = tipoArchivoEvidencia(file)
@@ -228,35 +237,13 @@ export default function CompletarServicioPage() {
         advice = videoSizeAdvice()
         continue
       }
+      if (aceptados.length >= slots) { sinCupo++; continue }
       aceptados.push(file)
     }
 
-    setError(advice) // null si todos pasaron; guía si rechazamos un video grande
-    if (aceptados.length === 0) return
-
-    // Previews: miniatura liviana (320 px) para imágenes — decodificar 10-20
-    // originales de la biblioteca para pintar cuadritos congelaba el celular —
-    // y placeholder 'video' (se renderiza con icono 🎬). Se agregan a las
-    // existentes sin recrear las anteriores.
-    setPreparandoPreviews(true)
-    const nuevasPreviews: string[] = []
-    try {
-      for (const f of aceptados) {
-        nuevasPreviews.push(tipoArchivoEvidencia(f) === 'video' ? 'video' : await crearMiniatura(f))
-      }
-    } finally {
-      setPreparandoPreviews(false)
-    }
-
-    setFotos(prev => [...prev, ...aceptados])
-    setFotoPreviews(prev => [...prev, ...nuevasPreviews])
-  }
-
-  const removePhoto = (idx: number) => {
-    const url = fotoPreviews[idx]
-    if (url && url !== 'video') URL.revokeObjectURL(url)
-    setFotos(fotos.filter((_, i) => i !== idx))
-    setFotoPreviews(fotoPreviews.filter((_, i) => i !== idx))
+    // null si todos pasaron; guía si rechazamos un video grande o se llenó el cupo.
+    setError(advice ?? (sinCupo > 0 ? `Máximo ${MAX_ARCHIVOS} archivos: ${sinCupo} quedaron por fuera.` : null))
+    if (aceptados.length > 0) colaFotos.agregar(aceptados)
   }
 
   // Signature canvas handlers
@@ -314,6 +301,10 @@ export default function CompletarServicioPage() {
       setError('Sube al menos una foto o video del servicio completado')
       return
     }
+    if (colaFotos.resumen.errores > 0) {
+      setError('Hay archivos que no se pudieron subir: toca "Reintentar" sobre cada uno o quítalos antes de completar.')
+      return
+    }
     const checklistItems = [
       checklist.diagnostico_realizado,
       checklist.prueba_encendido,
@@ -329,79 +320,21 @@ export default function CompletarServicioPage() {
     setError(null)
 
     try {
-      // 1. Comprimir imágenes y subir todos los archivos en paralelo.
-      //
-      // Cambios respecto al loop secuencial anterior:
-      //
-      // - Imágenes comprimidas client-side (4000 px máx, JPEG 0.92). Una foto
-      //   iPhone HEIC de 5 MB termina en ~700 KB JPEG, y de paso queda en formato
-      //   que Chrome/Firefox del admin sí decodifican (HEIC no es universal).
-      // - `Promise.all` en vez de `for await`: subir 6 archivos en serie a 4G
-      //   eran 45-90 s; en paralelo el cuello es el ancho de banda, no la latencia.
-      // - Extensión inferida desde `file.type` (vía inferExtension) en vez de
-      //   `file.name.split('.').pop()` — más confiable cuando viene de `capture`.
-      // - Timestamp + random suffix evita colisiones si el técnico hace submit
-      //   dos veces seguidas tras un error de red.
-      // - Para videos no hay compresión client-side (requeriría ffmpeg.wasm).
-      const stamp = Date.now()
-      const rand = Math.random().toString(36).slice(2, 8)
-
-      // 2026-10-24: subida con progreso real, corte por inactividad y
-      // reintentos (subirArchivoStorage), de a 3 archivos a la vez
-      // (ejecutarConLimite) y compresión con tope de tiempo — ver
-      // src/lib/utils/subida-evidencia.ts.
-      const total = fotos.length
-      const agregador = crearAgregadorProgreso(
-        fotos.map(f => f.size),
-        (pct, listos) => {
-          setProgresoPct(pct)
-          setProgreso(mensajeProgresoSubida(listos, total, pct))
-        },
-      )
-      setProgresoPct(0)
-      setProgreso(`Preparando ${total} archivo${total === 1 ? '' : 's'}...`)
-
-      const uploadResults = await ejecutarConLimite(
-        fotos.map((rawFile, i) => async () => {
-          const file = await comprimirConLimite(rawFile)
-          // Defensa post-compresión: si tras comprimir aún excede el límite (caso raro,
-          // ej. un video grande adjuntado), no lo subimos.
-          const esVideo = tipoArchivoEvidencia(file) === 'video'
-          const limite = esVideo ? MAX_VIDEO_SIZE_BYTES : MAX_FILE_SIZE
-          if (file.size > limite) {
-            agregador.terminar(i)
-            return {
-              ok: false as const,
-              idx: i,
-              error: esVideo
-                ? `Archivo ${i + 1}: el video excede ${MAX_VIDEO_SIZE_MB} MB`
-                : `Archivo ${i + 1}: excede ${MAX_IMAGE_SIZE_MB} MB tras compresión`,
-            }
-          }
-          const ext = inferExtension(file)
-          const path = `${servicio.id}/${stamp}_${rand}_${i}.${ext}`
-          try {
-            const { publicUrl } = await subirArchivoStorage('evidencias-servicio', path, file, {
-              onProgreso: p => agregador.reportar(i, p),
-            })
-            agregador.terminar(i)
-            return { ok: true as const, idx: i, url: publicUrl }
-          } catch (e) {
-            agregador.terminar(i)
-            return { ok: false as const, idx: i, error: `Archivo ${i + 1}: ${e instanceof Error ? e.message : 'error al subir'}` }
-          }
-        }),
-      )
-
-      const fotoUrls = uploadResults.flatMap(r => (r.ok ? [r.url] : []))
-      const uploadErrors = uploadResults.flatMap(r => (r.ok ? [] : [r.error]))
+      // 1. Evidencia: la cola la viene subiendo desde que el técnico eligió
+      //    cada archivo (compresión 4000 px / JPEG 0.85, XHR con progreso,
+      //    corte por inactividad y reintentos, de a 3 — ver cola-subida.ts y
+      //    subida-evidencia.ts). Acá solo se espera lo que falte.
+      setProgreso('Terminando de subir la evidencia...')
+      const { urls: fotoUrls, errores } = await colaFotos.esperarTodo()
+      if (errores.length > 0) {
+        throw new Error(
+          `${errores.length} archivo${errores.length === 1 ? '' : 's'} no se pudo${errores.length === 1 ? '' : 'ieron'} subir. Toca "Reintentar" sobre cada uno (o quítalos) y vuelve a completar.`,
+        )
+      }
 
       // Verify at least 1 file uploaded successfully
       if (fotoUrls.length === 0) {
-        const errMsg = uploadErrors.length > 0
-          ? `Error subiendo archivos: ${uploadErrors.join(', ')}`
-          : 'No se pudo subir ningún archivo. Verifica tu conexión.'
-        throw new Error(errMsg)
+        throw new Error('No se pudo subir ningún archivo. Verifica tu conexión.')
       }
 
       setProgreso('Guardando el servicio...')
@@ -514,7 +447,6 @@ export default function CompletarServicioPage() {
 
     setEnviando(false)
     setProgreso('')
-    setProgresoPct(0)
   }
 
   if (cargando) {
@@ -665,24 +597,28 @@ export default function CompletarServicioPage() {
           <p className="text-xs text-gray-400 mb-3">
             Equipo funcionando, placa de serie, repuesto, antes/después (máx {MAX_ARCHIVOS} archivos).
             Graba la prueba de funcionamiento con el botón 🎬; si es larga, súbela en varios clips.
+            Cada archivo se sube solo mientras terminas el formulario.
           </p>
 
           <div className="grid grid-cols-3 gap-2 mb-3">
-            {fotoPreviews.map((src, i) => (
-              <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                {src === 'video' ? (
+            {fotos.map((arch, i) => (
+              <div key={arch.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                {arch.tipo === 'video' ? (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white">
                     <span className="text-2xl mb-0.5">🎬</span>
                     <span className="text-[10px] font-medium">Video</span>
                     <span className="text-[9px] text-gray-300 mt-0.5">
-                      {(fotos[i]?.size / (1024 * 1024)).toFixed(1)} MB
+                      {(arch.file.size / (1024 * 1024)).toFixed(1)} MB
                     </span>
                   </div>
+                ) : arch.preview ? (
+                  <Image src={arch.preview} alt={`Evidencia ${i + 1}`} fill className="object-cover" unoptimized />
                 ) : (
-                  <Image src={src} alt={`Evidencia ${i + 1}`} fill className="object-cover" unoptimized />
+                  <div className="w-full h-full flex items-center justify-center text-xl text-gray-300">📷</div>
                 )}
+                <EstadoSubidaOverlay archivo={arch} onReintentar={colaFotos.reintentar} />
                 <button
-                  onClick={() => removePhoto(i)}
+                  onClick={() => colaFotos.quitar(arch.id)}
                   className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full text-xs flex items-center justify-center"
                 >
                   X
@@ -730,8 +666,12 @@ export default function CompletarServicioPage() {
           )}
 
           <p className="text-[10px] text-gray-400">
-            {preparandoPreviews && <span className="text-slate-700 font-medium">Preparando vistas previas… </span>}
             {fotos.length}/{MAX_ARCHIVOS} archivos · Fotos se comprimen al subir; video máx {MAX_VIDEO_SIZE_MB} MB.
+            {fotos.length > 0 && (
+              <span className={`block mt-0.5 font-medium ${colaFotos.resumen.errores > 0 ? 'text-red-600' : colaFotos.resumen.enCurso > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                {textoResumenCola(colaFotos.resumen)}
+              </span>
+            )}
           </p>
 
           {/* Input cámara foto — capture="environment" abre la cámara trasera en modo foto. */}
@@ -886,20 +826,25 @@ export default function CompletarServicioPage() {
           )
         })()}
 
-        {/* Progreso de la subida */}
-        {enviando && progreso && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3">
-            <p className="text-sm text-blue-700 flex items-center gap-2">
-              <span className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
-              {progreso}
-            </p>
-            {progresoPct > 0 && progresoPct < 100 && (
-              <div className="mt-2 h-1.5 w-full rounded-full bg-blue-100 overflow-hidden">
-                <div className="h-full bg-blue-500 transition-[width] duration-300" style={{ width: `${progresoPct}%` }} />
-              </div>
-            )}
-          </div>
-        )}
+        {/* Progreso: mientras queden archivos subiendo se muestra el avance
+            real de la cola; después, el paso ("Guardando…"). */}
+        {enviando && progreso && (() => {
+          const { enCurso, total, pct } = colaFotos.resumen
+          const texto = enCurso > 0 ? mensajeProgresoSubida(total - enCurso, total, pct) : progreso
+          return (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3">
+              <p className="text-sm text-blue-700 flex items-center gap-2">
+                <span className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+                {texto}
+              </p>
+              {enCurso > 0 && pct > 0 && pct < 100 && (
+                <div className="mt-2 h-1.5 w-full rounded-full bg-blue-100 overflow-hidden">
+                  <div className="h-full bg-blue-500 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Submit */}
         <button

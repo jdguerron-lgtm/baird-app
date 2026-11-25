@@ -200,7 +200,7 @@ Todas en idioma `es`. Categoría `UTILITY` salvo notas.
 - **Destino**: cliente
 - **Body** (4 params): `cliente`, `tecnico`, `horario`, `anticipo`
 - **Botón URL dinámica**: `{APP_URL}/pago/anticipo/{{1}}` con `{{1}} = cliente_token` — display "Pagar anticipo". La página arma el Web Checkout de **Wompi** con el monto exacto de la BD firmado server-side (`src/lib/wompi.ts`).
-- **Propósito**: confirmar la reserva — "el técnico puede atenderte en {horario}; para verificar la reserva genera el pago del anticipo". El monto es dinámico (50% del precio al cliente), por lo que ya aplica también a Mantenimiento/Cambio de filtro.
+- **Propósito**: confirmar la reserva — "el técnico puede atenderte en {horario}; para verificar la reserva genera el pago del anticipo". El monto es dinámico (50% del precio al cliente), por lo que ya aplica también a Mantenimiento/Cambio de filtro. **Desde 2026-10-29 es el ÚNICO momento del cobro del anticipo**: `/solicitar` no ofrece pagar y `/pago/anticipo` rechaza el cobro sin técnico asignado (texto de la plantilla sin cambios).
 
 #### `anticipo_confirmado_cliente_v1` (nueva 2026-08-18 — **en script, pendiente subir a Meta**)
 - **Disparo**: `pagos.service → enviarAnticipoConfirmadoCliente()` cuando Wompi aprueba la transacción del anticipo (webhook `/api/wompi/webhook` o redirect de vuelta — idempotente, se envía UNA vez).

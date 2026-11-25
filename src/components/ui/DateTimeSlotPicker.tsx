@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
-import { formatearFechaLargaCO } from '@/lib/utils/fecha-visita'
+import { formatearFechaLargaCO, DIAS_MINIMOS_RESERVA_CLIENTE } from '@/lib/utils/fecha-visita'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 
 interface DateTimeSlotPickerProps {
@@ -46,10 +46,11 @@ export function DateTimeSlotPicker({ label, value, onChange, error, required }: 
   const franjasLlenas = useFranjasLlenas(selectedDate ? toDateKey(selectedDate) : '')
   const franjasDisponibles = FRANJAS_HORARIO.filter(f => !franjasLlenas.includes(f.value))
 
-  // Min date = tomorrow, max date = today + 30 days
+  // Min date = pasado mañana (DIAS_MINIMOS_RESERVA_CLIENTE, mismo guard que
+  // validarHorarioAgendable en el servidor), max date = today + 30 days
   const minDate = useMemo(() => {
     const d = new Date(today)
-    d.setDate(d.getDate() + 1)
+    d.setDate(d.getDate() + DIAS_MINIMOS_RESERVA_CLIENTE)
     return d
   }, [today])
 

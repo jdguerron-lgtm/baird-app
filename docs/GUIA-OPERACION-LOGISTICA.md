@@ -72,6 +72,7 @@ administrador (ver § 12).
 | 📊 Dashboard | Indicadores generales y accesos rápidos | § 3.3 |
 | 📋 Solicitudes | Lista de todos los servicios y su ficha | § 4 |
 | ⏰ Incumplidos | Visitas que no se atendieron el día reservado | § 7 |
+| 👤 Clientes | Todas las órdenes de un mismo cliente (por teléfono) y órdenes duplicadas | § 4.6 |
 | 🗺️ Mapa | Servicios ubicados en el mapa por fecha de visita | § 3.4 |
 | 💵 Pricing pendiente | Cotizaciones particulares con repuesto que esperan precio del admin | § 5.3 |
 | 🔧 Técnicos | Técnicos registrados, verificación y portal | § 3.4 |
@@ -159,7 +160,8 @@ Bloque **Registros recientes**: los últimos técnicos registrados.
    la primera oferta va solo a él; los reenvíos van a todos.
 4. **Aceptación**: el primer técnico que pulsa "Aceptar" se la queda
    (*Asignada*). El cliente recibe los datos del técnico y, en particular, el
-   link para pagar el anticipo.
+   link para pagar el anticipo — es el **único momento** en que se le cobra
+   el anticipo: antes de tener técnico no paga nada (desde 2026-10-29).
 5. **Visita y diagnóstico**: el técnico registra el diagnóstico desde su
    portal y elige el siguiente paso: reparar, esperar repuesto, no reparable
    o el cliente no quiere reparar.
@@ -271,7 +273,16 @@ Bloques, de arriba hacia abajo:
    celular, tipo o marca de equipo (queda en el historial).
 2. **Equipo y servicio**: tipo de equipo, marca, tipo de solicitud, problema
    reportado, si es **Garantía** y el **N° de orden / garantía MABE**.
-3. **💰 Cuentas del servicio**: en garantía, arriba una tira de chips con los
+3. **📄 Cotización enviada al cliente** (solo particular): lo mismo que el
+   cliente vio en su página de cotización — fecha de envío, si la **aprobó**,
+   la **rechazó** (con el motivo) o sigue **esperando respuesta**, el desglose
+   (visita de diagnóstico + servicio, o total todo incluido), los repuestos
+   incluidos, el tiempo de entrega, las recomendaciones y el diagnóstico que
+   leyó. Si el admin cambió el valor después, aparece el valor anterior, el
+   nuevo y el motivo. El link **Ver la página que ve el cliente ↗** abre su
+   cotización tal cual. Si el precio aún no se ha fijado, dice que **no se ha
+   enviado**.
+   Debajo, **💰 Cuentas del servicio**: en garantía, arriba una tira de chips con los
    factores del bono — **⏱️ TA** (horas entre el horario confirmado y el
    diagnóstico; límite 24 h), **📅 días de solución** (brutos, pausa y netos,
    con la fila de la tabla MABE que aplica), **📦 pausa por repuesto** (desde el
@@ -360,6 +371,60 @@ Bloques, de arriba hacia abajo:
 3. En particular: etiqueta de etapa de pago (¿pagó el anticipo?).
 4. Historial: último evento y cualquier ⚠️.
 5. Notas y llamadas: qué ya se habló con el cliente.
+
+### 4.6 Clientes y órdenes duplicadas (`/admin/clientes`)
+
+A veces el mismo cliente queda con **dos órdenes para el mismo equipo**: la
+marca reenvía la orden o saca un número nuevo porque se demoró el agendamiento,
+o el cliente vuelve a llenar el formulario. Si nadie lo nota, a los técnicos les
+llega una oferta repetida y el cliente recibe mensajes de dos servicios.
+
+**Cómo se identifica al cliente:** por su **número de celular**. Un **posible
+duplicado** es:
+
+- otra orden **abierta** del mismo celular y el **mismo tipo de equipo**, o
+- otra orden con el **mismo número de orden / serie** (abierta, o cerrada hace
+  30 días o menos).
+
+Las órdenes de **equipos distintos** del mismo cliente (lavadora + nevera) **no**
+se marcan: son servicios legítimos.
+
+**Dónde lo ves:**
+
+- **👤 Clientes** en el menú: una fila por cliente con sus órdenes totales,
+  cuántas siguen abiertas y el aviso 🔁 si hay posibles duplicados. Arriba están
+  los filtros *Posibles duplicados* (el que sale por defecto), *Con varias
+  órdenes* y *Todos*, la ventana de fechas y un buscador por nombre o celular.
+  Haz clic en una fila para ver todas las órdenes del cliente, de la más nueva a
+  la más vieja, con estado, técnico, número de orden, visita y pagos.
+- **Lista de solicitudes:** debajo del celular aparece la etiqueta
+  **🔁 Posible duplicado**, que lleva a la página del cliente. Solo compara las
+  filas que estás viendo; si filtraste por estado, revisa en Clientes.
+- **Ficha de la solicitud:** un recuadro amarillo arriba avisa *Posible
+  duplicado* con el botón **Ver órdenes del cliente**.
+
+**Cómo cancelar el duplicado [solo admin]:**
+
+1. Decide cuál orden **sigue**: casi siempre la que va más avanzada (tiene
+   técnico, horario o diagnóstico). Cancela la que sobra.
+2. En la orden que sobra pulsa **Cancelar como duplicado**, elige en *¿Cuál orden
+   se conserva?* la que sigue y, si quieres, escribe una nota (p. ej. "MABE
+   reenvió la orden con número nuevo").
+3. Confirma. La orden queda **Cancelada** con el motivo *Duplicado de la orden
+   #…*, y en el historial queda quién lo hizo.
+
+Qué pasa al cancelar:
+
+- **El cliente no recibe ningún mensaje** (su otra orden sigue normal).
+- Si la orden duplicada tenía técnico, **le llega un WhatsApp** diciendo que no
+  vaya a esa visita. Si no le llega, porque la ventana de 24 h está cerrada,
+  llámalo.
+- Las ofertas abiertas a técnicos de esa orden **se anulan**.
+- Los supervisores reciben el cambio de estado como cualquier cancelación.
+
+No se puede cancelar como duplicado una orden que **ya tiene un pago** (primero
+se devuelve, § 8.4) ni una que ya está **en proceso o cerrada**. Para esos casos
+usa el cambio manual de estado de la ficha.
 
 ---
 
@@ -545,7 +610,7 @@ pedirle que lo registre desde su portal.
 
 | Etapa | Cuándo se cobra | Cuánto | Qué pasa al pagar |
 |---|---|---|---|
-| **Anticipo** | Cuando el técnico acepta (link por WhatsApp; también desde la pantalla de éxito del formulario) | 50 % del valor del diagnóstico | Confirma la reserva; cliente y técnico reciben aviso |
+| **Anticipo** | **Solo cuando un técnico acepta** (link por WhatsApp). Al enviar la solicitud el cliente no paga nada; si abre el link de pago sin técnico asignado ve "Aún no tienes técnico asignado" | 50 % del valor del servicio (diagnóstico, mantenimiento o cambio de filtro) | Confirma la reserva; cliente y técnico reciben aviso |
 | **Abono de repuestos** | Cuando el cliente aprueba una cotización **con** repuestos | 50 % del saldo | El técnico recibe aviso de que puede comprar los repuestos |
 | **Saldo** | Cuando aprueba una cotización **sin** repuestos, o al completar el servicio (o cuando el admin fija el cobro final) | Total − lo ya pagado (− descuento si tiene código) | Cliente y técnico reciben aviso; el técnico sabe que no debe cobrar nada en sitio |
 
@@ -554,6 +619,12 @@ cobro: sin cobro → anticipo pendiente → anticipo pagado → abono pendiente 
 abono pagado → saldo pendiente → pagado total; también "sin pago online" y
 "pago parcial · cerrado". Solo refleja pagos **online por Wompi**: un pago en
 sitio con QR o transferencia no aparece.
+
+En la ficha, debajo de la etiqueta, salen los **pasos del cobro** (Anticipo →
+Abono repuestos → Saldo), cada uno con su monto: lo ya pagado, el cobro con
+link enviado, o el valor estimado (≈) de los cobros que aún no salen y cuándo
+se cobran. El paso del abono aparece desde que la cotización enviada lleva
+repuestos, aunque el cliente todavía no la apruebe.
 
 Los **códigos de descuento** (§ 8.5) se restan únicamente en el saldo final.
 
@@ -570,6 +641,16 @@ pulsa este botón (opcionalmente pega el **N° de transacción** que sale en el
 comprobante de Wompi). Consulta Wompi y registra el pago si corresponde a este
 servicio. Es seguro repetirlo. Además, un proceso automático cada 5 minutos
 revisa en Wompi los cobros pendientes de los servicios abiertos.
+
+**💬 Cobrar faltante por WhatsApp ($…)** (solo admin, servicios particulares):
+aparece siempre que al cliente le falte pagar algo, en cualquier etapa: el
+anticipo de la reserva, el abono de repuestos o el saldo (lo que falte del
+total). Le reenvía por WhatsApp el link de pago Wompi por el monto que muestra
+el botón (ya descuenta lo pagado y el código de descuento). No aparece si ya
+pagó todo, si el servicio se canceló o si aún no hay valor (diagnóstico sin
+cotización con el anticipo ya pagado). No cambia el valor del servicio — para
+fijar otro valor usa **Cobro final del servicio**. Queda registrado en el
+historial.
 
 ### 8.3 Cuándo devolver un pago
 
@@ -814,7 +895,28 @@ motivo. No envía WhatsApp a cliente ni técnico, así que después hay que
 avisarles a mano si corresponde. Un servicio con técnico asignado **nunca**
 se devuelve a *Notificada* (dejaría al técnico sin ver el servicio).
 
-### 11.7 A quién escalar
+### 11.7 El técnico dice que no puede subir fotos o videos
+
+Desde 2026-10-29 la evidencia de Diagnóstico y Completar se sube **sola
+apenas el técnico elige cada archivo** (cámara o galería), mientras termina el
+formulario. Cada foto muestra ✓ al quedar lista, una barra mientras sube y, si
+falla, un botón **Reintentar**. Con eso en mente:
+
+- Pedirle una **captura de la pantalla**: si hay archivos en rojo, que toque
+  Reintentar o los quite; el formulario no se envía con archivos en error.
+- "Se queda en Subiendo": señal débil. Que no cierre la página (pierde lo no
+  enviado) y espere; la subida reintenta sola y, en videos, retoma desde donde
+  iba si la conexión se cae.
+- Video rechazado "supera 50 MB": que lo grabe en 1080p y en clips más cortos.
+  El tope es el del proyecto en Supabase; lo sube el admin cuando haga falta.
+- Fotos de la galería lentas en Android: ya está corregido (se reducen antes
+  de procesarlas). Si persiste, que tome la foto desde la cámara del
+  formulario y que el admin revise el modelo de celular.
+- Si subió todo pero "no aparece en la ficha": la evidencia solo entra a la
+  ficha cuando **envía** el diagnóstico o el cierre. Que vuelva a entrar al
+  formulario y envíe.
+
+### 11.8 A quién escalar
 
 | Tema | Escalar a |
 |---|---|

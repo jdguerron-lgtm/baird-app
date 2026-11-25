@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import GestionarServicioLink from '@/components/ui/GestionarServicioLink'
-import { fechaColombiaMasDias } from '@/lib/utils/fecha-visita'
+import { fechaColombiaMasDias, fechaMinimaReservaCliente } from '@/lib/utils/fecha-visita'
 import { FRANJAS_HORARIO } from '@/lib/constants/franjas'
 import { useFranjasLlenas } from '@/hooks/useFranjasLlenas'
 
@@ -40,11 +40,11 @@ function formatFechaLarga(iso: string): string {
   return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
-// Mínimo agendable: mañana (nunca el mismo día). Máximo: 2 semanas.
+// Mínimo agendable: pasado mañana (DIAS_MINIMOS_RESERVA_CLIENTE). Máximo: 2 semanas.
 // Se calcula sobre el día calendario en TZ Colombia para no correrse un día
 // por la noche (toISOString sobre hora local devolvía el día UTC siguiente).
 function fechaMinima(): string {
-  return fechaColombiaMasDias(1)
+  return fechaMinimaReservaCliente()
 }
 
 function fechaMaxima(): string {

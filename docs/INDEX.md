@@ -90,7 +90,7 @@
 |---|---|
 | `docs/TEST_CARGA_MASIVA.md` | Procedimiento de test de `/admin/carga-masiva`: Excel BITÁCORA y PDF de órdenes TALLER MABE (§ 7; § 7.1 explica el parser paso a paso y § 7.2 los casos reales corregidos, último 2026-10-09). ⚠️ El cuerpo (estado inicial, teléfono, duplicados) está desactualizado — tanda 3. |
 | `docs/pagos-tecnico.pdf` | Guía de pagos al técnico (PDF que se comparte por WhatsApp). La versión web es `public/guia-pagos.html`. |
-| `docs/flujos-servicio.html` | Mockup visual antiguo del flujo. No es referencia técnica. |
+| `docs/historico/flujos-servicio.html` | Mockup visual antiguo del flujo (tarifas de 2026-04, $80.000). Movido a `historico/` el 2026-10-29. No es referencia técnica. |
 | `legal/*.docx` | Borradores legales originales (2026-04-13). ⚠️ **Desactualizados desde 2026-10-09**: la fuente vigente son `/terminos`, `/politica-privacidad` y `/contrato-tecnico` (código en `src/app/*/page.tsx`, datos en `src/lib/constants/legal.ts`). Ver `legal/README.md`. |
 
 ### Backlog de mejoras futuras (ideas en discusión, aún no implementadas)
@@ -110,7 +110,7 @@
 | [`docs/mejoras-futuras/migracion-dominio/`](mejoras-futuras/migracion-dominio/README.md) | Migración del app a `lineablanca.bairdservice.com`. Runbook + rollback documentado. | 2026-05-23 |
 | [`docs/mejoras-futuras/mapa-admin/`](mejoras-futuras/mapa-admin/README.md) | Mapa admin de servicios geolocalizados en `/admin/mapa`. Pipeline geocoding + 9 mejoras UI. Fase 2 (GPS en vivo, heatmap, rutas) diferida. | 2026-05-23 |
 | [`docs/mejoras-futuras/supervisores-y-repuesto-recibido/`](mejoras-futuras/supervisores-y-repuesto-recibido/plan-despliegue-2026-05-29.md) | Supervisores con avisos WhatsApp por cambio de estado + estado `repuesto_recibido` + botón "pedir repuesto a supervisores". Desplegado en iteraciones sucesivas. | 2026-05-29 → 06-16 |
-| [`docs/mejoras-futuras/pagos-shopify/`](mejoras-futuras/pagos-shopify/README.md) | **ARCHIVADO 2026-08-18** — superseded por Wompi como pasarela única (`docs/WOMPI.md`). Shopify queda solo para repuestos. ⚠️ El CTA de anticipo Shopify en `/solicitar` sigue en el código (decisión pendiente, tanda 2). | archivado |
+| [`docs/mejoras-futuras/pagos-shopify/`](mejoras-futuras/pagos-shopify/README.md) | **ARCHIVADO 2026-08-18** — superseded por Wompi como pasarela única (`docs/WOMPI.md`). Shopify queda solo para repuestos. El CTA de anticipo de `/solicitar` (Shopify y luego Wompi) se retiró el 2026-10-29: el anticipo se cobra solo con técnico asignado. | archivado |
 
 ### Documentación deprecated (no actualizar)
 

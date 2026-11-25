@@ -28,9 +28,9 @@ describe('media — límites de evidencia (2026-10-24)', () => {
     expect(MAX_IMAGE_SIZE_MB).toBe(20)
   })
 
-  it('más archivos por formulario: 20 diagnóstico, 20 completar, 30 admin', () => {
-    expect(MAX_EVIDENCIAS_DIAGNOSTICO).toBe(20)
-    expect(MAX_ARCHIVOS_COMPLETAR).toBe(20)
+  it('más archivos por formulario: 30 diagnóstico, 30 completar, 30 admin (2026-10-29, env NEXT_PUBLIC_EVIDENCIA_MAX_ARCHIVOS)', () => {
+    expect(MAX_EVIDENCIAS_DIAGNOSTICO).toBe(30)
+    expect(MAX_ARCHIVOS_COMPLETAR).toBe(30)
     expect(MAX_ARCHIVOS_EVIDENCIA_ADMIN).toBe(30)
   })
 
@@ -41,9 +41,9 @@ describe('media — límites de evidencia (2026-10-24)', () => {
     expect(segundosVideoAprox(5)).toBe(10)
   })
 
-  it('fotos a mayor resolución: 4000 px / JPEG 0.92', () => {
+  it('fotos a 4000 px / JPEG 0.85 (2026-10-29: menos bytes por foto, misma legibilidad)', () => {
     expect(EVIDENCIA_MAX_DIMENSION).toBe(4000)
-    expect(EVIDENCIA_JPEG_QUALITY).toBe(0.92)
+    expect(EVIDENCIA_JPEG_QUALITY).toBe(0.85)
   })
 })
 

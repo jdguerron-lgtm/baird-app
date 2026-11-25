@@ -1,7 +1,14 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { ESTADOS_TERMINALES } from '@/lib/constants/estados'
-import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA } from '@/lib/constants/franjas'
-import { parsearFechaVisita, fechaColombiaYMD, fechaColombiaMasDias, validarFechaVisita } from '@/lib/utils/fecha-visita'
+import { FRANJAS_HORARIO, MAX_RESERVAS_POR_FRANJA, MAX_SERVICIOS_TECNICO_POR_FRANJA, fechaCerradaAReservas } from '@/lib/constants/franjas'
+import {
+  parsearFechaVisita,
+  fechaColombiaYMD,
+  fechaColombiaMasDias,
+  validarFechaVisita,
+  formatearFechaLargaCO,
+  DIAS_MINIMOS_RESERVA_CLIENTE,
+} from '@/lib/utils/fecha-visita'
 import { slotDesdeFechaVisita } from '@/lib/utils/agenda-slots'
 
 /**
@@ -60,7 +67,10 @@ export type ValidacionAgenda =
  *      (salvo el cruce diciembre → enero), así que una opción vencida del
  *      cliente ("29 de agosto" aceptada en septiembre, orden 9415568723) se
  *      rechaza aquí en vez de quedar agendada un año después.
- *   2. La fecha debe ser a partir de MAÑANA (TZ Colombia) — no mismo día.
+ *   2. Anticipación mínima (TZ Colombia): por defecto
+ *      DIAS_MINIMOS_RESERVA_CLIENTE (2 = desde pasado mañana, 2026-10-27) para
+ *      todo lo que elige el cliente; la aceptación del técnico pasa
+ *      `diasMinimos: 1` (una opción del cliente puede haber quedado para mañana).
  *   3. El slot (día + franja) debe tener cupo (< MAX_RESERVAS_POR_FRANJA).
  *
  * Texto no parseable (sugerencias libres del formulario) → ok con
@@ -72,16 +82,29 @@ export type ValidacionAgenda =
 export async function validarHorarioAgendable(
   horarioTexto: string,
   excluirSolicitudId?: string,
+  opts: { diasMinimos?: number } = {},
 ): Promise<ValidacionAgenda> {
   const fechaVisitaAt = parsearFechaVisita(horarioTexto)
   if (!fechaVisitaAt) return { ok: true, fechaVisitaAt: null }
 
   const fecha = validarFechaVisita(fechaVisitaAt)
   if (!fecha.ok) return { ok: false, error: fecha.error }
-  if (fechaColombiaYMD(new Date(fechaVisitaAt)) < fechaColombiaMasDias(1)) {
+  const diasMinimos = opts.diasMinimos ?? DIAS_MINIMOS_RESERVA_CLIENTE
+  if (fechaColombiaYMD(new Date(fechaVisitaAt)) < fechaColombiaMasDias(diasMinimos)) {
     return {
       ok: false,
-      error: 'Por ahora no agendamos para el mismo día. Elige una fecha a partir de mañana.',
+      error: diasMinimos >= 2
+        ? `Necesitamos al menos ${diasMinimos} días de anticipación para organizar la visita. Elige una fecha a partir del ${formatearFechaLargaCO(fechaColombiaMasDias(diasMinimos))}.`
+        : 'Por ahora no agendamos para el mismo día. Elige una fecha a partir de mañana.',
+    }
+  }
+
+  // Día cerrado a reservas nuevas (FECHAS_SIN_RESERVAS_NUEVAS): lo ya agendado
+  // ese día se mantiene, pero no entra nada nuevo.
+  if (fechaCerradaAReservas(fechaColombiaYMD(new Date(fechaVisitaAt)))) {
+    return {
+      ok: false,
+      error: 'Ese día ya no tiene cupo para nuevas visitas. Por favor elige otro día.',
     }
   }
 
@@ -205,6 +228,9 @@ export function materializarFechaVisita(fechaYMD: string, franjaValue: string): 
  * devuelve [] (fail-open — el guard real es validarHorarioAgendable).
  */
 export async function franjasLlenasParaFecha(fechaYMD: string): Promise<string[]> {
+  // Día cerrado a reservas nuevas → todas las franjas se muestran llenas.
+  if (fechaCerradaAReservas(fechaYMD)) return FRANJAS_HORARIO.map(f => f.value)
+
   const slots = FRANJAS_HORARIO.map(f => ({ value: f.value, iso: isoDeSlot(fechaYMD, f.horaInicio) }))
 
   const { data, error } = await supabase

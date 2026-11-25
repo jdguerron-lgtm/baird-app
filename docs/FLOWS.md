@@ -91,7 +91,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ POST /api/confirmar-horario { token, horario }                           │
 │                                                                           │
 │ Validación de agenda (agenda.service, 2026-06-12):                       │
-│  - Mínimo MAÑANA (TZ Colombia) — no se agenda para el mismo día.         │
+│  - Mínimo PASADO MAÑANA (TZ Colombia, desde 2026-10-27) — ni hoy ni mañana.│
 │  - Cupo por slot (día + franja): máx MAX_RESERVAS_POR_FRANJA (3)         │
 │    reservas activas. La UI desactiva franjas llenas vía                  │
 │    GET /api/disponibilidad-horario; el rechazo real es server-side.      │
@@ -129,7 +129,7 @@ La marca (Mabe/GE) paga a Baird vía tarifa por código de complejidad. El clien
 │ propuestos por el cliente (horario_visita_1/2 + el ya confirmado; se     │
 │ ocultan opciones con fecha pasada). Solo se admite un valor de ese       │
 │ conjunto — nunca texto arbitrario. Si elige uno ≠ al confirmado:         │
-│   - validarHorarioAgendable (cupo franja + mínimo mañana); si falla →    │
+│   - validarHorarioAgendable (cupo franja + mín. pasado mañana); si falla →    │
 │     { ganado:false, reintentar:true } SIN asignar (la UI vuelve a idle   │
 │     para escoger el otro horario)                                        │
 │   - si pasa → el mismo UPDATE atómico también setea horario_confirmado,  │
@@ -444,10 +444,11 @@ Ver [docs/TARIFAS.md § "Particular"](./TARIFAS.md#particular-post-garantía-mul
 │ Al cliente:                                                              │
 │ 📩 → CLIENTE: tecnico_asignado_particular_v1                             │
 │   Body: cliente, técnico, equipo, horario, tel, tarifa, anticipo         │
-│ 📩 → CLIENTE: pago_anticipo_cliente_v1 (2026-07-21, solo Diagnóstico/    │
-│   Reparación) — botón "Pagar anticipo" a la tienda Shopify ($42.000).    │
-│   Cierra el gap: antes el link de pago solo vivía en la pantalla de      │
-│   éxito de /solicitar.                                                   │
+│ 📩 → CLIENTE: pago_anticipo_cliente_v2 (Wompi, todo particular) — botón  │
+│   "Pagar anticipo" → /pago/anticipo/{cliente_token}. ÚNICO momento del   │
+│   cobro del anticipo desde 2026-10-29: solo con técnico asignado (la     │
+│   pantalla de éxito de /solicitar ya no ofrece pagar y /pago/anticipo    │
+│   rechaza sin tecnico_asignado_id). Fallback v1 (tienda) si v2 falla.    │
 │ 📷🪪 → CLIENTE: fotos del técnico (mismo caveat 24h)                     │
 └──────────────────────────────────────────────────────────────────────────┘
                                   │
@@ -812,7 +813,7 @@ Idioma: `es`. WABA ID `2354953275016882`. Phone `+57 313 4951164`.
 | `servicio_asignado_tecnico_v4` | procesarAceptacion — ganador | Técnico ganador |
 | `tecnico_asignado_cliente_v6` | procesarAceptacion (warranty) | Cliente |
 | `tecnico_asignado_particular_v1` | procesarAceptacion (particular) | Cliente |
-| `pago_anticipo_cliente_v1` ⏳ | procesarAceptacion (particular, Diagnóstico/Reparación) — botón a la tienda | Cliente |
+| `pago_anticipo_cliente_v2` | procesarAceptacion / avisarAsignacionTecnico (particular) — botón a `/pago/anticipo/{token}`; solo con técnico asignado (2026-10-29). `pago_anticipo_cliente_v1` queda como fallback | Cliente |
 | `solicitud_particular_cliente_v1` | (legacy — verificar uso) | Cliente |
 | `registro_bienvenida_v3` | notificarRegistroTecnico | Técnico recién registrado |
 
