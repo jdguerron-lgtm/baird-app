@@ -8,7 +8,8 @@
 ## Verificación
 
 - [ ] CI en verde (`tsc`, `lint`, `test`).
-- [ ] Probado en la **preview de Vercel contra staging** (URL: …). Flujos recorridos: …
+- [ ] **E2E contra staging en verde** (`npm run e2e`, `docs/FLUJO-DESARROLLO.md` § 5.4) — obligatorio en código, BD y dependencias. Resumen: …/32
+- [ ] Probado en la preview de Vercel (URL: …). Flujos recorridos: …
 - [ ] Si toca UI del técnico/cliente: probado en móvil (ancho ~400 px).
 
 ## Base de datos

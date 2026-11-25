@@ -12,6 +12,11 @@ aquí escribe en producción**: a prod solo se le hace `pg_dump --schema-only` y
 | `01-storage-buckets-y-policies.sql` | Crea los 4 buckets y las 9 policies de `storage.objects` tal como están en prod (2026-10-24). `pg_dump --schema=public` no las incluye. | Staging (SQL Editor o MCP `apply_migration`) |
 | `02-inventario-schema.sql` | Lista tablas, columnas, constraints, índices, policies, triggers y funciones en un formato estable para hacer `diff` entre prod y staging. | Prod (solo lectura) y staging |
 | `03-seed-anonimizado.mjs` | Copia a staging las últimas N solicitudes con sus satélites, todos los técnicos y los supervisores, reemplazando PII y tokens. Se niega a escribir si el destino es prod. | Local, desde el repo (`node --env-file=…`) |
+| `04-huella-schema.sql` | Huella (md5 + conteo) de 11 categorías del schema. Si las 11 filas coinciden entre prod y staging, la estructura es idéntica. | Prod (solo lectura) y staging |
+| `entrar.mjs` (`npm run staging:entrar`) | Imprime los links para entrar a mano a la app sobre staging: link de clave del panel admin, portal del técnico, del supervisor, del cliente y una ficha por estado. Se niega si la base no es staging. | Local, desde un worktree con `.env.local` de staging |
+
+Cómo entrar y qué se puede probar: `docs/FLUJO-DESARROLLO.md` § 1.1. Procedimiento para cambios de
+estructura: § 5.5 del mismo doc.
 
 ## 1. Crear el proyecto
 
@@ -147,3 +152,64 @@ para reproducir producción cuando haga falta (ver `docs/FLUJO-DESARROLLO.md` §
 - Re-seed cuando los datos de prueba queden viejos: el script es idempotente.
 - Si staging se desalinea más de la cuenta, se repite § 2–3 (el proyecto se puede
   resetear desde el dashboard sin costo).
+
+## 9. Variante sin costo: staging local con Docker
+
+Mientras no se decida el plan de Supabase (`docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md` § 4.1),
+se puede tener la misma base en el PC. Sirve para local y para probar migraciones y RLS;
+**no** sirve para las previews de Vercel (no pueden llegar a `localhost`).
+
+1. Instalar Docker Desktop (con WSL 2) y dejarlo abierto:
+   ```bash
+   winget install -e --id Docker.DockerDesktop
+   ```
+2. Inicializar y levantar Supabase local (crea `supabase/config.toml`; la primera vez descarga ~2 GB de imágenes):
+   ```bash
+   npx supabase init
+   npx supabase start
+   ```
+   La salida muestra `API URL` (`http://127.0.0.1:54321`), `anon key`, `service_role key` y `DB URL` (`postgresql://postgres:postgres@127.0.0.1:54322/postgres`).
+3. Schema de producción (§ 2) y Storage (§ 3) sobre la base local:
+   ```bash
+   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f schema-prod-<fecha>.sql
+   psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f scripts/staging/01-storage-buckets-y-policies.sql
+   ```
+4. Seed anonimizado (§ 5) con `STAGING_SUPABASE_URL=http://127.0.0.1:54321` y la `service_role key` local.
+5. `.env.local` → API URL y keys locales; `BAIRD_TEST_PHONE_WHITELIST` con tu celular; Wompi `pub_test_`.
+6. Para apagar: `npx supabase stop` (los datos quedan en volúmenes de Docker; `--no-backup` los borra).
+
+Cuando exista `baird-staging` en la nube, este mismo flujo aplica cambiando las URLs y keys.
+
+## 10. Arranque con Supabase Pro — runbook exacto (preparado y ensayado el 2026-10-24)
+
+> **Estado (2026-10-26): EJECUTADO.** `baird-staging` = `etsbzxnthpmyvuodrmrh` (us-east-1, 10 USD/mes).
+> Pasos 1–6 y 8 hechos: estructura en 5 migraciones `ddl_staging_desde_prod_0*`, Storage, Vault `cron_secret`
+> propio, **11/11 huellas iguales a prod** (`04-huella-schema.sql`), seed anonimizado (672 filas, 0 PII en la
+> auditoría SQL) y secuencias ajustadas. Pendientes del dueño: paso 7 (apagar signups en Auth de staging) y
+> paso 9 (variables de Preview en Vercel). E2E: `docs/FLUJO-DESARROLLO.md` § 5.4 → 32/32.
+
+Todo lo que se pudo probar sin el proyecto ya está probado contra producción con ensayos que se deshacen solos:
+
+| Pieza | Ensayo | Resultado |
+|---|---|---|
+| `00-generar-ddl.sql` | Aplicado en un schema temporal `ddl_test` dentro de un bloque que termina en `RAISE EXCEPTION` | **255 sentencias, 0 fallos, 20 tablas**; sin rastro después |
+| `01-storage-buckets-y-policies.sql` | `create/drop policy` en `storage.objects` como `postgres` | Permitido (no hace falta el dashboard) |
+| `03-seed-anonimizado.mjs --dry` | Lectura de prod + anonimización en memoria | 657 filas, **0 fugas** (teléfonos, correos, URLs de Storage); nada escrito |
+
+Con eso, una vez la organización esté en Pro, el arranque es:
+
+| # | Paso | Quién | Toca prod |
+|---|---|---|---|
+| 1 | `get_cost` del proyecto nuevo en la org → **confirmar el monto con el dueño** → `create_project` `baird-staging`, región `us-east-1` | Claude (con OK del dueño) | No |
+| 2 | Esperar `ACTIVE_HEALTHY` | Claude | No |
+| 3 | Correr `00-generar-ddl.sql` en **prod** (solo lectura) y aplicar su salida, fase por fase, en **staging** con `apply_migration` (`ddl_staging_desde_prod_<fecha>`) | Claude | Solo lectura |
+| 4 | `01-storage-buckets-y-policies.sql` en staging | Claude | No |
+| 5 | `02-inventario-schema.sql` en prod y en staging → **diff vacío** en tablas, columnas, constraints, índices, policies, triggers y funciones | Claude | Solo lectura |
+| 6 | Vault de staging: `select vault.create_secret(encode(gen_random_bytes(32), 'hex'), 'cron_secret');` (nadie ve el valor; el dueño lo revela luego en el dashboard para Vercel Preview) | Claude | No |
+| 7 | Auth de staging: apagar *Allow new users to sign up*; crear la cuenta admin con `scripts/crear-usuario-panel.mjs` apuntando a staging | Dueño (toggle) + Claude | No |
+| 8 | `.env.staging-seed` (fuera de git) con `STAGING_SUPABASE_URL` y `STAGING_SERVICE_ROLE_KEY` de staging → `node --env-file=.env.local --env-file=.env.staging-seed scripts/staging/03-seed-anonimizado.mjs --confirmo-staging` | Dueño (copia la key) + Claude (corre) | Solo lectura |
+| 9 | Vercel → Environment Variables con **solo Preview** marcado (tabla del § 6) | Dueño | No |
+| 10 | Push de una rama de prueba → preview contra staging → `npm run smoke -- <url-preview> --bypass=<token>` y recorrido de los flujos de `docs/FLOWS.md` | Claude | No |
+| 11 | `.env.local` del repo de trabajo → staging (la réplica `baird-app-main` sigue en prod) | Dueño | No |
+
+**Con Pro, en producción** (no dependen de staging): backups diarios con 7 días de retención quedan activos solos; activar *Leaked password protection* en Auth → Settings (toggle del dueño); evaluar subir el tope de archivos de Storage para videos (`NEXT_PUBLIC_EVIDENCIA_VIDEO_MAX_MB`, ver `docs/GOTCHAS.md`).

@@ -1,0 +1,94 @@
+# Smoke automático después de cada deploy de producción — docs/FLUJO-DESARROLLO.md § 6.4.
+#
+# Cuando Vercel termina un deploy de producción (evento `deployment_status` success), corre el smoke
+# de solo lectura contra el dominio real con 2 reintentos espaciados 30 s (un cold start no debe dar
+# falsa alarma). Si sigue fallando: abre un issue con el resultado y el paso de rollback, y el job
+# queda en rojo. No hace rollback solo: la decisión es humana (Vercel → Deployments → Instant Rollback).
+name: Post-deploy producción
+
+on: deployment_status
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: post-deploy-${{ github.event.deployment.sha }}
+  cancel-in-progress: false
+
+jobs:
+  smoke-produccion:
+    name: smoke-produccion
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      (contains(github.event.deployment.environment, 'Production') || contains(github.event.deployment.environment, 'production'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # smoke.mjs solo usa fetch nativo: no hace falta npm ci.
+      - name: Smoke de producción (3 intentos)
+        id: smoke
+        run: |
+          for intento in 1 2 3; do
+            if node scripts/smoke.mjs https://lineablanca.bairdservice.com --json > smoke.json; then
+              echo "✅ Smoke OK en el intento $intento"
+              exit 0
+            fi
+            echo "⚠️ Intento $intento falló"
+            [ "$intento" -lt 3 ] && sleep 30
+          done
+          exit 1
+
+      - name: Guardar resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-produccion-${{ github.event.deployment.sha }}
+          path: smoke.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Abrir issue de alerta
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: actions/github-script@v7
+        env:
+          DEPLOY_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+        with:
+          script: |
+            const fs = require('fs')
+            let detalle = 'Sin smoke.json'
+            try {
+              const r = JSON.parse(fs.readFileSync('smoke.json', 'utf8'))
+              detalle = r.resultados.map(x => `${x.ok ? '✅' : '❌'} ${x.nombre} — ${x.detalle}`).join('\n')
+            } catch {}
+            const sha = context.payload.deployment.sha
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Smoke de producción falló tras deploy ${sha.slice(0, 7)}`,
+              body: [
+                `El smoke de producción falló 3 veces seguidas después del deploy de \`${sha}\`.`,
+                `Deploy: ${process.env.DEPLOY_URL}`,
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '### Resultado',
+                '```',
+                detalle,
+                '```',
+                '',
+                '### Qué hacer (rollback primero, diagnóstico después)',
+                '1. Vercel → proyecto baird-app → Deployments → deploy anterior → **Instant Rollback**.',
+                '2. Verificar: `node scripts/smoke.mjs` en verde.',
+                '3. Diagnosticar fuera de producción (staging / `npm run e2e`) y revertir el merge con `git revert -m 1 <sha>` en un PR.',
+                '',
+                'Protocolo completo: docs/FLUJO-DESARROLLO.md § 6–8.',
+              ].join('\n'),
+            })

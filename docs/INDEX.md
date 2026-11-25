@@ -28,7 +28,7 @@
 | **Levantar o usar el ambiente de pruebas (staging), evaluar el impacto de un cambio crítico, elegir la ventana horaria o aplicar las reglas de paso a producción** | `docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md` + `scripts/staging/README.md` | § 2 ventana · § 3 fichas por cambio · § 5 reglas |
 | **Entender RLS y storage** | `docs/SUPABASE.md` § "Supabase Architecture" + **`docs/PLAN-RLS.md`** (fases + bitácora: qué está cerrado y qué falta) |
 | **Elegir el cliente Supabase correcto** (anon vs service_role) | `docs/GOTCHAS.md` (primer ítem) + `docs/SUPABASE.md` § "Dos clientes" |
-| **Probar un cambio en local, hacer un respaldo o desplegar a producción** | `docs/FLUJO-DESARROLLO.md` | Todo |
+| **Probar un cambio en local, hacer un respaldo o desplegar a producción** (carril por tipo de cambio, pruebas, go/no-go, monitoreo, rollback, incidentes) | `docs/FLUJO-DESARROLLO.md` | § 3 carriles · § 5 pruebas · § 6 despliegue · § 7 rollback |
 | **Saber qué env vars necesita** | `CLAUDE.md` § "Environment Variables" |
 | **Entender por qué un técnico sí/no recibe una oferta** (matching ciudad/especialidad) | `docs/GOTCHAS.md` § Matching + `src/lib/utils/format.ts` (`normalizeForMatch`, `cityTokenForMatch`) + panel "Diagnóstico de matching" en `/admin/solicitudes/[id]` |
 | **Ver qué visitas NO se atendieron el día reservado** (incumplidas, atendidas tarde, cumplimiento por técnico) | `/admin/incumplidos` (KPI "Sin atender" en `/admin`) → `GET /api/admin/incumplidos` → `src/lib/services/incumplidos.service.ts` (criterio documentado en el header del archivo) |

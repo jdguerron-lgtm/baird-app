@@ -50,7 +50,7 @@ src/
 │       ├── repuesto-recibido/      # Admin marks parts arrived → estado repuesto_recibido
 │       ├── reprogramar-repuesto/   # Public (token): customer picks new tentative date → en_proceso
 │       ├── gps-ping/               # Tech browser GPS ping by phase
-│       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup, repuesto reminder)
+│       ├── cron/                   # Scheduled jobs (horario reminder, GPS followup, repuesto reminder, resumen supervisores, agenda técnicos, alerta visitas, oferta escalonada, conciliación Wompi, salud-servicios 7 am: chequeo diario de Supabase/Meta/Wompi/Siigo/Resend/Maps con alerta por WhatsApp — salud-servicios.service.ts)
 │       ├── triaje/                 # Gemini AI diagnosis (disabled)
 │       ├── health/                 # Health check
 │       ├── log-error/              # Client connection-error telemetry (fire-and-forget)

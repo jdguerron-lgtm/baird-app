@@ -46,6 +46,10 @@ jobs:
       - name: Tests (vitest)
         run: npm test
 
+      - name: Build de producción (next build)
+        # Mismo build que hace Vercel; con las env ficticias de arriba no se conecta a nada.
+        run: npm run build
+
       - name: Migraciones nuevas documentadas en supabase/migrations/README.md
         # Aviso (no bloquea): cada .sql agregado o modificado en el PR debe estar
         # listado en el README de migraciones, que hace de historial de aplicación.

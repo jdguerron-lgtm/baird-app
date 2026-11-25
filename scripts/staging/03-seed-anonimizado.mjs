@@ -5,10 +5,14 @@
 // Sobre prod SOLO ejecuta SELECT. Se niega a escribir si el destino es prod.
 //
 // Uso:
-//   node --env-file=.env.staging-seed scripts/staging/03-seed-anonimizado.mjs --confirmo-staging [--solicitudes=40]
+//   # Ensayo: lee prod y anonimiza, NO escribe nada; muestra conteos, auditoría de fugas y una fila de muestra.
+//   node --env-file=.env.local scripts/staging/03-seed-anonimizado.mjs --dry [--solicitudes=40]
+//   # Seed real hacia staging:
+//   node --env-file=.env.local --env-file=.env.staging-seed scripts/staging/03-seed-anonimizado.mjs --confirmo-staging [--solicitudes=40]
 //
 // Env (ver scripts/staging/README.md § 5):
-//   PROD_SUPABASE_URL, PROD_SERVICE_ROLE_KEY, STAGING_SUPABASE_URL, STAGING_SERVICE_ROLE_KEY
+//   PROD_SUPABASE_URL / PROD_SERVICE_ROLE_KEY  (si faltan, usa NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY del .env.local)
+//   STAGING_SUPABASE_URL, STAGING_SERVICE_ROLE_KEY  (solo para el seed real)
 
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
@@ -22,22 +26,26 @@ const args = new Map(process.argv.slice(2).map(a => {
   return [k, v ?? true]
 }))
 const N_SOLICITUDES = Number(args.get('solicitudes') ?? 40)
+const DRY = Boolean(args.get('dry'))
 
-const prodUrl = process.env.PROD_SUPABASE_URL
-const prodKey = process.env.PROD_SERVICE_ROLE_KEY
+const prodUrl = process.env.PROD_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+const prodKey = process.env.PROD_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY
 const stUrl = process.env.STAGING_SUPABASE_URL
 const stKey = process.env.STAGING_SERVICE_ROLE_KEY
 
 function abortar(msg) { console.error(`❌  ${msg}`); process.exit(1) }
 
-if (!args.get('confirmo-staging')) abortar('Falta --confirmo-staging (confirmación explícita de que el destino es staging).')
-if (!prodUrl || !prodKey || !stUrl || !stKey) abortar('Faltan PROD_SUPABASE_URL / PROD_SERVICE_ROLE_KEY / STAGING_SUPABASE_URL / STAGING_SERVICE_ROLE_KEY.')
-if (stUrl.replace(/\/$/, '') === prodUrl.replace(/\/$/, '')) abortar('STAGING_SUPABASE_URL es igual a PROD_SUPABASE_URL. Me niego.')
-if (stUrl.includes(PROD_REF)) abortar(`STAGING_SUPABASE_URL contiene el ref de producción (${PROD_REF}). Me niego.`)
+if (!prodUrl || !prodKey) abortar('Faltan las credenciales de lectura de prod (PROD_* o NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).')
+if (!DRY) {
+  if (!args.get('confirmo-staging')) abortar('Falta --confirmo-staging (confirmación explícita de que el destino es staging). Para ensayar sin escribir: --dry.')
+  if (!stUrl || !stKey) abortar('Faltan STAGING_SUPABASE_URL / STAGING_SERVICE_ROLE_KEY.')
+  if (stUrl.replace(/\/$/, '') === prodUrl.replace(/\/$/, '')) abortar('STAGING_SUPABASE_URL es igual a la URL de prod. Me niego.')
+  if (stUrl.includes(PROD_REF)) abortar(`STAGING_SUPABASE_URL contiene el ref de producción (${PROD_REF}). Me niego.`)
+}
 if (!Number.isInteger(N_SOLICITUDES) || N_SOLICITUDES < 1 || N_SOLICITUDES > 500) abortar('--solicitudes debe ser un entero entre 1 y 500.')
 
 const prod = createClient(prodUrl, prodKey, { auth: { persistSession: false, autoRefreshToken: false } })
-const st = createClient(stUrl, stKey, { auth: { persistSession: false, autoRefreshToken: false } })
+const st = DRY ? null : createClient(stUrl, stKey, { auth: { persistSession: false, autoRefreshToken: false } })
 
 // ── Anonimización ────────────────────────────────────────────────────────
 let contador = 0
@@ -125,12 +133,16 @@ async function escribir(tabla, filas) {
 }
 
 async function main() {
-  console.log(`→ Seed anonimizado: prod → ${stUrl} (últimas ${N_SOLICITUDES} solicitudes)`)
+  console.log(DRY
+    ? `→ ENSAYO (--dry): lee prod y anonimiza, no escribe nada (últimas ${N_SOLICITUDES} solicitudes)`
+    : `→ Seed anonimizado: prod → ${stUrl} (últimas ${N_SOLICITUDES} solicitudes)`)
 
-  // Sanidad del destino: debe existir el schema (tabla principal) y estar casi vacío.
-  const { count, error: errCount } = await st.from('solicitudes_servicio').select('id', { count: 'exact', head: true })
-  if (errCount) abortar(`Staging no responde o no tiene el schema aplicado: ${errCount.message}`)
-  console.log(`   staging tiene hoy ${count ?? 0} solicitudes`)
+  if (!DRY) {
+    // Sanidad del destino: debe existir el schema (tabla principal).
+    const { count, error: errCount } = await st.from('solicitudes_servicio').select('id', { count: 'exact', head: true })
+    if (errCount) abortar(`Staging no responde o no tiene el schema aplicado: ${errCount.message}`)
+    console.log(`   staging tiene hoy ${count ?? 0} solicitudes`)
+  }
 
   // 1. Técnicos y especialidades (todos; son pocos).
   const tecnicos = (await leer('tecnicos')).map(f => anonimizarFila(f, 'tecnico'))
@@ -155,6 +167,25 @@ async function main() {
   const eventos = (await leer('solicitud_eventos', porSolicitud)).map(f => anonimizarFila(f, 'evento'))
   const pagos = (await leer('pagos', porSolicitud)).map(f => anonimizarFila(f, 'pago'))
   const pings = (await leer('gps_pings', porSolicitud)).map(f => anonimizarFila(f, 'ping'))
+
+  if (DRY) {
+    const lotes = { tecnicos, especialidades, supervisores, solicitudes, notificaciones, evidencias, repuestos, eventos, pagos, pings }
+    for (const [k, v] of Object.entries(lotes)) console.log(`   ${k.padEnd(16)} ${v.length} filas`)
+    // Auditoría de fugas sobre TODO lo anonimizado: móviles reales, correos y URLs de Storage de prod.
+    const blob = JSON.stringify(lotes)
+    const tel = (blob.match(/\b573(?!000)\d{9}\b/g) ?? []).length
+    const mail = (blob.match(/[\w.+-]+@(?!example\.com)[\w-]+\.[\w.-]+/g) ?? []).length
+    const urls = (blob.match(/supabase\.co\/storage\/v1\/object/g) ?? []).length
+    console.log(`   fugas detectadas → teléfonos: ${tel} · correos: ${mail} · URLs de Storage de prod: ${urls}`)
+    const m = solicitudes[0] ?? {}
+    const muestra = Object.fromEntries(['cliente_nombre', 'cliente_telefono', 'cliente_email', 'direccion', 'cliente_token', 'estado', 'es_garantia']
+      .filter(k => k in m).map(k => [k, m[k]]))
+    console.log('   muestra de solicitud anonimizada:', JSON.stringify(muestra))
+    console.log(tel + mail + urls === 0
+      ? '✅  Ensayo OK: sin fugas detectadas. Nada se escribió.'
+      : '⚠️  Revisar las reglas de anonimización antes del seed real. Nada se escribió.')
+    return
+  }
 
   console.log('→ Escribiendo en staging (orden por FK):')
   await escribir('tecnicos', tecnicos)
