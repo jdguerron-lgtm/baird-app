@@ -39,7 +39,17 @@ function EstablecerClaveInner() {
         const { data, error: e } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: tipo })
         if (cancelado) return
         if (e || !data.session) {
-          setEstado('invalido')
+          // El link es de un solo uso: si ya se canjeó en este navegador (recarga de la
+          // página, o el doble efecto de React en desarrollo) la sesión quedó abierta.
+          const { data: { session: previa } } = await supabase.auth.getSession()
+          if (cancelado) return
+          if (previa) {
+            window.history.replaceState(null, '', '/admin/establecer-clave')
+            setEmail(previa.user.email ?? null)
+            setEstado('listo')
+          } else {
+            setEstado('invalido')
+          }
           return
         }
         // Limpiar el token de la URL (ya está consumido).

@@ -6,6 +6,9 @@
 > ROLLBACK, smoke test (`scripts/smoke.mjs`), incidentes y hoja de ruta de
 > madurez. Decisiones de seguridad, ventana horaria con datos y fichas de
 > impacto por cambio: `docs/PLAN-CIERRE-SEGURIDAD-Y-STAGING.md`.
+> **v3 2026-11-24**: staging pasa a ser parada obligatoria (§ 1.1 cómo entrar, § 4.1 lista
+> de chequeo por cambio, § 5.5 cambios de estructura de base de datos con expandir →
+> migrar → contraer, § 12 estado verificado y pendientes).
 
 ## 0. Principios
 
@@ -30,6 +33,40 @@
 **En local con el `.env.local` de producción y en las previews (hasta que tengan las variables de staging) no se envían formularios ni se ejecutan acciones** que escriban. Solo navegación. Lo que escribe se prueba **en staging** (§ 5.4) o con el ensayo con ROLLBACK (§ 5.3).
 
 Kit para montar staging: `scripts/staging/README.md` (incluye la variante local con Docker, § 9 del README).
+
+### 1.1 Cómo entrar al ambiente de pruebas
+
+Staging no tiene una URL pública fija: es la **misma app corriendo en tu PC** (o en una preview) conectada a la base `baird-staging`. Tres pasos:
+
+```bash
+# 1. Una sola vez por worktree: .env.local apuntando a staging (WhatsApp, pagos, Siigo, correo y voz apagados)
+cd "C:/Users/Juan Guerron/Documents/baird-app/.wt/<nombre>" && npm ci
+node scripts/e2e/preparar-env-staging.mjs --base="C:/Users/Juan Guerron/Documents/baird-app/.env.local" --staging="C:/Users/Juan Guerron/Documents/baird-app/.env.staging-seed"
+
+# 2. Levantar la app (Claude: preview_start "staging-local"; a mano:)
+npm run dev -- -p 3100
+
+# 3. Pedir las puertas de entrada
+npm run staging:entrar
+```
+
+`npm run staging:entrar` (`scripts/staging/entrar.mjs`) imprime:
+
+| Puerta | Qué entrega | Cómo se usa |
+|---|---|---|
+| **Panel admin** | Link de un solo uso para fijar la clave de tu cuenta admin en staging (crea la cuenta si no existe) | Abrir el link, escribir una clave, y desde ahí entrar por `http://localhost:3100/admin/login`. `--email=otro@correo` para otra persona (debe estar en `ADMIN_EMAILS` / `LECTURA_EMAILS` del `.env.local`) |
+| **Portal del técnico** | `/tecnico/{token}` de un técnico verificado del seed | Ver cards, diagnóstico, completar, agenda, equipo |
+| **Portal del supervisor** | `/supervisor/{token}` | Lista de servicios en su alcance, repuestos, PDF |
+| **Cliente** | `/solicitar` y un `/servicio/{token}` por estado | Crear solicitudes nuevas y ver el portal del cliente en cada etapa |
+| **Fichas** | Una `/admin/solicitudes/{id}` por cada estado × (garantía / particular) presente en el seed | Ir directo a la pantalla del estado que se quiere verificar |
+
+El script se niega a correr si la base no es `baird-staging` o si `--base` apunta al dominio de producción. No envía correos ni WhatsApp.
+
+**Qué hay adentro:** 40 solicitudes, 21 técnicos y 3 supervisores con datos ficticios (nombres `Prueba …`, teléfonos `5730…` inexistentes). Ningún WhatsApp sale (whitelist `570000000000`), no hay cobros ni correos. Los avisos que en producción llegan por WhatsApp se ven en la ficha admin (historial) y en la tabla `notificaciones_whatsapp`.
+
+**Consola de la base:** Supabase → proyecto `baird-staging` (SQL Editor, Table Editor, Auth, Storage, Logs). Claude la consulta con el MCP de Supabase (`project_id = etsbzxnthpmyvuodrmrh`).
+
+**Refrescar datos:** `node --env-file=.env.local --env-file=.env.staging-seed scripts/staging/03-seed-anonimizado.mjs --confirmo-staging` (idempotente, solo lee de prod).
 
 ## 2. Carpetas en el PC
 
@@ -63,7 +100,7 @@ Cada PR declara su tipo en el título o la descripción. El tipo decide qué pru
 |---|---|---|---|
 | **A · Docs / proceso** | `docs/**`, `.github/**`, plantillas de PR, scripts que no corren en prod | CI | Merge a cualquier hora. El deploy de Vercel no cambia el runtime. |
 | **B · Código de la app** | `src/**` sin migración | CI + prueba en preview (navegación) + tests nuevos si toca lógica | **Ventana** (§ 6.1) + protocolo completo (§ 6) |
-| **C · Base de datos** | `supabase/migrations/**`, policies, grants, funciones | Ensayo con ROLLBACK en prod (§ 5.3) **o** staging + inventario de schema | Migración en ventana, **antes** del código que la usa; luego el PR del código como tipo B |
+| **C · Base de datos** | `supabase/migrations/**`, policies, grants, funciones | **Staging primero** (aplicar, e2e, huella) **y** ensayo con ROLLBACK en prod (§ 5.3). Procedimiento completo en § 5.5 | Migración en ventana, **antes** del código que la usa; luego el PR del código como tipo B. Lo destructivo va en una migración aparte, después (§ 5.5) |
 | **D · Configuración** | Env vars de Vercel, toggles del dashboard de Supabase/Vercel | Verificación específica escrita antes | Ventana, fuera de :13–:17 y :58–:02 (redeploy) |
 | **E · Plantillas WhatsApp** | `scripts/upload-templates*.mjs`, textos | `--check` en `APPROVED` | El código que la invoca no se mergea hasta que Meta la aprueba |
 | **F · Dependencias** | `package.json`, `package-lock.json` | Worktree limpio con `npm ci`; línea base vs. después de tsc, lint, test y build; `next start` + smoke local; lockfile con binarios de Linux | Ventana + protocolo completo. **Nunca `npm audit fix --force`**. Pines exactos donde ya los hay. |
@@ -92,6 +129,39 @@ Cada PR declara su tipo en el título o la descripción. El tipo decide qué pru
 7. **Merge en ventana** siguiendo § 6. Merge = deploy a producción.
 8. **Cierre:** bitácora, `CLAUDE.md` § Current Status y memoria del proyecto.
 
+### 4.1 Lista de chequeo por cambio (de la idea a producción)
+
+Copiar en la descripción del PR y marcar. Lo que no aplica al tipo de cambio se tacha, no se borra.
+
+**Antes de escribir código**
+- [ ] Tipo de cambio declarado (A–G, § 3). Si mezcla tipos, se parte en varios PR.
+- [ ] Worktree propio en `.wt/<nombre>` desde `origin/main` al día, con `npm ci`.
+- [ ] Si toca la base: migración diseñada con § 5.5 (aditiva primero, rollback escrito).
+
+**Mientras se desarrolla**
+- [ ] `.env.local` del worktree apunta a **staging** (§ 1.1). Nunca se prueba escritura contra prod.
+- [ ] Lógica nueva con su test en `src/__tests__/<área>/`.
+- [ ] Docs del área actualizados en el mismo PR (`docs/INDEX.md` § Pipeline de actualización).
+
+**Antes de abrir el PR**
+- [ ] `npx tsc --noEmit && npm run lint && npm test` en verde.
+- [ ] `npm run build` en verde (tipos B, C, F).
+- [ ] Migración aplicada **en staging** y verificada (tipo C).
+- [ ] `npm run e2e` con todos los pasos OK contra staging (tipos B, C, F).
+- [ ] Prueba manual en staging de las pantallas tocadas, con `npm run staging:entrar` (admin, técnico, supervisor, cliente según aplique). Garantía **y** particular si el cambio toca un flujo.
+
+**Antes del merge (en ventana)**
+- [ ] `main` traído a la rama y barrera repetida si `main` avanzó.
+- [ ] CI `verificar` en verde en el commit que se va a mergear.
+- [ ] Go / no-go de § 6.2 completo.
+- [ ] Tipo C: ensayo con ROLLBACK en prod (§ 5.3) con `ENSAYO_OK`; luego migración aplicada en prod y huella prod = staging (§ 5.5).
+- [ ] Plantillas WhatsApp que el código usa en `APPROVED` (tipo E).
+- [ ] OK explícito del dueño para el merge.
+
+**Después del merge**
+- [ ] Deploy en READY, `npm run smoke` 15/15, 15 minutos de monitoreo (§ 6.3).
+- [ ] Bitácora, `CLAUDE.md` § Current Status, README de migraciones y memoria del proyecto.
+
 ## 5. Pruebas
 
 ### 5.1 Pirámide
@@ -100,12 +170,13 @@ Cada PR declara su tipo en el título o la descripción. El tipo decide qué pru
 |---|---|---|---|
 | Tipos | `npx tsc --noEmit` | Contratos entre módulos, columnas usadas en el código | Siempre (CI) |
 | Lint | `npm run lint` (incluye `check-pagos-frontera`) | Reglas de React/Next, frontera del módulo de pagos | Siempre (CI) |
-| Unitarias | `npm test` (Vitest, 745 casos en 55 archivos) | Cálculos de tarifas, bonos, pagos, validaciones Zod, utilidades, parsers | Siempre (CI). **Toda lógica nueva lleva su test** en `src/__tests__/<área>/` |
+| Unitarias | `npm test` (Vitest, 885 casos en 67 archivos al 2026-11-24) | Cálculos de tarifas, bonos, pagos, validaciones Zod, utilidades, parsers | Siempre (CI). **Toda lógica nueva lleva su test** en `src/__tests__/<área>/` |
 | Build | `npm run build` | Que Next compile todas las rutas (121 páginas) | CI + tipos B y F |
 | Smoke | `node scripts/smoke.mjs [url]` | Salud con lectura real a la BD, páginas clave, headers de seguridad, noindex, 404 de tokens, 401 de webhook y admin. **Solo lectura.** | Después de cada deploy y en cada ronda de monitoreo |
 | Conectividad | `npm run conectividad` (`scripts/conectividad.mjs`) | App, TLS del dominio, Supabase prod y staging (Auth, REST, Storage), WhatsApp (número, calidad), Wompi (comercio), y Siigo / Resend / Google Maps / Gemini si hay credencial. **Solo lectura** | Antes de cada ventana de despliegue y cuando falle una integración |
 | RLS / Storage | `node --env-file=.env.local scripts/verify-flows.mjs` | Lo que el navegador puede leer con la anon key + ciclo de subida a Storage | Antes y después de tocar RLS, policies o buckets |
-| Ensayo SQL | Bloque `DO` con `RAISE EXCEPTION` final (§ 5.3) | Que una migración se aplica y que los triggers siguen funcionando, sin dejar nada aplicado | Todo cambio tipo C mientras no haya staging |
+| Ensayo SQL | Bloque `DO` con `RAISE EXCEPTION` final (§ 5.3) | Que una migración se aplica **sobre los datos reales** y que los triggers siguen funcionando, sin dejar nada aplicado | Todo cambio tipo C, después de probarlo en staging y antes de aplicarlo en prod |
+| Huella de schema | `scripts/staging/04-huella-schema.sql` en prod y en staging | Que las dos bases tienen la misma estructura (11 categorías: tablas, columnas, constraints, índices, policies, triggers, funciones, permisos, buckets, comentarios, extensiones) | Antes de empezar un cambio tipo C y al cerrarlo |
 | Flujos end-to-end | `npm run e2e` (`scripts/e2e/flujos.mjs`, 32 pasos) contra la app corriendo sobre staging | Particular reparar, particular con repuesto + precios admin, garantía con verificación de paso, y seguridad (tokens falsos, admin sin sesión, cron sin secreto, doble confirmación). Verifica el estado en la base en cada paso y borra sus datos | Tipos B, C y F antes del merge (§ 5.4). Futuro: Playwright para la UI |
 
 Build local con env ficticias (no se conecta a nada):
@@ -124,7 +195,7 @@ node scripts/smoke.mjs --json > smoke-$(date +%H%M).json               # evidenc
 
 El token de bypass sale de Vercel → Settings → Deployment Protection → *Protection Bypass for Automation*. Salida con código 1 si algún check falla.
 
-### 5.3 Ensayo de una migración con ROLLBACK (sin staging)
+### 5.3 Ensayo de una migración con ROLLBACK (contra los datos reales de prod)
 
 Patrón usado el 2026-10-24 para el hardening de funciones: todo dentro de un bloque `DO` que aplica el cambio, prueba lo que importa **con el rol real de la app** (`service_role`) y termina con `RAISE EXCEPTION`, que deshace todo (Postgres hace transaccional también el DDL y los grants).
 
@@ -171,6 +242,54 @@ Primera corrida (2026-10-26): **32/32 en 39 s**, sin ningún WhatsApp enviado (t
 
 Cuándo correrla: **todo PR tipo B, C o F antes del merge**; además, después de aplicar una migración en staging y antes de llevarla a producción.
 
+### 5.5 Cambios de estructura de base de datos
+
+Regla central: **la base y el código nunca cambian al mismo tiempo de forma incompatible.** Producción siempre corre un código que funciona con la estructura que hay, antes y después de cada paso. Eso se logra partiendo todo cambio en tres tiempos:
+
+| Tiempo | Qué va | Ejemplos | Riesgo |
+|---|---|---|---|
+| **1 · Expandir** | Migración solo aditiva | Tabla nueva; columna nueva `NULL` o con `DEFAULT`; índice; valor nuevo en un `CHECK` (se amplía, no se reduce); función o trigger nuevo | Bajo: el código viejo ni se entera |
+| **2 · Migrar** | Código que usa lo nuevo y sigue tolerando lo viejo, más el backfill de datos | El código escribe en la columna nueva y lee `nueva ?? vieja`; `UPDATE` por lotes para llenar históricos | Medio: se prueba completo en staging |
+| **3 · Contraer** | Migración destructiva, **días después**, cuando prod ya corre el código nuevo y nadie lee lo viejo | `DROP COLUMN`, `DROP TABLE`, `NOT NULL`, reducir un `CHECK`, renombrar | Alto e irreversible sin respaldo: PR y ventana propios |
+
+Nunca en un solo paso: renombrar una columna o una tabla (se crea la nueva, se copia, se cambia el código y luego se borra la vieja), cambiar el tipo de una columna con datos, quitar un valor de un `CHECK` de estados, o agregar `NOT NULL` sin default a una tabla con filas. Antecedente en este repo: el renombre de estados v7 se hizo así (`renombrar_estados_expand` y luego `renombrar_estados_contract`).
+
+**Formato de cada migración** (`supabase/migrations/AAAAMMDD_nombre.sql`, una por cambio lógico):
+
+```sql
+-- AAAAMMDD_nombre.sql
+-- QUÉ: una línea.
+-- POR QUÉ: una línea.
+-- TIEMPO: expandir | contraer.
+-- IMPACTO: tablas tocadas, si bloquea escrituras y cuánto, qué código la necesita.
+-- VERIFICACIÓN: consulta que demuestra que quedó aplicada.
+-- ROLLBACK: sentencias exactas para deshacerla (o "irreversible: requiere respaldo" en contraer).
+
+ALTER TABLE public.solicitudes_servicio ADD COLUMN IF NOT EXISTS ejemplo text;
+```
+
+Idempotente siempre que se pueda (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP … IF EXISTS`), para que aplicarla dos veces no rompa. Toda tabla nueva nace con RLS encendido y sin policies para `anon` (el server usa `service_role`; ver `docs/PLAN-RLS.md`).
+
+**Recorrido de un cambio tipo C:**
+
+| # | Paso | Dónde | Cómo |
+|---|---|---|---|
+| 1 | Huella inicial igual en prod y staging | Ambas (lectura) | `04-huella-schema.sql` con 11/11. Si difiere, primero se alinea staging |
+| 2 | Aplicar la migración | **Staging** | MCP `apply_migration` con el `project_id` de staging, o SQL Editor |
+| 3 | Código contra la estructura nueva | Worktree contra staging | `tsc`, lint, tests, build, `npm run e2e`, prueba manual (§ 1.1) |
+| 4 | Backfill, si lo hay | Staging | Correrlo sobre el seed, medir duración y contar filas afectadas |
+| 5 | Ensayo con ROLLBACK | **Prod** (no deja nada) | § 5.3: detecta choques con datos reales que el seed no tiene (nulos, duplicados, valores fuera de un `CHECK`) |
+| 6 | Ventana: aplicar la migración | **Prod** | Antes del merge del código. Correr la consulta de VERIFICACIÓN |
+| 7 | Huella final | Ambas | 11/11 otra vez. Anotar en `supabase/migrations/README.md` fecha y hora de aplicación |
+| 8 | Merge del código (tipo B) | Prod | Protocolo § 6 |
+| 9 | Contraer | Staging y luego prod | Otro PR, otra ventana, mínimo unos días después y con respaldo confirmado |
+
+**Varios cambios encadenados** (un rediseño grande): se ordenan en una tabla de entregas, cada una con su migración de expandir, su PR de código y su criterio de terminado. No se empieza la entrega N+1 hasta que la N esté en producción y con la huella igualada; así staging nunca se aleja de prod más de un paso y un rollback siempre es de una sola entrega.
+
+**Respaldo antes de contraer o de un backfill grande:** con Supabase Pro hay respaldo diario automático (7 días). Para un punto exacto antes del cambio: `CREATE TABLE _respaldo_<tabla>_<fecha> AS SELECT … FROM <tabla>` dentro de la misma ventana (se borra en la siguiente), o `pg_dump` de las tablas tocadas a `Documents/baird-app-backups/`.
+
+**Quién aplica migraciones:** una sola sesión a la vez. Si hay varias sesiones de Claude abiertas, solo la que tiene el cambio tipo C en curso toca la estructura de staging o de prod.
+
 ---
 
 ## 6. Protocolo de despliegue
@@ -195,6 +314,8 @@ Cuándo correrla: **todo PR tipo B, C o F antes del merge**; además, después d
 | 7 | Destino de rollback anotado | id del deploy de producción actual |
 | 8 | Migraciones y plantillas que el código necesita, ya aplicadas / `APPROVED` | README de migraciones, `--check` |
 | 9 | **E2E en verde contra staging** con el código del PR (tipos B, C y F) | Check `e2e-preview` del PR (§ 6.4) o `npm run e2e` en local (§ 5.4) |
+| 10 | Tipo C: `ENSAYO_OK` en prod y huella prod = staging tras aplicar | § 5.5 pasos 5–7 |
+| 11 | OK explícito del dueño para este merge | En el chat, en el momento |
 
 ### 6.3 Ejecución
 
@@ -270,4 +391,32 @@ Lo que corre solo, sin que nadie lo dispare:
 | 2 · Barreras | CI en cada PR, plantilla de PR, ventana con datos, smoke test, ensayo de migraciones, rollback escrito | ✅ **2026-10-24** |
 | 3 · Protegido | Protección de rama en `main` (CI obligatorio + PR), `CRON_SECRET`, backups diarios de la BD | ⏳ protección de rama tras el primer CI verde; backups requieren Supabase Pro |
 | 4 · Ambiente de pruebas | `baird-staging` con seed anonimizado, e2e de 4 flujos; previews contra staging; migraciones con Supabase CLI | ✅ staging + e2e **2026-10-26**; ⏳ variables de Preview en Vercel y Supabase CLI |
+| 4b · Entrada manual a staging | `npm run staging:entrar` (links de admin, técnico, supervisor, cliente y una ficha por estado) | ✅ **2026-11-24** (§ 12) |
 | 5 · Automatizado | E2E automático contra la preview en cada PR (`e2e-preview`), smoke post-deploy con issue de alerta, chequeo diario de servicios con alerta por WhatsApp; Playwright para la UI; Sentry o log drain; Rolling Releases | 🟡 **parcial 2026-10-26**: los 3 automatismos escritos (PR del pipeline); falta cargar los secretos y las variables de Preview, y Playwright / Sentry / Rolling Releases |
+
+## 12. Estado verificado y pendientes (2026-11-24)
+
+Verificado ese día, con la rama de este documento al día con `main` (`66f2abe`):
+
+| Qué | Resultado |
+|---|---|
+| Huella de schema prod vs staging | **11/11 iguales** (20 tablas, 346 columnas, 100 constraints, 89 índices, 35 policies, 6 triggers, 9 funciones, 4 buckets) |
+| `tsc`, lint, tests, build | 0 errores de tipos · 0 errores de lint (5 avisos) · 885/885 tests · build OK |
+| Smoke contra la app sobre staging | 15/15 |
+| E2E contra staging | **33/33** en 58 s, sin restos en la base |
+| Entrada manual | Panel admin (link de clave y dashboard con datos), portal del técnico y portal del supervisor abren y cargan datos del seed |
+| GitHub | CI `verificar` verde en `main`. **Sin protección de rama y sin secretos de Actions** |
+
+Pendientes para dar por cerrada la Fase 0, en orden:
+
+| # | Pendiente | Quién | Por qué importa |
+|---|---|---|---|
+| 1 | Mergear el PR de este flujo | Dueño da el OK, Claude mergea en ventana | Sin esto, `main` no tiene `e2e`, `smoke`, `staging:entrar` ni los workflows |
+| 2 | Variables de **Preview** en Vercel apuntando a staging (`scripts/staging/README.md` § 6) | Dueño (Claude no puede escribir claves ni leer las env de Vercel) | Hasta entonces una preview puede leer y escribir en **producción** |
+| 3 | 4 secretos de GitHub Actions (§ 6.4) | Dueño | Sin ellos `e2e-preview` queda en rojo y no corre |
+| 4 | Protección de `main` (§ 6.4): PR obligatorio + `verificar` (y `e2e-preview` cuando 2 y 3 estén) | Dueño, o Claude con OK | Impide un push directo a producción por error |
+| 5 | Apagar *Allow new users to sign up* en Auth de staging | Dueño | Nadie externo crea cuentas en staging |
+| 6 | Actualizar Next 16.4.3 a 16.4.6 (avisos de seguridad moderados) como cambio tipo F | Claude, en su propio PR | `npm audit` lo reporta; `next build` se detiene una vez a avisarlo |
+| 7 | `20261124_agente_wa_conversaciones.sql` (rama del agente WhatsApp): aplicarla primero en staging cuando ese trabajo se retome | Claude | Única migración escrita que no está en ninguna base |
+
+Mientras el 2 no esté hecho, **las previews de Vercel son solo para mirar** (§ 1); todo lo que escribe se prueba con la app local contra staging.

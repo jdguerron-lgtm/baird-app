@@ -12,6 +12,11 @@ aquí escribe en producción**: a prod solo se le hace `pg_dump --schema-only` y
 | `01-storage-buckets-y-policies.sql` | Crea los 4 buckets y las 9 policies de `storage.objects` tal como están en prod (2026-10-24). `pg_dump --schema=public` no las incluye. | Staging (SQL Editor o MCP `apply_migration`) |
 | `02-inventario-schema.sql` | Lista tablas, columnas, constraints, índices, policies, triggers y funciones en un formato estable para hacer `diff` entre prod y staging. | Prod (solo lectura) y staging |
 | `03-seed-anonimizado.mjs` | Copia a staging las últimas N solicitudes con sus satélites, todos los técnicos y los supervisores, reemplazando PII y tokens. Se niega a escribir si el destino es prod. | Local, desde el repo (`node --env-file=…`) |
+| `04-huella-schema.sql` | Huella (md5 + conteo) de 11 categorías del schema. Si las 11 filas coinciden entre prod y staging, la estructura es idéntica. | Prod (solo lectura) y staging |
+| `entrar.mjs` (`npm run staging:entrar`) | Imprime los links para entrar a mano a la app sobre staging: link de clave del panel admin, portal del técnico, del supervisor, del cliente y una ficha por estado. Se niega si la base no es staging. | Local, desde un worktree con `.env.local` de staging |
+
+Cómo entrar y qué se puede probar: `docs/FLUJO-DESARROLLO.md` § 1.1. Procedimiento para cambios de
+estructura: § 5.5 del mismo doc.
 
 ## 1. Crear el proyecto
 
