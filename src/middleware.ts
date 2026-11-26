@@ -63,6 +63,13 @@ const RATE_LIMITS: { path: string; limit: number; windowMs: number }[] = [
   // Recuperación de clave del panel admin (2026-10-13): respuesta genérica,
   // pero cada llamada puede disparar un correo → tope estricto por IP.
   { path: '/api/auth/recuperar-clave', limit: 5, windowMs: 60_000 },
+  // Bienvenida al técnico recién registrado (2026-11-25): público y dispara un
+  // WhatsApp (costo). Un registro real lo llama una vez; el candado de fondo
+  // (registro reciente + una vez por técnico) está en la ruta.
+  { path: '/api/notificar-registro', limit: 3, windowMs: 60_000 },
+  // Validación en vivo del código de descuento (2026-11-25): con debounce, un
+  // cliente escribiendo hace 3–6 llamadas; 20/min frena adivinar códigos.
+  { path: '/api/descuentos/validar', limit: 20, windowMs: 60_000 },
 ]
 
 // Token pages: prevent brute-force enumeration.
